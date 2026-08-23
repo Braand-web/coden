@@ -130,15 +130,13 @@ begin
       create policy %I_member_access on public.%I for all using (
         exists (select 1 from public.projects p
           where p.id = %I.project_id
-            and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid()))
-        or exists (select 1 from public.project_members pm
-          where pm.project_id = %I.project_id and pm.user_id = auth.uid())
+            and p.owner_id = auth.uid())
       ) with check (
         exists (select 1 from public.projects p
           where p.id = %I.project_id
-            and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid()))
+            and p.owner_id = auth.uid())
       )
-    $policy$, table_name, table_name, table_name, table_name, table_name);
+    $policy$, table_name, table_name, table_name, table_name);
   end loop;
 end $$;
 

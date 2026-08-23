@@ -43,19 +43,14 @@ create policy agent_run_events_member_access on public.agent_run_events
     exists (
       select 1 from public.projects p
       where p.id = agent_run_events.project_id
-        and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid())
-    )
-    or exists (
-      select 1 from public.project_members pm
-      where pm.project_id = agent_run_events.project_id
-        and pm.user_id = auth.uid()
+        and p.owner_id = auth.uid()
     )
   )
   with check (
     exists (
       select 1 from public.projects p
       where p.id = agent_run_events.project_id
-        and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid())
+        and p.owner_id = auth.uid()
     )
   );
 

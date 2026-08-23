@@ -3,6 +3,25 @@
 
 create extension if not exists "uuid-ossp";
 
+create table if not exists public.organizations (
+  id uuid primary key references auth.users(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  name text not null default 'Personal workspace',
+  slug text not null unique,
+  type text not null default 'personal',
+  status text not null default 'active',
+  plan text not null default 'free',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.organizations enable row level security;
+drop policy if exists "Organizations owner isolation" on public.organizations;
+create policy "Organizations owner isolation" on public.organizations
+  for all using (owner_id = auth.uid())
+  with check (owner_id = auth.uid() and id = auth.uid());
+grant select, insert, update on public.organizations to authenticated;
+
 create table if not exists public.projects (
   id uuid primary key default uuid_generate_v4(),
   created_at timestamptz default now() not null
@@ -52,10 +71,10 @@ create table if not exists public.deployments (
   id uuid primary key default uuid_generate_v4(),
   organization_id uuid,
   project_id uuid not null references public.projects(id) on delete cascade,
-  provider text default 'vercel' not null,
+  provider text default 'cloudflare' not null,
   provider_deployment_id text,
   deployment_url text,
-  status text not null,
+  status text not null default 'unknown',
   commit_hash text,
   branch text default 'main',
   created_at timestamptz default now() not null
@@ -75,7 +94,7 @@ create table if not exists public.agent_events (
 );
 
 alter table public.deployments add column if not exists organization_id uuid;
-alter table public.deployments add column if not exists provider text default 'vercel';
+alter table public.deployments add column if not exists provider text default 'cloudflare';
 alter table public.deployments add column if not exists provider_deployment_id text;
 alter table public.deployments add column if not exists deployment_url text;
 alter table public.deployments add column if not exists public_url text;

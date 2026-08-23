@@ -57,18 +57,16 @@ alter table public.agent_workflow_runs enable row level security;
 
 drop policy if exists agent_workflows_member_select on public.agent_workflows;
 create policy agent_workflows_member_select on public.agent_workflows for select using (
-  exists (select 1 from public.projects p where p.id = project_id and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid()))
-  or exists (select 1 from public.project_members pm where pm.project_id = agent_workflows.project_id and pm.user_id = auth.uid())
+  exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid())
 );
 drop policy if exists agent_workflows_member_write on public.agent_workflows;
 create policy agent_workflows_member_write on public.agent_workflows for all using (
-  exists (select 1 from public.projects p where p.id = project_id and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid()))
-  or exists (select 1 from public.project_members pm where pm.project_id = agent_workflows.project_id and pm.user_id = auth.uid() and pm.role in ('owner','admin'))
-) with check (created_by = auth.uid() or exists (select 1 from public.project_members pm where pm.project_id = agent_workflows.project_id and pm.user_id = auth.uid() and pm.role in ('owner','admin')));
+  exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid())
+) with check (created_by = auth.uid() and exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
 
 drop policy if exists agent_workflow_runs_member_select on public.agent_workflow_runs;
 create policy agent_workflow_runs_member_select on public.agent_workflow_runs for select using (
-  exists (select 1 from public.agent_workflows w join public.projects p on p.id = w.project_id where w.id = workflow_id and (p.owner_id = auth.uid() or p.created_by = auth.uid() or p.user_id = auth.uid()))
+  exists (select 1 from public.agent_workflows w join public.projects p on p.id = w.project_id where w.id = workflow_id and p.owner_id = auth.uid())
 );
 
 -- Atomic lease claim for one process-safe scheduler pass.

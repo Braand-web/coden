@@ -96,7 +96,7 @@ export const MODEL_REGISTRY = [
     id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', provider: 'deepseek',
     contextWindow: 1_048_576, maxOutputTokens: 65_536,
     tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 2,
-    inputUsdPerMillion: 0.414, outputUsdPerMillion: 0.828,
+    inputUsdPerMillion: 0.396894, outputUsdPerMillion: 0.793788,
     description: 'Excellent rapport qualité-prix pour le code, le debug et les traitements longs.',
     capabilities: { ...commonTextTools, supportsPromptCaching: false,
       reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'medium', securityLevel: 'high',

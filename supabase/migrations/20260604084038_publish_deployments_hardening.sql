@@ -7,13 +7,13 @@ create table if not exists public.deployments (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid,
   project_id uuid not null,
-  provider text default 'vercel',
+  provider text default 'cloudflare',
   provider_deployment_id text,
   deployment_url text,
   public_url text,
   custom_domain text,
   badge_required boolean default false,
-  status text default 'ready',
+  status text default 'unknown',
   commit_hash text,
   branch text default 'main',
   created_at timestamptz default now() not null,
@@ -22,13 +22,13 @@ create table if not exists public.deployments (
 
 alter table public.deployments add column if not exists organization_id uuid;
 alter table public.deployments add column if not exists project_id uuid;
-alter table public.deployments add column if not exists provider text default 'vercel';
+alter table public.deployments add column if not exists provider text default 'cloudflare';
 alter table public.deployments add column if not exists provider_deployment_id text;
 alter table public.deployments add column if not exists deployment_url text;
 alter table public.deployments add column if not exists public_url text;
 alter table public.deployments add column if not exists custom_domain text;
 alter table public.deployments add column if not exists badge_required boolean default false;
-alter table public.deployments add column if not exists status text default 'ready';
+alter table public.deployments add column if not exists status text default 'unknown';
 alter table public.deployments add column if not exists commit_hash text;
 alter table public.deployments add column if not exists branch text default 'main';
 alter table public.deployments add column if not exists created_at timestamptz default now();
@@ -36,8 +36,8 @@ alter table public.deployments add column if not exists updated_at timestamptz d
 
 update public.deployments
 set
-  provider = coalesce(provider, 'vercel'),
-  status = coalesce(status, 'ready'),
+  provider = coalesce(provider, 'cloudflare'),
+  status = coalesce(status, 'unknown'),
   branch = coalesce(branch, 'main'),
   badge_required = coalesce(badge_required, false),
   created_at = coalesce(created_at, now()),

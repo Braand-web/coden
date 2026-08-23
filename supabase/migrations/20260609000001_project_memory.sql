@@ -34,7 +34,7 @@ CREATE TRIGGER project_memory_set_updated_at
   BEFORE UPDATE ON public.project_memory
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
--- RLS: users can only access memory for projects they own or belong to
+-- RLS: the current product maps each personal workspace to its authenticated owner.
 ALTER TABLE public.project_memory ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated users to read memory for their own projects
@@ -43,9 +43,7 @@ CREATE POLICY "project_memory_select" ON public.project_memory
   TO authenticated
   USING (
     project_id IN (
-      SELECT id FROM public.projects WHERE user_id = auth.uid()
-      UNION
-      SELECT project_id FROM public.project_members WHERE user_id = auth.uid()
+      SELECT id FROM public.projects WHERE owner_id = auth.uid()
     )
   );
 
@@ -55,7 +53,7 @@ CREATE POLICY "project_memory_insert" ON public.project_memory
   TO authenticated
   WITH CHECK (
     project_id IN (
-      SELECT id FROM public.projects WHERE user_id = auth.uid()
+      SELECT id FROM public.projects WHERE owner_id = auth.uid()
     )
   );
 
@@ -65,7 +63,7 @@ CREATE POLICY "project_memory_delete" ON public.project_memory
   TO authenticated
   USING (
     project_id IN (
-      SELECT id FROM public.projects WHERE user_id = auth.uid()
+      SELECT id FROM public.projects WHERE owner_id = auth.uid()
     )
   );
 
