@@ -25,6 +25,13 @@ export type ProjectMemoryRow = {
   project_id: string;
   memory_type: 'adr' | 'preference' | 'blocker' | 'pattern' | 'design_token' | 'user_instruction' | 'failure';
   content: string;
+  source?: 'user' | 'filesystem' | 'verified_run' | 'model_candidate' | 'legacy';
+  confidence?: number;
+  verified?: boolean;
+  expires_at?: string | null;
+  supersedes_id?: string | null;
+  verified_fact_ids?: string[];
+  content_hash?: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -49,7 +56,11 @@ export function selectRelevantMemoryRows(rows: ProjectMemoryRow[], query: string
   const queryTerms = meaningfulTerms(query);
   const now = Date.now();
   return rows
-    .filter(row => String(row.content || '').trim())
+    .filter(row => {
+      if (!String(row.content || '').trim()) return false;
+      const expiresAt = row.expires_at ? Date.parse(row.expires_at) : 0;
+      return !expiresAt || expiresAt > now;
+    })
     .map((row, index) => {
       const content = String(row.content || '');
       const terms = meaningfulTerms(content);
@@ -59,8 +70,15 @@ export function selectRelevantMemoryRows(rows: ProjectMemoryRow[], query: string
       const date = Date.parse(row.updated_at || row.created_at || '') || 0;
       const ageDays = date ? Math.max(0, (now - date) / 86_400_000) : 365;
       const recency = Math.max(0, 1 - Math.min(ageDays, 180) / 180);
-      const explicit = /"verified"\s*:\s*true|"source"\s*:\s*"user"/i.test(content) ? 2 : 0;
-      return { row, index, score: MEMORY_TYPE_WEIGHT[row.memory_type] + overlap * 12 + recency * 2 + explicit };
+      const sourceAuthority = row.source === 'user' ? 3 : row.source === 'verified_run' || row.source === 'filesystem' ? 2 : 0;
+      const verifiedAuthority = row.verified ? 2 : 0;
+      const confidence = Number.isFinite(row.confidence) ? Math.max(0, Math.min(1, Number(row.confidence))) : 0;
+      const legacyExplicit = /"verified"\s*:\s*true|"source"\s*:\s*"user"/i.test(content) ? 1 : 0;
+      return {
+        row,
+        index,
+        score: MEMORY_TYPE_WEIGHT[row.memory_type] + overlap * 12 + recency * 2 + sourceAuthority + verifiedAuthority + confidence + legacyExplicit,
+      };
     })
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, Math.max(0, limit))

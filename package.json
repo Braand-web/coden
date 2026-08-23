@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "dev": "vite --port=3000 --host=0.0.0.0",
     "test:universal-runtime": "node --experimental-strip-types test-universal-product-contract.ts && node --experimental-strip-types test-structured-output.ts && node --experimental-strip-types test-llm-tool-loop.ts && node --experimental-strip-types test-multimodal-runtime.ts",
-    "pretest": "node --experimental-strip-types test-publish-verification-gate.ts && node --experimental-strip-types test-generated-app-runtime.ts",
+    "pretest": "node --experimental-strip-types test-publish-verification-gate.ts && node --experimental-strip-types test-generated-app-runtime.ts && node --experimental-strip-types test-agent-memory-rag.ts",
     "build": "vite build",
     "preview": "vite preview",
     "start": "tsx server.ts",
