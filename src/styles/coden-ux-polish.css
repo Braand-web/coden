@@ -1,0 +1,250 @@
+:root {
+  --coden-motion-instant: 90ms;
+  --coden-motion-fast: 140ms;
+  --coden-motion-medium: 220ms;
+  --coden-motion-slow: 360ms;
+  --coden-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --coden-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --coden-shadow-soft-blue: 0 0 0 4px var(--coden-blue-soft, rgba(59, 130, 246, 0.1));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  text-rendering: optimizeLegibility;
+}
+
+:where(
+  .navbar,
+  .hero-content,
+  .hero-visual,
+  .feature-card,
+  .pricing-card,
+  .testimonial-card,
+  .faq-item,
+  .project-card,
+  .create-section,
+  .activity-list,
+  .settings-panel,
+  .modal-content,
+  .auth-card,
+  .seo-card,
+  .seo-panel
+) {
+  animation: coden-panel-reveal var(--coden-motion-slow) var(--coden-ease-enter) both;
+}
+
+:where(.feature-card, .pricing-card, .testimonial-card, .project-card, .seo-card, .seo-panel, .create-section) {
+  will-change: transform;
+}
+
+:where(.feature-card, .pricing-card, .testimonial-card, .project-card, .seo-card, .seo-panel, .create-section):hover {
+  transform: translateY(-2px);
+}
+
+:where(
+  button,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-solid,
+  .btn-upgrade,
+  .btn-deploy,
+  .btn-create-top,
+  .submit-btn,
+  .icon-btn,
+  .tab-btn,
+  .sub-tab,
+  .model-select,
+  .prompt-mode-btn,
+  .nav-link-item,
+  .chip,
+  .badge
+) {
+  transition:
+    transform var(--coden-motion-fast) var(--coden-ease-standard),
+    opacity var(--coden-motion-fast) var(--coden-ease-standard),
+    color var(--coden-motion-fast) var(--coden-ease-standard),
+    border-color var(--coden-motion-fast) var(--coden-ease-standard),
+    background-color var(--coden-motion-fast) var(--coden-ease-standard),
+    box-shadow var(--coden-motion-fast) var(--coden-ease-standard);
+}
+
+:where(
+  button,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-solid,
+  .btn-upgrade,
+  .btn-deploy,
+  .btn-create-top,
+  .submit-btn,
+  .icon-btn,
+  .tab-btn,
+  .sub-tab,
+  .model-select,
+  .prompt-mode-btn
+):hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+:where(
+  button,
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-solid,
+  .btn-upgrade,
+  .btn-deploy,
+  .btn-create-top,
+  .submit-btn,
+  .icon-btn,
+  .tab-btn,
+  .sub-tab,
+  .model-select,
+  .prompt-mode-btn
+):active:not(:disabled) {
+  transform: scale(0.985);
+  transition-duration: var(--coden-motion-instant);
+}
+
+:where(input, textarea, select, .input-wrapper, .coden-ai-input, .chat-input-area) {
+  transition:
+    border-color var(--coden-motion-fast) var(--coden-ease-standard),
+    box-shadow var(--coden-motion-medium) var(--coden-ease-standard),
+    background-color var(--coden-motion-fast) var(--coden-ease-standard),
+    transform var(--coden-motion-medium) var(--coden-ease-standard);
+}
+
+:where(.input-wrapper, .coden-ai-input, .chat-input-area):focus-within {
+  box-shadow: var(--coden-shadow-soft-blue);
+}
+
+:where(.dropdown, .project-menu-panel, .coden-model-dropdown, .model-provider-panel, .prompt-mode-menu, #chat-mode-menu) {
+  animation: coden-popover-in var(--coden-motion-medium) var(--coden-ease-enter) both;
+  transform-origin: top center;
+}
+
+:where(.toast, .attachment-chip, .prompt-attachment-chip, .feedback-modal, .publish-popover) {
+  animation: coden-soft-rise var(--coden-motion-medium) var(--coden-ease-enter) both;
+}
+
+:where(.preview-frame-wrapper, .preview-content, .preview-empty, .web-preview, .artifact-preview) {
+  transition:
+    opacity var(--coden-motion-medium) var(--coden-ease-standard),
+    transform var(--coden-motion-medium) var(--coden-ease-standard),
+    border-color var(--coden-motion-fast) var(--coden-ease-standard),
+    background-color var(--coden-motion-fast) var(--coden-ease-standard);
+}
+
+:where(.preview-frame-wrapper, .web-preview, .artifact-preview)[data-loading="true"],
+:where(.preview-frame-wrapper.is-loading, .web-preview.is-loading, .artifact-preview.is-loading) {
+  opacity: 0.92;
+}
+
+:where(.skeleton, .analysis-skeleton, .preview-skeleton, .shimmer, .coden-shimmer) {
+  background-size: 220% 100%;
+  animation: coden-premium-shimmer 1.35s var(--coden-ease-standard) infinite;
+}
+
+:where(.coden-message) {
+  animation: coden-soft-rise var(--coden-motion-medium) var(--coden-ease-enter) both;
+}
+
+:where(.coden-message-content) {
+  transition:
+    background-color var(--coden-motion-fast) var(--coden-ease-standard),
+    border-color var(--coden-motion-fast) var(--coden-ease-standard),
+    box-shadow var(--coden-motion-fast) var(--coden-ease-standard),
+    transform var(--coden-motion-fast) var(--coden-ease-standard);
+}
+
+:where(.coden-message-content):hover {
+  transform: translateY(-1px);
+}
+
+@keyframes coden-panel-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes coden-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes coden-soft-rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes coden-premium-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  :where(
+    button,
+    .btn,
+    .btn-primary,
+    .btn-secondary,
+    .btn-solid,
+    .btn-upgrade,
+    .btn-deploy,
+    .btn-create-top,
+    .submit-btn,
+    .icon-btn,
+    .tab-btn,
+    .sub-tab,
+    .model-select,
+    .prompt-mode-btn,
+    .feature-card,
+    .pricing-card,
+    .testimonial-card,
+    .project-card,
+    .seo-card,
+    .seo-panel,
+    .create-section,
+    .coden-message-content
+  ):hover {
+    transform: none !important;
+  }
+}

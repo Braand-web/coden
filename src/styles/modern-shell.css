@@ -1,0 +1,186 @@
+/* Final shared shell layer. It is intentionally scoped so legacy project
+   markup can migrate surface by surface without changing generated apps. */
+@import "./canonical-shell.css";
+body.coden-modern-shell {
+  color-scheme: dark;
+  text-rendering: optimizeLegibility;
+}
+
+body.coden-modern-shell :where(button, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--focus-ring, var(--coden-focus, #8fb7ff));
+  outline-offset: 3px;
+  box-shadow: none;
+}
+
+body.coden-modern-shell .navbar {
+  z-index: 100;
+  transition: background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control), transform var(--transition-control), backdrop-filter var(--transition-control);
+}
+
+body.coden-modern-shell .navbar.scrolled,
+body.coden-modern-shell .navbar:not(.navbar-transparent-on-scroll) {
+  background: color-mix(in srgb, var(--bg-panel, var(--coden-panel, #13151a)) 84%, transparent) !important;
+  border-color: color-mix(in srgb, var(--border, var(--coden-border)) 90%, transparent) !important;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+}
+
+body.coden-modern-shell .hero-halo { opacity: 0 !important; filter: none !important; }
+body.coden-modern-shell .hero h1,
+body.coden-modern-shell .hero h1 .neon-highlight,
+body.coden-modern-shell .hero h1 .neon-glow {
+  text-shadow: none !important;
+  filter: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+body.coden-modern-shell .badge::after,
+body.coden-modern-shell .badge-dot { animation: none !important; }
+
+body.coden-modern-shell .input-wrapper,
+body.coden-modern-shell .pricing-card,
+body.coden-modern-shell .auth-card,
+body.coden-modern-shell .checkout-card,
+body.coden-modern-shell .project-card,
+body.coden-modern-shell .feature-card {
+  transition: border-color var(--transition-control), background-color var(--transition-control), box-shadow var(--transition-control), transform var(--transition-control);
+}
+
+body.coden-modern-shell .input-wrapper:focus-within,
+body.coden-modern-shell input:focus,
+body.coden-modern-shell textarea:focus,
+body.coden-modern-shell select:focus {
+  border-color: color-mix(in srgb, var(--primary, var(--accent-blue)) 70%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary, var(--accent-blue)) 16%, transparent);
+}
+
+body.coden-modern-shell .footer,
+body.coden-modern-shell .seo-footer {
+  border-top: 1px solid var(--border, var(--coden-border));
+  background: var(--bg, var(--coden-bg));
+}
+body.coden-modern-shell .footer-links a,
+body.coden-modern-shell .footer-bottom-actions select {
+  min-height: 36px;
+}
+
+body.coden-modern-shell .footer-links a:hover,
+body.coden-modern-shell .nav-links a:hover {
+  transform: none;
+  color: var(--text, var(--coden-text));
+  background: color-mix(in srgb, var(--primary, var(--accent-blue)) 11%, transparent);
+}
+
+body.coden-modern-shell .modal-overlay[aria-hidden="true"],
+body.coden-modern-shell .modal-overlay:not(.open) {
+  pointer-events: none;
+}
+
+#coden-marketing-header-root, #coden-react-marketing-root { position: fixed; inset: 0 0 auto; z-index: 1000; height: 0; pointer-events: none; }
+
+.coden-ui-container { width: min(var(--shell-max), calc(100% - 32px)); margin-inline: auto; }
+.coden-ui-tabs { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); }
+.coden-ui-tab { position: relative; min-height: 36px; padding: 0 12px; border: 0; border-radius: 9px; color: var(--text-muted); background: transparent; cursor: pointer; }
+.coden-ui-tab:hover, .coden-ui-tab.is-active { color: var(--text); }
+.coden-ui-tab-indicator { position: absolute; inset: 0; z-index: 0; border-radius: 9px; background: var(--accent-blue-soft); border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent); }
+.coden-ui-tab > span:last-child { position: relative; z-index: 1; }
+.coden-ui-dropdown { position: relative; display: inline-flex; }
+.coden-ui-dropdown-trigger { min-height: 40px; border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; background: var(--bg-surface); color: var(--text); }
+.coden-ui-dropdown-panel { position: absolute; top: calc(100% + 8px); right: 0; min-width: 180px; z-index: 50; padding: 6px; border: 1px solid var(--border-mid); border-radius: 12px; background: var(--bg-elevated); box-shadow: var(--shadow-lg); }
+.coden-ui-accordion { border-top: 1px solid var(--border); }
+.coden-ui-accordion-trigger { width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; color: var(--text); text-align: left; }
+.coden-ui-accordion-content { overflow: hidden; color: var(--text-muted); padding: 0 0 16px; }
+.coden-ui-overlay { position: fixed; inset: 0; z-index: 12000; display: grid; place-items: center; padding: 20px; background: var(--overlay); backdrop-filter: blur(4px); }
+.coden-ui-overlay-panel { width: min(640px, 100%); max-height: min(760px, calc(100dvh - 40px)); overflow: auto; border: 1px solid var(--border-mid); border-radius: 16px; background: var(--bg-surface); color: var(--text); box-shadow: var(--shadow-overlay); }
+.coden-ui-overlay-panel.is-sheet { width: min(720px, 100%); align-self: end; border-radius: 16px 16px 0 0; }
+.coden-ui-overlay-header { min-height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); }
+.coden-ui-overlay-header h2 { font-size: 16px; }
+.coden-icon-button { min-width: 40px; padding: 0 10px; }
+.coden-ui-toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 13000; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); }
+.coden-ui-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--border-mid); border-radius: 12px; background: var(--bg-elevated); color: var(--text); box-shadow: var(--shadow-md); }
+.coden-ui-toast p { margin-top: 4px; color: var(--text-muted); font-size: 13px; line-height: 1.45; }
+.coden-ui-toast.is-success { border-color: color-mix(in srgb, var(--success) 42%, var(--border)); }
+.coden-ui-toast.is-warning { border-color: color-mix(in srgb, var(--warning) 42%, var(--border)); }
+.coden-ui-toast.is-danger { border-color: color-mix(in srgb, var(--error) 42%, var(--border)); }
+.coden-ui-shimmer { display: inline-block; width: 48px; height: 12px; border-radius: 999px; background: linear-gradient(90deg, var(--bg-panel), var(--accent-blue-soft), var(--bg-panel)); background-size: 220% 100%; animation: coden-skeleton 1.6s var(--coden-ease) infinite; }
+.coden-marketing-shell, .coden-auth-shell, .coden-dashboard-shell, .coden-builder-shell { min-height: 100dvh; background: var(--bg); color: var(--text); }
+.coden-auth-shell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 42%); }
+.coden-auth-main { display: grid; place-items: center; min-width: 0; padding: 32px; }
+.coden-auth-aside { display: grid; place-items: center; padding: 48px; border-left: 1px solid var(--border); background: linear-gradient(145deg, var(--bg-panel), var(--bg-surface)); }
+.coden-dashboard-shell { display: flex; overflow: hidden; }
+.coden-dashboard-main { min-width: 0; flex: 1; overflow: auto; }
+.coden-builder-shell { display: grid; grid-template-rows: 56px minmax(0, 1fr); overflow: hidden; }
+.coden-builder-toolbar { border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.coden-builder-grid { min-height: 0; display: grid; grid-template-columns: minmax(220px, 280px) minmax(300px, .8fr) minmax(420px, 1.2fr); }
+.coden-builder-sidebar, .coden-builder-conversation, .coden-builder-preview { min-width: 0; min-height: 0; overflow: auto; border-right: 1px solid var(--border); }
+.coden-builder-preview { border-right: 0; background: var(--bg-panel); }
+.coden-react-marketing-header { position: relative; top: 0; left: 0; z-index: 1; width: 100%; min-height: 68px; display: flex; align-items: center; gap: 28px; padding: 10px max(16px, calc((100vw - var(--shell-max)) / 2)); pointer-events: auto; border: 1px solid transparent; border-radius: 0; background: transparent; transition: width var(--transition-control), min-height var(--transition-control), margin var(--transition-control), padding var(--transition-control), background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control), backdrop-filter var(--transition-control), border-radius var(--transition-control); }
+.coden-react-marketing-header[data-header-state="scrolled"] { width: min(var(--shell-max), calc(100% - 32px)); min-height: 58px; margin: 8px auto 0; padding: 8px 10px 8px 14px; border-color: var(--border); border-radius: 16px; background: color-mix(in srgb, var(--bg-panel) 86%, transparent); box-shadow: var(--shadow-md); backdrop-filter: blur(16px) saturate(125%); -webkit-backdrop-filter: blur(16px) saturate(125%); }
+.coden-react-brand { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; color: var(--text); font-weight: 700; letter-spacing: -.02em; }
+.coden-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--text); font-weight: 700; letter-spacing: -.02em; text-decoration: none; }
+.coden-logo-mark { display: block; flex: 0 0 auto; width: 32px; height: 32px; }
+.coden-react-brand .coden-logo-mark { width: 30px; height: 30px; }
+.coden-react-brand-mark { display: none; }
+.coden-react-nav { display: flex; align-items: center; gap: 4px; margin-inline: auto; }
+.coden-react-nav a, .coden-react-mobile-nav a { min-height: 40px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 9px; color: var(--text-muted); font-size: 13px; transition: color var(--transition-control), background-color var(--transition-control); }
+.coden-react-nav a:hover, .coden-react-nav a[aria-current="page"], .coden-react-mobile-nav a:hover, .coden-react-mobile-nav a[aria-current="page"] { color: var(--text); background: var(--accent-blue-soft); }
+.coden-react-header-actions { display: flex; align-items: center; gap: 8px; }
+.coden-react-theme-toggle, .coden-react-menu { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--bg-surface) 72%, transparent); transition: color var(--transition-control), border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
+.coden-react-theme-toggle:hover, .coden-react-menu:hover { color: var(--text); border-color: var(--border-strong, var(--border)); background: var(--bg-surface); }
+.coden-react-theme-toggle:active, .coden-react-menu:active { transform: scale(.97); }
+.coden-react-cta { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; padding: 0 14px; border-radius: 10px; background: var(--accent-blue); color: #08111f !important; font-size: 13px; font-weight: 700; }
+.coden-react-menu { display: none; }
+.coden-react-mobile-backdrop { position: fixed; inset: 0; z-index: -1; background: var(--overlay, rgba(4, 7, 12, .62)); }
+.coden-react-mobile-nav { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 2; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated); box-shadow: var(--shadow-lg); }
+.coden-react-mobile-nav a { min-height: 48px; padding-inline: 14px; }
+.coden-react-mobile-nav .coden-react-cta { margin-top: 6px; min-height: 48px; }
+.coden-menu-icon { display: grid; gap: 4px; width: 18px; }
+.coden-menu-icon i { display: block; width: 18px; height: 1.5px; border-radius: 999px; background: currentColor; transition: transform var(--transition-control), opacity var(--transition-control); }
+.coden-react-marketing-header.is-open .coden-menu-icon i:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+.coden-react-marketing-header.is-open .coden-menu-icon i:nth-child(2) { opacity: 0; }
+.coden-react-marketing-header.is-open .coden-menu-icon i:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+.coden-react-footer { margin-top: 96px; padding: 56px max(16px, calc((100vw - var(--shell-max)) / 2)) 24px; border-top: 1px solid var(--border); background: var(--bg-panel); }
+.coden-react-footer-top { display: flex; align-items: end; justify-content: space-between; gap: 32px; padding-bottom: 48px; }
+.coden-react-footer-top p { margin-top: 12px; color: var(--text-muted); font-size: 14px; }
+.coden-react-footer-cta { display: flex; align-items: center; gap: 16px; color: var(--text-muted); font-size: 14px; }
+.coden-react-footer-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding: 32px 0; border-top: 1px solid var(--border); }
+.coden-react-footer-grid h2 { margin-bottom: 12px; color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.coden-react-footer-grid a { display: block; width: max-content; min-height: 34px; color: var(--text-muted); font-size: 13px; }
+.coden-react-footer-grid a:hover { color: var(--text); }
+.coden-react-footer-bottom { display: flex; justify-content: space-between; gap: 16px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-sub); font: 11px var(--font-mono, monospace); }
+@media (max-width: 899px) { .coden-react-nav { display: none; } .coden-react-menu { display: inline-flex; } .coden-react-header-actions .coden-react-cta { display: none; } .coden-react-marketing-header { padding-inline: 16px; } .coden-react-marketing-header[data-header-state="scrolled"] { width: calc(100% - 32px); } .coden-auth-shell { grid-template-columns: 1fr; } .coden-auth-aside { display: none; } .coden-builder-grid { grid-template-columns: 1fr; } .coden-builder-sidebar { display: none; } .coden-react-footer-top { align-items: flex-start; flex-direction: column; } .coden-react-footer-cta { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 620px) { .coden-react-marketing-header { min-height: 60px; } .coden-react-marketing-header[data-header-state="scrolled"] { margin-top: 8px; } .coden-react-footer { margin-top: 64px; padding-inline: 16px; } .coden-react-footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .coden-react-footer-bottom { flex-direction: column; } }
+
+@media (max-width: 899px) {
+  body.coden-modern-shell .navbar {
+    padding-inline: 16px;
+  }
+  body.coden-modern-shell .nav-links {
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-react-marketing-header,
+  .coden-react-nav a,
+  .coden-react-mobile-nav a,
+  .coden-react-theme-toggle,
+  .coden-react-menu,
+  .coden-menu-icon i {
+    transition: none !important;
+  }
+  .coden-react-mobile-backdrop,
+  .coden-react-mobile-nav {
+    animation: none !important;
+  }
+  body.coden-modern-shell .navbar,
+  body.coden-modern-shell .input-wrapper,
+  body.coden-modern-shell .pricing-card,
+  body.coden-modern-shell .auth-card,
+  body.coden-modern-shell .checkout-card,
+  body.coden-modern-shell .project-card,
+  body.coden-modern-shell .feature-card {
+    transition: none !important;
+  }
+}

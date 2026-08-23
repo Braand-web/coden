@@ -1,0 +1,37 @@
+{
+  "canonicalPublic": [
+    "/",
+    "/features.html",
+    "/pricing.html",
+    "/documentation.html",
+    "/security.html",
+    "/privacy.html",
+    "/terms.html"
+  ],
+  "private": [
+    "/auth.html",
+    "/checkout.html",
+    "/dashboard.html",
+    "/builder.html",
+    "/admin.html"
+  ],
+  "redirects": {
+    "/about.html": "/",
+    "/enterprise.html": "/pricing.html",
+    "/careers.html": "/",
+    "/community.html": "/",
+    "/api-reference.html": "/documentation.html",
+    "/blog.html": "/documentation.html",
+    "/discover.html": "/features.html",
+    "/showcase.html": "/features.html",
+    "/built-with-coden/": "/",
+    "/guides/": "/documentation.html",
+    "/guides/build-saas-mvp-with-ai/": "/documentation.html",
+    "/guides/supabase-app-builder/": "/documentation.html",
+    "/tools/prompt-to-app-idea/": "/",
+    "/tools/landing-page-score/": "/",
+    "/prompt-recipes/restaurant-app/": "/",
+    "/prompt-recipes/saas-dashboard/": "/",
+    "/prompt-recipes/marketplace/": "/"
+  }
+}

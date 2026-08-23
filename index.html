@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Coden — Turn an idea into a web app with AI</title>
+  <!-- CODEN_SEO_START -->
+  <meta name="description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://coden.fun/" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Coden" />
+  <meta property="og:title" content="Coden — Turn an idea into a web app with AI" />
+  <meta property="og:description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+  <meta property="og:url" content="https://coden.fun/" />
+  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
+  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Coden — Turn an idea into a web app with AI" />
+  <meta name="twitter:description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
+  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Coden",
+  "url": "https://coden.fun",
+  "logo": "https://coden.fun/favicon.svg"
+}</script>
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Coden",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Web",
+  "description": "Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}</script>
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Coden AI App Builder",
+  "description": "Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification.",
+  "brand": {
+    "@type": "Brand",
+    "name": "Coden"
+  }
+}</script>
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is Coden?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Coden helps you turn an idea into a working web app, preview it, improve it, and publish it after verification."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can Coden generate SEO-ready apps?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Coden can help structure generated apps with semantic pages and metadata, then you can inspect and verify the result before publishing."
+      }
+    }
+  ]
+}</script>
+  <!-- CODEN_SEO_END -->
+    <script>
+        // Emergency fix for "Cannot set property fetch of #<Window> which has only a getter"
+        (function() {
+            try {
+                let currentFetch = window.fetch;
+                Object.defineProperty(window, 'fetch', {
+                    get: () => currentFetch,
+                    set: (v) => { currentFetch = v; },
+                    configurable: true,
+                    enumerable: true
+                });
+            } catch (e) {
+                // If it's not configurable, we can't do much about direct assignments to window.fetch
+                // But we can try to intercept if it's a global variable assignment
+                try {
+                    window.fetch = window.fetch; 
+                } catch (e2) {}
+            }
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <script>
+        (function() {
+            const theme = localStorage.getItem('coden-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@300;400;500;600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+</head>
+<body data-coden-surface="marketing">
+    <div id="curtain"></div>
+    <div class="navbar-line"></div>
+    <div id="coden-marketing-header-root" aria-live="off"></div>
+    <noscript>
+        <nav id="landing-navbar" aria-label="Main navigation">
+            <a href="/">Coden</a>
+            <a href="/features.html">Features</a>
+            <a href="/pricing.html">Pricing</a>
+            <a href="/documentation.html">Documentation</a>
+            <a href="/auth.html">Create my app</a>
+            <button id="landing-nav-toggle" type="button" aria-label="Open navigation">Menu</button>
+        </nav>
+    </noscript>
+
+    <main id="main-content">
+    <section class="hero">
+        <div class="hero-halo" aria-hidden="true"></div>
+        <div class="hero-content" translate="no">
+            <div class="badge">
+                <div class="badge-dot"></div>
+                <span class="badge-text">AI-POWERED APP BUILDER</span>
+            </div>
+            <h1>
+                <span class="neon-highlight neon-glow" data-i18n="hero.title">From idea to web app.</span>
+            </h1>
+            <p class="hero-subtitle" data-i18n="hero.subtitle">Describe your project. Coden builds it, verifies it, and helps you publish it.</p>
+
+            <div class="input-wrapper">
+                <textarea id="ai-textarea" placeholder="Describe the app you want to create…" data-i18n-placeholder="hero.placeholder"></textarea>
+                <div class="input-actions">
+                    <div class="actions-left">
+                        <button class="icon-btn" id="btn-upload" data-tooltip="Upload files" data-prompt-action="upload" aria-label="Attach files" type="button">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
+                        <input type="file" id="file-input" style="display: none;" multiple>
+                        <button class="icon-btn" id="btn-search" data-tooltip="Search snippets" type="button">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="7"></circle>
+                                <line x1="12" y1="2" x2="12" y2="5"></line>
+                                <line x1="12" y1="19" x2="12" y2="22"></line>
+                                <line x1="2" y1="12" x2="5" y2="12"></line>
+                                <line x1="19" y1="12" x2="22" y2="12"></line>
+                            </svg>
+                        </button>
+                        <button class="icon-btn" id="btn-voice" data-tooltip="Voice input" data-prompt-action="voice" aria-label="Voice input" type="button">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="actions-right">
+                        <div class="model-select" id="model-select-btn" data-tooltip="Switch AI engine">
+                            <span class="model-label-prefix">Model</span>
+                            <span id="current-model-label">Auto</span>
+                            <svg id="chevron-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 200ms;">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                            <div class="dropdown" id="model-dropdown">
+                                <div class="dropdown-header">Choose AI Engine</div>
+                            </div>
+                        </div>
+                        <div class="prompt-mode" data-prompt-mode="auto">
+                            <button class="prompt-mode-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="Choose Auto, Build or Plan">
+                                <span class="prompt-mode-label">Auto</span>
+                                <svg class="prompt-mode-chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </button>
+                            <div class="prompt-mode-menu" role="menu">
+                                <button type="button" data-prompt-mode-option="auto" role="menuitem" class="active">
+                                    <span>Auto</span>
+                                    <small>Let Coden decide</small>
+                                </button>
+                                <button type="button" data-prompt-mode-option="build" role="menuitem">
+                                    <span>Build</span>
+                                    <small>Generate or edit the app</small>
+                                </button>
+                                <button type="button" data-prompt-mode-option="plan" role="menuitem">
+                                    <span>Plan</span>
+                                    <small>Think without changing files</small>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="submit-wrapper">
+                            <button class="submit-btn" id="submit-btn" title="Create my app">
+                                <span data-i18n="hero.cta">Create my app</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="12" y1="19" x2="12" y2="5"></line>
+                                    <polyline points="5 12 12 5 19 12"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="hero-reassurance" data-i18n="hero.reassurance">Start free. No payment is required to create your first prototype.</p>
+
+        </div>
+    </section>
+
+    <template id="legacy-partner-strip" hidden>
+        <p class="partners-heading" data-i18n="partners.heading">Works with the tools you already use.</p>
+        <div class="partners-viewport">
+            <div class="partners-track">
+                <div class="partners-group">
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 76 65" aria-hidden="true"><path d="M37.927 0 75.854 64H0L37.927 0Z"/></svg>
+                        <span>Vercel</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.9 2.7 4.5 13.2c-.6.7-.1 1.8.8 1.8h5l-1.1 6.2c-.2 1.1 1.2 1.7 1.9.8l8.4-10.7c.6-.8.1-1.8-.9-1.8h-4.7l1.4-5.9c.2-1.1-1.1-1.8-1.8-.9Z"/></svg>
+                        <span>Supabase</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 10.8c0-.6.5-.9 1.4-.9 1.3 0 3 .4 4.2 1.1V7.6a10.7 10.7 0 0 0-4.3-.8c-3.5 0-5.8 1.8-5.8 4.2 0 3.7 5 3.1 5 4.7 0 .6-.6 1-1.6 1-1.4 0-3.2-.6-4.6-1.5v3.5c1.6.8 3.1 1.1 4.6 1.1 3.6 0 6.1-1.8 6.1-4.4 0-4-5-3.3-5-4.6Zm8.1-3.7h3.4v12.4h-3.4V7.1Z"/></svg>
+                        <span>Stripe</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1-9.4 13.4L15.4 2.6A10 10 0 0 1 12 2Zm6.5 4.2L6.2 18.5c.5.5 1 .9 1.6 1.2L19.7 7.8c-.3-.6-.7-1.1-1.2-1.6Zm2 4.1L10.3 20.5c.5.1 1.1.2 1.7.2a8.7 8.7 0 0 0 8.7-8.7c0-.6-.1-1.2-.2-1.7Z"/></svg>
+                        <span>Linear</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 31 30" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M.927 21.128 16.6.582a.735.735 0 0 1 1.19.072l13.006 21.26a.735.735 0 0 1-.498 1.086l-28.9 6.607a.735.735 0 0 1-.886-.975l.415-7.504Zm2.773-.193v7.257l23.977-5.48L16.462 4.375 3.7 20.935Z"/></svg>
+                        <span>Prisma</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.9 14.5-6-8.7v8.7H9.4V6.6h1.8l5.8 8.4V6.6h1.5v9.9h-1.6Z"/></svg>
+                        <span>Next.js</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 14 21" aria-hidden="true"><path d="M0 0h14v7H7L0 0Zm0 7h7l7 7H7v7l-7-7V7Z"/></svg>
+                        <span>Framer</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.36 9.36 0 0 1 12 6.91c.85 0 1.7.12 2.5.34 1.9-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.9 0 1.38-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.1 10.1 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z"/></svg>
+                        <span>GitHub</span>
+                    </div>
+                </div>
+                <div class="partners-group" aria-hidden="true">
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 76 65"><path d="M37.927 0 75.854 64H0L37.927 0Z"/></svg>
+                        <span>Vercel</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24"><path d="M13.9 2.7 4.5 13.2c-.6.7-.1 1.8.8 1.8h5l-1.1 6.2c-.2 1.1 1.2 1.7 1.9.8l8.4-10.7c.6-.8.1-1.8-.9-1.8h-4.7l1.4-5.9c.2-1.1-1.1-1.8-1.8-.9Z"/></svg>
+                        <span>Supabase</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24"><path d="M8.2 10.8c0-.6.5-.9 1.4-.9 1.3 0 3 .4 4.2 1.1V7.6a10.7 10.7 0 0 0-4.3-.8c-3.5 0-5.8 1.8-5.8 4.2 0 3.7 5 3.1 5 4.7 0 .6-.6 1-1.6 1-1.4 0-3.2-.6-4.6-1.5v3.5c1.6.8 3.1 1.1 4.6 1.1 3.6 0 6.1-1.8 6.1-4.4 0-4-5-3.3-5-4.6Zm8.1-3.7h3.4v12.4h-3.4V7.1Z"/></svg>
+                        <span>Stripe</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1-9.4 13.4L15.4 2.6A10 10 0 0 1 12 2Zm6.5 4.2L6.2 18.5c.5.5 1 .9 1.6 1.2L19.7 7.8c-.3-.6-.7-1.1-1.2-1.6Zm2 4.1L10.3 20.5c.5.1 1.1.2 1.7.2a8.7 8.7 0 0 0 8.7-8.7c0-.6-.1-1.2-.2-1.7Z"/></svg>
+                        <span>Linear</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 31 30"><path fill-rule="evenodd" clip-rule="evenodd" d="M.927 21.128 16.6.582a.735.735 0 0 1 1.19.072l13.006 21.26a.735.735 0 0 1-.498 1.086l-28.9 6.607a.735.735 0 0 1-.886-.975l.415-7.504Zm2.773-.193v7.257l23.977-5.48L16.462 4.375 3.7 20.935Z"/></svg>
+                        <span>Prisma</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.9 14.5-6-8.7v8.7H9.4V6.6h1.8l5.8 8.4V6.6h1.5v9.9h-1.6Z"/></svg>
+                        <span>Next.js</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 14 21"><path d="M0 0h14v7H7L0 0Zm0 7h7l7 7H7v7l-7-7V7Z"/></svg>
+                        <span>Framer</span>
+                    </div>
+                    <div class="partner-logo">
+                        <svg viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.36 9.36 0 0 1 12 6.91c.85 0 1.7.12 2.5.34 1.9-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.9 0 1.38-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.1 10.1 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z"/></svg>
+                        <span>GitHub</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <section class="workflow-section reveal" aria-label="How Coden works" translate="no">
+        <div class="section-header compact">
+            <h2 data-i18n="workflow.title">From idea to live app, in three moves.</h2>
+            <p data-i18n="workflow.subtitle">Coden keeps the path simple: describe it, watch it come alive, then refine and ship.</p>
+        </div>
+        <div class="workflow-steps three stagger-grid">
+            <div class="workflow-step reveal">
+                <div class="workflow-visual wv-idea" aria-hidden="true"><span></span><span></span><span></span></div>
+                <span class="step-number">01</span>
+                <h3 data-i18n="workflow.s1.title">Start with an idea</h3>
+                <p data-i18n="workflow.s1.text">Describe the app you want in plain language &mdash; or drop in a screenshot, a repo or a URL.</p>
+            </div>
+            <div class="workflow-step reveal">
+                <div class="workflow-visual wv-build" aria-hidden="true"><i></i><i></i><i></i></div>
+                <span class="step-number">02</span>
+                <h3 data-i18n="workflow.s2.title">Watch it come alive</h3>
+                <p data-i18n="workflow.s2.text">Coden generates a real React app and shows the working preview as it builds.</p>
+            </div>
+            <div class="workflow-step reveal">
+                <div class="workflow-visual wv-publish" aria-hidden="true"><b></b></div>
+                <span class="step-number">03</span>
+                <h3 data-i18n="workflow.s3.title">Refine &amp; publish</h3>
+                <p data-i18n="workflow.s3.text">Ask for changes in chat &mdash; Coden edits the project &mdash; then publish in one click.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="pricing" class="pricing-full reveal" translate="no">
+        <div class="section-header compact">
+            <p class="section-kicker" data-i18n="pricing.kicker">Pricing</p>
+            <h2 data-i18n="pricing.title">Start free. Upgrade when you publish.</h2>
+            <p data-i18n="pricing.subtitle">Free to validate the idea. Pro to ship real apps. Scale for teams.</p>
+        </div>
+        <div class="pricing-grid-full stagger-grid">
+            <div class="plan-card reveal">
+                <div class="plan-head">
+                    <span class="plan-name" data-i18n="pricing.free.name">Free</span>
+                    <span class="plan-price">$0<small data-i18n="pricing.unit">/mo</small></span>
+                    <span class="plan-note" data-i18n="pricing.free.benefit">Validate your idea</span>
+                </div>
+                <ul class="plan-features">
+                    <li data-i18n="pricing.free.f1">50 starter credits</li>
+                    <li data-i18n="pricing.free.f2">1 active project</li>
+                    <li data-i18n="pricing.free.f3">Live preview while you build</li>
+                    <li data-i18n="pricing.free.f4">$1 Cloud balance included</li>
+                    <li data-i18n="pricing.free.f5">Coden subdomain</li>
+                </ul>
+                <a class="plan-cta" href="/auth.html" data-conversion-event="pricing_plan_click" data-conversion-plan="free" data-i18n="pricing.free.cta">Get started</a>
+            </div>
+            <div class="plan-card featured reveal">
+                <span class="plan-badge" data-i18n="pricing.pro.badge">Most popular</span>
+                <div class="plan-head">
+                    <span class="plan-name" data-i18n="pricing.pro.name">Pro</span>
+                    <span class="plan-price">$25<small data-i18n="pricing.unit">/mo</small></span>
+                    <span class="plan-note" data-i18n="pricing.pro.benefit">Publish real apps</span>
+                </div>
+                <ul class="plan-features">
+                    <li data-i18n="pricing.pro.f1">1,000 credits / month</li>
+                    <li data-i18n="pricing.pro.f2">10 active projects, 3 published</li>
+                    <li data-i18n="pricing.pro.f3">$10 Cloud balance included</li>
+                    <li data-i18n="pricing.pro.f4">Custom domain &amp; badge removal</li>
+                    <li data-i18n="pricing.pro.f5">Deploy, export, versions, rollback</li>
+                </ul>
+                <a class="plan-cta plan-cta-primary" href="/auth.html?plan=pro" data-conversion-event="pricing_plan_click" data-conversion-plan="pro" data-i18n="pricing.pro.cta">Start with Pro</a>
+            </div>
+            <div class="plan-card reveal">
+                <div class="plan-head">
+                    <span class="plan-name" data-i18n="pricing.scale.name">Scale</span>
+                    <span class="plan-price">$200<small data-i18n="pricing.unit">/mo</small></span>
+                    <span class="plan-note" data-i18n="pricing.scale.benefit">More control for teams</span>
+                </div>
+                <ul class="plan-features">
+                    <li data-i18n="pricing.scale.f1">10,000 credits / month</li>
+                    <li data-i18n="pricing.scale.f2">Unlimited drafts, 25 published</li>
+                    <li data-i18n="pricing.scale.f3">$75 Cloud balance included</li>
+                    <li data-i18n="pricing.scale.f4">Team workspace &amp; roles</li>
+                    <li data-i18n="pricing.scale.f5">Priority support &amp; premium models</li>
+                </ul>
+                <a class="plan-cta" href="/auth.html?plan=scale" data-conversion-event="pricing_plan_click" data-conversion-plan="scale" data-i18n="pricing.scale.cta">Upgrade to Scale</a>
+            </div>
+        </div>
+        <a class="pricing-link" href="/pricing.html" data-i18n="pricing.link">Compare plans &amp; billing &rarr;</a>
+    </section>
+
+    <section class="faq-section landing-faq reveal" aria-label="Frequently asked questions" translate="no">
+        <div class="section-header compact faq-head">
+            <p class="section-kicker" data-i18n="faq.kicker">FAQ</p>
+            <h2 data-i18n="faq.title">Questions before you build.</h2>
+        </div>
+        <div class="faq-list">
+            <div class="faq-item active">
+                <button class="faq-question" type="button" aria-expanded="true">
+                    <span data-i18n="faq.q1">What can Coden build?</span>
+                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer"><p data-i18n="faq.a1">Web products: SaaS dashboards, portals, booking tools, e-commerce, internal tools and landing pages. Coden opens a builder workspace and turns your idea into a working preview, then a publishable app.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button" aria-expanded="false">
+                    <span data-i18n="faq.q2">Real apps or just mockups?</span>
+                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer"><p data-i18n="faq.a2">Real apps. For app requests, Coden builds structured React, TypeScript and Vite projects — with files, styles, interactions and a live preview — not static mockups.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button" aria-expanded="false">
+                    <span data-i18n="faq.q3">How do credits and plans work?</span>
+                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer"><p data-i18n="faq.a3">Credits power building and improving apps with AI. Paid plans include more credits and higher limits. Cloud, storage and deployed AI usage are tracked separately as your live apps grow.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button" aria-expanded="false">
+                    <span data-i18n="faq.q4">What's the difference between preview and publish?</span>
+                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer"><p data-i18n="faq.a4">Preview is where you inspect and iterate safely. Your live site changes only when you click Publish, so visitors never see unfinished work.</p></div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question" type="button" aria-expanded="false">
+                    <span data-i18n="faq.q5">Is my data secure?</span>
+                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div class="faq-answer"><p data-i18n="faq.a5">Provider keys and private tokens never appear in generated frontend code. Server-side secrets stay in secure backend environments, and sensitive actions stay confirmed and server-safe.</p></div>
+            </div>
+        </div>
+    </section>
+
+    </main>
+
+    <section class="footer-cta reveal" aria-label="Start building with Coden">
+        <div>
+            <p class="section-kicker" data-i18n="footer.cta">Start with your idea.</p>
+            <h2 data-i18n="footer.ctaTitle">Your idea deserves a first prototype.</h2>
+        </div>
+        <a href="/auth.html" class="footer-cta-button" data-conversion-event="start_building_click" data-conversion-place="footer" data-i18n="footer.ctaButton">Create my app</a>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <a href="/" class="logo coden-brand" data-coden-logo="brand">
+                    <div class="logo-mark">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
+                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
+                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
+                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                        </svg>
+                    </div>
+                    <span class="logo-text">Coden</span>
+                </a>
+                <p data-i18n="footer.tagline">From idea to verified web product.</p>
+            </div>
+            <div class="footer-col">
+                <h5 data-i18n="footer.col.product">Product</h5>
+                <ul class="footer-links">
+                    <li><a href="/features.html" data-i18n="footer.link.features">Features</a></li>
+                    <li><a href="/pricing.html" data-i18n="footer.link.pricing">Pricing</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5 data-i18n="footer.col.solutions">Solutions</h5>
+                <ul class="footer-links">
+                    <li><a href="/features.html" data-i18n="footer.link.features">Features</a></li>
+                    <li><a href="/documentation.html" data-i18n="footer.link.documentation">Documentation</a></li>
+                    <li><a href="/pricing.html" data-i18n="footer.link.pricing">Pricing</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5 data-i18n="footer.col.resources">Resources</h5>
+                <ul class="footer-links">
+                    <li><a href="/documentation.html" data-i18n="footer.link.documentation">Documentation</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5 data-i18n="footer.col.company">Company</h5>
+                <ul class="footer-links">
+                    <li><a href="/security.html" data-i18n="footer.link.security">Security</a></li>
+                    <li><a href="/privacy.html" data-i18n="footer.link.privacy">Privacy</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5 data-i18n="footer.col.legal">Legal</h5>
+                <ul class="footer-links">
+                    <li><a href="/terms.html" data-i18n="footer.link.terms">Terms</a></li>
+                    <li><a href="/privacy.html#cookies" data-i18n="footer.link.cookies">Cookies</a></li>
+                    <li><a href="/security.html" data-i18n="footer.link.status">Trust &amp; safety</a></li>
+                    <li><a href="mailto:contact@coden.fun" data-i18n="footer.link.contact">Contact</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>© 2026 Coden Inc.</span>
+            <div class="footer-bottom-actions">
+                <label for="lang-select" data-i18n="footer.lang">Language</label>
+                <select id="lang-select" aria-label="Language">
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                </select>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Modal Overlay -->
+    <div id="modal-overlay" class="modal-overlay">
+        <div class="modal-content">
+            <button id="modal-close" class="modal-close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

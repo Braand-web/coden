@@ -1,0 +1,15 @@
+# Coden
+
+Coden is an AI app builder for creating, previewing, iterating and publishing production-ready web apps.
+
+## Important pages
+- Home: https://coden.fun/
+- Pricing: https://coden.fun/pricing.html
+- Features: https://coden.fun/features.html
+- Documentation: https://coden.fun/documentation.html
+- Security: https://coden.fun/security.html
+
+## Product facts
+- Coden supports prompt-to-app generation, project preview, database visibility, publishing workflows and model selection.
+- Coden is designed for founders, agencies, product teams and non-technical builders.
+- Private app routes such as auth, dashboard and builder are not intended for indexing.

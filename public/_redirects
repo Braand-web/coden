@@ -1,0 +1,17 @@
+/about.html / 301
+/enterprise.html /pricing.html 301
+/careers.html / 301
+/community.html / 301
+/api-reference.html /documentation.html 301
+/blog.html /documentation.html 301
+/discover.html /features.html 301
+/showcase.html /features.html 301
+/built-with-coden/ / 301
+/guides/ /documentation.html 301
+/guides/build-saas-mvp-with-ai/ /documentation.html 301
+/guides/supabase-app-builder/ /documentation.html 301
+/tools/prompt-to-app-idea/ / 301
+/tools/landing-page-score/ / 301
+/prompt-recipes/restaurant-app/ / 301
+/prompt-recipes/saas-dashboard/ / 301
+/prompt-recipes/marketplace/ / 301

@@ -1,0 +1,272 @@
+/* Coden Design System — public pages and product surfaces.
+   Aligned with src/builder.css tokens (Zinc + Indigo 500 signature).
+   Cool neutral whites, no warm yellow; Linear-style raised-by-light dark. */
+:root {
+  /* Surfaces — cool neutral whites (Zinc 50/100). */
+  --coden-bg: #f7f9fc;
+  --coden-bg-warm: #f1f5f9;
+  --coden-surface: #ffffff;
+  --coden-surface-raised: #ffffff;
+  --coden-text: #111827;
+  --coden-muted: #64748b;
+  --coden-subtle: #64748b;
+  --coden-panel: #f1f5f9;
+  --coden-input: #ffffff;
+  --coden-border: #e2e8f0;
+  --coden-border-strong: #cbd5e1;
+
+  /* Signature accent — Indigo 500. */
+  --coden-blue: #2563eb;
+  --coden-blue-deep: #1d4ed8;
+  --coden-blue-ink: #1e3a8a;
+  --coden-blue-soft: rgba(37, 99, 235, 0.10);
+  --coden-blue-hover: rgba(37, 99, 235, 0.16);
+  --coden-blue-active: rgba(37, 99, 235, 0.22);
+  --coden-focus: #2563eb;
+
+  --accent-blue: var(--coden-blue);
+  --accent-blue-deep: var(--coden-blue-deep);
+  --accent-blue-soft: var(--coden-blue-soft);
+  --accent-blue-hover: var(--coden-blue-hover);
+  --accent-blue-active: var(--coden-blue-active);
+  --blue: var(--coden-blue);
+  --blue-dim: var(--coden-blue-soft);
+
+  --coden-radius-sm: 8px;
+  --coden-radius-md: 10px;
+  --coden-radius-lg: 14px;
+  --coden-radius-xl: 18px;
+
+  /* Soft, low-contrast elevation that feels like paper. */
+  --coden-shadow-soft: 0 4px 12px rgba(9, 9, 11, 0.06), 0 1px 2px rgba(9, 9, 11, 0.04);
+  --coden-shadow-card: 0 20px 48px rgba(9, 9, 11, 0.10), 0 1px 2px rgba(9, 9, 11, 0.04);
+
+  --coden-gradient-blue: linear-gradient(135deg, #3b82f6 0%, #2563eb 48%, #1d4ed8 100%);
+  --coden-motion-fast: 160ms;
+  --coden-motion-normal: 180ms;
+  --coden-motion-panel: 280ms;
+  --coden-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Semantic aliases shared by marketing, application and Builder surfaces. */
+  --background: var(--coden-bg);
+  --foreground: var(--coden-text);
+  --surface: var(--coden-surface);
+  --surface-subtle: var(--coden-bg-warm);
+  --surface-elevated: var(--coden-surface-raised);
+  --surface-inverse: var(--coden-text);
+  --border: var(--coden-border);
+  --border-subtle: var(--coden-border);
+  --border-strong: var(--coden-border-strong);
+  --primary: var(--coden-blue);
+  --primary-foreground: #ffffff;
+  --primary-hover: var(--coden-blue-deep);
+  --primary-active: #1e40af;
+  --secondary: var(--coden-bg-warm);
+  --secondary-foreground: var(--coden-text);
+  --accent: var(--coden-blue-soft);
+  --accent-foreground: var(--coden-blue-ink);
+  --muted: var(--coden-bg-warm);
+  --muted-foreground: var(--coden-muted);
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --danger: #dc2626;
+  --danger-foreground: #ffffff;
+  --info: var(--coden-blue);
+  --info-foreground: #ffffff;
+  --focus-ring: var(--coden-focus);
+  --overlay: rgba(15, 23, 42, .48);
+  --chart-1: #4f8cff;
+  --chart-2: #8fb7ff;
+  --chart-3: #36c98f;
+  --chart-4: #f2b84b;
+  --chart-5: #a78bfa;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+  --radius-none: 0px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+  --shadow-xs: 0 1px 2px rgba(9, 9, 11, .04);
+  --shadow-sm: var(--coden-shadow-soft);
+  --shadow-md: 0 12px 30px rgba(9, 9, 11, .10);
+  --shadow-lg: var(--coden-shadow-card);
+  --shadow-xl: 0 24px 70px rgba(9, 9, 11, .16);
+  --shadow-overlay: 0 24px 90px rgba(9, 9, 11, .22);
+  --font-sans: "Instrument Sans", Inter, system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root[data-theme="dark"] {
+  /* Surfaces — Zinc 950 → 800 (Linear raised-by-light). */
+  --coden-bg: #0e1116;
+  --coden-bg-warm: #11161e;
+  --coden-surface: #151a22;
+  --coden-surface-raised: #1b2230;
+  --coden-text: #f8fafc;
+  --coden-muted: #aab4c3;
+  --coden-subtle: #8d98a8;
+  --coden-panel: #11161e;
+  --coden-input: #121923;
+  --coden-border: #263244;
+  --coden-border-strong: #3a4a60;
+
+  /* Same Indigo 500 signature. */
+  --coden-blue: #4f8cff;
+  --coden-blue-deep: #6b9bff;
+  --coden-blue-ink: #bbd4ff;
+  --coden-blue-soft: rgba(79, 140, 255, 0.14);
+  --coden-blue-hover: rgba(79, 140, 255, 0.22);
+  --coden-blue-active: rgba(79, 140, 255, 0.30);
+  --coden-focus: #8fb7ff;
+
+  /* Elevation — soft shadow + faint top highlight (Linear trick). */
+  --coden-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 6px 16px rgba(0, 0, 0, 0.45);
+  --coden-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 18px 48px rgba(0, 0, 0, 0.55);
+  --primary-foreground: #08111f;
+  --secondary: #222b38;
+  --secondary-foreground: #e8eef7;
+  --accent-foreground: #bbd4ff;
+  --muted-foreground: #8d98a8;
+  --success: #36c98f;
+  --warning: #f2b84b;
+  --danger: #f06b7a;
+  --info: #6fa8ff;
+  --overlay: rgba(4, 7, 12, .72);
+  --shadow-xs: 0 1px 0 rgba(255, 255, 255, .04) inset;
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, .36);
+  --shadow-xl: 0 24px 70px rgba(0, 0, 0, .46);
+  --shadow-overlay: 0 24px 90px rgba(0, 0, 0, .62);
+}
+
+:where(button, a, input, textarea, select, summary) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 4px var(--coden-focus);
+}
+
+:where(.card, .feature-card, .pricing-card, .testimonial-card, .seo-card, .seo-panel, .project-card, .activity-list, .create-section) {
+  border-color: var(--coden-border);
+  background: color-mix(in srgb, var(--coden-surface) 92%, transparent);
+}
+
+:where(.feature-card, .pricing-card, .testimonial-card, .seo-card, .seo-panel, .project-card, .create-section) {
+  box-shadow: var(--coden-shadow-soft);
+  transition:
+    transform var(--coden-motion-normal) var(--coden-ease),
+    box-shadow var(--coden-motion-normal) var(--coden-ease),
+    border-color var(--coden-motion-normal) var(--coden-ease),
+    background var(--coden-motion-normal) var(--coden-ease);
+}
+
+:where(.feature-card, .pricing-card, .testimonial-card, .seo-card, .seo-panel, .project-card):hover {
+  transform: translateY(-2px);
+  border-color: var(--coden-border-strong);
+  box-shadow: var(--coden-shadow-card);
+}
+
+:where(.sign-in-btn, .pricing-btn.primary, .btn-solid, .seo-button, .btn-primary, .btn-create-top, .submit-btn, .card-cta) {
+  transition:
+    transform var(--coden-motion-fast) var(--coden-ease),
+    filter var(--coden-motion-fast) var(--coden-ease),
+    box-shadow var(--coden-motion-fast) var(--coden-ease),
+    background var(--coden-motion-fast) var(--coden-ease);
+}
+
+:where(.sign-in-btn, .pricing-btn.primary, .btn-solid, .seo-button, .btn-primary, .btn-create-top, .submit-btn, .card-cta):hover {
+  transform: translateY(-1px);
+  filter: saturate(1.02);
+}
+
+:where(.sign-in-btn, .pricing-btn.primary, .btn-solid, .seo-button, .btn-primary, .btn-create-top, .submit-btn, .card-cta):active {
+  transform: scale(0.985);
+}
+
+:where(.chip, .badge, .seo-pill, .nav-link-item, .footer-links a, .seo-footer-links a) {
+  transition:
+    transform var(--coden-motion-fast) var(--coden-ease),
+    color var(--coden-motion-fast) var(--coden-ease),
+    background var(--coden-motion-fast) var(--coden-ease),
+    border-color var(--coden-motion-fast) var(--coden-ease);
+}
+
+:where(.chip, .badge, .seo-pill, .nav-link-item):hover {
+  transform: translateY(-1px);
+}
+
+.footer,
+.seo-footer {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.08), transparent 34%),
+    linear-gradient(180deg, var(--coden-bg) 0%, var(--coden-bg-warm) 100%);
+}
+
+.footer-grid,
+.footer-bottom,
+.seo-shell {
+  width: min(1200px, calc(100vw - 32px));
+}
+
+.footer-grid,
+.footer-bottom {
+  max-width: none;
+}
+
+.footer-brand p,
+.footer-links a,
+.footer-bottom,
+.seo-card p,
+.seo-card li,
+.seo-lead {
+  color: var(--coden-muted);
+}
+
+.footer-col h5,
+.seo-card h3,
+.seo-section h2 {
+  color: var(--coden-text);
+}
+
+.seo-footer-card {
+  background:
+    radial-gradient(circle at 18% 14%, rgba(147, 197, 253, 0.28), transparent 34%),
+    radial-gradient(circle at 82% 18%, rgba(96, 165, 250, 0.18), transparent 35%),
+    var(--coden-gradient-blue);
+}
+
+.footer {
+  border-top-color: var(--coden-border);
+}
+
+.footer a,
+.seo-footer-card a {
+  text-underline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,59 @@
+// Example captured generation for productivity-01 (passes the heuristic gate).
+// index.html
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>Tasks</title></head>
+<body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+
+// src/main.tsx
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+
+// src/App.tsx
+import { useEffect, useState } from 'react';
+type Task = { id: string; title: string; done: boolean };
+export default function App() {
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    try { return JSON.parse(localStorage.getItem('tasks') || '[]'); } catch { return []; }
+  });
+  const [title, setTitle] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'done'>('all');
+  useEffect(() => { localStorage.setItem('tasks', JSON.stringify(tasks)); }, [tasks]);
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    setTasks(t => [...t, { id: crypto.randomUUID(), title: title.trim(), done: false }]);
+    setTitle('');
+  };
+  const visible = tasks.filter(t => filter === 'all' ? true : filter === 'done' ? t.done : !t.done);
+  return (
+    <main className="mx-auto max-w-xl p-6">
+      <h1 className="text-2xl font-semibold">Tasks</h1>
+      <form onSubmit={handleSubmit} className="mt-4 flex gap-2">
+        <label className="sr-only" htmlFor="t">New task</label>
+        <input id="t" value={title} onChange={e => setTitle(e.target.value)} className="flex-1 rounded border px-3 py-2" placeholder="Add a task" />
+        <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white">Add</button>
+      </form>
+      <div className="mt-4 flex gap-2">
+        {(['all', 'active', 'done'] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)} className={filter === f ? 'font-bold' : ''}>{f}</button>
+        ))}
+      </div>
+      {visible.length === 0 ? (
+        <p className="mt-6 text-gray-500">No tasks yet — add your first one above.</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {visible.map(t => (
+            <li key={t.id} className="flex items-center gap-2">
+              <input type="checkbox" checked={t.done} onChange={() => setTasks(list => list.map(x => x.id === t.id ? { ...x, done: !x.done } : x))} />
+              <span className={t.done ? 'line-through' : ''}>{t.title}</span>
+              <button onClick={() => setTasks(list => list.filter(x => x.id !== t.id))} className="ml-auto text-red-600">Delete</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}

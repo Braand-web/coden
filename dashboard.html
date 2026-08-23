@@ -1,0 +1,3542 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Coden — Workspace Dashboard</title>
+  <!-- CODEN_SEO_START -->
+  <meta name="description" content="Your private Coden workspace." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="canonical" href="https://coden.fun/dashboard.html" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Coden" />
+  <meta property="og:title" content="Coden — Workspace Dashboard" />
+  <meta property="og:description" content="Your private Coden workspace." />
+  <meta property="og:url" content="https://coden.fun/dashboard.html" />
+  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
+  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Coden — Workspace Dashboard" />
+  <meta name="twitter:description" content="Your private Coden workspace." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
+  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Coden — Workspace Dashboard",
+  "description": "Your private Coden workspace.",
+  "url": "https://coden.fun/dashboard.html"
+}</script>
+  <!-- CODEN_SEO_END -->
+    <script>
+    // Emergency fix for "Cannot set property fetch of #<Window> which has only a getter"
+    (function() {
+        try {
+            let currentFetch = window.fetch;
+            Object.defineProperty(window, 'fetch', {
+                get: () => currentFetch,
+                set: (v) => { currentFetch = v; },
+                configurable: true,
+                enumerable: true
+            });
+        } catch (e) {
+            try {
+                window.fetch = window.fetch; 
+            } catch (e2) {}
+        }
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <script>
+    (function() {
+      const theme = localStorage.getItem('coden-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script type="module" src="/src/auth-guard.ts"></script>
+  <style>
+    :root[data-theme="dark"] {
+      --bg           : #0f1014;
+      --bg-surface   : #15171c;
+      --bg-elevated  : #1b1e25;
+      --bg-input     : #181b21;
+      --bg-panel     : #13151a;
+
+      --accent       : #f5f7fb;
+      --accent-blue  : #3b82f6;
+      --accent-blue-deep: #93c5fd;
+      --accent-blue-soft: rgba(59, 130, 246,0.16);
+      --accent-blue-hover: rgba(59, 130, 246,0.22);
+      --accent-blue-active: rgba(59, 130, 246,0.30);
+      --accent-dim   : rgba(245,247,251,0.07);
+      --accent-hover : rgba(245,247,251,0.11);
+      --accent-active: rgba(245,247,251,0.15);
+
+      --text         : #f5f7fb;
+      --text-muted   : #c6cad3;
+      --text-sub     : #8d95a3;
+
+      --border       : rgba(226,232,240,0.12);
+      --border-mid   : rgba(226,232,240,0.18);
+      --border-focus : rgba(59, 130, 246,0.46);
+
+      --success      : #4ADE80;
+      --success-dim  : rgba(74,222,128,0.10);
+      --warning      : #FBBF24;
+      --warning-dim  : rgba(251,191,36,0.10);
+      --error        : #F87171;
+      --error-dim    : rgba(248,113,113,0.10);
+      --blue         : #3b82f6;
+      --blue-dim     : var(--accent-blue-soft);
+      --grain-opacity: 0.022;
+    }
+
+    :root[data-theme="light"] {
+      --bg           : #fafafa;
+      --bg-surface   : #ffffff;
+      --bg-elevated  : #f4f4f5;
+      --bg-input     : #ffffff;
+      --bg-panel     : #f4f4f5;
+
+      --accent       : #3b82f6;
+      --accent-blue  : #3b82f6;
+      --accent-blue-deep: #1d4ed8;
+      --accent-blue-soft: rgba(59, 130, 246,0.10);
+      --accent-blue-hover: rgba(59, 130, 246,0.14);
+      --accent-blue-active: rgba(59, 130, 246,0.18);
+      --accent-dim   : rgba(59, 130, 246,0.10);
+      --accent-hover : rgba(59, 130, 246,0.14);
+      --accent-active: rgba(59, 130, 246,0.18);
+
+      --text         : #1c1c1c;
+      --text-muted   : #5f5f5d;
+      --text-sub     : #77736b;
+
+      --border       : #eceae4;
+      --border-mid   : #dedbd2;
+      --border-focus : rgba(59, 130, 246,0.36);
+
+      --success      : #22C55E;
+      --success-dim  : rgba(34,197,94,0.08);
+      --warning      : #D97706;
+      --warning-dim  : rgba(217,119,6,0.08);
+      --error        : #DC2626;
+      --error-dim    : rgba(220,38,38,0.08);
+      --blue         : var(--accent-blue);
+      --blue-dim     : var(--accent-blue-soft);
+      --grain-opacity: 0.018;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body { 
+      background: var(--bg); color: var(--text); 
+      font-family: "Instrument Sans", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-feature-settings: "ss01","cv01";
+    }
+
+    /* GRAIN */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+      background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+      background-repeat: repeat;
+      background-size: 200px 200px;
+      opacity: var(--grain-opacity);
+    }
+
+    button { cursor: pointer; font-family: inherit; border: none; background: none; color: inherit; }
+    input, textarea { font-family: inherit; }
+    svg { display: block; flex-shrink: 0; }
+    a { text-decoration: none; color: inherit; }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
+
+    .dashboard {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: 240px; flex-shrink: 0;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      z-index: 100;
+      transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 205ms ease, border-right-width 200ms ease;
+    }
+
+    .sidebar.collapsed {
+      width: 0px !important;
+      border-right-width: 0px !important;
+      opacity: 0 !important;
+      pointer-events: none;
+    }
+
+    .sidebar-logo {
+      height: 48px; padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0;
+    }
+    .logo-text {
+      font-family: "Instrument Serif"; font-style: italic;
+      font-size: 18px; color: var(--text); letter-spacing: -0.01em;
+    }
+
+    .sidebar-profile {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0;
+    }
+    .profile-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      border: 1px solid var(--border-mid);
+      display: flex; align-items: center; justify-content: center;
+      font-family: "Instrument Sans"; font-size: 12px;
+      font-weight: 500; color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .profile-info { min-width: 0; }
+    .profile-name {
+      font-size: 13px; font-weight: 500;
+      color: var(--text); white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 140px;
+    }
+    .profile-email {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      color: var(--text-sub); margin-top: 1px;
+    }
+
+    .sidebar-credits {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .credits-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .plan-label {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-sub);
+    }
+    .plan-badge {
+      padding: 2px 8px; border-radius: 3px;
+      font-family: "JetBrains Mono"; font-size: 10px; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      background: var(--accent-dim); color: var(--text-muted);
+      border: 1px solid var(--border-mid);
+    }
+    .plan-badge.pro { background: var(--warning-dim); color: var(--warning); border-color: rgba(251,191,36,0.3); }
+    .plan-badge.scale,
+    .plan-badge.team { background: var(--blue-dim); color: var(--blue); border-color: rgba(96,165,250,0.3); }
+
+    .credits-value-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .credits-count {
+      font-family: "JetBrains Mono"; font-size: 16px; font-weight: 500;
+      color: var(--text);
+    }
+    .credits-total {
+      font-family: "JetBrains Mono"; font-size: 11px; color: var(--text-sub);
+    }
+    .credits-track {
+      height: 3px; background: var(--border-mid);
+      border-radius: 2px; overflow: hidden;
+    }
+    .credits-fill {
+      height: 100%; width: 0;
+      background: var(--accent); border-radius: 2px;
+      transition: width 1.2s cubic-bezier(0.22,1,0.36,1);
+    }
+
+    .sidebar-nav {
+      flex: 1; overflow-y: auto; padding: 8px;
+    }
+    .nav-label {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-sub); padding: 8px 10px 4px; display: block;
+    }
+    .btn-new-project-sidebar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 6px;
+      width: 100%; margin-bottom: 12px;
+      border: 1px dashed var(--border-mid);
+      background: transparent; cursor: pointer;
+      transition: all 150ms;
+      text-align: left;
+    }
+    .btn-new-project-sidebar:hover {
+      border-color: var(--border-focus);
+      background: var(--accent-dim);
+    }
+    .btn-new-project-sidebar span {
+      font-family: "Instrument Sans"; font-size: 12px; font-weight: 500;
+      color: var(--text-sub);
+    }
+    .btn-new-project-sidebar:hover span { color: var(--text); }
+
+    .nav-divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+    .nav-project {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px;
+      cursor: pointer; width: 100%;
+      border: 1px solid transparent;
+      background: transparent;
+      transition: all 120ms; margin-bottom: 1px;
+      text-align: left;
+    }
+    .nav-project:hover { background: var(--accent-dim); border-color: var(--border); }
+    .nav-project.active { background: var(--accent-dim); border-color: var(--border-mid); }
+    .nav-project.active .project-dot { transform: scale(1.2); }
+
+    .project-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; transition: transform 0.2s; }
+    .project-nav-name {
+      font-size: 12px; font-weight: 500;
+      color: var(--text-muted); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; max-width: 140px; flex: 1;
+    }
+    .nav-project.active .project-nav-name { color: var(--text); }
+    .badge-builds {
+      font-family: "JetBrains Mono"; font-size: 10px; color: var(--text-sub);
+      padding: 1px 5px; border-radius: 3px;
+      background: var(--bg-elevated); border: 1px solid var(--border);
+    }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border);
+      padding: 8px;
+      display: flex; align-items: center; gap: 4px;
+      flex-shrink: 0;
+    }
+    .btn-footer {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-radius: 6px;
+      font-family: "Instrument Sans"; font-size: 12px;
+      color: var(--text-sub); cursor: pointer; transition: all 120ms;
+      flex: 1;
+    }
+    .btn-footer:hover { background: var(--accent-dim); color: var(--text); }
+
+    .btn-theme-toggle {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border); background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); transition: all 150ms; flex-shrink: 0;
+    }
+    .btn-theme-toggle:hover { border-color: var(--border-focus); color: var(--text); }
+
+    /* MAIN AREA */
+    .main-area {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; background: var(--bg);
+    }
+
+    .topbar {
+      height: 48px; padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-surface);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 90;
+    }
+    .topbar-title {
+      font-family: "Instrument Serif"; font-style: italic;
+      font-size: 18px; color: var(--text); letter-spacing: -0.01em;
+    }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+    .search-wrapper {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 12px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      width: 240px; height: 32px; transition: all 150ms;
+    }
+    .search-wrapper:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-dim); }
+    .search-input {
+      font-family: "Instrument Sans"; font-size: 12px;
+      color: var(--text); background: transparent;
+      border: none; outline: none; flex: 1;
+    }
+    .search-input::placeholder { color: var(--text-sub); }
+
+    .btn-create-top {
+      height: 32px; padding: 0 14px; border-radius: 6px;
+      background: var(--accent); color: var(--bg);
+      font-family: "Instrument Sans"; font-size: 12px; font-weight: 600;
+      border: none; cursor: pointer; transition: opacity 120ms;
+    }
+    .btn-create-top:hover { opacity: 0.82; }
+
+    .content-area {
+      flex: 1; overflow-y: auto; padding: 28px;
+      display: flex; flex-direction: column; gap: 40px;
+    }
+
+    .section-label {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      letter-spacing: 0.09em; text-transform: uppercase;
+      color: var(--text-sub); margin-bottom: 16px; display: block;
+    }    /* KPI GRID */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .kpi-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px;
+      position: relative; overflow: hidden;
+      transition: all 200ms ease;
+    }
+    .kpi-card:hover { border-color: var(--border-mid); transform: translateY(-1px); }
+    .kpi-icon {
+      position: absolute; top: 18px; right: 20px;
+      color: var(--text-sub);
+    }
+    .kpi-label {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      letter-spacing: 0.07em; text-transform: uppercase;
+      color: var(--text-sub); margin-bottom: 12px; display: block;
+    }
+    .kpi-value {
+      font-family: "Instrument Sans"; font-size: 32px; font-weight: 500;
+      color: var(--text); line-height: 1; letter-spacing: -0.03em;
+      margin-bottom: 8px;
+    }
+    .kpi-trend {
+      font-family: "JetBrains Mono"; font-size: 11px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .trend-up { color: var(--success); }
+    .trend-down { color: var(--error); }
+
+    .kpi-mini-track {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+      background: var(--border-mid);
+    }
+    .kpi-mini-fill {
+      height: 100%; width: 0; background: var(--accent);
+      transition: width 1s cubic-bezier(0.22,1,0.36,1);
+    }
+    .quality-badge {
+      background: var(--success-dim); color: var(--success);
+      border: 1px solid rgba(74,222,128,0.2);
+      font-family: "JetBrains Mono"; font-size: 10px; font-weight: 500;
+      padding: 2px 8px; border-radius: 3px; text-transform: uppercase;
+    }
+
+    /* CREATE SECTION (AI CHAT STYLE) */
+    .create-section {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .create-title {
+      font-family: "Instrument Serif"; font-style: italic;
+      font-size: 24px; color: var(--text); letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    .create-subtitle {
+      font-family: "Instrument Sans"; font-size: 14px;
+      font-weight: 300; color: var(--text-muted);
+      line-height: 1.5; margin-bottom: 24px;
+      max-width: 500px;
+    }
+
+    .input-wrapper {
+        width: 100%;
+        max-width: 720px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        background: var(--bg-input);
+        box-shadow: 0 1px 0 rgba(9,9,11,0.04) inset, 0 20px 60px rgba(9,9,11,0.14);
+        transition: all 400ms cubic-bezier(0.22, 1, 0.36, 1);
+        margin-bottom: 0;
+        position: relative;
+        overflow: visible;
+        text-align: left;
+    }
+
+    .input-wrapper::before {
+        content: "";
+        position: absolute;
+        inset: -1.5px;
+        background: transparent;
+        animation: none;
+        z-index: -1;
+        opacity: 0;
+        transition: opacity 300ms;
+        filter: none;
+        clip-path: inset(0 round 14px);
+    }
+
+    .input-wrapper:focus-within::before {
+        opacity: 0;
+    }
+
+    .input-wrapper::after {
+        content: "";
+        position: absolute;
+        inset: 1px;
+        background: var(--bg-input);
+        border-radius: 11px;
+        z-index: -1;
+    }
+
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .input-wrapper:focus-within {
+        border-color: var(--border-mid);
+        box-shadow: 0 1px 0 rgba(255,255,255,.72) inset, 0 14px 34px rgba(28,28,28,.08);
+    }
+
+    #ai-textarea {
+        width: 100%;
+        background: transparent;
+        border: none;
+        outline: none;
+        padding: 18px 18px 0;
+        font-size: 14px;
+        font-weight: 400;
+        line-height: 1.65;
+        color: var(--text);
+        caret-color: var(--accent);
+        resize: none;
+        min-height: 90px;
+        max-height: 200px;
+        display: block;
+    }
+
+    #ai-textarea::placeholder {
+        color: var(--text-sub);
+    }
+
+    .input-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 14px 14px;
+        background: transparent;
+    }
+
+    .actions-left {
+        display: flex;
+        gap: 6px;
+    }
+
+    .sidebar-promo {
+        margin: 16px;
+        padding: 16px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .promo-badge {
+        display: inline-flex;
+        padding: 3px 8px;
+        background: var(--warning-dim);
+        color: var(--warning);
+        font-family: "JetBrains Mono";
+        font-size: 10px;
+        font-weight: 600;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(251, 191, 36, 0.2);
+    }
+
+    .promo-text {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.5;
+        margin-bottom: 14px;
+        font-weight: 300;
+    }
+
+    .btn-promo-upgrade {
+        width: 100%;
+        padding: 8px;
+        background: var(--accent);
+        color: var(--bg);
+        border: none;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 200ms;
+    }
+
+    .btn-promo-upgrade:hover {
+        opacity: 0.9;
+        transform: translateY(-1px);
+    }
+
+    .icon-btn {
+        width: 26px;
+        height: 26px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-sub);
+        transition: all 150ms;
+        cursor: pointer;
+    }
+
+    .icon-btn:hover {
+        border-color: var(--border-focus);
+        color: var(--text-muted);
+        background: var(--accent-dim);
+    }
+
+    .actions-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .model-select {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-muted);
+        user-select: none;
+        position: relative;
+        transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+        cursor: pointer;
+        background: var(--bg-input);
+        isolation: isolate;
+    }
+
+    .model-label-prefix {
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 9px;
+        opacity: 0.6;
+        padding-right: 4px;
+        border-right: 1px solid var(--border);
+    }
+
+    #current-model-label {
+        font-family: "JetBrains Mono";
+        font-weight: 500;
+    }
+
+    .model-select:hover {
+        border-color: var(--border-focus);
+        background: var(--accent-hover);
+        color: var(--text);
+        transform: translateY(-1px);
+    }
+
+    .prompt-mode {
+        position: relative;
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+    }
+
+    .prompt-mode-btn {
+        height: 34px;
+        min-width: 74px;
+        border: 1px solid var(--border);
+        background: var(--bg-input);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 0 11px;
+        font-size: 11px;
+        font-weight: 750;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .prompt-mode-btn:hover,
+    .prompt-mode.open .prompt-mode-btn {
+        border-color: var(--border-focus);
+        background: var(--accent-hover);
+    }
+
+    .prompt-mode-chevron {
+        font-size: 9px;
+        line-height: 1;
+        opacity: 0.58;
+    }
+
+    .prompt-mode-menu {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 10px);
+        width: 206px;
+        border: 1px solid var(--border);
+        background: var(--bg-surface);
+        border-radius: 12px;
+        padding: 6px;
+        box-shadow: 0 18px 50px rgba(0,0,0,.5);
+        display: none;
+        z-index: 1000;
+    }
+
+    .prompt-mode.open .prompt-mode-menu {
+        display: grid;
+        gap: 4px;
+    }
+
+    .prompt-mode-menu button {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        color: var(--text-muted);
+        border-radius: 8px;
+        padding: 9px;
+        cursor: pointer;
+        font: inherit;
+    }
+
+    .prompt-mode-menu button.active,
+    .prompt-mode-menu button:hover {
+        background: rgba(244,244,245,.08);
+        color: var(--text);
+    }
+
+    .prompt-mode-menu span {
+        display: block;
+        font-size: 11px;
+        font-weight: 750;
+    }
+
+    .prompt-mode-menu small {
+        display: block;
+        margin-top: 2px;
+        color: var(--text-sub);
+        font-size: 10px;
+        font-weight: 500;
+    }
+
+    .dropdown {
+        position: absolute;
+        bottom: calc(100% + 12px);
+        right: 0;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 8px;
+        min-width: min(320px, calc(100vw - 32px));
+        max-height: min(380px, 65vh);
+        overflow-y: auto;
+        z-index: 5000;
+        box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(12px) scale(0.96);
+        transition: all 280ms cubic-bezier(0.22, 1, 0.36, 1);
+        pointer-events: none;
+        backdrop-filter: blur(14px);
+    }
+
+    @media (max-width: 640px) {
+        .dropdown {
+            position: fixed;
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            top: auto;
+            min-width: 0;
+            width: auto;
+            max-height: 68vh;
+            border-radius: 18px;
+        }
+    }
+
+    .dropdown.open {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+    }
+
+    .dropdown-header {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 8px 12px 12px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 6px;
+    }
+
+    .model-option {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        transition: all 150ms;
+        position: relative;
+        text-align: left;
+    }
+
+    .model-option:hover {
+        background: var(--accent-dim);
+        transform: translateX(4px);
+    }
+
+    .model-option.active {
+        background: var(--accent-hover);
+    }
+
+    .model-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .opt-meta {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .opt-name {
+        font-size: 12px;
+        color: var(--text);
+        font-weight: 500;
+    }
+
+    .opt-desc {
+        font-size: 10px;
+        color: var(--text-muted);
+        font-family: "JetBrains Mono";
+        margin-top: 1px;
+    }
+
+    .submit-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        border-radius: 8px;
+        overflow: visible;
+        padding: 1px;
+        transition: transform 100ms;
+    }
+
+    .submit-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        color: var(--text-sub);
+        cursor: not-allowed;
+        pointer-events: none;
+        transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .submit-btn svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .submit-btn.active {
+        background: var(--accent);
+        border-color: transparent;
+        color: var(--bg);
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    .submit-btn.active:hover {
+        opacity: 0.9;
+        transform: scale(1.02);
+    }
+
+    .chips-row { 
+        display: flex; 
+        gap: 8px; 
+        flex-wrap: wrap; 
+        margin-top: 24px;
+        justify-content: center;
+    }
+    .chip {
+      padding: 6px 12px; border-radius: 6px;
+      border: 1px solid var(--border); background: transparent;
+      font-family: "JetBrains Mono"; font-size: 11px;
+      color: var(--text-sub); cursor: pointer; transition: all 120ms;
+    }
+    .chip:hover { border-color: var(--border-mid); color: var(--text-muted); background: var(--accent-dim); }
+    .chip:active { transform: scale(0.97); }
+
+    .workspace-hubs {
+      width: 100%;
+      max-width: 920px;
+      margin: 18px auto 0;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .workspace-hub-card {
+      min-height: 86px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+      color: var(--text);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      text-align: left;
+      transition: border-color 150ms cubic-bezier(.22,1,.36,1), background 150ms cubic-bezier(.22,1,.36,1), transform 150ms cubic-bezier(.22,1,.36,1);
+    }
+
+    .workspace-hub-card:hover {
+      border-color: var(--border-focus);
+      background: var(--bg-surface);
+      transform: translateY(-1px);
+    }
+
+    .workspace-hub-icon {
+      width: 26px;
+      height: 26px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      display: grid;
+      place-items: center;
+      color: var(--text-muted);
+    }
+
+    .workspace-hub-icon svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .workspace-hub-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      font-weight: 780;
+      letter-spacing: -0.01em;
+    }
+
+    .workspace-beta-badge,
+    .workspace-plan-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 16px;
+      padding: 0 6px;
+      border: 1px solid color-mix(in srgb, var(--accent-blue, #3b82f6) 26%, var(--border));
+      border-radius: 999px;
+      background: var(--accent-blue-soft, rgba(59, 130, 246,.10));
+      color: var(--accent-blue-deep, #2458dc);
+      font-size: 8.5px;
+      font-weight: 850;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    .workspace-plan-tag {
+      border-color: var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+
+    .workspace-plan-tag.included {
+      border-color: rgba(22, 163, 74, .24);
+      background: rgba(22, 163, 74, .10);
+      color: #15803d;
+    }
+
+    .workspace-plan-tag.locked {
+      border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 24%, var(--border));
+      background: var(--accent-blue-soft, rgba(59, 130, 246,.10));
+      color: var(--accent-blue-deep, #2458dc);
+    }
+
+    .workspace-hub-desc {
+      font-size: 11px;
+      line-height: 1.35;
+      color: var(--text-muted);
+      font-weight: 420;
+    }
+
+    /* PROJECTS GRID */
+    .grid-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 18px;
+    }
+    .btn-sort {
+      padding: 4px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: transparent;
+      font-family: "JetBrains Mono"; font-size: 11px;
+      color: var(--text-muted); cursor: pointer; transition: all 120ms;
+    }
+    .btn-sort:hover { border-color: var(--border-focus); color: var(--text); }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .project-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 22px;
+      cursor: pointer; transition: all 250ms cubic-bezier(0.22,1,0.36,1);
+      display: flex; flex-direction: column; gap: 16px;
+      position: relative;
+    }
+    .project-card:hover { 
+      border-color: var(--border-mid); 
+      box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+      transform: translateY(-2px);
+    }
+
+    .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .card-title-row { display: flex; align-items: center; gap: 10px; }
+    .card-name {
+      font-family: "Instrument Sans"; font-size: 15px; font-weight: 500;
+      color: var(--text); letter-spacing: -0.01em;
+    }
+    .status-badge {
+      background: var(--success-dim); color: var(--success);
+      border: 1px solid rgba(74,222,128,0.2);
+      font-family: "JetBrains Mono"; font-size: 10px; font-weight: 500;
+      padding: 2px 7px; border-radius: 3px; text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .card-desc {
+      font-family: "Instrument Sans"; font-size: 13px;
+      color: var(--text-muted); line-height: 1.6; margin-top: -4px;
+      display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
+      flex: 1;
+    }
+
+    .card-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+    .score-badge {
+      font-family: "JetBrains Mono"; font-size: 10px; font-weight: 500;
+      padding: 3px 8px; border-radius: 4px;
+    }
+    .score-badge.sec { background: var(--success-dim); color: var(--success); border: 1px solid rgba(74,222,128,0.2); }
+    .score-badge.meta { background: var(--accent-dim); color: var(--text-muted); border: 1px solid var(--border-mid); }
+
+    .card-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      border-top: 1px solid var(--border); padding-top: 14px;
+    }
+    .card-meta { font-family: "JetBrains Mono"; font-size: 10px; color: var(--text-sub); }
+    .btn-open-project {
+      padding: 5px 12px; border-radius: 5px;
+      background: transparent; border: 1px solid var(--border);
+      font-family: "Instrument Sans"; font-size: 12px; font-weight: 500;
+      color: var(--text-muted); transition: all 120ms;
+    }
+    .project-card:hover .btn-open-project { border-color: var(--border-focus); color: var(--text); background: var(--accent-dim); }
+
+    /* ACTIVITY LIST */
+    .activity-list {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    .activity-row {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--border);
+      transition: background 150ms;
+    }
+    .activity-row:last-child { border-bottom: none; }
+    .activity-row:hover { background: var(--accent-dim); }
+
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.success { background: var(--success); }
+    .status-dot.working { background: var(--warning); animation: dotPulse 1.2s ease-in-out infinite; }
+    .status-dot.error { background: var(--error); }
+
+    @keyframes dotPulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.5); }
+    }
+
+    .act-project {
+      font-family: "Instrument Sans"; font-size: 14px; font-weight: 500;
+      color: var(--text); min-width: 140px; flex-shrink: 0;
+    }
+    .act-desc {
+      font-family: "Instrument Sans"; font-size: 13px;
+      color: var(--text-muted); flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .act-meta {
+      font-family: "JetBrains Mono"; font-size: 10px;
+      color: var(--text-sub); white-space: nowrap; margin-left: 12px;
+    }
+
+    /* CURTAIN */
+    #curtain {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        pointer-events: none;
+        transform-origin: top;
+        transform: scaleY(0);
+        will-change: transform;
+        background: var(--bg);
+    }
+
+    #curtain::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: var(--accent);
+        box-shadow: 0 0 40px var(--accent);
+        opacity: 0;
+        transition: opacity 300ms;
+    }
+
+    #curtain.falling {
+        transition: transform 600ms cubic-bezier(0.82, 0, 0.18, 1);
+        transform: scaleY(1);
+        pointer-events: all;
+    }
+
+    #curtain.falling::after {
+        opacity: 0.4;
+    }
+
+    #curtain.rising {
+        transition: transform 600ms cubic-bezier(0.82, 0, 0.18, 1);
+        transform: scaleY(0);
+        transform-origin: bottom;
+        pointer-events: none;
+    }
+
+    #curtain.rising::after {
+        opacity: 0.4;
+        top: 0;
+        bottom: auto;
+    }
+
+    /* SETTINGS PANEL */
+    .settings-overlay {
+      position: fixed; inset: 0; z-index: 10001;
+      background: rgba(0,0,0,0.45); backdrop-filter: blur(2px);
+      opacity: 0; visibility: hidden; transition: all 350ms ease;
+    }
+    .settings-overlay.open { opacity: 1; visibility: visible; }
+    
+    .settings-panel {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: 100%; max-width: 480px; z-index: 10002;
+      background: var(--bg-panel); border-left: 1px solid var(--border-mid);
+      display: flex; flex-direction: column;
+      transform: translateX(100%); transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow: -16px 0 64px rgba(0,0,0,0.5);
+    }
+    .settings-panel.open { transform: translateX(0); }
+    
+    .settings-header {
+      height: 64px; padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .settings-title {
+      font-family: "Instrument Serif"; font-style: italic;
+      font-size: 20px; color: var(--text); letter-spacing: -0.01em;
+    }
+    .btn-close-settings {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); transition: all 150ms;
+    }
+    .btn-close-settings:hover { border-color: var(--border-focus); color: var(--text); background: var(--accent-dim); }
+    
+    .settings-tabs {
+      height: 44px; padding: 0 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 4px;
+      background: var(--bg-surface); flex-shrink: 0; overflow-x: auto;
+    }
+    .settings-tabs::-webkit-scrollbar { display: none; }
+    
+    .settings-tab {
+      padding: 6px 14px; border-radius: 6px;
+      font-size: 13px; font-weight: 500; color: var(--text-sub);
+      white-space: nowrap; transition: all 150ms;
+    }
+    .settings-tab:hover { color: var(--text-muted); background: var(--accent-dim); }
+    .settings-tab.active { color: var(--text); background: var(--accent-dim); border: 1px solid var(--border-mid); }
+    .settings-tab.danger { color: var(--error); }
+    .settings-tab.danger.active { background: var(--error-dim); border-color: rgba(248,113,113,0.2); }
+    
+    .settings-body { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 32px; }
+    .tab-panel { display: flex; flex-direction: column; gap: 32px; }
+    
+    .settings-footer {
+      height: 72px; padding: 0 24px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg-surface); flex-shrink: 0;
+    }
+    .save-status { font-family: "JetBrains Mono"; font-size: 11px; color: var(--success); letter-spacing: 0.04em; }
+    
+    /* COMPONENTS */
+    .settings-block {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      transition: border-color 160ms ease, background 160ms ease, padding 160ms ease;
+    }
+    .block-title {
+      font-family: "JetBrains Mono"; font-size: 10px; font-weight: 500;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-sub);
+      padding-bottom: 8px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; cursor: pointer; user-select: none;
+      transition: color 160ms ease, border-color 160ms ease;
+    }
+
+    .dashboard-collapse-chev::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform 160ms ease;
+      opacity: 0.72;
+      flex-shrink: 0;
+    }
+
+    .settings-block.is-collapsed {
+      gap: 0;
+      padding: 0;
+    }
+
+    .settings-block.is-collapsed > :not(.block-title) {
+      display: none !important;
+    }
+
+    .settings-block.is-collapsed .dashboard-collapse-chev::after,
+    .dashboard-collapse-label[aria-expanded="false"] .dashboard-collapse-chev::after,
+    .credits-header[aria-expanded="false"] .dashboard-collapse-chev::after {
+      transform: rotate(-45deg);
+    }
+
+    .block-title:focus-visible,
+    .dashboard-collapse-label:focus-visible,
+    .credits-header:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--accent-blue) 62%, transparent);
+      outline-offset: 3px;
+      border-radius: 8px;
+    }
+
+    .dashboard-collapse-label,
+    .credits-header {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .dashboard-collapse-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .dashboard-collapse-chev {
+      display: inline-flex;
+      color: currentColor;
+      margin-left: auto;
+    }
+
+    .sidebar-credits.is-collapsed .credits-value-row,
+    .sidebar-credits.is-collapsed .credits-track,
+    #sidebar-projects-list.is-collapsed {
+      display: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .settings-block,
+      .block-title,
+      .dashboard-collapse-chev::after {
+        transition: none !important;
+      }
+    }
+    
+    .form-row { display: flex; flex-direction: column; gap: 8px; }
+    .form-row.horizontal { flex-direction: row; align-items: center; justify-content: space-between; }
+    .form-label { font-size: 14px; font-weight: 500; color: var(--text); }
+    .form-sublabel { font-size: 12px; font-weight: 300; color: var(--text-muted); margin-top: 1px; }
+    
+    .settings-input {
+      width: 100%; padding: 10px 14px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      font-size: 14px; color: var(--text); transition: all 150ms;
+    }
+    .settings-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-dim); outline: none; }
+    .settings-input.mono { font-family: "JetBrains Mono"; font-size: 13px; }
+    
+    .toggle {
+      width: 40px; height: 22px; border-radius: 999px;
+      background: var(--border-mid); border: 1px solid var(--border-mid);
+      position: relative; cursor: pointer; transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .toggle.on { background: var(--accent); border-color: var(--accent); }
+    .toggle::after {
+      content: ""; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--bg-panel); transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .toggle.on::after { transform: translateX(18px); }
+    
+    .settings-select {
+      padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-input); font-size: 14px; color: var(--text);
+      cursor: pointer; appearance: none; transition: all 150ms;
+      background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606060' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+      padding-right: 36px;
+    }
+    .settings-select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px var(--accent-dim); outline: none; }
+
+    .usage-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .usage-card,
+    .usage-row,
+    .model-rate-row {
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 12px;
+    }
+    .usage-card {
+      padding: 12px;
+      min-height: 74px;
+    }
+    .usage-card-label {
+      display: block;
+      color: var(--text-sub);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .usage-card-value {
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .usage-list {
+      display: grid;
+      gap: 8px;
+    }
+    .usage-row,
+    .model-rate-row {
+      display: grid;
+      gap: 8px;
+      padding: 11px 12px;
+    }
+    .usage-row-head,
+    .model-rate-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .usage-row-title,
+    .model-rate-title {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 750;
+    }
+    .usage-row-meta,
+    .model-rate-meta {
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .usage-credit-pill,
+    .model-tier-pill {
+      border: 1px solid var(--border-mid);
+      background: var(--bg-panel);
+      border-radius: 999px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 750;
+      padding: 4px 8px;
+      white-space: nowrap;
+    }
+    .model-credit-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .model-credit-cell {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px;
+    }
+    .model-credit-cell span {
+      display: block;
+      color: var(--text-sub);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+    .model-credit-cell strong {
+      color: var(--text);
+      font-size: 11px;
+    }
+    .usage-empty {
+      border: 1px dashed var(--border-mid);
+      border-radius: 12px;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 14px;
+      background: var(--bg-input);
+    }
+    
+    .avatar-editor { display: flex; align-items: center; gap: 16px; }
+    .avatar-large {
+      width: 56px; height: 56px; border-radius: 50%;
+      background: var(--accent-dim); border: 1px solid var(--border-mid);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: var(--text-muted); cursor: pointer; position: relative; overflow: hidden;
+    }
+    .avatar-large:hover::after {
+      content: "EDIT"; position: absolute; inset: 0; background: rgba(0,0,0,0.5);
+      font-size: 10px; font-weight: 700; color: white; display: flex; align-items: center; justify-content: center;
+    }
+    
+    .btn-secondary {
+      padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+      font-size: 13px; font-weight: 500; color: var(--text-muted); transition: all 150ms;
+    }
+    .btn-secondary:hover { border-color: var(--border-focus); color: var(--text); background: var(--accent-dim); }
+    
+    .btn-primary {
+      padding: 8px 24px; border-radius: 8px; background: var(--accent);
+      font-size: 13px; font-weight: 600; color: var(--bg); transition: all 150ms;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:disabled { background: var(--accent-dim); color: var(--text-sub); cursor: not-allowed; }
+    
+    .danger-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px; border-radius: 12px; border: 1px solid var(--error-dim);
+      background: var(--error-dim);
+    }
+    .btn-danger-sm {
+      padding: 6px 14px; border-radius: 6px; background: transparent;
+      border: 1px solid rgba(248,113,113,0.3); color: var(--error);
+      font-size: 12px; font-weight: 600; transition: all 150ms;
+    }
+    .btn-danger-sm:hover { background: var(--error); color: white; }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 10000;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; visibility: hidden; transition: all 300ms;
+    }
+    .modal-overlay.open { opacity: 1; visibility: visible; }
+    
+    .modal-content {
+      position: relative;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px; padding: 28px;
+      width: 100%; max-width: 400px;
+      transform: translateY(20px); transition: all 300ms cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    }
+    .modal-overlay.open .modal-content { transform: translateY(0); }
+    
+    .modal-title {
+      font-family: "Instrument Serif"; font-style: italic;
+      font-size: 22px; color: var(--text); margin-bottom: 12px;
+    }
+    .modal-desc {
+      font-size: 14px; color: var(--text-muted); line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+    .btn-modal {
+      padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      transition: all 150ms;
+    }
+    .btn-cancel { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-cancel:hover { background: var(--accent-dim); color: var(--text); }
+    .btn-confirm-delete { background: var(--error); color: white; }
+    .btn-confirm-delete:hover { opacity: 0.9; transform: translateY(-1px); }
+
+    /* CARD DELETE BTN */
+    .btn-card-delete {
+      position: absolute; top: 12px; right: 12px;
+      width: 28px; height: 28px; border-radius: 6px;
+      background: transparent; border: 1px solid transparent;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-sub); transition: all 150ms;
+      opacity: 0;
+    }
+    .project-card:hover .btn-card-delete { opacity: 1; }
+    .btn-card-delete:hover { 
+      background: var(--error-dim); border-color: rgba(248,113,113,0.2);
+      color: var(--error);
+    }
+    
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 60px 40px; text-align: center; background: var(--bg-surface);
+      border: 1px dashed var(--border-mid); border-radius: 12px;
+      grid-column: 1 / -1;
+    }
+    .empty-icon { color: var(--text-sub); margin-bottom: 20px; opacity: 0.5; }
+    .empty-title { font-family: "Instrument Serif"; font-size: 20px; margin-bottom: 8px; font-style: italic;}
+    .empty-desc { font-size: 14px; color: var(--text-muted); max-width: 300px; margin-bottom: 24px; }
+
+    .hidden { display: none !important; }
+
+    .mobile-dashboard-nav {
+      display: none;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 1024px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main-area { width: 100vw; }
+      .content-area { padding-bottom: 96px; }
+      .mobile-dashboard-nav {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 220;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+        box-shadow: 0 14px 34px rgba(24, 22, 17, 0.14);
+        backdrop-filter: blur(18px);
+      }
+      .mobile-dashboard-nav button {
+        min-width: 0;
+        height: 42px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text-muted);
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        cursor: pointer;
+        transition: transform var(--motion-fast, 120ms) var(--motion-ease, ease), background var(--motion-fast, 120ms) var(--motion-ease, ease), color var(--motion-fast, 120ms) var(--motion-ease, ease);
+      }
+      .mobile-dashboard-nav button svg {
+        width: 15px;
+        height: 15px;
+      }
+      .mobile-dashboard-nav button.active {
+        background: var(--text);
+        color: var(--bg);
+      }
+      .mobile-dashboard-nav button:active {
+        transform: scale(0.98);
+      }
+    }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+      .search-wrapper { display: none; }
+      .content-area { padding: 20px; }
+      .create-input-row { flex-direction: column; align-items: stretch; }
+      .btn-submit { height: 40px; }
+      .workspace-hubs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    /* Codex-like dashboard refinement */
+    .dashboard {
+      background: var(--bg);
+    }
+
+    .sidebar {
+      width: 280px;
+      background: var(--bg-surface);
+      border-right-color: var(--border);
+    }
+
+    .sidebar-logo,
+    .topbar {
+      height: 74px;
+      background: var(--bg);
+      border-bottom-color: var(--border);
+    }
+
+    .sidebar-profile,
+    .sidebar-credits,
+    .sidebar-footer {
+      border-color: var(--border);
+    }
+
+    .logo-text,
+    .topbar-title {
+      font-family: "Instrument Sans", system-ui, sans-serif;
+      font-style: normal;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .main-area {
+      background: var(--bg);
+    }
+
+    .topbar {
+      padding: 0 24px;
+    }
+
+    .content-area {
+      gap: 18px;
+      padding: 22px 24px 28px;
+      max-width: 1320px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      margin-bottom: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+    }
+
+    .kpi-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .kpi-card,
+    .project-card,
+    .activity-list,
+    .create-section,
+    .sidebar-promo {
+      background: var(--bg-surface);
+      border-color: var(--border);
+      border-radius: 8px;
+      box-shadow: none;
+    }
+
+    .kpi-card {
+      padding: 14px;
+    }
+
+    .kpi-card:hover,
+    .project-card:hover {
+      transform: none;
+      box-shadow: none;
+      border-color: var(--border-focus);
+    }
+
+    .kpi-value {
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    .create-section {
+      align-items: center;
+      text-align: center;
+      padding: 0;
+      margin: clamp(54px, 9vh, 108px) auto 30px;
+      max-width: 860px;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    /* ── Chat-to-Build: dashboard "descent" morph on submit ──────────────
+       The centered hero composer drops toward the bottom while the title /
+       subtitle / chips fade out and a short conversation (the prompt + a
+       thinking indicator) appears above it — the Claude.ai feel — right before
+       the builder opens with the same prompt. */
+    .create-section.is-launching {
+      justify-content: flex-end;
+      min-height: 60vh;
+    }
+    .create-section.is-launching .create-title,
+    .create-section.is-launching .create-subtitle,
+    .create-section.is-launching .chips-row {
+      opacity: 0;
+      max-height: 0;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      pointer-events: none;
+      transition: opacity 200ms ease, max-height 300ms ease, margin 300ms ease;
+    }
+    .create-section.is-launching .input-wrapper {
+      transition: transform 360ms cubic-bezier(.22, 1, .36, 1);
+    }
+    .launch-thread {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 14px;
+      text-align: left;
+      animation: launchFade 280ms ease both;
+    }
+    .launch-bubble-user {
+      align-self: flex-end;
+      max-width: 80%;
+      background: var(--accent-blue, #3b82f6);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 14px 14px 4px 14px;
+      font-size: 14px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .launch-bubble-ai {
+      align-self: flex-start;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .launch-dots { display: inline-flex; gap: 4px; }
+    .launch-dots i {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: currentColor; opacity: .4;
+      animation: launchDot 1s infinite;
+    }
+    .launch-dots i:nth-child(2) { animation-delay: .15s; }
+    .launch-dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes launchDot { 0%,60%,100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+    @keyframes launchFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .create-section.is-launching .create-title,
+      .create-section.is-launching .create-subtitle,
+      .create-section.is-launching .chips-row,
+      .create-section.is-launching .input-wrapper,
+      .launch-thread,
+      .launch-dots i { transition: none !important; animation: none !important; }
+    }
+
+    .create-title {
+      font-family: "Instrument Sans", system-ui, sans-serif;
+      font-style: normal;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .create-subtitle {
+      font-size: 12px;
+      margin-bottom: 22px;
+      max-width: 560px;
+    }
+
+    .input-wrapper {
+      max-width: 780px;
+      border-radius: 16px;
+      border-color: transparent;
+      background: var(--bg-input);
+      box-shadow: none;
+    }
+
+    .input-wrapper::before,
+    .input-wrapper::after {
+      display: none;
+    }
+
+    .input-wrapper:focus-within {
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    #ai-textarea {
+      min-height: 88px;
+      padding: 18px 18px 0;
+      text-align: center;
+    }
+
+    #ai-textarea::placeholder,
+    .search-input::placeholder {
+      color: #71717a;
+    }
+
+    .chips-row {
+      justify-content: center;
+      margin-top: 16px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      background: var(--bg-panel);
+      color: var(--text-muted);
+      border-color: var(--border);
+    }
+
+    .projects-grid {
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
+    }
+
+    .project-card {
+      padding: 16px;
+    }
+
+    .empty-state {
+      background: var(--bg-surface);
+      border-color: var(--border);
+      border-radius: 8px;
+      padding: 44px 28px;
+    }
+
+    .empty-title {
+      font-family: "Instrument Sans", system-ui, sans-serif;
+      font-style: normal;
+      font-size: 15px;
+    }
+
+    .sidebar-promo {
+      margin: 10px;
+      padding: 12px;
+    }
+
+    .promo-badge {
+      display: none;
+    }
+
+    .promo-text {
+      margin-bottom: 10px;
+    }
+
+    .btn-promo-upgrade,
+    .btn-create-top {
+      border-radius: 8px;
+      background: var(--accent);
+      color: var(--bg);
+    }
+
+    .btn-new-project-sidebar {
+      border-radius: 8px;
+      border-style: solid;
+      background: var(--bg-elevated);
+    }
+
+    @media (max-width: 1024px) {
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .content-area {
+        padding: 16px;
+      }
+
+      .create-section {
+        margin-top: 44px;
+      }
+
+      .actions-right {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .topbar {
+        padding: 0 14px;
+      }
+
+      .topbar-right {
+        gap: 8px;
+      }
+
+      .btn-create-top {
+        padding: 0 10px;
+      }
+    }
+
+    /* ==================================================================
+       Sidebar v2 — cleaner hierarchy, airy rhythm, very subtle separators,
+       uniform footer actions, soft hover/active. (slate theme, blue accent)
+       ================================================================== */
+    .sidebar {
+      width: 248px;
+      background: var(--bg-panel);
+    }
+    .sidebar-logo { height: 52px; padding: 0 18px; border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); }
+    .sidebar-profile { padding: 14px 16px; border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); }
+    .sidebar-credits { padding: 14px 16px; border-bottom-color: color-mix(in srgb, var(--border) 60%, transparent); }
+    .sidebar-nav { padding: 10px; }
+    .nav-label { padding: 12px 10px 6px; }
+    .nav-label:first-child { padding-top: 4px; }
+
+    /* Nav rows: consistent shape + gentle hover/active (~0.15s). */
+    .btn-new-project-sidebar,
+    .nav-project {
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+    .nav-project {
+      display: flex; align-items: center; gap: 9px;
+      width: 100%; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid transparent; background: transparent; text-align: left;
+    }
+    .nav-project:hover { background: var(--accent-dim); }
+    .nav-project.active,
+    .nav-project[aria-current="true"] { background: var(--accent-dim); border-color: var(--border); }
+    .nav-project:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
+    /* Footer: language selector + uniform, equal-sized action buttons. */
+    .sidebar-footer {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      padding: 10px;
+      border-top-color: color-mix(in srgb, var(--border) 60%, transparent);
+    }
+    .sidebar-lang {
+      display: flex; align-items: center; gap: 8px;
+      height: 34px; padding: 0 11px;
+      border: 1px solid var(--border); border-radius: 9px;
+      color: var(--text-sub);
+      transition: border-color 150ms ease, color 150ms ease;
+    }
+    .sidebar-lang:hover { border-color: var(--border-focus); color: var(--text-muted); }
+    .sidebar-lang select {
+      flex: 1; min-width: 0;
+      background: transparent; border: 0; outline: none;
+      color: var(--text-muted); font-family: "Instrument Sans"; font-size: 12px;
+      font-weight: 500; cursor: pointer;
+    }
+    .sidebar-lang select option { color: #111; }
+    .sidebar-footer-actions { display: flex; align-items: center; gap: 6px; }
+    .sidebar-footer .btn-footer {
+      flex: 1 1 0;
+      height: 34px; padding: 0; gap: 0;
+      justify-content: center;
+      border: 1px solid var(--border); border-radius: 9px;
+      color: var(--text-sub);
+      transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+    .sidebar-footer .btn-footer:hover { background: var(--accent-dim); color: var(--text); border-color: var(--border-focus); }
+    .sidebar-footer .btn-footer:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+    .sidebar-footer .btn-footer span { display: none; }
+    .btn-footer-danger { color: var(--error) !important; }
+    .btn-footer-danger:hover { background: var(--error-dim) !important; color: var(--error) !important; border-color: rgba(248,113,113,0.28) !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .nav-project, .sidebar-footer .btn-footer, .sidebar-lang { transition: none; }
+    }
+  </style>
+</head>
+<body data-coden-surface="dashboard">
+  <div id="curtain"></div>
+
+  <div class="dashboard">
+
+    <aside class="sidebar" aria-label="Coden workspace navigation" data-sidebar-drawer>
+      <div class="sidebar-logo">
+        <div class="sidebar-brand">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <rect width="32" height="32" rx="8" fill="var(--text)"/>
+            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
+            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
+            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+          </svg>
+          <span class="logo-text">Coden</span>
+        </div>
+        <button id="btn-collapse-sidebar" class="btn-sidebar-toggle" type="button" title="Collapse sidebar" aria-label="Collapse navigation" aria-expanded="true" data-i18n-aria-label="dash.closeNavigation">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <div class="sidebar-profile">
+        <div class="profile-avatar">U</div>
+        <div class="profile-info">
+          <div class="profile-name" id="dashboard-user-name">Workspace</div>
+          <div class="profile-email" id="dashboard-user-email">Signed in</div>
+        </div>
+        <button class="profile-settings-btn" id="btn-settings" type="button" title="Settings" aria-label="Open settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="sidebar-credits">
+        <div class="credits-header">
+          <span class="plan-label" data-i18n="dash.plan">Plan</span>
+          <span class="plan-badge" id="dashboard-plan-badge">Free</span>
+        </div>
+        <div class="credits-value-row">
+          <span class="credits-count">--</span>
+          <span class="credits-total" data-i18n="dash.creditsUnit"> credits</span>
+        </div>
+        <div class="credits-track">
+          <div class="credits-fill" data-fill="100%"></div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Workspace navigation">
+        <section class="sidebar-section sidebar-section-create" aria-labelledby="sidebar-create-label">
+          <span class="sidebar-section-label" id="sidebar-create-label" data-i18n="dash.create">Create</span>
+          <button class="btn-new-project-sidebar" id="btn-new-project" type="button" aria-label="Create a new project" data-i18n-aria-label="dash.newProject">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span data-i18n="dash.newProject">New project</span>
+        </button>
+
+        </section>
+
+        <section class="sidebar-section sidebar-section-projects" aria-labelledby="sidebar-projects-label">
+
+        <span class="nav-label sidebar-section-label" id="sidebar-projects-label" data-i18n="dash.projects">Projects</span>
+        <div id="sidebar-projects-list" style="display: flex; flex-direction: column; width: 100%;">
+          <div class="empty-nav-state" style="padding: 10px; font-size: 11px; color: var(--text-sub); font-style: italic;" data-i18n="dash.noProjects">
+            No projects yet
+          </div>
+        </div>
+        </section>
+      </nav>
+
+      <div class="sidebar-promo" aria-label="Pro plan">
+        <div class="promo-badge">PRO</div>
+        <p class="promo-text" data-i18n="dash.promoText">Unlock the full power of AI with Pro.</p>
+        <button class="btn-promo-upgrade" id="btn-upgrade-dashboard" data-i18n="dash.upgradePro" type="button">Upgrade to Pro</button>
+      </div>
+
+      <div class="sidebar-footer">
+        <label class="sidebar-lang" title="Language">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a15.3 15.3 0 0 1 0 20 15.3 15.3 0 0 1 0-20"></path></svg>
+          <select id="sidebar-lang-select" aria-label="Language" data-i18n-skip>
+            <option value="en">EN</option>
+            <option value="fr">FR</option>
+          </select>
+        </label>
+        <div class="sidebar-footer-actions">
+          <a class="btn-footer" href="/connectors.html" id="btn-connectors" title="Connectors" aria-label="Connectors" style="display:none;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v5"></path>
+              <path d="M14 9V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v5"></path>
+              <rect x="4" y="9" width="16" height="6" rx="2"></rect>
+              <path d="M12 15v4a3 3 0 0 1-3 3H8"></path>
+            </svg>
+            <span data-i18n="dash.connectors">Connectors</span>
+          </a>
+          <a class="btn-footer" href="/admin.html" id="btn-admin-console" title="Admin" aria-label="Admin console" style="display:none;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z"></path>
+              <path d="M9.5 12.5l1.7 1.7 3.8-4"></path>
+            </svg>
+            <span data-i18n="dash.admin">Admin</span>
+          </a>
+          <button class="btn-footer btn-footer-danger" data-auth-logout title="Sign out" aria-label="Sign out">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span data-i18n="dash.signOut">Sign out</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" hidden aria-hidden="true"></div>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <!-- Expand Sidebar trigger -->
+          <button id="btn-expand-sidebar" class="btn-sidebar-expand" type="button" title="Open navigation" aria-label="Open navigation" aria-expanded="false" data-i18n-aria-label="dash.openNavigation">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1 class="topbar-title" data-i18n="dash.title">Dashboard</h1>
+        </div>
+        <div class="topbar-right">
+          <div class="search-wrapper">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-sub)" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" class="search-input" placeholder="Search projects..." data-i18n-placeholder="dash.search">
+          </div>
+          <button class="btn-create-top" id="btn-create-top" data-i18n="dash.newProjectTop">New Project</button>
+          <button class="btn-theme-toggle" id="theme-btn-dashboard" data-theme-toggle type="button" aria-label="Activer le thème clair" title="Activer le thème clair">
+            <span aria-hidden="true">☼</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="content-area">
+
+        <section class="create-section">
+          <h2 class="create-title" data-i18n="dash.createTitle">Ask Coden to build</h2>
+          <p class="create-subtitle" data-i18n="dash.createSubtitle">Describe the app you want. Coden will open the builder with your prompt ready.</p>
+          
+          <div class="input-wrapper">
+            <textarea id="ai-textarea" placeholder="E.g.: An HR dashboard with auth, interactive charts and CSV exports..."></textarea>
+            <div class="input-actions">
+                <div class="actions-left">
+                    <button class="icon-btn" title="Upload files" data-prompt-action="upload" aria-label="Attach files" type="button">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <button class="icon-btn" title="Voice input" data-prompt-action="voice" aria-label="Voice input" type="button">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="actions-right">
+                    <div class="model-select" id="model-select-btn">
+                        <span class="model-label-prefix">Model</span>
+                        <span id="current-model-label">Auto</span>
+                        <svg id="chevron-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 200ms;">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                        
+                        <div class="dropdown" id="model-dropdown">
+                                <div class="dropdown-header">Choose AI Engine</div>
+                            </div>
+                    </div>
+                    <div class="prompt-mode" data-prompt-mode="auto">
+                        <button class="prompt-mode-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="Choose Auto, Build or Plan">
+                            <span class="prompt-mode-label">Auto</span>
+                            <svg class="prompt-mode-chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="prompt-mode-menu" role="menu">
+                            <button type="button" data-prompt-mode-option="auto" role="menuitem" class="active">
+                                <span>Auto</span>
+                                <small>Let Coden decide</small>
+                            </button>
+                            <button type="button" data-prompt-mode-option="build" role="menuitem">
+                                <span>Build</span>
+                                <small>Generate or edit the app</small>
+                            </button>
+                            <button type="button" data-prompt-mode-option="plan" role="menuitem">
+                                <span>Plan</span>
+                                <small>Think without changing files</small>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="submit-wrapper">
+                        <button class="submit-btn" id="submit-btn">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="19" x2="12" y2="5"></line>
+                                <polyline points="5 12 12 5 19 12"></polyline>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          <div class="chips-row">
+            <button class="chip" data-prompt="Create an analytics dashboard">Analytics Dashboard</button>
+            <button class="chip" data-prompt="Create an e-commerce app">E-commerce App</button>
+            <button class="chip" data-prompt="Create a 3D portfolio">3D Portfolio</button>
+            <button class="chip" data-prompt="Create a SaaS manager">SaaS Manager</button>
+          </div>
+
+        </section>
+
+        <section>
+          <div class="grid-header">
+            <span class="section-label" style="margin-bottom:0">All Projects <span style="opacity:0.5">(0)</span></span>
+          </div>
+          <div class="projects-grid">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                  <line x1="3" y1="9" x2="21" y2="9"></line>
+                  <line x1="9" y1="21" x2="9" y2="9"></line>
+                </svg>
+              </div>
+              <h3 class="empty-title" data-i18n="dash.emptyTitle">Your workspace is quiet</h3>
+              <p class="empty-desc" data-i18n="dash.emptyDesc">Describe your first idea above or open a new builder session.</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <span class="section-label" data-i18n="dash.recentActivity">Recent Activity</span>
+          <div class="activity-list">
+            <div class="empty-nav-state" style="padding: 24px; text-align: center; color: var(--text-sub); font-size: 13px;">
+              No activity recorded yet.
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <nav class="mobile-dashboard-nav" aria-label="Dashboard navigation">
+      <button type="button" class="active" data-mobile-dashboard-target="create" aria-pressed="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 5v14"></path><path d="M5 12h14"></path>
+        </svg>
+        <span>Create</span>
+      </button>
+      <button type="button" data-mobile-dashboard-target="projects" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 10h18"></path><path d="M9 20V10"></path>
+        </svg>
+        <span>Projects</span>
+      </button>
+      <button type="button" data-mobile-dashboard-target="usage" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 19V5"></path><path d="M9 19v-8"></path><path d="M14 19v-5"></path><path d="M19 19V8"></path>
+        </svg>
+        <span>Usage</span>
+      </button>
+      <button type="button" data-mobile-dashboard-target="account" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4"></circle><path d="M5 21a7 7 0 0 1 14 0"></path>
+        </svg>
+        <span>Account</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <script>
+    // 1. Theme state and navigation. The shared theme controller is initialized by dashboard-live.ts.
+    const html = document.documentElement;
+    const curtain = document.getElementById('curtain');
+    // 2. Navigation Projets Dashboard
+    document.querySelectorAll('.nav-project').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-project').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    // 3. Suggestion Chips
+    const aiTextarea = document.getElementById('ai-textarea');
+    const submitBtn = document.getElementById('submit-btn');
+    const modelSelectBtn = document.getElementById('model-select-btn');
+    const modelDropdown = document.getElementById('model-dropdown');
+    const modelLabel = document.getElementById('current-model-label');
+    const chevronIcon = document.getElementById('chevron-icon');
+    const promptModeRoot = document.querySelector('.prompt-mode');
+    const promptModeBtn = document.querySelector('.prompt-mode-btn');
+    const promptModeLabel = document.querySelector('.prompt-mode-label');
+    let selectedPromptMode = 'auto';
+
+    function setPromptMode(mode) {
+      selectedPromptMode = mode === 'plan' ? 'plan' : mode === 'build' ? 'build' : 'auto';
+      promptModeRoot?.classList.remove('open');
+      promptModeRoot?.setAttribute('data-prompt-mode', selectedPromptMode);
+      promptModeBtn?.setAttribute('aria-expanded', 'false');
+      if (promptModeLabel) promptModeLabel.textContent = selectedPromptMode === 'plan' ? 'Plan' : selectedPromptMode === 'build' ? 'Build' : 'Auto';
+      document.querySelectorAll('[data-prompt-mode-option]').forEach(option => {
+        option.classList.toggle('active', option.dataset.promptModeOption === selectedPromptMode);
+      });
+    }
+
+    setPromptMode('auto');
+
+    promptModeBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nextOpen = !promptModeRoot?.classList.contains('open');
+      promptModeRoot?.classList.toggle('open', nextOpen);
+      promptModeBtn.setAttribute('aria-expanded', String(nextOpen));
+    });
+
+    document.querySelectorAll('[data-prompt-mode-option]').forEach(option => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setPromptMode(option.dataset.promptModeOption);
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!promptModeRoot?.contains(e.target)) {
+        promptModeRoot?.classList.remove('open');
+        promptModeBtn?.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    // Model Dropdown Toggle
+    modelSelectBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = modelDropdown.classList.contains('open');
+      if (isOpen) {
+        modelDropdown.classList.remove('open');
+        chevronIcon.style.transform = 'rotate(0deg)';
+      } else {
+        modelDropdown.classList.add('open');
+        chevronIcon.style.transform = 'rotate(180deg)';
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!modelDropdown.contains(e.target) && !modelSelectBtn.contains(e.target)) {
+        modelDropdown.classList.remove('open');
+        chevronIcon.style.transform = 'rotate(0deg)';
+      }
+    });
+
+    // Initialize saved model
+    const savedModel = localStorage.getItem('coden-selected-model') || 'auto';
+    let foundModel = false;
+    document.querySelectorAll('.model-option').forEach(opt => {
+      if (opt.dataset.id === savedModel) {
+        document.querySelectorAll('.model-option').forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+        if (modelLabel) modelLabel.textContent = opt.dataset.name || 'Auto';
+        foundModel = true;
+      }
+    });
+    if (!foundModel && modelLabel) {
+      const activeOpt = document.querySelector('.model-option.active');
+      if (activeOpt) {
+        modelLabel.textContent = activeOpt.dataset.name || 'Auto';
+      }
+    }
+
+    // Model Selection
+    document.querySelectorAll('.model-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.model-option').forEach(o => o.classList.remove('active'));
+        opt.classList.add('active');
+        const modelId = opt.dataset.id || 'auto';
+        const modelName = opt.dataset.name || 'Auto';
+        localStorage.setItem('coden-selected-model', modelId);
+        if (modelLabel) modelLabel.textContent = modelName;
+        modelDropdown.classList.remove('open');
+        chevronIcon.style.transform = 'rotate(0deg)';
+      });
+    });
+
+    // Model search filtering & event isolation
+    const dropdownSearch = modelDropdown.querySelector('.dropdown-search-input');
+    dropdownSearch?.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('.model-option').forEach(opt => {
+        const name = opt.dataset.name?.toLowerCase() || '';
+        const desc = opt.querySelector('.opt-desc')?.textContent?.toLowerCase() || '';
+        if (name.includes(query) || desc.includes(query)) {
+          opt.style.display = 'flex';
+        } else {
+          opt.style.display = 'none';
+        }
+      });
+    });
+    dropdownSearch?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+    });
+    dropdownSearch?.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+
+    document.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        aiTextarea.value = chip.dataset.prompt || chip.textContent.trim();
+        aiTextarea.dispatchEvent(new Event('input'));
+        aiTextarea.focus();
+      });
+    });
+
+    // 4. Auto-resize textarea + Join state
+    aiTextarea.addEventListener('input', () => {
+      aiTextarea.style.height = 'auto';
+      aiTextarea.style.height = Math.min(aiTextarea.scrollHeight, 200) + 'px';
+      submitBtn.classList.toggle('active', aiTextarea.value.trim().length > 0);
+    });
+
+    // 5. Credits Animation
+    window.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        document.querySelectorAll('.credits-fill, .kpi-mini-fill').forEach(el => {
+          el.style.width = el.dataset.fill;
+        });
+      }, 300);
+    });
+
+    // 6. Search filtering
+    const searchInput = document.querySelector('.search-input');
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase();
+      document.querySelectorAll('.project-card').forEach(card => {
+        const name = (card.querySelector('.card-name')?.textContent || '').toLowerCase();
+        const desc = (card.querySelector('.card-desc')?.textContent || card.querySelector('.card-meta')?.textContent || '').toLowerCase();
+        if (name.includes(query) || desc.includes(query)) {
+          card.style.display = 'flex';
+          card.style.opacity = '1';
+        } else {
+          card.style.display = 'none';
+          card.style.opacity = '0';
+        }
+      });
+    });
+
+    // 7. Navigation logic - Link to builder
+    const liftCurtain = () => {
+        if (curtain) curtain.classList.add('rising');
+    };
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        liftCurtain();
+    } else {
+        window.addEventListener('load', liftCurtain);
+    }
+
+    function navigate(url) {
+        const targetUrl = typeof url === 'string' && url.startsWith('/')
+            ? url
+            : `/${String(url).replace(/^\.?\//, '')}`;
+        if (curtain) {
+            curtain.classList.remove('rising');
+            curtain.classList.add('falling');
+            setTimeout(() => {
+                window.location.href = targetUrl;
+            }, 600);
+        } else {
+            window.location.href = targetUrl;
+        }
+    }
+
+    function openNewBuilder(prompt = '', mode = selectedPromptMode) {
+      const cleanPrompt = String(prompt || '').trim();
+      if (cleanPrompt) {
+        sessionStorage.setItem('coden-initial-prompt', cleanPrompt);
+        sessionStorage.setItem('coden-requested-mode', mode === 'plan' ? 'plan' : mode === 'build' ? 'build' : 'auto');
+      } else {
+        sessionStorage.removeItem('coden-initial-prompt');
+        sessionStorage.removeItem('coden-requested-mode');
+      }
+      localStorage.removeItem('coden-initial-prompt');
+      localStorage.removeItem('coden-current-project');
+      localStorage.removeItem('coden-last-builder-project-id');
+      navigate('/builder.html?new=1');
+    }
+
+    document.querySelectorAll('[data-workshop-open]').forEach(button => {
+      button.addEventListener('click', () => {
+        const workshop = button.dataset.workshopOpen || 'chat';
+        localStorage.setItem('coden-active-workshop', workshop);
+        sessionStorage.removeItem('coden-initial-prompt');
+        sessionStorage.removeItem('coden-requested-mode');
+        localStorage.removeItem('coden-current-project');
+        localStorage.removeItem('coden-last-builder-project-id');
+        navigate(`/builder.html?new=1&workshop=${encodeURIComponent(workshop)}`);
+      });
+    });
+
+    let projects = [];
+    localStorage.removeItem('coden-projects');
+    localStorage.removeItem('coden-current-project');
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function getThemeColor(theme) {
+      switch (theme) {
+        case 'light': return '#3B82F6';
+        case 'synthwave': return '#EC4899';
+        case 'emerald': return '#10B981';
+        default: return '#A78BFA'; // dark / default
+      }
+    }
+
+    function getTemplateLabel(template) {
+      switch (template) {
+        case 'ecommerce': return 'E-Commerce';
+        case 'saas': return 'AI SaaS';
+        case 'portfolio': return 'Portfolio';
+        default: return 'Analytics';
+      }
+    }
+
+    function getTemplateDesc(template) {
+      switch (template) {
+        case 'ecommerce': return 'Modern storefront built with interactive grids and robust checkout components.';
+        case 'saas': return 'Next-generation AI chat layout with rich response streams and modular controls.';
+        case 'portfolio': return 'High-contrast portfolio showcase with responsive bento-inspired grids.';
+        default: return 'Business-facing analytics console displaying critical application insights.';
+      }
+    }
+
+    function getModelLabel(model) {
+      if (model.includes('claude-opus-5')) return 'Opus 5';
+      if (model.includes('claude-sonnet-5')) return 'Sonnet 5';
+      if (model.includes('claude-fable-5')) return 'Fable 5';
+      if (model.includes('gpt-5.6-sol')) return 'Sol';
+      if (model.includes('gpt-5.6-terra')) return 'Terra';
+      if (model.includes('gpt-5.6-luna')) return 'Luna';
+      if (model.includes('gemini-3.7-flash')) return 'Gemini 3.7 Flash';
+      if (model.includes('deepseek-v4-pro')) return 'DeepSeek V4 Pro';
+      if (model.includes('grok-4.6')) return 'Grok 4.6';
+      return 'AI Auto';
+    }
+
+    function relativeTime(isoString) {
+      try {
+        const ms = Date.now() - new Date(isoString).getTime();
+        const mins = Math.floor(ms / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs}h ago`;
+        return '1d ago';
+      } catch (e) {
+        return 'recently';
+      }
+    }
+
+    window.openProjectWorkspace = function(id) {
+      if (id) navigate(`/builder.html?project=${encodeURIComponent(id)}`);
+    };
+
+    function renderProjects() {
+      const grid = document.querySelector('.projects-grid');
+      const sidebarList = document.getElementById('sidebar-projects-list');
+      if (!grid) return;
+      
+      const totalCount = projects.length;
+      const countLabel = document.querySelector('.section-label span');
+      if (countLabel) {
+        countLabel.textContent = `(${totalCount})`;
+      }
+      
+      // Sidebar rendering
+      if (sidebarList) {
+        if (totalCount === 0) {
+          sidebarList.innerHTML = `
+            <div class="empty-nav-state" style="padding: 10px; font-size: 11px; color: var(--text-sub); font-style: italic;">
+              No projects yet
+            </div>
+          `;
+        } else {
+          sidebarList.innerHTML = projects.map(proj => `
+            <button class="nav-project" data-id="${proj.id}" title="${escapeHtml(proj.name)}" aria-label="${escapeHtml(proj.name)}" onclick="openProjectWorkspace('${proj.id}')">
+              <div class="project-dot" style="background: ${getThemeColor(proj.theme)}"></div>
+              <span class="project-nav-name">${escapeHtml(proj.name)}</span>
+              <span class="badge-builds">${escapeHtml(proj.status || proj.preview_status || 'ready')}</span>
+            </button>
+          `).join('');
+        }
+      }
+
+      // Grid projects rendering
+      if (totalCount === 0) {
+        grid.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="18" height="18" x="3" y="3" rx="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+              </svg>
+            </div>
+            <h3 class="empty-title">Your workspace is quiet</h3>
+            <p class="empty-desc">Describe your first idea above or click 'New Project' to start building something amazing.</p>
+          </div>
+        `;
+      } else {
+        grid.innerHTML = projects.map(proj => `
+          <div class="project-card" data-id="${proj.id}" style="--project-accent:${getThemeColor(proj.theme)}">
+            <div class="project-preview-shell">
+              <div class="project-preview-empty" aria-hidden="true">
+                <span class="project-preview-mark">${escapeHtml((proj.name || 'H').slice(0,1).toUpperCase())}</span>
+              </div>
+              <div class="project-hover-actions" aria-label="Project actions">
+                <button class="project-hover-button btn-open-project" type="button">Open</button>
+                <button class="project-hover-button danger btn-card-delete" type="button" title="Delete Project" aria-label="Delete project">Delete</button>
+              </div>
+            </div>
+            <div class="project-card-body">
+              <div class="project-card-title">
+                <span class="card-name">${escapeHtml(proj.name)}</span>
+                <span class="card-meta">${escapeHtml(getTemplateLabel(proj.template))} &middot; Updated ${escapeHtml(relativeTime(proj.updated_at || proj.created_at || proj.createdAt))}</span>
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+        // Re-bind workspace open triggers
+        grid.querySelectorAll('.project-card').forEach(card => {
+          const pid = card.dataset.id;
+          card.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-card-delete')) return; // handled separately
+            openProjectWorkspace(pid);
+          });
+        });
+      }
+    }
+
+    renderProjects();
+
+    document.querySelectorAll('#submit-btn, .btn-open-project').forEach(el => {
+      el.addEventListener('click', (e) => {
+        // Only trigger if active (for submit-btn)
+        if (el.id === 'submit-btn' && !el.classList.contains('active')) return;
+        
+        if (el.id === 'submit-btn') {
+          const mainIdea = document.getElementById('ai-textarea')?.value.trim() || '';
+          if (mainIdea) {
+            openNewBuilder(mainIdea);
+          }
+          return;
+        }
+        navigate('/builder.html');
+      });
+    });
+
+    // Intercept internal links
+    document.addEventListener('click', (e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const link = e.target.closest('a');
+        if (link && link.href && link.origin === window.location.origin && !link.hasAttribute('download') && link.target !== '_blank') {
+            const href = link.getAttribute('href');
+            if (href && (href.startsWith('#') || href === '')) {
+                return;
+            }
+            if (link.closest('.dropdown')) return; // Allow dropdown links if they exist
+            e.preventDefault();
+            navigate(link.href);
+        }
+    });
+
+    // 8. Delete Project Flow
+    const deleteModal = document.getElementById('delete-modal');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalConfirm = document.getElementById('modal-confirm');
+    let projectToDeleteId = null;
+
+    document.addEventListener('click', (e) => {
+      const deleteBtn = e.target.closest('.btn-card-delete');
+      if (deleteBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const cardObj = deleteBtn.closest('.project-card');
+        if (cardObj) {
+          projectToDeleteId = cardObj.dataset.id;
+          deleteModal?.classList.add('open');
+        }
+      }
+    });
+
+    modalCancel?.addEventListener('click', () => {
+      deleteModal.classList.remove('open');
+      projectToDeleteId = null;
+    });
+
+    deleteModal?.addEventListener('click', (e) => {
+      if (e.target === deleteModal) {
+        deleteModal.classList.remove('open');
+        projectToDeleteId = null;
+      }
+    });
+
+    modalConfirm?.addEventListener('click', () => {
+      projectToDeleteId = null;
+      deleteModal.classList.remove('open');
+    });
+
+    // New Project Modal Flow
+    const newProjectModal = document.getElementById('new-project-modal');
+    const btnNewProjectSidebar = document.getElementById('btn-new-project');
+    const btnCreateTop = document.getElementById('btn-create-top');
+    const btnCancelNewProj = document.getElementById('btn-new-proj-cancel');
+    const btnConfirmNewProj = document.getElementById('btn-new-proj-create');
+    
+    // Inputs
+    const newProjNameInput = document.getElementById('new-proj-name');
+    const newProjTemplateSelect = document.getElementById('new-proj-template');
+    const newProjThemeSelect = document.getElementById('new-proj-theme');
+    const newProjModelSelect = document.getElementById('new-proj-model');
+
+    function openNewProjectModal() {
+      openNewBuilder();
+    }
+
+    if (btnNewProjectSidebar) {
+      btnNewProjectSidebar.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openNewProjectModal();
+      });
+    }
+
+    if (btnCreateTop) {
+      btnCreateTop.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openNewProjectModal();
+      });
+    }
+
+    if (btnCancelNewProj) {
+      btnCancelNewProj.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (newProjectModal) {
+          newProjectModal.classList.remove('open');
+        }
+      });
+    }
+
+    if (newProjectModal) {
+      newProjectModal.addEventListener('click', (e) => {
+        if (e.target === newProjectModal) {
+          newProjectModal.classList.remove('open');
+        }
+      });
+    }
+
+    if (btnConfirmNewProj) {
+      btnConfirmNewProj.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        const nameVal = newProjNameInput ? newProjNameInput.value.trim() : '';
+        if (!nameVal) {
+          alert("Please enter a valid project name.");
+          return;
+        }
+
+        const templateVal = newProjTemplateSelect ? newProjTemplateSelect.value : 'dashboard';
+        const themeVal = newProjThemeSelect ? newProjThemeSelect.value : 'light';
+        const modelVal = newProjModelSelect ? newProjModelSelect.value : 'auto';
+
+        const hasDb = document.getElementById('features-db')?.checked || false;
+        const hasAuth = document.getElementById('features-auth')?.checked || false;
+        const hasExport = document.getElementById('features-export')?.checked || false;
+        const hasSeo = document.getElementById('features-seo')?.checked || false;
+
+        const configFeatures = [];
+        if (hasDb) configFeatures.push("db");
+        if (hasAuth) configFeatures.push("auth");
+        if (hasExport) configFeatures.push("export");
+        if (hasSeo) configFeatures.push("seo");
+
+        if (newProjectModal) {
+          newProjectModal.classList.remove('open');
+        }
+        openNewBuilder(`${nameVal}\nTemplate: ${templateVal}\nTheme: ${themeVal}\nModel: ${modelVal}\nFeatures: ${configFeatures.join(', ') || 'responsive UI'}`);
+      });
+    }
+
+    const upgradeModal = document.getElementById('upgrade-modal');
+    const btnUpgradeDashboard = document.getElementById('btn-upgrade-dashboard');
+    const btnUpgradeClose = document.getElementById('btn-upgrade-close');
+    const btnUpgradeLater = document.getElementById('btn-upgrade-later');
+    const btnUpgradePricing = document.getElementById('btn-upgrade-pricing');
+
+    function openUpgradeModal() {
+      if (upgradeModal) upgradeModal.classList.add('open');
+      window.codenTrackFunnelEvent?.('upgrade_modal_opened', { surface: 'dashboard', recommended_plan: 'pro' });
+    }
+
+    function closeUpgradeModal() {
+      if (upgradeModal) upgradeModal.classList.remove('open');
+    }
+
+    btnUpgradeDashboard?.addEventListener('click', (e) => {
+      e.preventDefault();
+      openUpgradeModal();
+    });
+    btnUpgradeClose?.addEventListener('click', closeUpgradeModal);
+    btnUpgradeLater?.addEventListener('click', closeUpgradeModal);
+    btnUpgradePricing?.addEventListener('click', () => {
+      window.codenTrackFunnelEvent?.('upgrade_pricing_clicked', { surface: 'dashboard', plan: 'pro', billing: 'monthly' });
+      navigate('/pricing.html?plan=pro&billing=monthly');
+    });
+    upgradeModal?.addEventListener('click', (e) => {
+      if (e.target === upgradeModal) closeUpgradeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeUpgradeModal();
+    });
+
+    // 9. Settings Logic
+    const btnSettings = document.getElementById('btn-settings');
+    const settingsPanel = document.getElementById('settings-panel');
+    const settingsOverlay = document.getElementById('settings-overlay');
+    const btnCloseSettings = document.getElementById('btn-close-settings');
+    const settingsTabs = document.querySelectorAll('.settings-tab');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+    const saveBtn = document.getElementById('save-settings');
+    const saveStatus = document.getElementById('save-status');
+
+    function openSettings() {
+      settingsOverlay?.classList.add('open');
+      settingsPanel?.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeSettings() {
+      settingsOverlay?.classList.remove('open');
+      settingsPanel?.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    btnSettings?.addEventListener('click', openSettings);
+    btnCloseSettings?.addEventListener('click', closeSettings);
+    settingsOverlay?.addEventListener('click', closeSettings);
+
+    settingsTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        settingsTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        tabPanels.forEach(panel => {
+          panel.classList.add('hidden');
+          if (panel.id === `tab-${target}`) panel.classList.remove('hidden');
+        });
+      });
+    });
+
+    saveBtn?.addEventListener('click', () => {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+      
+      setTimeout(() => {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Changes';
+        saveStatus.textContent = '✓ Changes saved successfully';
+        setTimeout(() => saveStatus.textContent = '', 3000);
+      }, 1000);
+    });
+
+    const DASHBOARD_COLLAPSE_STATE_KEY = 'coden-dashboard-collapse-state-v1';
+    const DASHBOARD_SIDEBAR_COLLAPSED_KEY = 'coden-dashboard-sidebar-collapsed';
+
+    function readCollapseState() {
+      try {
+        return JSON.parse(localStorage.getItem(DASHBOARD_COLLAPSE_STATE_KEY) || '{}') || {};
+      } catch {
+        return {};
+      }
+    }
+
+    const dashboardCollapseState = readCollapseState();
+
+    function writeCollapseState() {
+      try {
+        localStorage.setItem(DASHBOARD_COLLAPSE_STATE_KEY, JSON.stringify(dashboardCollapseState));
+      } catch {
+        // Preference persistence is optional; the UI still works in-session.
+      }
+    }
+
+    function addCollapseChevron(control) {
+      if (!control || control.querySelector('.dashboard-collapse-chev')) return;
+      const chevron = document.createElement('span');
+      chevron.className = 'dashboard-collapse-chev';
+      chevron.setAttribute('aria-hidden', 'true');
+      control.appendChild(chevron);
+    }
+
+    function prepareCollapseControl(control, label) {
+      if (!control) return;
+      control.setAttribute('role', 'button');
+      control.setAttribute('tabindex', '0');
+      control.setAttribute('aria-label', label);
+      addCollapseChevron(control);
+    }
+
+    function bindCollapseControl(key, control, target, options = {}) {
+      if (!control || !target) return;
+      const initialCollapsed = key in dashboardCollapseState
+        ? Boolean(dashboardCollapseState[key])
+        : Boolean(options.defaultCollapsed);
+
+      prepareCollapseControl(control, options.label || 'Toggle section');
+
+      const setCollapsed = (collapsed, persist = true) => {
+        target.classList.toggle('is-collapsed', collapsed);
+        control.setAttribute('aria-expanded', String(!collapsed));
+        control.setAttribute('title', collapsed ? 'Expand section' : 'Collapse section');
+        if (persist) {
+          dashboardCollapseState[key] = collapsed;
+          writeCollapseState();
+        }
+      };
+
+      const toggle = () => setCollapsed(!target.classList.contains('is-collapsed'));
+
+      control.addEventListener('click', toggle);
+      control.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggle();
+      });
+
+      setCollapsed(initialCollapsed, false);
+    }
+
+    function enhanceDashboardCollapses() {
+      const creditsBlock = document.querySelector('.sidebar-credits');
+      const creditsHeader = creditsBlock?.querySelector('.credits-header');
+      bindCollapseControl('sidebar:credits', creditsHeader, creditsBlock, { label: 'Toggle plan and credits' });
+
+      const projectsLabel = document.querySelector('.nav-label[data-i18n="dash.projects"]')
+        || Array.from(document.querySelectorAll('.nav-label')).find(label => ['projects', 'projets'].includes(label.textContent?.trim().toLowerCase()));
+      const projectsList = document.getElementById('sidebar-projects-list');
+      if (projectsLabel) projectsLabel.classList.add('dashboard-collapse-label');
+      bindCollapseControl('sidebar:projects', projectsLabel, projectsList, { label: 'Toggle projects list' });
+
+      document.querySelectorAll('.settings-block').forEach((block, index) => {
+        const title = block.querySelector('.block-title');
+        const panel = block.closest('.tab-panel');
+        const titleText = title?.textContent?.trim().toLowerCase().replace(/\s+/g, '-') || `block-${index}`;
+        const panelId = panel?.id || 'settings';
+        bindCollapseControl(`settings:${panelId}:${titleText}`, title, block, { label: `Toggle ${title?.textContent?.trim() || 'settings section'}` });
+      });
+    }
+
+    enhanceDashboardCollapses();
+
+    // Left panel collapse, compact rail and mobile drawer logic
+    const sidebar = document.querySelector('.sidebar');
+    const btnCollapseSidebar = document.getElementById('btn-collapse-sidebar');
+    const btnExpandSidebar = document.getElementById('btn-expand-sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const dashboardRoot = document.querySelector('.dashboard');
+    const sidebarMedia = window.matchMedia('(max-width: 899px)');
+    let sidebarMobileOpen = false;
+    let sidebarWasCollapsed = false;
+    let sidebarFocusBeforeOpen = null;
+
+    const isMobileSidebar = () => sidebarMedia.matches;
+
+    function getSidebarFocusableElements() {
+      if (!sidebar) return [];
+      return Array.from(sidebar.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter((element) => {
+        const node = element;
+        return !node.hidden && node.getClientRects().length > 0;
+      });
+    }
+
+    function setMobileSidebarOpen(open, restoreFocus = true) {
+      if (!isMobileSidebar()) {
+        if (!open) {
+          sidebarMobileOpen = false;
+          dashboardRoot?.classList.remove('sidebar-mobile-open');
+          document.body.classList.remove('coden-sidebar-lock');
+          if (sidebarBackdrop) {
+            sidebarBackdrop.hidden = true;
+            sidebarBackdrop.setAttribute('aria-hidden', 'true');
+          }
+          sidebar?.setAttribute('aria-hidden', 'false');
+          sidebar?.removeAttribute('inert');
+        }
+        return;
+      }
+      if (open && !sidebarMobileOpen) {
+        sidebarFocusBeforeOpen = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      }
+      sidebarMobileOpen = open;
+      if (open) {
+        sidebarWasCollapsed = sidebar?.classList.contains('collapsed') ?? false;
+        sidebar?.classList.remove('collapsed');
+      }
+      dashboardRoot?.classList.toggle('sidebar-mobile-open', open);
+      document.body.classList.toggle('coden-sidebar-lock', open);
+      if (sidebarBackdrop) {
+        sidebarBackdrop.hidden = !open;
+        sidebarBackdrop.setAttribute('aria-hidden', String(!open));
+      }
+      sidebar?.setAttribute('aria-hidden', String(!open));
+      sidebar?.toggleAttribute('inert', !open);
+      btnExpandSidebar?.setAttribute('aria-expanded', String(open));
+      btnCollapseSidebar?.setAttribute('aria-expanded', String(open));
+      if (open) {
+        window.requestAnimationFrame(() => {
+          const firstFocusable = getSidebarFocusableElements()[0];
+          (firstFocusable || btnCollapseSidebar)?.focus();
+        });
+      } else if (restoreFocus) {
+        window.requestAnimationFrame(() => {
+          (sidebarFocusBeforeOpen || btnExpandSidebar)?.focus();
+          sidebarFocusBeforeOpen = null;
+        });
+      }
+    }
+
+    function setSidebarCollapsed(collapsed, persist = true) {
+      if (isMobileSidebar()) {
+        sidebarWasCollapsed = collapsed;
+        sidebar?.classList.remove('collapsed');
+        if (btnExpandSidebar) btnExpandSidebar.style.display = 'flex';
+        btnExpandSidebar?.setAttribute('aria-expanded', String(sidebarMobileOpen));
+        btnCollapseSidebar?.setAttribute('aria-expanded', String(sidebarMobileOpen));
+        return;
+      }
+      sidebar?.classList.toggle('collapsed', collapsed);
+      if (btnExpandSidebar) btnExpandSidebar.style.display = collapsed ? 'flex' : 'none';
+      btnCollapseSidebar?.setAttribute('aria-expanded', String(!collapsed));
+      btnExpandSidebar?.setAttribute('aria-expanded', String(collapsed));
+      if (persist) {
+        try {
+          localStorage.setItem(DASHBOARD_SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
+        } catch {
+          // Non-critical preference.
+        }
+      }
+    }
+
+    function collapseSidebar() {
+      if (isMobileSidebar()) setMobileSidebarOpen(false);
+      else setSidebarCollapsed(true);
+    }
+
+    function expandSidebar() {
+      if (isMobileSidebar()) setMobileSidebarOpen(true);
+      else setSidebarCollapsed(false);
+    }
+
+    btnCollapseSidebar?.addEventListener('click', collapseSidebar);
+    btnExpandSidebar?.addEventListener('click', expandSidebar);
+    sidebarBackdrop?.addEventListener('click', () => setMobileSidebarOpen(false));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && sidebarMobileOpen) setMobileSidebarOpen(false);
+      if (event.key !== 'Tab' || !sidebarMobileOpen) return;
+      const focusable = getSidebarFocusableElements();
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    sidebar?.addEventListener('click', event => {
+      if (!isMobileSidebar()) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('#sidebar-projects-list, #btn-new-project, #btn-upgrade-dashboard, .sidebar-footer a, [data-auth-logout]')) {
+        setMobileSidebarOpen(false, false);
+      }
+    });
+
+    try {
+      const savedCollapsed = localStorage.getItem(DASHBOARD_SIDEBAR_COLLAPSED_KEY) === '1';
+      sidebarWasCollapsed = savedCollapsed;
+      setSidebarCollapsed(savedCollapsed, false);
+    } catch {
+      setSidebarCollapsed(false, false);
+    }
+    if (isMobileSidebar()) setMobileSidebarOpen(false, false);
+
+    const syncSidebarMode = () => {
+      if (isMobileSidebar()) {
+        setMobileSidebarOpen(false, false);
+        return;
+      }
+      setMobileSidebarOpen(false, false);
+      try {
+        setSidebarCollapsed(localStorage.getItem(DASHBOARD_SIDEBAR_COLLAPSED_KEY) === '1', false);
+      } catch {
+        setSidebarCollapsed(false, false);
+      }
+    };
+    sidebarMedia.addEventListener?.('change', syncSidebarMode);
+
+    // Save simulation triggered by Ctrl+S / Cmd+S
+    function showSaveToast() {
+      // Remove existing toast if any
+      const existing = document.getElementById("save-success-toast");
+      if (existing) {
+        existing.remove();
+      }
+
+      const toast = document.createElement("div");
+      toast.id = "save-success-toast";
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-left: 3px solid #10b981;
+        border-radius: 8px;
+        padding: 12px 16px;
+        box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        z-index: 99999;
+        transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+        transform: translateY(20px);
+        opacity: 0;
+      `;
+
+      toast.innerHTML = `
+        <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; flex-shrink: 0;"></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-weight: 500; color: var(--text);">Project Saved</span>
+          <span style="font-size: 11px; color: var(--text-muted);">Ctrl+S simulation saved successfully</span>
+        </div>
+        <button style="background: none; border: none; padding: 4px; color: var(--text-sub); cursor: pointer; font-size: 14px; line-height: 1; margin-left: 8px; display: flex;" onclick="this.parentElement.remove()">✕</button>
+      `;
+
+      document.body.appendChild(toast);
+
+      // Trigger entering animation
+      requestAnimationFrame(() => {
+        toast.style.transform = "translateY(0)";
+        toast.style.opacity = "1";
+      });
+
+      // Fade out and remove after 3s
+      setTimeout(() => {
+        toast.style.transform = "translateY(20px)";
+        toast.style.opacity = "0";
+        setTimeout(() => {
+          toast.remove();
+        }, 300);
+      }, 3000);
+    }
+
+    document.addEventListener("keydown", function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        showSaveToast();
+      }
+    });
+  </script>
+  <div class="settings-overlay" id="settings-overlay"></div>
+  <div class="settings-panel" id="settings-panel">
+    <div class="settings-header">
+      <h2 class="settings-title">Settings</h2>
+      <button class="btn-close-settings" id="btn-close-settings">✕</button>
+    </div>
+    <div class="settings-tabs">
+      <button class="settings-tab active" data-tab="profil">Profile</button>
+      <button class="settings-tab" data-tab="compte">Account</button>
+      <button class="settings-tab" data-tab="apparence">Appearance</button>
+      <button class="settings-tab" data-tab="ia">AI Usage</button>
+      <button class="settings-tab" data-tab="api">API</button>
+      <button class="settings-tab danger" data-tab="danger">Danger Zone</button>
+    </div>
+    <div class="settings-body">
+      <!-- Profil -->
+      <div class="tab-panel" id="tab-profil">
+        <div class="settings-block">
+          <span class="block-title">Identity</span>
+          <div class="avatar-editor">
+            <div class="avatar-large">U</div>
+            <div class="form-row">
+              <span class="form-label">Avatar</span>
+              <span class="form-sublabel">JPG, PNG or GIF. Max 2MB.</span>
+              <button class="btn-secondary" style="margin-top:4px">Change</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <span class="form-label">Display Name</span>
+            <input type="text" class="settings-input" value="User Account">
+          </div>
+          <div class="form-row">
+            <span class="form-label">Email</span>
+            <input type="email" class="settings-input" value="user@example.com">
+          </div>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Bio</span>
+          <div class="form-row">
+            <textarea class="settings-input" style="height:100px; resize:none" placeholder="Briefly describe your focus..."></textarea>
+          </div>
+        </div>
+      </div>
+      <!-- Compte -->
+      <div class="tab-panel hidden" id="tab-compte">
+        <div class="settings-block">
+          <span class="block-title">Subscription</span>
+          <div class="danger-row" style="background:var(--bg-elevated); border-color:var(--border-mid)">
+            <div class="form-row">
+              <span class="form-label">Free Plan</span>
+              <span class="form-sublabel">Credits are synced from billing.</span>
+            </div>
+            <button class="btn-primary" style="background:var(--warning); color:white; padding:6px 14px; font-size:12px">Upgrade to Pro</button>
+          </div>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Security</span>
+          <div class="form-row horizontal">
+            <div class="form-row">
+              <span class="form-label">Two-Factor Authentication</span>
+              <span class="form-sublabel">Secure your account via TOTP</span>
+            </div>
+            <div class="toggle"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Apparence -->
+      <div class="tab-panel hidden" id="tab-apparence">
+        <div class="settings-block">
+          <span class="block-title">Theme</span>
+          <div class="form-row">
+             <span class="form-label">Display Mode</span>
+             <select class="settings-select">
+               <option value="light">Light (default)</option>
+               <option value="dark">Dark</option>
+               <option value="system">System</option>
+             </select>
+          </div>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Interface</span>
+          <div class="form-row horizontal">
+            <div class="form-row">
+              <span class="form-label">Animations</span>
+              <span class="form-sublabel">Enable fluid transitions</span>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+        </div>
+      </div>
+      <!-- IA -->
+      <div class="tab-panel hidden" id="tab-ia">
+        <div class="settings-block">
+          <span class="block-title">AI Usage</span>
+          <div class="usage-summary-grid">
+            <div class="usage-card">
+              <span class="usage-card-label">Balance</span>
+              <strong class="usage-card-value" id="ai-usage-balance">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Monthly</span>
+              <strong class="usage-card-value" id="ai-usage-monthly">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Daily promo</span>
+              <strong class="usage-card-value" id="ai-usage-daily">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Top-ups</span>
+              <strong class="usage-card-value" id="ai-usage-topups">--</strong>
+            </div>
+          </div>
+          <span class="form-sublabel">Credit usage lives here, away from the generation flow.</span>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Coden Cloud</span>
+          <div class="usage-summary-grid">
+            <div class="usage-card">
+              <span class="usage-card-label">Cloud balance</span>
+              <strong class="usage-card-value" id="cloud-balance">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">AI app balance</span>
+              <strong class="usage-card-value" id="cloud-ai-app">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Top-up from</span>
+              <strong class="usage-card-value" id="cloud-topup-min">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Database</span>
+              <strong class="usage-card-value" id="cloud-db-storage">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Files</span>
+              <strong class="usage-card-value" id="cloud-file-storage">--</strong>
+            </div>
+            <div class="usage-card">
+              <span class="usage-card-label">Bandwidth</span>
+              <strong class="usage-card-value" id="cloud-bandwidth">--</strong>
+            </div>
+          </div>
+          <span class="form-sublabel">Coden Cloud runs published apps: hosting, database, storage, realtime, bandwidth and deployed AI features.</span>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Recent AI Actions</span>
+          <div class="usage-list" id="ai-usage-history">
+            <div class="usage-empty">AI usage history will appear here after your first Plan, Build, Fix or Deploy action.</div>
+          </div>
+        </div>
+        <div class="settings-block">
+          <span class="block-title">Model credit rates</span>
+          <div class="usage-list" id="model-credit-rates">
+            <div class="usage-empty">Model credit rates are loading.</div>
+          </div>
+        </div>
+      </div>
+      <!-- API -->
+      <div class="tab-panel hidden" id="tab-api">
+        <div class="settings-block">
+          <span class="block-title">API Keys</span>
+          <div class="form-row">
+            <span class="form-label">Primary Key</span>
+            <div style="display:flex; gap:8px">
+              <input type="text" class="settings-input mono" readonly value="hgy_sk_••••••••••••••••••••">
+              <button class="btn-secondary" style="padding:0 12px">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Danger -->
+      <div class="tab-panel hidden" id="tab-danger">
+        <div class="settings-block">
+          <span class="block-title">Irreversible Actions</span>
+          <div class="danger-row">
+            <div class="form-row">
+              <span class="form-label" style="color:var(--error)">Delete all projects</span>
+              <span class="form-sublabel">This will erase your current projects.</span>
+            </div>
+            <button class="btn-danger-sm">Reset</button>
+          </div>
+          <div class="danger-row" style="border-color:var(--error)">
+            <div class="form-row">
+              <span class="form-label" style="color:var(--error)">Delete account</span>
+              <span class="form-sublabel">All your data will be permanently deleted.</span>
+            </div>
+            <button class="btn-danger-sm" style="background:var(--error); color:white">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-footer">
+      <div class="save-status" id="save-status"></div>
+      <div style="display:flex; gap:8px">
+        <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+        <button class="btn-primary" id="save-settings">Save Changes</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal-content">
+      <h3 class="modal-title">Delete Project?</h3>
+      <p class="modal-desc">This action is irreversible. All data, code, and associated deployments will be permanently deleted.</p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-cancel" id="modal-cancel">Cancel</button>
+        <button class="btn-modal btn-confirm-delete" id="modal-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="upgrade-modal">
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
+      <button id="btn-upgrade-close" aria-label="Close upgrade modal" style="position:absolute; top:14px; right:14px; width:28px; height:28px; border-radius:6px; border:1px solid var(--border); background:var(--bg-elevated); color:var(--text-sub);">x</button>
+      <h3 class="modal-title" id="upgrade-modal-title">Choisissez le forfait adapté à votre projet</h3>
+      <p class="modal-desc">Les crédits servent à construire. L’hébergement sert à garder vos applications publiées en ligne.</p>
+      <div style="display:grid; gap:10px; margin:16px 0 20px;">
+        <div style="display:flex; justify-content:space-between; gap:16px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated);">
+          <span>Pro</span>
+          <strong>25 $/mois · 1 000 crédits · 10 $ d’hébergement</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; gap:16px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-elevated);">
+          <span>Scale</span>
+          <strong>200 $/mois · 10 000 crédits · 75 $ d’hébergement + équipe</strong>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-modal btn-cancel" id="btn-upgrade-later" type="button">Plus tard</button>
+        <button class="btn-modal" id="btn-upgrade-pricing" type="button" style="background: var(--accent); color: var(--bg); font-weight: 600;">Comparer les forfaits</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function bindLateDashboardModals() {
+      const onReady = (callback) => {
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', callback);
+        } else {
+          callback();
+        }
+      };
+
+      const saveProjectAndOpenBuilder = () => {
+        const nameInput = document.getElementById('new-proj-name');
+        const templateSelect = document.getElementById('new-proj-template');
+        const themeSelect = document.getElementById('new-proj-theme');
+        const modelSelect = document.getElementById('new-proj-model');
+        const name = nameInput?.value.trim();
+
+        if (!name) {
+          alert('Please enter a valid project name.');
+          return;
+        }
+
+        const template = templateSelect?.value || 'dashboard';
+        const prompt = `${name}\nTemplate: ${template}\nTheme: ${themeSelect?.value || 'light'}\nModel: ${modelSelect?.value || 'auto'}`;
+        sessionStorage.setItem('coden-initial-prompt', prompt);
+        sessionStorage.setItem('coden-requested-mode', 'auto');
+        localStorage.removeItem('coden-initial-prompt');
+        localStorage.removeItem('coden-current-project');
+        localStorage.removeItem('coden-last-builder-project-id');
+        if (typeof navigate === 'function') {
+          navigate('/builder.html?new=1');
+        } else {
+          window.location.href = '/builder.html?new=1';
+        }
+      };
+
+      onReady(() => {
+        const newProjectModal = document.getElementById('new-project-modal');
+        const upgradeModal = document.getElementById('upgrade-modal');
+        const deleteModal = document.getElementById('delete-modal');
+
+        const openNewProjectModal = (event) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          if (typeof openNewBuilder === 'function') {
+            openNewBuilder();
+          } else {
+            localStorage.removeItem('coden-current-project');
+            localStorage.removeItem('coden-last-builder-project-id');
+            window.location.href = '/builder.html?new=1';
+          }
+        };
+
+        const closeNewProjectModal = () => newProjectModal?.classList.remove('open');
+        const openUpgradeModal = () => upgradeModal?.classList.add('open');
+        const closeUpgradeModal = () => upgradeModal?.classList.remove('open');
+
+        document.getElementById('btn-new-project')?.addEventListener('click', openNewProjectModal);
+        document.getElementById('btn-create-top')?.addEventListener('click', openNewProjectModal);
+        document.getElementById('btn-new-proj-cancel')?.addEventListener('click', closeNewProjectModal);
+        document.getElementById('btn-new-proj-create')?.addEventListener('click', (event) => {
+          event.preventDefault();
+          saveProjectAndOpenBuilder();
+        });
+        newProjectModal?.addEventListener('click', (event) => {
+          if (event.target === newProjectModal) closeNewProjectModal();
+        });
+
+        document.getElementById('btn-upgrade-dashboard')?.addEventListener('click', openUpgradeModal);
+        document.getElementById('btn-upgrade-close')?.addEventListener('click', closeUpgradeModal);
+        document.getElementById('btn-upgrade-later')?.addEventListener('click', closeUpgradeModal);
+        document.getElementById('btn-upgrade-pricing')?.addEventListener('click', () => {
+          if (typeof navigate === 'function') {
+            navigate('/pricing.html?plan=pro&billing=monthly');
+          } else {
+            window.location.href = '/pricing.html?plan=pro&billing=monthly';
+          }
+        });
+        upgradeModal?.addEventListener('click', (event) => {
+          if (event.target === upgradeModal) closeUpgradeModal();
+        });
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            closeNewProjectModal();
+            closeUpgradeModal();
+            deleteModal?.classList.remove('open');
+          }
+        });
+      });
+    })();
+  </script>
+  <script type="module" src="/src/dashboard-i18n.ts"></script>
+  <script type="module" src="/src/dashboard-live.ts"></script>
+</body>
+</html>

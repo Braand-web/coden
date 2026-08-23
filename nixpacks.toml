@@ -1,0 +1,15 @@
+[variables]
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-10_x"]
+
+[phases.install]
+cmds = ["npm install --include=dev --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start"

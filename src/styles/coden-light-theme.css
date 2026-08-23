@@ -1,0 +1,274 @@
+/*
+ * Coden Light Mode
+ * A single late-loading light palette for public pages and product surfaces.
+ * Dark mode is intentionally untouched.
+ */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --coden-bg: #ffffff;
+  --coden-bg-warm: #fafafa;
+  --coden-surface: #ffffff;
+  --coden-surface-raised: #f4f4f5;
+  --coden-text: #0a0a0a;
+  --coden-muted: #52525b;
+  --coden-subtle: #71717a;
+  --coden-border: #e4e4e7;
+  --coden-border-strong: #d4d4d8;
+  --coden-blue: #2563eb;
+  --coden-blue-deep: #1d4ed8;
+  --coden-blue-ink: #1e3a8a;
+  --coden-blue-soft: #eff6ff;
+  --coden-blue-hover: #dbeafe;
+  --coden-blue-active: #bfdbfe;
+  --coden-focus: rgba(37, 99, 235, 0.26);
+  --coden-shadow-soft: 0 1px 2px rgba(10, 10, 10, 0.04);
+  --coden-shadow-card: 0 16px 40px rgba(10, 10, 10, 0.09), 0 2px 8px rgba(10, 10, 10, 0.04);
+
+  --bg: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f4f4f5;
+  --bg-input: #ffffff;
+  --bg-panel: #fafafa;
+  --accent: #2563eb;
+  --accent-spark: #2563eb;
+  --accent-blue: #2563eb;
+  --accent-blue-deep: #1d4ed8;
+  --accent-blue-soft: #eff6ff;
+  --accent-blue-hover: #dbeafe;
+  --accent-blue-active: #bfdbfe;
+  --accent-dim: rgba(10, 10, 10, 0.045);
+  --accent-hover: rgba(10, 10, 10, 0.075);
+  --accent-active: rgba(10, 10, 10, 0.11);
+  --text: #0a0a0a;
+  --text-muted: #52525b;
+  --text-sub: #71717a;
+  --text-dark: #52525b;
+  --border: #e4e4e7;
+  --border-light: #f4f4f5;
+  --border-mid: #d4d4d8;
+  --border-focus: rgba(37, 99, 235, 0.38);
+  --blue: #2563eb;
+  --blue-dim: #eff6ff;
+  --caret: #2563eb;
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --nav-line: #e4e4e7;
+  --shadow-sm: 0 1px 2px rgba(10, 10, 10, 0.04);
+  --shadow-md: 0 8px 24px rgba(10, 10, 10, 0.07), 0 1px 2px rgba(10, 10, 10, 0.04);
+  --shadow-lg: 0 22px 54px rgba(10, 10, 10, 0.10), 0 2px 8px rgba(10, 10, 10, 0.04);
+
+  --kimi-bg: #ffffff;
+  --kimi-sidebar: #fafafa;
+  --kimi-surface: #ffffff;
+  --kimi-surface-raised: #f4f4f5;
+  --kimi-border: #e4e4e7;
+  --kimi-border-strong: #d4d4d8;
+  --kimi-text: #0a0a0a;
+  --kimi-muted: #52525b;
+  --kimi-sub: #71717a;
+  --kimi-blue: #2563eb;
+  --kimi-blue-soft: #eff6ff;
+  --kimi-blue-hover: #dbeafe;
+}
+
+:root[data-theme="light"] body,
+:root[data-theme="light"] .main-area,
+:root[data-theme="light"] .app-workspace,
+:root[data-theme="light"] .dashboard {
+  background: #ffffff;
+  color: var(--text);
+}
+
+:root[data-theme="light"] body::before {
+  opacity: 0 !important;
+}
+
+:root[data-theme="light"] :where(
+  .navbar,
+  .topbar,
+  .brand-topbar,
+  .sidebar,
+  .main-panel,
+  .chat-input-area,
+  .settings-sidebar,
+  .settings-panel
+) {
+  background-color: var(--bg-surface);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] :where(.sidebar, .settings-sidebar, .preview-panel, .preview-toolbar, .panel-tabs) {
+  background-color: var(--bg-panel) !important;
+}
+
+:root[data-theme="light"] :where(
+  .card,
+  .feature-card,
+  .pricing-card,
+  .testimonial-card,
+  .project-card,
+  .activity-list,
+  .create-section,
+  .auth-card,
+  .settings-block,
+  .settings-section,
+  .modal-content,
+  .modal-container,
+  .publish-popover,
+  .dropdown,
+  .coden-model-dropdown,
+  .model-provider-panel,
+  .prompt-mode-menu
+) {
+  background-color: var(--bg-surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+:root[data-theme="light"] :where(
+  .feature-card,
+  .pricing-card,
+  .testimonial-card,
+  .project-card,
+  .auth-card,
+  .modal-content,
+  .publish-popover
+):hover {
+  border-color: var(--border-mid);
+}
+
+:root[data-theme="light"] :where(
+  input,
+  textarea,
+  select,
+  .input-wrapper,
+  .search-wrapper,
+  .search-box,
+  .settings-input,
+  .chat-input-area .input-wrapper
+) {
+  background-color: var(--bg-input);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] :where(input, textarea, select)::placeholder {
+  color: var(--text-sub);
+  opacity: 1;
+}
+
+:root[data-theme="light"] :where(input, textarea, select, .input-wrapper):focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 4px var(--coden-focus);
+}
+
+:root[data-theme="light"] :where(
+  .icon-btn,
+  .action-btn,
+  .tab-btn,
+  .sub-tab,
+  .model-select,
+  .prompt-mode-btn,
+  .theme-toggle,
+  .chip,
+  .btn-secondary,
+  .btn-outline
+) {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] :where(
+  .icon-btn,
+  .action-btn,
+  .tab-btn,
+  .sub-tab,
+  .model-select,
+  .prompt-mode-btn,
+  .theme-toggle,
+  .chip,
+  .btn-secondary,
+  .btn-outline
+):hover {
+  color: var(--text);
+  background-color: var(--bg-elevated);
+  border-color: var(--border-mid);
+}
+
+:root[data-theme="light"] :where(
+  .tab-btn.active,
+  .sub-tab.active,
+  .nav-item.active,
+  .nav-link-item.active,
+  .prompt-mode-option.active,
+  .model-option.active
+) {
+  color: var(--accent-blue-deep);
+  background-color: var(--accent-blue-soft);
+  border-color: #bfdbfe;
+}
+
+:root[data-theme="light"] :where(
+  .btn-primary,
+  .btn-solid,
+  .btn-deploy,
+  .submit-btn.active,
+  .pricing-btn.primary,
+  .seo-button,
+  .card-cta
+) {
+  color: #ffffff;
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.18);
+}
+
+:root[data-theme="light"] :where(
+  .btn-primary,
+  .btn-solid,
+  .btn-deploy,
+  .submit-btn.active,
+  .pricing-btn.primary,
+  .seo-button,
+  .card-cta
+):hover {
+  background: var(--accent-blue-deep);
+  border-color: var(--accent-blue-deep);
+}
+
+:root[data-theme="light"] .preview-panel {
+  background: #f4f4f5 !important;
+}
+
+:root[data-theme="light"] :where(.preview-content, .preview-frame-wrapper, .web-preview, .artifact-preview) {
+  background-color: #ffffff;
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] :where(.muted, .text-muted, .form-sublabel, .card-meta, .create-subtitle) {
+  color: var(--text-muted);
+}
+
+:root[data-theme="light"] :where(.status-badge, .plan-badge, .workspace-plan-tag) {
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] :where(.divider, .topbar-sep, .navbar-line, hr) {
+  border-color: var(--border);
+  background-color: var(--border);
+}
+
+:root[data-theme="light"] :where(.modal-overlay, .settings-overlay) {
+  background: rgba(10, 10, 10, 0.24);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="light"] *,
+  :root[data-theme="light"] *::before,
+  :root[data-theme="light"] *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,15 @@
+/* Shared motion contract for the Vite multi-page shell. */
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --transition-micro: 160ms var(--ease-out);
+  --transition-control: 180ms var(--ease-out);
+  --transition-menu: 220ms var(--ease-out);
+  --transition-drawer: 280ms var(--ease-drawer);
+  --transition-modal: 320ms var(--ease-drawer);
+  --transition-page: 280ms var(--ease-out);
+}
+
+/* Page transitions are owned by navigation-transitions.ts. Keeping the
+   protocol in one place avoids two competing body animations. */

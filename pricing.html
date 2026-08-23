@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Coden Pricing — Build, preview and publish web apps</title>
+  <!-- CODEN_SEO_START -->
+  <meta name="description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://coden.fun/pricing.html" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Coden" />
+  <meta property="og:title" content="Coden Pricing — Build, preview and publish web apps" />
+  <meta property="og:description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
+  <meta property="og:url" content="https://coden.fun/pricing.html" />
+  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
+  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Coden Pricing — Build, preview and publish web apps" />
+  <meta name="twitter:description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
+  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Coden Pricing — Build, preview and publish web apps",
+  "description": "Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications.",
+  "url": "https://coden.fun/pricing.html"
+}</script>
+  <!-- CODEN_SEO_END -->
+    <script>
+        // Emergency fix for "Cannot set property fetch of #<Window> which has only a getter"
+        (function() {
+            try {
+                let currentFetch = window.fetch;
+                Object.defineProperty(window, 'fetch', {
+                    get: () => currentFetch,
+                    set: (v) => { currentFetch = v; },
+                    configurable: true,
+                    enumerable: true
+                });
+            } catch (e) {
+                try {
+                    window.fetch = window.fetch; 
+                } catch (e2) {}
+            }
+        })();
+    </script>
+    <script>
+        (function() {
+            const theme = localStorage.getItem('coden-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@300;400;500;600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="/src/index.css">
+    <style>
+        .pricing-hero {
+            padding: 160px 24px 80px;
+            text-align: center;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .pricing-hero h1 {
+            font-size: clamp(48px, 6vw, 92px);
+            margin-bottom: 24px;
+            line-height: 0.95;
+            animation: fadeUp 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .pricing-hero p {
+            font-size: clamp(18px, 1.2vw, 22px);
+            color: var(--text-muted);
+            max-width: 600px;
+            margin: 0 auto 48px;
+            font-weight: 300;
+            line-height: 1.5;
+            animation: fadeUp 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .pricing-explainer {
+            max-width: 640px !important;
+            margin: -40px auto 0 !important;
+            font-size: 13px !important;
+            color: var(--text-sub) !important;
+        }
+
+        .pricing-explainer strong { color: var(--text); font-weight: 700; }
+
+        .billing-toggle {
+            display: inline-flex;
+            background: var(--bg-surface);
+            padding: 4px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            margin-bottom: 64px;
+            animation: fadeUp 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .toggle-btn {
+            padding: 8px 24px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .toggle-btn.active {
+            background: var(--accent);
+            color: var(--bg);
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 28px;
+            max-width: 1400px;
+            margin: 0 auto 120px;
+            padding: 0 24px;
+        }
+
+        .pricing-card {
+            animation: fadeUp 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .pricing-card:nth-child(2) { animation-delay: 0.1s; }
+        .pricing-card:nth-child(3) { animation-delay: 0.2s; }
+
+        .billing-note {
+            color: var(--text-sub);
+            font-size: 13px;
+            line-height: 1.45;
+            margin: 16px 0 0;
+        }
+
+        /* FAQ SECTION */
+        .faq-section {
+            max-width: 880px;
+            margin: 0 auto 160px;
+            padding: 0 24px;
+        }
+
+        .faq-title {
+            font-family: "Instrument Serif";
+            font-size: 42px;
+            text-align: center;
+            margin-bottom: 64px;
+        }
+
+        .faq-item {
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            background: var(--bg-surface);
+        }
+
+        .faq-q {
+            padding: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 500;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 200ms;
+            width: 100%;
+            border: 0;
+            color: inherit;
+            text-align: left;
+            font: inherit;
+        }
+
+        .faq-q:hover {
+            background: var(--accent-dim);
+        }
+
+        .faq-a {
+            padding: 0 24px 24px;
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+            font-weight: 300;
+            display: none;
+        }
+
+        .faq-item.open .faq-a { display: block; }
+        .faq-a[hidden] { display: none; }
+        .faq-item.open .plus-icon { transform: rotate(45deg); }
+
+        .plus-icon {
+            transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+            color: var(--text-sub);
+        }
+
+        .pricing-sticky-summary { display: none; }
+
+        @media (max-width: 640px) {
+            .pricing-sticky-summary {
+                position: fixed;
+                z-index: 40;
+                left: 12px;
+                right: 12px;
+                bottom: max(12px, env(safe-area-inset-bottom));
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 10px 10px 10px 14px;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+                box-shadow: 0 16px 38px rgba(9, 9, 11, .16);
+                backdrop-filter: blur(16px);
+                font-size: 12px;
+                font-weight: 750;
+            }
+
+            .pricing-sticky-summary a {
+                min-height: 42px;
+                display: inline-flex;
+                align-items: center;
+                padding: 0 15px;
+                border-radius: 10px;
+                background: var(--accent);
+                color: var(--bg);
+                text-decoration: none;
+                white-space: nowrap;
+            }
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 968px) {
+            .pricing-grid {
+                grid-template-columns: 1fr;
+                max-width: 500px;
+            }
+        }
+    </style>
+</head>
+<body data-coden-surface="pricing">
+    <div id="curtain"></div>
+    <div class="navbar-line"></div>
+    <div id="coden-marketing-header-root" aria-live="off"></div>
+
+    <nav class="navbar" hidden aria-hidden="true">
+        <a href="/" class="logo">
+            <div class="logo-mark">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="var(--text)"/>
+                    <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
+                    <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
+                    <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                </svg>
+            </div>
+            <span class="logo-text">Coden</span>
+        </a>
+        <div class="nav-links">
+            <a href="/pricing.html" class="nav-link-item">Pricing</a>
+            <a href="/dashboard.html" class="nav-link-item">Dashboard</a>
+            <a href="/builder.html" class="nav-link-item">Builder</a>
+        </div>
+        <div class="nav-actions">
+            <button class="theme-toggle" id="theme-btn">
+                <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+                <svg id="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+            <button class="sign-in-btn">Sign In</button>
+        </div>
+    </nav>
+
+    <header class="pricing-hero">
+        <h1>Transformez votre idée.<br>Publiez une vraie application.</h1>
+        <p>Commencez gratuitement, améliorez votre produit avec l’IA et publiez-le quand il est prêt.</p>
+
+        <div class="billing-toggle">
+            <button class="toggle-btn active" type="button" data-billing-toggle="monthly" aria-pressed="true">Mensuel</button>
+            <button class="toggle-btn" type="button" data-billing-toggle="annual" aria-pressed="false">Annuel · économisez 20 %</button>
+        </div>
+        <p class="pricing-explainer"><strong>Construire</strong> avec les crédits IA. <strong>Héberger</strong> votre application publiée avec Coden Cloud.</p>
+    </header>
+
+    <section class="pricing-grid">
+        <div class="pricing-card">
+            <span class="card-name">Gratuit</span>
+            <div class="card-price">$0 <span>/mois</span></div>
+            <p class="card-desc">Validez votre idée et créez votre premier prototype.</p>
+            <ul class="feature-list">
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>50 crédits pour commencer</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>1 projet actif</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Aperçu en direct pendant la création</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>1 $ d’hébergement inclus</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Sous-domaine Coden</li>
+            </ul>
+            <a class="card-cta btn-outline" data-pricing-plan="free" href="/auth.html?plan=free&amp;billing=monthly">Créer mon prototype</a>
+        </div>
+
+        <div class="pricing-card featured">
+            <span class="featured-label">Le meilleur départ</span>
+            <span class="card-name">Pro</span>
+            <div class="card-price" id="price-pro">$25 <span>/mois</span></div>
+            <p class="card-desc">Pour publier votre application et continuer à l’améliorer.</p>
+            <ul class="feature-list">
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>1 000 crédits pour construire chaque mois</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>10 projets actifs, 3 applications publiées</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>10 $ d’hébergement inclus</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Domaine personnalisé et retrait du badge</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Publication, export, versions et restauration</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Crédits et hébergement rechargeables</li>
+            </ul>
+            <p class="billing-note" id="note-pro">Facturation mensuelle · annulation à tout moment</p>
+            <a class="card-cta btn-solid" data-pricing-plan="pro" href="/auth.html?plan=pro&amp;billing=monthly">Publier mon application</a>
+        </div>
+
+        <div class="pricing-card">
+            <span class="card-name">Scale</span>
+            <div class="card-price" id="price-scale">$200 <span>/mois</span></div>
+            <p class="card-desc">Pour les équipes qui livrent plusieurs applications en production.</p>
+            <ul class="feature-list">
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>10 000 crédits pour construire chaque mois</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Brouillons illimités, 25 applications publiées</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>75 $ d’hébergement inclus</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Plusieurs domaines personnalisés</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Espace d’équipe et rôles</li>
+                <li class="feature-item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>Support prioritaire et modèles premium</li>
+            </ul>
+            <p class="billing-note" id="note-scale">Facturation mensuelle · annulation à tout moment</p>
+            <a class="card-cta btn-outline" data-pricing-plan="scale" href="/auth.html?plan=scale&amp;billing=monthly">Construire avec mon équipe</a>
+        </div>
+    </section>
+
+    <div class="pricing-sticky-summary" id="pricing-sticky-summary" aria-live="polite">
+        <span id="pricing-sticky-label">Pro · $25/mois</span>
+        <a id="pricing-sticky-cta" data-pricing-plan="pro" href="/auth.html?plan=pro&amp;billing=monthly">Choisir Pro</a>
+    </div>
+
+    <!-- FAQ -->
+    <section class="faq-section">
+        <h2 class="faq-title">Les questions avant de vous lancer</h2>
+        <div class="faq-list">
+            <div class="faq-item">
+                <button class="faq-q" type="button" aria-expanded="false" aria-controls="pricing-faq-credits">
+                    <span>Quelle différence entre les crédits et l’hébergement ?</span>
+                    <svg class="plus-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <div class="faq-a" id="pricing-faq-credits" hidden>Les crédits servent à créer et améliorer votre application avec Coden. L’hébergement sert à garder votre application publiée en ligne avec sa base de données, son stockage et sa bande passante.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" type="button" aria-expanded="false" aria-controls="pricing-faq-usage">
+                    <span>Que se passe-t-il si mon application dépasse l’usage inclus ?</span>
+                    <svg class="plus-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <div class="faq-a" id="pricing-faq-usage" hidden>Votre application reste protégée par les limites du forfait. Vous pouvez ajouter de l’hébergement lorsque votre produit grandit ; aucune dépense ne doit être engagée sans votre action.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" type="button" aria-expanded="false" aria-controls="pricing-faq-cancel">
+                    <span>Puis-je annuler à tout moment ?</span>
+                    <svg class="plus-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <div class="faq-a" id="pricing-faq-cancel" hidden>Oui. Vous pouvez annuler depuis les réglages et conserver votre accès jusqu’à la fin de la période facturée. Vos projets restent dans votre espace.</div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-q" type="button" aria-expanded="false" aria-controls="pricing-faq-projects">
+                    <span>Vais-je perdre mes projets si je change de forfait ?</span>
+                    <svg class="plus-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <div class="faq-a" id="pricing-faq-projects" hidden>Non. Vos projets restent associés à votre compte. Les limites du nouveau forfait peuvent modifier l’accès à certaines fonctions, mais vos données ne sont pas supprimées automatiquement.</div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <a href="/" class="logo">
+                    <div class="logo-mark">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
+                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
+                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
+                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                        </svg>
+                    </div>
+                    <span class="logo-text">Coden</span>
+                </a>
+                <p>The next generation of <span class="neon-highlight neon-static">AI-native</span> software development.</p>
+            </div>
+            <div class="footer-col">
+                <h5>Product</h5>
+                <ul class="footer-links">
+                    <li><a href="/features.html">Features</a></li>
+                    <li><a href="/pricing.html">Pricing</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5>Resources</h5>
+                <ul class="footer-links">
+                    <li><a href="/documentation.html">Documentation</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h5>Company</h5>
+                <ul class="footer-links">
+                    <li><a href="/privacy.html">Privacy</a></li>
+                    <li><a href="/security.html">Security</a></li>
+                    <li><a href="/terms.html">Terms</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <span>© 2026 Coden Inc.</span>
+            <div style="display:flex;gap:20px;" aria-label="Social links">
+                <span style="color:inherit;opacity:.7;">Social profiles coming soon</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // FAQ Collapse Toggle — keyboard and screen-reader friendly.
+        document.querySelectorAll('.faq-q').forEach(q => {
+            q.addEventListener('click', () => {
+                const item = q.parentElement;
+                const answer = item?.querySelector('.faq-a');
+                const expanded = item?.classList.toggle('open') ?? false;
+                q.setAttribute('aria-expanded', String(expanded));
+                if (answer) answer.hidden = !expanded;
+            });
+        });
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

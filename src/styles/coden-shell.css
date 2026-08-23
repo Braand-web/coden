@@ -1,0 +1,174 @@
+@import "../design-system.css";
+@import "./motion-tokens.css";
+@import "./legacy-bridge.css";
+@import "../components/ui/motion.css";
+
+/* Shared Coden shell language. Values come from design-system.css; the Builder remains the visual reference. */
+:root {
+  --coden-shell-bg: var(--coden-bg);
+  --coden-shell-panel: var(--coden-panel);
+  --coden-shell-surface: var(--coden-surface);
+  --coden-shell-raised: var(--coden-surface-raised);
+  --coden-shell-input: var(--coden-input);
+  --coden-shell-text: var(--coden-text);
+  --coden-shell-muted: var(--coden-muted);
+  --coden-shell-sub: var(--coden-subtle);
+  --coden-shell-border: var(--coden-border);
+  --coden-shell-border-strong: var(--coden-border-strong);
+  --coden-shell-blue: var(--coden-blue);
+  --coden-shell-blue-deep: var(--coden-blue-deep);
+  --coden-shell-blue-soft: var(--coden-blue-soft);
+  --coden-shell-focus: var(--coden-focus);
+  --coden-shell-success: #4ade80;
+  --coden-shell-warning: #fbbf24;
+  --coden-shell-error: #f87171;
+  --coden-shell-radius-sm: var(--coden-radius-sm, 8px);
+  --coden-shell-radius-md: var(--coden-radius-md, 12px);
+  --coden-shell-radius-lg: var(--coden-radius-lg, 16px);
+  --coden-shell-shadow: var(--coden-shadow-soft);
+  --coden-shell-ease: var(--coden-ease);
+  --coden-shell-fast: var(--coden-motion-fast);
+  --coden-shell-normal: var(--coden-motion-normal);
+  --coden-shell-motion-panel: var(--coden-motion-panel);
+}
+
+:root[data-theme="light"] {
+  --coden-shell-shadow: var(--coden-shadow-soft);
+}
+
+:where(body, button, input, textarea, select) {
+  font-family: "Instrument Sans", "Inter", system-ui, sans-serif;
+}
+
+:where(button, a, input, textarea, select, summary) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--coden-shell-bg), 0 0 0 4px var(--coden-shell-focus) !important;
+}
+
+:where(.pricing-card, .auth-card, .checkout-card, .project-card, .settings-block, .settings-section, .modal-content, .modal-container, .create-section) {
+  border-radius: var(--coden-shell-radius-lg) !important;
+  border-color: var(--coden-shell-border) !important;
+  background: var(--coden-shell-surface) !important;
+  box-shadow: var(--coden-shell-shadow);
+}
+
+:where(.pricing-card, .project-card, .feature-card, .settings-block, .settings-section, .modal-content, .modal-container) {
+  transition: transform var(--coden-shell-normal) var(--coden-shell-ease), border-color var(--coden-shell-normal) var(--coden-shell-ease), box-shadow var(--coden-shell-normal) var(--coden-shell-ease), background-color var(--coden-shell-normal) var(--coden-shell-ease);
+}
+
+:where(.pricing-card, .project-card, .feature-card):hover {
+  border-color: var(--coden-shell-border-strong) !important;
+  box-shadow: var(--coden-shell-shadow);
+  transform: translateY(-2px);
+}
+
+:where(.btn-primary, .btn-solid, .btn-create-top, .btn-promo-upgrade, .btn-deploy, .submit-btn.active, .pricing-btn.primary, .card-cta, .checkout-submit) {
+  min-height: 44px;
+  border-radius: var(--coden-shell-radius-sm) !important;
+  background: var(--coden-shell-blue) !important;
+  border-color: var(--coden-shell-blue) !important;
+  color: #fff !important;
+  transition: transform var(--coden-shell-fast) var(--coden-shell-ease), background-color var(--coden-shell-fast) var(--coden-shell-ease), box-shadow var(--coden-shell-fast) var(--coden-shell-ease), opacity var(--coden-shell-fast) var(--coden-shell-ease);
+}
+
+:where(.btn-primary, .btn-solid, .btn-create-top, .btn-promo-upgrade, .btn-deploy, .submit-btn.active, .pricing-btn.primary, .card-cta, .checkout-submit):hover:not(:disabled) {
+  background: var(--coden-shell-blue-deep) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, .22);
+}
+
+:where(.btn-secondary, .btn-outline, .btn-modal, .btn-footer, .theme-toggle, .icon-btn, .tab-btn, .toggle-btn, .checkout-billing-toggle button) {
+  border-radius: var(--coden-shell-radius-sm) !important;
+  border-color: var(--coden-shell-border) !important;
+  transition: transform var(--coden-shell-fast) var(--coden-shell-ease), background-color var(--coden-shell-fast) var(--coden-shell-ease), border-color var(--coden-shell-fast) var(--coden-shell-ease), color var(--coden-shell-fast) var(--coden-shell-ease);
+}
+
+:where(.btn-secondary, .btn-outline, .btn-modal, .btn-footer, .theme-toggle, .icon-btn, .tab-btn, .toggle-btn, .checkout-billing-toggle button):hover:not(:disabled) {
+  background: var(--coden-shell-raised) !important;
+  border-color: var(--coden-shell-border-strong) !important;
+}
+
+:where(input, textarea, select, .input-wrapper, .search-wrapper, .checkout-card) {
+  border-color: var(--coden-shell-border);
+}
+
+:where(input, textarea, select):focus,
+:where(.input-wrapper, .search-wrapper):focus-within {
+  border-color: var(--coden-shell-blue) !important;
+  box-shadow: 0 0 0 3px var(--coden-shell-blue-soft) !important;
+}
+
+:where(.sidebar, .topbar, .brand-topbar, .navbar, .checkout-nav) {
+  background: var(--coden-shell-panel) !important;
+  border-color: var(--coden-shell-border) !important;
+}
+
+:where(.sidebar, .topbar, .brand-topbar, .navbar, .checkout-nav) :where(a, button) {
+  color: var(--coden-shell-muted);
+}
+
+:where(.sidebar, .topbar, .brand-topbar, .navbar, .checkout-nav) :where(a, button):hover {
+  color: var(--coden-shell-text);
+}
+
+:where(.theme-toggle, [data-theme-toggle]) {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--coden-shell-muted);
+}
+
+:where(.status-badge, .plan-badge, .workspace-plan-tag, .builder-plan-badge) {
+  border-radius: 999px !important;
+}
+
+/* Shared state vocabulary for every interactive surface. */
+:where(.coden-empty-state, .coden-error-state, .coden-success-state, .coden-info-state) {
+  border: 1px solid var(--coden-shell-border);
+  border-radius: var(--coden-shell-radius-md);
+  padding: 20px;
+  background: var(--coden-shell-surface);
+  color: var(--coden-shell-text);
+}
+
+:where(.coden-empty-state, .coden-info-state) { border-color: color-mix(in srgb, var(--coden-shell-blue) 28%, var(--coden-shell-border)); }
+:where(.coden-success-state) { border-color: color-mix(in srgb, var(--coden-shell-success) 34%, var(--coden-shell-border)); }
+:where(.coden-error-state) { border-color: color-mix(in srgb, var(--coden-shell-error) 42%, var(--coden-shell-border)); }
+
+:where(.coden-loading-dots)::after {
+  content: '…';
+  display: inline-block;
+  width: 1.2em;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: coden-loading-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes coden-loading-dots {
+  0%, 20% { width: 0; }
+  40% { width: .4em; }
+  60% { width: .8em; }
+  80%, 100% { width: 1.2em; }
+}
+
+:where(input, textarea, select):disabled,
+:where(button, a)[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -1,0 +1,1852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coden — Admin Console</title>
+  <!-- CODEN_SEO_START -->
+  <meta name="description" content="Private Coden administration console." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="canonical" href="https://coden.fun/admin.html" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png" />
+  <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Coden" />
+  <meta property="og:title" content="Coden — Admin Console" />
+  <meta property="og:description" content="Private Coden administration console." />
+  <meta property="og:url" content="https://coden.fun/admin.html" />
+  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
+  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Coden — Admin Console" />
+  <meta name="twitter:description" content="Private Coden administration console." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
+  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  "name": "Coden — Admin Console",
+  "description": "Private Coden administration console.",
+  "url": "https://coden.fun/admin.html"
+}</script>
+  <!-- CODEN_SEO_END -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/index.css">
+  <style>
+    body {
+      background:
+        radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--accent-blue) 12%, transparent), transparent 32%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .admin-shell {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .admin-sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px;
+      border-right: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+      backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .admin-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 850;
+      letter-spacing: -0.04em;
+      text-decoration: none;
+      font-size: 22px;
+    }
+
+    .admin-brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: var(--accent);
+      color: var(--bg);
+      font: 900 13px/1 "JetBrains Mono", monospace;
+    }
+
+    .admin-nav {
+      display: grid;
+      gap: 6px;
+    }
+
+    .admin-nav button,
+    .admin-return {
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-sub);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 760;
+      border: 1px solid transparent;
+      transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+    }
+
+    .admin-nav button:hover,
+    .admin-nav button.active,
+    .admin-return:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .admin-main {
+      padding: 26px clamp(18px, 3vw, 36px) 56px;
+      min-width: 0;
+    }
+
+    .admin-topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    .admin-commandbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: -8px 0 22px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 18px 70px -62px rgba(0, 0, 0, 0.42);
+    }
+
+    .admin-global-search {
+      flex: 1 1 360px;
+      min-width: min(100%, 260px);
+      height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-input);
+      color: var(--text);
+      padding: 0 15px;
+      outline: none;
+      font-size: 13px;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .admin-global-search:focus,
+    .admin-search:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 12%, transparent);
+    }
+
+    .admin-live-status {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-muted);
+      background: var(--bg-elevated);
+      font: 760 11px/1 "JetBrains Mono", monospace;
+      white-space: nowrap;
+    }
+
+    .admin-live-status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent-blue);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-blue) 13%, transparent);
+    }
+
+    .admin-kicker {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent-blue);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .admin-title {
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 0.94;
+      letter-spacing: -0.065em;
+      max-width: 820px;
+    }
+
+    .admin-subtitle {
+      color: var(--text-muted);
+      max-width: 720px;
+      line-height: 1.55;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    .admin-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .admin-button {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: var(--bg-surface);
+      font-weight: 780;
+      font-size: 12px;
+    }
+
+    .admin-button.primary {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+
+    .admin-button.subtle {
+      background: transparent;
+      color: var(--text-muted);
+    }
+
+    .admin-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .admin-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .admin-card {
+      grid-column: span 4;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
+      padding: 16px;
+      min-width: 0;
+      box-shadow: 0 20px 70px -58px rgba(0, 0, 0, 0.45);
+    }
+
+    .admin-card.clickable {
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .admin-card.clickable:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-focus);
+      background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+    }
+
+    .admin-card.wide { grid-column: span 8; }
+    .admin-card.full { grid-column: 1 / -1; }
+
+    .metric-label,
+    .panel-label {
+      color: var(--text-sub);
+      font-size: 11px;
+      font-family: "JetBrains Mono", monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .metric-value {
+      display: block;
+      margin-top: 12px;
+      font-size: 34px;
+      line-height: 1;
+      letter-spacing: -0.055em;
+      font-weight: 850;
+    }
+
+    .metric-note {
+      display: block;
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-top: 8px;
+      line-height: 1.45;
+    }
+
+    .admin-section {
+      display: none;
+      animation: adminReveal 220ms ease both;
+    }
+
+    .admin-section.active {
+      display: block;
+    }
+
+    .admin-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .admin-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 0 0 12px;
+    }
+
+    .admin-filter-chip {
+      height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 800;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    }
+
+    .admin-filter-chip:hover,
+    .admin-filter-chip.active {
+      color: var(--text);
+      border-color: var(--border-focus);
+      background: var(--accent-dim);
+    }
+
+    .admin-search {
+      width: min(360px, 100%);
+      height: 40px;
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0 14px;
+      outline: none;
+    }
+
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .admin-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: color-mix(in srgb, var(--bg) 72%, transparent);
+    }
+
+    .admin-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      color: var(--text-sub);
+      font: 800 10px/1 "JetBrains Mono", monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+    }
+
+    .admin-table td {
+      padding: 12px 8px;
+      color: var(--text-muted);
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 66%, transparent);
+      vertical-align: top;
+    }
+
+    .admin-table tr {
+      transition: background 140ms ease;
+    }
+
+    .admin-table tbody tr:hover {
+      background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
+    }
+
+    .admin-table strong {
+      color: var(--text);
+      font-weight: 780;
+    }
+
+    .admin-mono {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
+      color: var(--text-sub);
+      word-break: break-all;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      background: var(--bg-elevated);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .status-pill.ok,
+    .status-pill.ready,
+    .status-pill.completed,
+    .status-pill.published { color: #34d399; }
+
+    .status-pill.warning,
+    .status-pill.draft,
+    .status-pill.running { color: #fbbf24; }
+
+    .status-pill.failed,
+    .status-pill.error,
+    .status-pill.blocked { color: #fb7185; }
+
+    .health-list,
+    .flag-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .health-row,
+    .flag-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg-elevated);
+    }
+
+    .health-row span,
+    .flag-row span {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .admin-empty,
+    .admin-error {
+      padding: 18px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      line-height: 1.55;
+    }
+
+    .admin-error {
+      color: #fca5a5;
+    }
+
+    .admin-skeleton {
+      display: grid;
+      gap: 10px;
+    }
+
+    .admin-skeleton-line {
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(90deg, var(--bg-elevated), color-mix(in srgb, var(--accent-blue) 7%, var(--bg-elevated)), var(--bg-elevated));
+      background-size: 220% 100%;
+      animation: adminShimmer 1.4s ease-in-out infinite;
+    }
+
+    .admin-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(520px, 100%);
+      height: 100vh;
+      z-index: 70;
+      padding: 20px;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border);
+      transform: translateX(102%);
+      transition: transform 220ms ease;
+      box-shadow: -28px 0 80px rgba(0, 0, 0, 0.24);
+      overflow: auto;
+    }
+
+    .admin-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 65;
+      background: rgba(0, 0, 0, 0.18);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease;
+    }
+
+    .drawer-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drawer-close {
+      float: right;
+      color: var(--text-sub);
+      font-size: 24px;
+    }
+
+    .drawer-title {
+      margin: 6px 40px 4px 0;
+      font-size: 28px;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .drawer-subtitle {
+      margin: 0 0 16px;
+      color: var(--text-muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .drawer-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 16px;
+    }
+
+    .drawer-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .drawer-field {
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: var(--bg-elevated);
+      padding: 11px;
+    }
+
+    .drawer-field span {
+      display: block;
+      color: var(--text-sub);
+      font: 800 10px/1 "JetBrains Mono", monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 7px;
+    }
+
+    .drawer-field strong,
+    .drawer-field code {
+      color: var(--text);
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .support-summary {
+      white-space: pre-wrap;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    @keyframes adminReveal {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes adminShimmer {
+      from { background-position: 120% 0; }
+      to { background-position: -120% 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .admin-section,
+      .admin-card.clickable,
+      .admin-drawer,
+      .drawer-backdrop,
+      .admin-skeleton-line {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .admin-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-sidebar {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .admin-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .admin-topbar {
+        flex-direction: column;
+      }
+
+      .admin-actions {
+        justify-content: flex-start;
+      }
+
+      .admin-commandbar {
+        align-items: stretch;
+      }
+
+      .admin-live-status {
+        width: 100%;
+      }
+
+      .admin-card,
+      .admin-card.wide {
+        grid-column: 1 / -1;
+      }
+    }
+    /* Claude-inspired admin shell, adapted for Coden operations. */
+    body {
+      background:
+        radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.98), transparent 31%),
+        radial-gradient(circle at 86% 5%, rgba(41, 108, 255, 0.10), transparent 28%),
+        linear-gradient(145deg, #e9e8e3 0%, #f8f7f3 48%, #e7e5de 100%);
+      color: #20201d;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      pointer-events: none;
+      background:
+        radial-gradient(circle, rgba(32, 32, 29, 0.19) 0 1px, transparent 1.2px) 0 0 / 7px 7px,
+        linear-gradient(90deg, rgba(32, 32, 29, 0.04), transparent 28%, rgba(32, 32, 29, 0.05));
+      mask-image: linear-gradient(90deg, #000 0 18%, transparent 48% 100%);
+      opacity: 0.55;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 7% 14%, rgba(0, 0, 0, 0.22), transparent 20%),
+        radial-gradient(circle at 22% 0%, rgba(0, 0, 0, 0.12), transparent 18%);
+      filter: blur(14px);
+      opacity: 0.28;
+    }
+
+    .admin-shell {
+      position: relative;
+      width: min(1760px, calc(100vw - 48px));
+      min-height: calc(100vh - 48px);
+      margin: 24px auto;
+      grid-template-columns: 104px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid rgba(32, 32, 29, 0.08);
+      border-radius: 34px;
+      background: rgba(255, 255, 252, 0.86);
+      box-shadow:
+        0 34px 120px -80px rgba(0, 0, 0, 0.72),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(28px);
+    }
+
+    .admin-sidebar {
+      z-index: 2;
+      width: 104px;
+      padding: 26px 18px;
+      background: rgba(255, 255, 255, 0.62);
+      border-right: 1px solid rgba(32, 32, 29, 0.08);
+      align-items: center;
+      gap: 24px;
+    }
+
+    .admin-brand {
+      width: 58px;
+      height: 58px;
+      justify-content: center;
+      gap: 0;
+      border-radius: 18px;
+      background: #171716;
+      box-shadow: 0 18px 44px -32px rgba(0, 0, 0, 0.72);
+    }
+
+    .admin-brand-mark {
+      width: 58px;
+      height: 58px;
+      border-radius: 18px;
+      background: #171716;
+      color: #f8f7f3;
+      font-size: 22px;
+      letter-spacing: -0.08em;
+    }
+
+    .admin-brand-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    .admin-nav {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .admin-nav button,
+    .admin-return {
+      position: relative;
+      width: 56px;
+      min-height: 56px;
+      padding: 0;
+      justify-content: center;
+      border-radius: 18px;
+      color: rgba(32, 32, 29, 0.38);
+      background: transparent;
+      border-color: transparent;
+    }
+
+    .admin-nav button:hover,
+    .admin-nav button.active,
+    .admin-return:hover {
+      color: #fffaf0;
+      background: #191918;
+      border-color: #191918;
+      box-shadow: 0 18px 42px -30px rgba(0, 0, 0, 0.62);
+    }
+
+    .admin-nav-icon {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      font: 900 13px/1 "JetBrains Mono", monospace;
+    }
+
+    .admin-nav-label {
+      position: absolute;
+      left: 68px;
+      top: 50%;
+      z-index: 12;
+      translate: 8px -50%;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: #191918;
+      color: #fffaf0;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      font-size: 12px;
+      letter-spacing: 0;
+      transition: opacity 160ms ease, translate 160ms ease;
+    }
+
+    .admin-nav button:hover .admin-nav-label,
+    .admin-return:hover .admin-nav-label {
+      opacity: 1;
+      translate: 0 -50%;
+    }
+
+    .admin-nav-index {
+      display: none;
+    }
+
+    .admin-return {
+      margin-top: auto;
+      text-decoration: none;
+      font-weight: 800;
+    }
+
+    .admin-main {
+      padding: 0;
+      background: rgba(255, 255, 252, 0.78);
+    }
+
+    .admin-appbar {
+      min-height: 92px;
+      padding: 18px clamp(22px, 4vw, 48px);
+      border-bottom: 1px solid rgba(32, 32, 29, 0.08);
+      display: grid;
+      grid-template-columns: minmax(220px, auto) minmax(280px, 1fr) auto auto;
+      align-items: center;
+      gap: 14px;
+      background: rgba(255, 255, 255, 0.48);
+    }
+
+    .admin-breadcrumb {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(32, 32, 29, 0.42);
+      font-weight: 740;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      min-width: 0;
+    }
+
+    .admin-breadcrumb strong {
+      color: #272622;
+      font-weight: 780;
+    }
+
+    .admin-app-icon {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: rgba(32, 32, 29, 0.14);
+      color: #fffaf0;
+      font: 900 14px/1 "JetBrains Mono", monospace;
+    }
+
+    .admin-search-shell {
+      position: relative;
+      min-width: 0;
+    }
+
+    .admin-search-shell::before {
+      content: "";
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      width: 15px;
+      height: 15px;
+      translate: 0 -50%;
+      border: 2px solid rgba(32, 32, 29, 0.24);
+      border-radius: 999px;
+      box-sizing: border-box;
+    }
+
+    .admin-search-shell::after {
+      content: "";
+      position: absolute;
+      left: 31px;
+      top: calc(50% + 8px);
+      width: 8px;
+      height: 2px;
+      rotate: 45deg;
+      border-radius: 99px;
+      background: rgba(32, 32, 29, 0.24);
+    }
+
+    .admin-global-search {
+      width: 100%;
+      height: 54px;
+      padding-left: 46px;
+      border: 1px solid rgba(32, 32, 29, 0.08);
+      background: rgba(255, 255, 255, 0.62);
+      color: #20201d;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+      font-size: 16px;
+    }
+
+    .admin-live-status {
+      min-height: 42px;
+      background: rgba(255, 255, 255, 0.72);
+      color: rgba(32, 32, 29, 0.56);
+      border-color: rgba(32, 32, 29, 0.08);
+    }
+
+    .admin-topbar {
+      margin: 0;
+      padding: clamp(26px, 4vw, 52px) clamp(22px, 4vw, 48px) 22px;
+      align-items: center;
+    }
+
+    .admin-product-lockup {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .admin-product-avatar {
+      width: 72px;
+      height: 72px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.95), transparent 18%),
+        linear-gradient(135deg, #1b61ff, #141413 72%);
+      color: #fffaf0;
+      font: 900 30px/1 "JetBrains Mono", monospace;
+      box-shadow: 0 22px 56px -34px rgba(27, 97, 255, 0.85);
+    }
+
+    .admin-kicker {
+      margin: 0 0 6px;
+      color: rgba(32, 32, 29, 0.44);
+      letter-spacing: 0.12em;
+    }
+
+    .admin-title {
+      max-width: 860px;
+      font-size: clamp(38px, 4vw, 62px);
+      line-height: 0.96;
+      color: #20201d;
+    }
+
+    .admin-subtitle {
+      margin-top: 8px;
+      max-width: 760px;
+      color: rgba(32, 32, 29, 0.58);
+      font-size: 19px;
+      line-height: 1.32;
+      letter-spacing: -0.025em;
+    }
+
+    .admin-actions {
+      align-self: flex-start;
+      padding-top: 4px;
+    }
+
+    .admin-button {
+      height: 42px;
+      border-color: rgba(32, 32, 29, 0.10);
+      background: rgba(255, 255, 255, 0.66);
+      color: #20201d;
+      box-shadow: 0 14px 34px -30px rgba(0, 0, 0, 0.52);
+    }
+
+    .admin-button.primary {
+      color: #fffaf0;
+      background: #191918;
+      border-color: #191918;
+    }
+
+    .admin-button.subtle {
+      background: rgba(255, 255, 255, 0.42);
+      color: rgba(32, 32, 29, 0.62);
+    }
+
+    .admin-hero-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      padding: 0 clamp(22px, 4vw, 48px) 26px;
+    }
+
+    .admin-signal-card {
+      min-height: 164px;
+      padding: 24px;
+      border: 1px solid rgba(32, 32, 29, 0.08);
+      border-radius: 28px;
+      background: rgba(255, 255, 255, 0.62);
+      box-shadow: 0 22px 74px -62px rgba(0, 0, 0, 0.60);
+    }
+
+    .admin-signal-value {
+      display: block;
+      color: #20201d;
+      font-size: clamp(34px, 4vw, 58px);
+      line-height: 0.94;
+      letter-spacing: -0.06em;
+      font-weight: 760;
+    }
+
+    .admin-signal-note {
+      display: block;
+      margin-top: 12px;
+      color: rgba(32, 32, 29, 0.58);
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    .admin-mini-bars {
+      display: flex;
+      align-items: end;
+      gap: 5px;
+      margin-top: 22px;
+      height: 34px;
+    }
+
+    .admin-mini-bars span {
+      width: 8px;
+      border-radius: 999px;
+      background: #ff6b1a;
+      opacity: 0.92;
+    }
+
+    .admin-mini-bars span:nth-child(n + 14) {
+      background: rgba(32, 32, 29, 0.09);
+    }
+
+    .admin-mini-line {
+      width: 100%;
+      height: 46px;
+      margin-top: 19px;
+      border-radius: 18px;
+      background:
+        linear-gradient(135deg, transparent 0 18%, rgba(231, 61, 115, 0.30) 18% 21%, transparent 21% 33%, rgba(231, 61, 115, 0.48) 33% 36%, transparent 36% 47%, rgba(231, 61, 115, 0.34) 47% 50%, transparent 50%),
+        linear-gradient(180deg, transparent 0 70%, rgba(231, 61, 115, 0.10));
+      border-bottom: 2px solid rgba(231, 61, 115, 0.36);
+    }
+
+    .admin-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 0 clamp(22px, 4vw, 48px);
+      border-top: 1px solid rgba(32, 32, 29, 0.06);
+      border-bottom: 1px solid rgba(32, 32, 29, 0.08);
+      background: rgba(255, 255, 252, 0.84);
+      backdrop-filter: blur(18px);
+    }
+
+    .admin-tabs button {
+      position: relative;
+      min-height: 66px;
+      padding: 0 18px;
+      border: 0;
+      background: transparent;
+      color: rgba(32, 32, 29, 0.38);
+      font-size: 18px;
+      font-weight: 760;
+      letter-spacing: -0.035em;
+      white-space: nowrap;
+    }
+
+    .admin-tabs button::after {
+      content: "";
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: -1px;
+      height: 2px;
+      border-radius: 999px;
+      background: #191918;
+      opacity: 0;
+      scale: 0.72 1;
+      transition: opacity 160ms ease, scale 160ms ease;
+    }
+
+    .admin-tabs button.active {
+      color: #20201d;
+    }
+
+    .admin-tabs button.active::after {
+      opacity: 1;
+      scale: 1 1;
+    }
+
+    .admin-section {
+      position: relative;
+      padding: 32px clamp(22px, 4vw, 48px) 56px;
+      isolation: isolate;
+    }
+
+    .admin-section::before {
+      content: "";
+      position: absolute;
+      inset: 24px clamp(22px, 4vw, 48px) auto;
+      height: 210px;
+      z-index: -1;
+      border-radius: 26px;
+      background: radial-gradient(circle, rgba(32, 32, 29, 0.10) 0 1px, transparent 1.3px) 0 0 / 15px 15px;
+      opacity: 0.20;
+    }
+
+    .admin-card {
+      border-color: rgba(32, 32, 29, 0.08);
+      border-radius: 26px;
+      background: rgba(255, 255, 255, 0.66);
+      box-shadow: 0 22px 70px -62px rgba(0, 0, 0, 0.60);
+    }
+
+    .admin-card.clickable:hover {
+      transform: translateY(-3px);
+      border-color: rgba(32, 32, 29, 0.18);
+      background: rgba(255, 255, 255, 0.86);
+    }
+
+    .metric-label,
+    .panel-label {
+      color: rgba(32, 32, 29, 0.44);
+    }
+
+    .metric-value {
+      color: #20201d;
+    }
+
+    .metric-note,
+    .admin-table td,
+    .health-row span,
+    .flag-row span {
+      color: rgba(32, 32, 29, 0.58);
+    }
+
+    .admin-card.clickable::after {
+      content: "";
+      display: block;
+      width: min(100%, 280px);
+      height: 34px;
+      margin-top: 18px;
+      border-radius: 999px;
+      background:
+        repeating-linear-gradient(90deg, #ff6b1a 0 8px, transparent 8px 14px),
+        linear-gradient(90deg, transparent 0 58%, rgba(32, 32, 29, 0.08) 58% 100%);
+      mask-image: linear-gradient(90deg, #000 0 72%, transparent 100%);
+      opacity: 0.8;
+    }
+
+    .admin-table-wrap {
+      border-color: rgba(32, 32, 29, 0.08);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    .admin-table th {
+      background: rgba(255, 255, 255, 0.82);
+      color: rgba(32, 32, 29, 0.44);
+    }
+
+    .admin-table tr:hover td {
+      background: rgba(255, 246, 232, 0.58);
+    }
+
+    .flag-list,
+    .health-list {
+      gap: 10px;
+    }
+
+    .flag-row,
+    .health-row {
+      min-height: 72px;
+      border-color: rgba(32, 32, 29, 0.08);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.56);
+    }
+
+    .flag-meta {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: rgba(32, 32, 29, 0.54);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .flag-meta > span {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 10px;
+      border: 1px solid rgba(32, 32, 29, 0.08);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.52);
+    }
+
+    .status-pill {
+      border-color: rgba(32, 32, 29, 0.08);
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    .status-pill.ok {
+      color: #1b9c65;
+      background: rgba(27, 156, 101, 0.10);
+    }
+
+    .admin-drawer {
+      border-color: rgba(32, 32, 29, 0.10);
+      background: rgba(255, 255, 252, 0.92);
+      box-shadow: 0 28px 110px -66px rgba(0, 0, 0, 0.75);
+    }
+
+    .drawer-backdrop {
+      background: rgba(22, 22, 20, 0.18);
+    }
+
+    @media (max-width: 1120px) {
+      .admin-shell {
+        width: min(100vw - 24px, 980px);
+        grid-template-columns: 1fr;
+      }
+
+      .admin-sidebar {
+        position: relative;
+        width: auto;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-between;
+        border-right: 0;
+        border-bottom: 1px solid rgba(32, 32, 29, 0.08);
+      }
+
+      .admin-nav {
+        flex: 1;
+        flex-direction: row;
+        justify-content: flex-start;
+        overflow-x: auto;
+      }
+
+      .admin-nav-label {
+        display: none;
+      }
+
+      .admin-return {
+        margin-top: 0;
+      }
+
+      .admin-appbar {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-hero-metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-topbar {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .admin-shell {
+        width: 100%;
+        min-height: 100vh;
+        margin: 0;
+        border-radius: 0;
+      }
+
+      .admin-sidebar,
+      .admin-appbar,
+      .admin-topbar,
+      .admin-hero-metrics,
+      .admin-tabs,
+      .admin-section {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .admin-product-lockup {
+        align-items: flex-start;
+      }
+
+      .admin-product-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 18px;
+        font-size: 23px;
+      }
+
+      .admin-title {
+        font-size: 34px;
+      }
+    }
+
+    /* Compact operations pass: admin should feel like a tool, not a showcase. */
+    body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(41, 108, 255, 0.06), transparent 28%),
+        linear-gradient(135deg, #f7f7f4 0%, #efeee8 100%);
+    }
+
+    body::before,
+    body::after {
+      opacity: 0.12;
+    }
+
+    .admin-shell {
+      width: 100%;
+      min-height: 100vh;
+      margin: 0;
+      grid-template-columns: 236px minmax(0, 1fr);
+      border: 0;
+      border-radius: 0;
+      background: rgba(255, 255, 252, 0.92);
+      box-shadow: none;
+    }
+
+    .admin-sidebar {
+      width: auto;
+      padding: 18px 14px;
+      align-items: stretch;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.70);
+      border-right: 1px solid rgba(32, 32, 29, 0.09);
+    }
+
+    .admin-brand {
+      width: auto;
+      height: 46px;
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 0 10px;
+      border-radius: 14px;
+      background: transparent;
+      color: #20201d;
+      box-shadow: none;
+    }
+
+    .admin-brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: #191918;
+      color: #fffaf0;
+      font-size: 15px;
+    }
+
+    .admin-brand-text {
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip: auto;
+      white-space: normal;
+      color: #20201d;
+      font-size: 18px;
+      font-weight: 850;
+      letter-spacing: -0.04em;
+    }
+
+    .admin-nav {
+      align-items: stretch;
+      gap: 4px;
+      overflow: visible;
+    }
+
+    .admin-nav button,
+    .admin-return {
+      width: 100%;
+      min-height: 42px;
+      justify-content: flex-start;
+      gap: 10px;
+      padding: 0 10px;
+      border-radius: 12px;
+      color: rgba(32, 32, 29, 0.62);
+      font-size: 13px;
+      letter-spacing: -0.01em;
+    }
+
+    .admin-nav button:hover,
+    .admin-nav button.active,
+    .admin-return:hover {
+      color: #20201d;
+      background: rgba(32, 32, 29, 0.06);
+      border-color: rgba(32, 32, 29, 0.08);
+      box-shadow: none;
+    }
+
+    .admin-nav button.active {
+      color: #fffaf0;
+      background: #191918;
+      border-color: #191918;
+    }
+
+    .admin-nav-icon {
+      width: 28px;
+      height: 28px;
+      flex: 0 0 28px;
+      border-radius: 9px;
+      background: rgba(32, 32, 29, 0.06);
+      color: currentColor;
+      font-size: 12px;
+    }
+
+    .admin-nav button.active .admin-nav-icon {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .admin-nav-label {
+      position: static;
+      translate: none;
+      padding: 0;
+      background: transparent;
+      color: currentColor;
+      opacity: 1;
+      font-size: 13px;
+      font-weight: 780;
+      pointer-events: auto;
+    }
+
+    .admin-nav-index {
+      display: block;
+      margin-left: auto;
+      color: rgba(32, 32, 29, 0.34);
+      font: 760 10px/1 "JetBrains Mono", monospace;
+    }
+
+    .admin-nav button.active .admin-nav-index {
+      color: rgba(255, 255, 255, 0.54);
+    }
+
+    .admin-return {
+      margin-top: auto;
+      text-decoration: none;
+    }
+
+    .admin-appbar {
+      min-height: 64px;
+      padding: 10px 22px;
+      grid-template-columns: minmax(190px, auto) minmax(260px, 1fr) auto auto;
+      gap: 10px;
+      background: rgba(255, 255, 252, 0.88);
+      backdrop-filter: blur(18px);
+    }
+
+    .admin-breadcrumb {
+      font-size: 14px;
+      gap: 8px;
+    }
+
+    .admin-app-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      font-size: 12px;
+      background: #191918;
+    }
+
+    .admin-global-search {
+      height: 42px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.76);
+    }
+
+    .admin-search-shell::before {
+      left: 16px;
+      width: 13px;
+      height: 13px;
+    }
+
+    .admin-search-shell::after {
+      left: 27px;
+      top: calc(50% + 7px);
+    }
+
+    .admin-live-status,
+    .admin-button {
+      min-height: 36px;
+      height: 36px;
+      font-size: 11px;
+      box-shadow: none;
+    }
+
+    .admin-topbar {
+      padding: 18px 22px 10px;
+      border-bottom: 0;
+      gap: 14px;
+    }
+
+    .admin-product-avatar,
+    .admin-hero-metrics,
+    .admin-tabs {
+      display: none;
+    }
+
+    .admin-product-lockup {
+      display: block;
+      min-width: 0;
+    }
+
+    .admin-kicker {
+      margin-bottom: 4px;
+      font-size: 10px;
+    }
+
+    .admin-title {
+      font-size: clamp(24px, 2.5vw, 32px);
+      line-height: 1;
+      letter-spacing: -0.045em;
+    }
+
+    .admin-subtitle {
+      margin-top: 6px;
+      max-width: 820px;
+      font-size: 13px;
+      line-height: 1.4;
+      letter-spacing: 0;
+    }
+
+    .admin-actions {
+      align-self: flex-start;
+      padding-top: 0;
+    }
+
+    .admin-section {
+      padding: 14px 22px 36px;
+    }
+
+    .admin-section::before,
+    .admin-card.clickable::after {
+      display: none;
+    }
+
+    .admin-grid {
+      gap: 10px;
+    }
+
+    .admin-card {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: none;
+    }
+
+    .admin-card.clickable:hover {
+      transform: translateY(-1px);
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: 28px;
+      letter-spacing: -0.045em;
+    }
+
+    .metric-note {
+      margin-top: 6px;
+      font-size: 11px;
+    }
+
+    .admin-panel-head {
+      margin-bottom: 10px;
+    }
+
+    .admin-table-wrap {
+      border-radius: 14px;
+    }
+
+    .admin-table {
+      font-size: 12px;
+    }
+
+    .admin-table th {
+      padding: 9px 10px;
+    }
+
+    .admin-table td {
+      padding: 10px;
+    }
+
+    .flag-row,
+    .health-row {
+      min-height: 54px;
+      padding: 10px 12px;
+      border-radius: 13px;
+    }
+
+    .status-pill,
+    .flag-meta > span,
+    .admin-filter-chip {
+      min-height: 26px;
+      font-size: 10px;
+    }
+
+    .drawer-title {
+      font-size: 25px;
+    }
+
+    .admin-drawer {
+      width: min(440px, calc(100vw - 18px));
+      border-radius: 18px 0 0 18px;
+    }
+
+    @media (max-width: 980px) {
+      .admin-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        height: auto;
+        flex-direction: column;
+        border-right: 0;
+        border-bottom: 1px solid rgba(32, 32, 29, 0.09);
+      }
+
+      .admin-nav {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .admin-nav button,
+      .admin-return {
+        min-height: 40px;
+      }
+
+      .admin-nav-label {
+        display: none;
+      }
+
+      .admin-appbar {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-topbar {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .admin-sidebar,
+      .admin-appbar,
+      .admin-topbar,
+      .admin-section {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .admin-nav {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .admin-nav-icon {
+        display: none;
+      }
+
+      .admin-nav button,
+      .admin-return {
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body data-coden-surface="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <a class="admin-brand" href="/dashboard.html" aria-label="Back to dashboard">
+        <span class="admin-brand-mark" data-coden-logo aria-hidden="true"><svg width="100%" height="100%" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--text)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/></svg></span>
+        <span class="admin-brand-text">Coden Admin</span>
+      </a>
+      <nav class="admin-nav" aria-label="Admin sections">
+        <button class="active" data-admin-tab="overview" type="button" aria-label="Overview"><span class="admin-nav-icon">O</span><span class="admin-nav-label">Overview</span><span class="admin-nav-index">01</span></button>
+        <button data-admin-tab="users" type="button" aria-label="Users"><span class="admin-nav-icon">U</span><span class="admin-nav-label">Users</span><span class="admin-nav-index">02</span></button>
+        <button data-admin-tab="projects" type="button" aria-label="Projects"><span class="admin-nav-icon">P</span><span class="admin-nav-label">Projects</span><span class="admin-nav-index">03</span></button>
+        <button data-admin-tab="runs" type="button" aria-label="Runs"><span class="admin-nav-icon">R</span><span class="admin-nav-label">Runs</span><span class="admin-nav-index">04</span></button>
+        <button data-admin-tab="errors" type="button" aria-label="Errors"><span class="admin-nav-icon">E</span><span class="admin-nav-label">Errors</span><span class="admin-nav-index">05</span></button>
+        <button data-admin-tab="models" type="button" aria-label="Models"><span class="admin-nav-icon">M</span><span class="admin-nav-label">Models</span><span class="admin-nav-index">06</span></button>
+        <button data-admin-tab="publish" type="button" aria-label="Publish"><span class="admin-nav-icon">D</span><span class="admin-nav-label">Publish</span><span class="admin-nav-index">07</span></button>
+        <button data-admin-tab="security" type="button" aria-label="Security"><span class="admin-nav-icon">S</span><span class="admin-nav-label">Security</span><span class="admin-nav-index">08</span></button>
+        <button data-admin-tab="flags" type="button" aria-label="Flags"><span class="admin-nav-icon">F</span><span class="admin-nav-label">Flags</span><span class="admin-nav-index">09</span></button>
+        <button data-admin-tab="support" type="button" aria-label="Support"><span class="admin-nav-icon">?</span><span class="admin-nav-label">Support</span><span class="admin-nav-index">10</span></button>
+      </nav>
+      <a class="admin-return" href="/dashboard.html" aria-label="Go to dashboard"><span class="admin-nav-icon admin-brand-icon" data-coden-logo aria-hidden="true"><svg width="18" height="18" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--text)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/></svg></span><span class="admin-nav-label">Dashboard</span><span class="admin-nav-index">-&gt;</span></a>
+    </aside>
+
+    <main class="admin-main">
+      <div class="admin-appbar" role="search">
+        <div class="admin-breadcrumb">
+          <span class="admin-app-icon">~</span>
+          <span>Activity</span>
+          <strong>/ Coden Admin</strong>
+        </div>
+        <div class="admin-search-shell">
+          <input id="admin-global-search" class="admin-global-search" placeholder="Search activity, users, runs or request IDs" autocomplete="off" />
+        </div>
+        <span class="admin-live-status" id="admin-live-status">Waiting for live data</span>
+        <button class="admin-button subtle" id="admin-clear-filters" type="button">Clear</button>
+      </div>
+
+      <header class="admin-topbar">
+        <div class="admin-product-lockup">
+          <span class="admin-product-avatar" aria-hidden="true" data-coden-logo><svg width="100%" height="100%" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--text)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/></svg></span>
+          <div>
+            <p class="admin-kicker">Platform operations</p>
+            <h1 class="admin-title">Coden Admin</h1>
+            <p class="admin-subtitle">A redacted operations cockpit for users, projects, runs, publish health, model reliability and security signals.</p>
+          </div>
+        </div>
+        <div class="admin-actions">
+          <button class="admin-button" id="admin-refresh" type="button">Refresh</button>
+          <button class="admin-button primary" id="admin-copy-summary" type="button">Copy summary</button>
+        </div>
+      </header>
+
+      <div class="admin-hero-metrics" aria-label="Admin highlights">
+        <article class="admin-signal-card">
+          <span class="admin-signal-value">Live</span>
+          <span class="admin-signal-note">Model, publish and builder signals in one place.</span>
+          <div class="admin-mini-bars" aria-hidden="true">
+            <span style="height: 20px"></span><span style="height: 26px"></span><span style="height: 18px"></span><span style="height: 31px"></span><span style="height: 24px"></span><span style="height: 29px"></span><span style="height: 34px"></span><span style="height: 25px"></span><span style="height: 30px"></span><span style="height: 21px"></span><span style="height: 28px"></span><span style="height: 32px"></span><span style="height: 23px"></span><span style="height: 20px"></span><span style="height: 26px"></span><span style="height: 18px"></span><span style="height: 24px"></span><span style="height: 31px"></span>
+          </div>
+        </article>
+        <article class="admin-signal-card">
+          <span class="admin-signal-value">142ms</span>
+          <span class="admin-signal-note">Target feel for admin interactions and filters.</span>
+          <div class="admin-mini-line" aria-hidden="true"></div>
+        </article>
+        <article class="admin-signal-card">
+          <span class="admin-signal-value">Safe</span>
+          <span class="admin-signal-note">Read-only by default until audited admin actions are wired.</span>
+          <div class="admin-mini-bars" aria-hidden="true">
+            <span style="height: 30px"></span><span style="height: 18px"></span><span style="height: 26px"></span><span style="height: 34px"></span><span style="height: 27px"></span><span style="height: 21px"></span><span style="height: 32px"></span><span style="height: 25px"></span><span style="height: 28px"></span><span style="height: 19px"></span><span style="height: 31px"></span><span style="height: 26px"></span><span style="height: 22px"></span><span style="height: 20px"></span><span style="height: 24px"></span><span style="height: 18px"></span><span style="height: 29px"></span><span style="height: 21px"></span>
+          </div>
+        </article>
+      </div>
+
+      <nav class="admin-tabs" aria-label="Admin workspaces">
+        <button class="active" data-admin-tab="overview" type="button">Signal</button>
+        <button data-admin-tab="users" type="button">Users</button>
+        <button data-admin-tab="projects" type="button">Projects</button>
+        <button data-admin-tab="runs" type="button">Runs</button>
+        <button data-admin-tab="errors" type="button">Errors</button>
+        <button data-admin-tab="models" type="button">Models</button>
+        <button data-admin-tab="publish" type="button">Publish</button>
+        <button data-admin-tab="security" type="button">Security</button>
+        <button data-admin-tab="flags" type="button">Flags</button>
+        <button data-admin-tab="support" type="button">Support</button>
+      </nav>
+
+      <section class="admin-section active" data-section="overview">
+        <div id="admin-overview" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="users">
+        <div class="admin-card full">
+          <div class="admin-panel-head">
+            <span class="panel-label">Users</span>
+            <input id="admin-user-search" class="admin-search" placeholder="Search email or user id" />
+          </div>
+          <div class="admin-filter-row" data-filter-group="users">
+            <button class="admin-filter-chip active" data-filter-value="all" type="button">All</button>
+            <button class="admin-filter-chip" data-filter-value="admin" type="button">Admins</button>
+            <button class="admin-filter-chip" data-filter-value="active" type="button">Active today</button>
+            <button class="admin-filter-chip" data-filter-value="no-email" type="button">No email</button>
+          </div>
+          <div id="admin-users"></div>
+        </div>
+      </section>
+
+      <section class="admin-section" data-section="projects">
+        <div class="admin-card full">
+          <div class="admin-panel-head">
+            <span class="panel-label">Projects</span>
+            <input id="admin-project-search" class="admin-search" placeholder="Search project, owner or id" />
+          </div>
+          <div class="admin-filter-row" data-filter-group="projects">
+            <button class="admin-filter-chip active" data-filter-value="all" type="button">All</button>
+            <button class="admin-filter-chip" data-filter-value="preview-ready" type="button">Preview ready</button>
+            <button class="admin-filter-chip" data-filter-value="published" type="button">Published</button>
+            <button class="admin-filter-chip" data-filter-value="needs-attention" type="button">Needs attention</button>
+          </div>
+          <div id="admin-projects"></div>
+        </div>
+      </section>
+
+      <section class="admin-section" data-section="runs">
+        <div id="admin-runs" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="errors">
+        <div id="admin-errors" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="models">
+        <div id="admin-models" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="publish">
+        <div id="admin-publish" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="security">
+        <div id="admin-security" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="flags">
+        <div id="admin-flags" class="admin-grid"></div>
+      </section>
+
+      <section class="admin-section" data-section="support">
+        <div class="admin-card full">
+          <div class="admin-panel-head">
+            <span class="panel-label">Support workspace</span>
+            <button class="admin-button" id="admin-build-support-summary" type="button">Build support summary</button>
+          </div>
+          <div id="admin-support"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="admin-drawer-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
+  <aside id="admin-drawer" class="admin-drawer" aria-live="polite" aria-label="Admin details panel">
+    <button class="drawer-close" id="admin-drawer-close" type="button" aria-label="Close">×</button>
+    <div id="admin-drawer-content"></div>
+  </aside>
+
+  <script type="module" src="/src/auth-guard.ts"></script>
+  <script type="module" src="/src/admin-live.ts"></script>
+</body>
+</html>

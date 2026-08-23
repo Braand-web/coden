@@ -1,0 +1,3 @@
+# Generated eval reports (regenerated on every run)
+*.json
+!.gitkeep

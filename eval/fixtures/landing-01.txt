@@ -1,0 +1,14 @@
+// Example BROKEN generation for landing-01 (must FAIL the heuristic gate):
+// dead CTA (no handler), leaked service_role secret, and placeholder copy.
+<!DOCTYPE html>
+<html><head><title>Landing</title></head>
+<body>
+  <header>
+    <h1>Welcome to our platform</h1>
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+    <button class="cta">Get started</button>
+  </header>
+  <script>
+    const SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.service_role.secret";
+  </script>
+</body></html>
