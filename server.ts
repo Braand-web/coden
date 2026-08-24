@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
 import { extractArchitectureDecisions, updateProjectMemory, buildMemoryRagContext, selectRelevantMemoryRows } from './src/services/agent-memory-rag.ts';
-import { evaluateAgentOutput, buildRetryPrompt } from './src/services/agent-eval-judge.ts';
 import { buildSmartContextInjection } from './src/services/smart-context-injector.ts';
 import { extractDesignTokens, buildDesignTokenContext, designSystemToMemoryRows, designSystemFromMemoryRow } from './src/services/design-token-store.ts';
 import { detectPromptConflict, conflictToPromptContext } from './src/services/conflict-detector.ts';
@@ -5956,18 +5955,12 @@ async function generateFilesWithAi(input: {
     return input.visionInputs?.length ? buildVisionMessageContent(payload, input.visionInputs) : payload;
   };
 
-  let attempt = 0;
   let result: any = null;
-  let currentPrompt = composedPrompt;
-  let currentGenerationModel = selectedModel;
-  
-  while (attempt < 2) {
-
-    try {
+  try {
       // Generated source is an atomic structured artifact. Streaming its raw
       // JSON makes provider disconnects more likely and can never be rendered
       // as assistant prose, so request one bounded structured response.
-      const generationResult = await providerGateway.chat(currentGenerationModel, [
+      result = await providerGateway.chat(selectedModel, [
         {
           role: 'system',
           content: buildGenerationSystemPrompt({
@@ -5980,7 +5973,7 @@ async function generateFilesWithAi(input: {
           role: 'user',
           content: JSON.stringify({
             projectName: input.projectName,
-            prompt: currentPrompt,
+            prompt: composedPrompt,
             memoryRagContext: memoryContext,
             existingFiles: fileManifest || 'No existing files yet.',
             // ✅ Semantic RAG: most relevant files first, others in manifest
@@ -6002,37 +5995,13 @@ async function generateFilesWithAi(input: {
         allowFallback: false,
         signal: input.signal,
       });
-      result = generationResult;
-      totalCostUsd += generationResult.cost_usd;
+      totalCostUsd += result.cost_usd;
     } catch (streamErr: any) {
       // A failed request is terminal for this run. Starting a second model
       // request here would duplicate work and could produce contradictory files.
       console.warn('[coden:generate_stream_failed]', { message: streamErr?.message });
       throw streamErr;
     }
-    const architectReqs = input.seniorAgentContext?.architect_blueprint?.quality_gates || [];
-    const judgeEval = evaluateAgentOutput(input.prompt, result.text, appType, architectReqs);
-
-    if (judgeEval.passed || attempt >= 1) {
-      break;
-    }
-
-    console.log('[AGENT_JUDGE] Generation failed quality gate. Retrying...', judgeEval.failures);
-
-    // Use a different model for the judge retry to avoid self-agreement bias
-    const judgeModelId = modelRouter.selectJudgeModel(
-      result.model,
-      input.userCredits ?? 999,
-      input.project ? String((input.project as any).plan_key || 'free') : 'free',
-    );
-    if (judgeModelId !== result.model) {
-      console.log(`[AGENT_JUDGE] Retrying with judge model: ${judgeModelId}`);
-    }
-
-    currentPrompt = buildRetryPrompt(input.prompt, judgeEval);
-    currentGenerationModel = judgeModelId;
-    attempt++;
-  }
 
   let parsed: ReturnType<typeof parseGeneratedOutput> | null = null;
   try {
@@ -6049,7 +6018,7 @@ async function generateFilesWithAi(input: {
     });
     let repairedByModel = false;
     try {
-      const repairModel = normalizeProviderModelForBackend(result?.model || currentGenerationModel);
+      const repairModel = normalizeProviderModelForBackend(result?.model || selectedModel);
       validateAllowedModel(repairModel);
       const repairResult = await providerGateway.chat(repairModel, [
         {

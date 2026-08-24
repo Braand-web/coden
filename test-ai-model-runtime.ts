@@ -72,16 +72,8 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
-  assert.match(
-    serverSource,
-    /providerGateway\.chat\(currentGenerationModel,/,
-    'The quality-gate retry must invoke the selected judge model instead of silently reusing the failed model.',
-  );
-  assert.match(
-    serverSource,
-    /currentGenerationModel = judgeModelId;/,
-    'A failed generation must switch the next attempt to the judge model selected by the router.',
-  );
+  assert.doesNotMatch(serverSource, /modelRouter\.selectJudgeModel\(/, 'Generation must not silently switch to a judge model.');
+  assert.match(serverSource, /providerGateway\.chat\(selectedModel,/, 'Generation must use the model selected for this run exactly once.');
   assert.match(
     serverSource,
     /providerGateway\.chat\(repairModel,/,
