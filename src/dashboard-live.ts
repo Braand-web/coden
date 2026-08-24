@@ -1,6 +1,3 @@
-import './styles/dashboard-polish.css';
-import './styles/dashboard-kimi.css';
-import './styles/dashboard-kimi-sidebar.css';
 import './styles/coden-light-theme.css';
 import './styles/motion-tokens.css';
 import './styles/legacy-bridge.css';
@@ -8,14 +5,14 @@ import './components/ui/motion.css';
 import './styles/agent-surface.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
+import './styles/dashboard-workspace.css';
 import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import './conversion-events';
 import { apiFetch } from './lib/api';
-import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
 import { initCodenMotion } from './coden-motion';
 import { initProviderModelSelectors } from './model-selector-ui';
-import { initPromptInputActions } from './prompt-input-actions';
+import { initPromptInputActions, storePendingPromptAttachments, type PendingPromptAttachment } from './prompt-input-actions';
 import { ensureSettingsPanel, openSettings } from './settings-panel';
 import { openConnectorsPanel } from './connectors-panel';
 import { formatCreateProjectFlowStatus, startCreateProjectFlow } from './services/create-project-flow';
@@ -128,6 +125,50 @@ let dashboardWorkspaceState: UserWorkspaceState | null = null;
 let aiUsageLoaded = false;
 let aiUsageSettingsBound = false;
 let dashboardAssistantBusy = false;
+let dashboardProjects: DashboardProject[] = [];
+let dashboardAttachments: PendingPromptAttachment[] = [];
+let dashboardSelectedProjectId = '';
+
+const DASHBOARD_PROJECT_KEY = 'coden-dashboard-selected-project';
+
+function selectedDashboardProjectId() {
+  return dashboardSelectedProjectId || localStorage.getItem(DASHBOARD_PROJECT_KEY) || '';
+}
+
+async function uploadDashboardAttachments(attachments: PendingPromptAttachment[]) {
+  for (const attachment of attachments) {
+    if (!attachment.dataUrl) throw new Error(`Le fichier ${attachment.name} ne peut pas être lu.`);
+    const response = await apiFetch<{ success: boolean; attachment: { id: string } }>('/api/assistant/attachments', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: attachment.name,
+        mimeType: attachment.type,
+        size: attachment.size,
+        dataUrl: attachment.dataUrl,
+      }),
+    });
+    attachment.id = response.attachment.id;
+    attachment.status = 'uploaded';
+  }
+  dashboardAttachments = [...dashboardAttachments.filter(item => !attachments.includes(item)), ...attachments];
+  await storePendingPromptAttachments(dashboardAttachments);
+  window.dispatchEvent(new Event('coden:dashboard-attachments-change'));
+}
+
+function setDashboardProject(projectId: string, persist = true) {
+  const normalized = projectId && projectId !== '__new__' ? projectId : '';
+  dashboardSelectedProjectId = normalized;
+  const select = document.getElementById('dashboard-project-select') as HTMLSelectElement | null;
+  if (select && select.value !== projectId) select.value = projectId || '';
+  if (persist) {
+    if (normalized) localStorage.setItem(DASHBOARD_PROJECT_KEY, normalized);
+    else localStorage.removeItem(DASHBOARD_PROJECT_KEY);
+    void apiFetch('/api/users/me/workspace-state', {
+      method: 'PATCH',
+      body: JSON.stringify({ last_project_id: normalized || null }),
+    }).catch(() => undefined);
+  }
+}
 
 type DashboardChatRole = 'user' | 'assistant' | 'system';
 type DashboardChatMessage = {
@@ -173,8 +214,8 @@ function showProjectError(message: string) {
   if (!status) {
     status = document.createElement('div');
     status.id = 'new-project-live-status';
+    status.className = 'dashboard-form-error';
     status.setAttribute('role', 'alert');
-    status.style.cssText = 'margin-top:10px;color:#fca5a5;font-size:12px;line-height:1.5;';
     document.querySelector('#new-project-modal .modal-content')?.appendChild(status);
   }
   status.textContent = message;
@@ -224,6 +265,7 @@ function saveDashboardWorkspace(immediate = false) {
         body: JSON.stringify({
           dashboard_draft_prompt: textarea?.value || '',
           dashboard_selected_mode: selectedDashboardMode(),
+          last_project_id: selectedDashboardProjectId() || null,
           last_route: '/dashboard.html',
         }),
       });
@@ -239,19 +281,7 @@ function saveDashboardWorkspace(immediate = false) {
 }
 
 function installContinueLastProject(state: UserWorkspaceState | null) {
-  if (!state?.last_project_id || document.getElementById('btn-continue-last-project')) return;
-  const createSection = document.querySelector('.create-section');
-  const subtitle = document.querySelector('.create-subtitle');
-  if (!createSection || !subtitle) return;
-  const button = document.createElement('button');
-  button.id = 'btn-continue-last-project';
-  button.type = 'button';
-  button.textContent = 'Continue last project';
-  button.style.cssText = 'margin:14px auto 18px;display:inline-flex;height:34px;align-items:center;justify-content:center;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);border-radius:999px;padding:0 14px;font-size:12px;font-weight:750;cursor:pointer;';
-  button.addEventListener('click', () => {
-    window.location.href = builderUrl(state.last_project_id || '');
-  });
-  subtitle.insertAdjacentElement('afterend', button);
+  if (state?.last_project_id) setDashboardProject(state.last_project_id, false);
 }
 
 function projectNameFromPrompt(prompt: string) {
@@ -456,12 +486,6 @@ function installDashboardUxPolish() {
 
     .create-section {
       transition: min-height 400ms ease, padding 400ms ease, align-content 400ms ease;
-    }
-
-    .create-section[data-chat-state="idle"] {
-      min-height: min(58vh, 560px);
-      display: grid;
-      align-content: center;
     }
 
     .create-section[data-chat-state="conversation"],
@@ -1191,122 +1215,28 @@ function installDashboardUxPolish() {
   document.head.appendChild(style);
 }
 
-function renderDashboardOverview(projects: DashboardProject[]) {
-  const grid = document.querySelector('.projects-grid') as HTMLElement | null;
-  const parent = grid?.parentElement;
-  if (!grid || !parent) return;
-  let overview = document.getElementById('dashboard-overview-grid');
-  if (!overview) {
-    overview = document.createElement('div');
-    overview.id = 'dashboard-overview-grid';
-    overview.className = 'dashboard-overview-grid';
-    parent.insertBefore(overview, grid);
-  }
-  const states = projects.map(projectState);
-  const published = states.filter(state => state === 'published').length;
-  const ready = states.filter(state => state === 'ready' || state === 'published').length;
-  const needsAttention = states.filter(state => state === 'needs-fix').length;
-  const recent = projects.filter(isRecentProject).length;
-  overview.innerHTML = [
-    ['Projects', projects.length, 'Everything created in this workspace.'],
-    ['Ready', ready, 'Previews or published apps available.'],
-    ['Live', published, 'Projects that reached publish status.'],
-    ['Recent', recent, needsAttention ? `${needsAttention} need attention.` : 'Updated in the last 7 days.'],
-  ].map(([label, value, note]) => `
-    <div class="dashboard-overview-card">
-      <div class="dashboard-overview-label">${escapeHtml(String(label))}</div>
-      <div class="dashboard-overview-value">${escapeHtml(String(value))}</div>
-      <div class="dashboard-overview-note">${escapeHtml(String(note))}</div>
-    </div>
-  `).join('');
-}
-
-function renderProjectFilters(projects: DashboardProject[]) {
-  const grid = document.querySelector('.projects-grid') as HTMLElement | null;
-  const parent = grid?.parentElement;
-  if (!grid || !parent) return;
-  let filters = document.getElementById('project-filter-row');
-  if (!projects.length) {
-    filters?.remove();
-    return;
-  }
-  if (!filters) {
-    filters = document.createElement('div');
-    filters.id = 'project-filter-row';
-    filters.className = 'project-filter-row';
-    parent.insertBefore(filters, grid);
-  }
-  const items = [
-    ['all', 'All'],
-    ['ready', 'Ready'],
-    ['published', 'Published'],
-    ['needs-fix', 'Needs attention'],
-    ['recent', 'Recent'],
-  ];
-  filters.innerHTML = items.map(([key, label], index) => `
-    <button class="project-filter-pill${index === 0 ? ' active' : ''}" type="button" data-project-filter="${escapeHtml(key)}">${escapeHtml(label)}</button>
-  `).join('');
-  filters.querySelectorAll<HTMLButtonElement>('[data-project-filter]').forEach(button => {
-    button.addEventListener('click', () => {
-      const filter = button.dataset.projectFilter || 'all';
-      filters?.querySelectorAll('.project-filter-pill').forEach(item => item.classList.toggle('active', item === button));
-      grid.querySelectorAll<HTMLElement>('.project-card').forEach(card => {
-        const state = card.dataset.projectState || 'draft';
-        const recent = card.dataset.projectRecent === 'true';
-        const visible = filter === 'all'
-          || state === filter
-          || (filter === 'ready' && (state === 'ready' || state === 'published'))
-          || (filter === 'recent' && recent);
-        card.hidden = !visible;
-      });
-    });
-  });
-}
-
-function renderRecentDashboardActivity(projects: DashboardProject[]) {
-  const list = document.querySelector('.activity-list') as HTMLElement | null;
-  if (!list) return;
-  const latest = [...projects]
-    .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())
-    .slice(0, 5);
-  if (!latest.length) {
-    list.innerHTML = `
-      <div class="empty-state" style="padding:16px;">
-        <h3 class="empty-title">No recent activity yet</h3>
-        <p class="empty-desc">Create or open a project and Coden will keep this area useful.</p>
-      </div>
-    `;
-    return;
-  }
-  list.innerHTML = latest.map((project, index) => {
-    const state = projectState(project);
-    return `
-      <button class="dashboard-activity-item" type="button" data-id="${escapeHtml(project.id)}" style="--activity-accent:${projectAccent(index)}">
-        <span class="dashboard-activity-dot" aria-hidden="true"></span>
-        <span>
-          <span class="dashboard-activity-title">${escapeHtml(project.name)}</span>
-          <span class="dashboard-activity-meta">${escapeHtml(projectKind(project))} &middot; ${escapeHtml(projectStateLabel(state))}</span>
-        </span>
-        <span class="dashboard-activity-time">${escapeHtml(relativeTime(project.updated_at || project.created_at))}</span>
-      </button>
-    `;
-  }).join('');
-  list.querySelectorAll<HTMLButtonElement>('[data-id]').forEach(button => {
-    button.addEventListener('click', () => {
-      const id = button.dataset.id;
-      if (id) window.location.href = builderUrl(id);
-    });
-  });
-}
-
 function renderLiveProjects(projects: DashboardProject[]) {
+  dashboardProjects = projects.slice();
   const grid = document.querySelector('.projects-grid') as HTMLElement | null;
   const sidebarList = document.getElementById('sidebar-projects-list');
+  const projectSelect = document.getElementById('dashboard-project-select') as HTMLSelectElement | null;
   const countLabel = document.querySelector('.section-label span');
   if (countLabel) countLabel.textContent = `(${projects.length})`;
-  renderDashboardOverview(projects);
-  renderProjectFilters(projects);
-  renderRecentDashboardActivity(projects);
+
+  if (projectSelect) {
+    const preferred = selectedDashboardProjectId() || dashboardWorkspaceState?.last_project_id || '';
+    projectSelect.innerHTML = [
+      '<option value="">Sélectionner un projet</option>',
+      ...projects.map(project => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)} · ${escapeHtml(relativeTime(project.updated_at || project.created_at))}</option>`),
+      '<option value="__new__">Créer un nouveau projet</option>',
+    ].join('');
+    if (preferred && projects.some(project => project.id === preferred)) {
+      setDashboardProject(preferred, false);
+      projectSelect.value = preferred;
+    } else {
+      setDashboardProject('', false);
+    }
+  }
 
   if (sidebarList) {
     sidebarList.innerHTML = projects.length
@@ -1316,7 +1246,7 @@ function renderLiveProjects(projects: DashboardProject[]) {
             <span class="project-nav-name">${escapeHtml(project.name)}</span>
           </button>
         `).join('')
-      : `<div class="empty-nav-state" style="padding:10px;font-size:11px;color:var(--text-sub);font-style:italic;">No projects yet</div>`;
+      : '<div class="empty-nav-state">Aucun projet</div>';
     sidebarList.querySelectorAll<HTMLElement>('.nav-project').forEach(button => {
       button.addEventListener('click', () => {
         const id = button.dataset.id;
@@ -1329,21 +1259,14 @@ function renderLiveProjects(projects: DashboardProject[]) {
   if (!projects.length) {
     grid.innerHTML = `
       <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="18" height="18" x="3" y="3" rx="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
-          </svg>
-        </div>
-        <h3 class="empty-title">Your workspace is quiet</h3>
-        <p class="empty-desc">Describe your first idea above or click New Project to open the builder.</p>
+        <h3 class="empty-title">Aucun projet pour le moment.</h3>
+        <p class="empty-desc">Décrivez votre première idée dans le composer.</p>
       </div>
     `;
     return;
   }
 
-  grid.innerHTML = projects.map((project, index) => {
+  grid.innerHTML = projects.slice(0, 5).map((project, index) => {
     const state = projectState(project);
     const accent = projectAccent(index);
     const liveUrl = projectLiveUrl(project);
@@ -1453,15 +1376,41 @@ async function loadLiveProjects() {
 async function loadLiveWallet() {
   const count = document.querySelector('.credits-count');
   const total = document.querySelector('.credits-total');
+  const pill = document.getElementById('btn-upgrade-dashboard') as HTMLButtonElement | null;
+  const badge = document.getElementById('dashboard-plan-badge');
+  const separator = pill?.querySelector('.dashboard-plan-separator') as HTMLElement | null;
+  const skeleton = pill?.querySelector('.dashboard-plan-pill-skeleton') as HTMLElement | null;
+  if (isLocalPreviewEnabled()) {
+    [count, badge, separator].forEach(node => node?.setAttribute('hidden', ''));
+    if (total) {
+      total.textContent = 'Aperçu local';
+      total.removeAttribute('hidden');
+    }
+    skeleton?.setAttribute('hidden', '');
+    pill?.classList.remove('is-loading');
+    pill?.classList.add('is-unavailable');
+    if (pill) pill.disabled = true;
+    return;
+  }
   try {
     const wallet = await apiFetch<BillingWalletResponse>('/api/billing/wallet');
     syncDashboardPlanBadges(wallet.plan || 'free');
     if (count) count.textContent = String(wallet.balance ?? 0);
-    if (total) total.textContent = ` crédits · ${planLabel(normalizePlanKey(wallet.plan))}`;
+    if (total) total.textContent = 'crédits';
+    [count, total, badge, separator].forEach(node => node?.removeAttribute('hidden'));
+    skeleton?.setAttribute('hidden', '');
+    pill?.classList.remove('is-loading', 'is-unavailable');
+    if (pill) pill.disabled = false;
   } catch {
-    syncDashboardPlanBadges('free');
-    if (count) count.textContent = '--';
-    if (total) total.textContent = ' credits unavailable';
+    [count, badge, separator].forEach(node => node?.setAttribute('hidden', ''));
+    if (total) {
+      total.textContent = 'Forfait indisponible';
+      total.removeAttribute('hidden');
+    }
+    skeleton?.setAttribute('hidden', '');
+    pill?.classList.remove('is-loading');
+    pill?.classList.add('is-unavailable');
+    if (pill) pill.disabled = true;
   }
 }
 
@@ -1652,10 +1601,22 @@ function initDashboardChrome() {
   installDashboardUxPolish();
   initCodenMotion();
   ensureSettingsPanel();
-  normalizeAiChatInputs();
-  initPromptInputActions({ persistForBuilder: true });
+  initPromptInputActions({
+    persistForBuilder: true,
+    onFiles: uploadDashboardAttachments,
+    onAttachmentsChange: attachments => {
+      const nextIds = new Set(attachments.map(item => item.id));
+      dashboardAttachments
+        .filter(item => item.id.startsWith('att_') && !nextIds.has(item.id))
+        .forEach(item => {
+          void apiFetch(`/api/assistant/attachments/${encodeURIComponent(item.id)}`, { method: 'DELETE' }).catch(() => undefined);
+        });
+      dashboardAttachments = attachments;
+      void storePendingPromptAttachments(attachments);
+      window.dispatchEvent(new Event('coden:dashboard-attachments-change'));
+    },
+  });
   initProviderModelSelectors();
-  normalizeAiChatInputs();
   bindAiUsageSettings();
   bindDashboardConnectors();
 }
@@ -1785,7 +1746,11 @@ function renderDashboardChat() {
       locale: (document.documentElement.lang || '').toLowerCase().startsWith('fr') ? 'fr' : 'en',
       onCancel: () => dashboardStreamHandles.get(message.id)?.cancel(),
       onRetry: () => void streamDashboardConversation(message.view?.prompt || message.content, message.id, message.view?.requestedMode || 'auto'),
-      onBuildPlan: () => void promoteDashboardPromptToBuilder(message.view?.prompt || message.content, 'build'),
+      onBuildPlan: () => {
+        if (window.confirm('Construire ce plan dans le Builder ? Les fichiers pourront être modifiés après validation du contexte.')) {
+          void promoteDashboardPromptToBuilder(message.view?.prompt || message.content, 'build', message.view?.planId);
+        }
+      },
     }));
   });
   thread.scrollTop = thread.scrollHeight;
@@ -1804,7 +1769,11 @@ function renderDashboardAgentMessage(message: DashboardChatMessage) {
     locale: (document.documentElement.lang || '').toLowerCase().startsWith('fr') ? 'fr' : 'en',
     onCancel: () => dashboardStreamHandles.get(message.id)?.cancel(),
     onRetry: () => void streamDashboardConversation(message.view?.prompt || message.content, message.id, message.view?.requestedMode || 'auto'),
-    onBuildPlan: () => void promoteDashboardPromptToBuilder(message.view?.prompt || message.content, 'build'),
+    onBuildPlan: () => {
+      if (window.confirm('Construire ce plan dans le Builder ? Les fichiers pourront être modifiés après validation du contexte.')) {
+        void promoteDashboardPromptToBuilder(message.view?.prompt || message.content, 'build', message.view?.planId);
+      }
+    },
   }));
 }
 
@@ -1905,6 +1874,8 @@ async function streamDashboardConversation(prompt: string, assistantMessageId: s
         prompt,
         requestedMode,
         modelId: dashboardSelectedModel(),
+        projectId: selectedDashboardProjectId() || undefined,
+        attachmentIds: dashboardAttachments.filter(item => item.status === 'uploaded').map(item => item.id),
         messages: recentDashboardConversationForAssistant(),
       }),
     },
@@ -1970,12 +1941,14 @@ async function requestDashboardDecision(prompt: string, requestedMode: AgentMode
       prompt,
       requestedMode,
       modelId: dashboardSelectedModel(),
+      projectId: selectedDashboardProjectId() || undefined,
+      attachmentIds: dashboardAttachments.filter(item => item.status === 'uploaded').map(item => item.id),
       messages: recentDashboardConversationForAssistant(),
     }),
   });
 }
 
-async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode) {
+async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode, planId?: string) {
   const submit = document.getElementById('submit-btn') as HTMLButtonElement | null;
   if (!submit) return;
   const original = submit.innerHTML;
@@ -1983,6 +1956,26 @@ async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode) 
   const statusMessageId = appendDashboardMessage('system', '', true);
   submit.classList.add('is-loading');
   try {
+    const selectedProject = selectedDashboardProjectId();
+    if (selectedProject) {
+      sessionStorage.setItem('coden-initial-prompt', prompt);
+      sessionStorage.setItem('coden-requested-mode', mode);
+      sessionStorage.setItem('coden-selected-model', dashboardSelectedModel());
+      if (planId) sessionStorage.setItem('coden-approved-plan-id', planId);
+      sessionStorage.setItem('coden-dashboard-handoff', JSON.stringify({
+        projectId: selectedProject,
+        prompt,
+        requestedMode: mode,
+        modelId: dashboardSelectedModel(),
+        attachmentIds: dashboardAttachments.filter(item => item.status === 'uploaded').map(item => item.id),
+        planId,
+        createdAt: Date.now(),
+      }));
+      await storePendingPromptAttachments(dashboardAttachments);
+      window.location.href = builderUrl(selectedProject);
+      return;
+    }
+    if (planId) sessionStorage.setItem('coden-approved-plan-id', planId);
     await startCreateProjectFlow({
       prompt,
       mode,
@@ -2005,6 +1998,71 @@ async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode) 
     submit.classList.remove('is-loading');
     submit.innerHTML = original;
   }
+}
+
+function bindDashboardComposerControls() {
+  const textarea = document.getElementById('ai-textarea') as HTMLTextAreaElement | null;
+  const submit = document.getElementById('submit-btn') as HTMLButtonElement | null;
+  const projectSelect = document.getElementById('dashboard-project-select') as HTMLSelectElement | null;
+  const wrapper = textarea?.closest('.input-wrapper') as HTMLElement | null;
+  if (!textarea || !submit || !wrapper || wrapper.dataset.codenComposerBound === 'true') return;
+  wrapper.dataset.codenComposerBound = 'true';
+
+  const resize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(220, Math.max(84, textarea.scrollHeight))}px`;
+  };
+  const syncSubmit = () => {
+    const hasPrompt = Boolean(textarea.value.trim());
+    const hasAttachment = dashboardAttachments.some(item => item.status === 'uploaded');
+    const uploading = dashboardAttachments.some(item => item.status === 'pending');
+    submit.disabled = dashboardAssistantBusy || uploading || (!hasPrompt && !hasAttachment) || isLocalPreviewEnabled();
+    wrapper.dataset.composerState = dashboardAssistantBusy ? 'streaming' : uploading ? 'uploading' : 'idle';
+  };
+  const applySlashCommand = () => {
+    const raw = textarea.value.trim().toLowerCase();
+    const commands: Record<string, DashboardMode> = { '/auto': 'auto', '/build': 'build', '/plan': 'plan' };
+    const mode = commands[raw];
+    if (!mode) return false;
+    setDashboardMode(mode);
+    textarea.value = '';
+    resize();
+    syncSubmit();
+    return true;
+  };
+
+  textarea.addEventListener('input', () => {
+    resize();
+    syncSubmit();
+  });
+  textarea.addEventListener('focus', () => { wrapper.dataset.composerState = 'focused'; });
+  textarea.addEventListener('blur', () => { wrapper.dataset.composerState = dashboardAssistantBusy ? 'streaming' : 'idle'; });
+  textarea.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (applySlashCommand()) return;
+      if (!submit.disabled) submit.click();
+    }
+    if (event.key === 'Escape') textarea.blur();
+  });
+  document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      textarea.focus();
+    }
+  });
+  projectSelect?.addEventListener('change', () => {
+    if (projectSelect.value === '__new__') {
+      projectSelect.value = selectedDashboardProjectId();
+      document.getElementById('btn-new-project')?.click();
+      return;
+    }
+    setDashboardProject(projectSelect.value);
+  });
+  resize();
+  syncSubmit();
+  window.addEventListener('coden:dashboard-attachments-change', syncSubmit);
 }
 
 function bindDashboardPromptCreation() {
@@ -2035,25 +2093,27 @@ function bindDashboardPromptCreation() {
       return;
     }
     const prompt = textarea.value.trim();
-    if (!prompt || dashboardAssistantBusy) return;
+    const hasAttachments = dashboardAttachments.some(item => item.status === 'uploaded');
+    if ((!prompt && !hasAttachments) || dashboardAssistantBusy) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
     const mode = selectedDashboardMode();
+    const effectivePrompt = prompt || 'Analyse les pièces jointes fournies et propose la prochaine action utile.';
     dashboardSetChatState('conversation');
-    appendDashboardMessage('user', prompt);
+    appendDashboardMessage('user', effectivePrompt);
     submit.classList.add('is-loading');
     try {
-      const decision = await requestDashboardDecision(prompt, mode);
+      const decision = await requestDashboardDecision(effectivePrompt, mode);
       if (decision.success === false) throw new Error(decision.message || decision.error || 'La décision de l’agent est indisponible.');
       textarea.value = '';
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
       const needsProject = Boolean(decision.requires_project) || ['build', 'edit', 'debug', 'verify'].includes(String(decision.resolved_action));
       if (needsProject) {
-        await promoteDashboardPromptToBuilder(prompt, mode);
+        await promoteDashboardPromptToBuilder(effectivePrompt, mode);
         return;
       }
-      const assistantId = appendDashboardRunMessage(prompt, mode);
+      const assistantId = appendDashboardRunMessage(effectivePrompt, mode);
       submit.classList.remove('is-loading');
       submit.innerHTML = 'Envoyer';
       const message = dashboardChatMessages.find(item => item.id === assistantId);
@@ -2064,7 +2124,7 @@ function bindDashboardPromptCreation() {
         if (decision.clarification) message.view.status = 'clarifying';
         scheduleDashboardAgentRender(assistantId);
       }
-      void streamDashboardConversation(prompt, assistantId, mode);
+      void streamDashboardConversation(effectivePrompt, assistantId, mode);
     } catch (error) {
       textarea.focus();
       submit.classList.remove('is-loading');
@@ -2122,6 +2182,7 @@ function initDashboardLive() {
   dashboardInitialized = true;
   initDashboardChrome();
   mountDashboardAgentModeComposer();
+  bindDashboardComposerControls();
   if (!dashboardChatMessages.length) dashboardSetChatState('idle');
   hydrateUserIdentity((window as any).codenAuthReady);
   bindLiveProjectCreation();

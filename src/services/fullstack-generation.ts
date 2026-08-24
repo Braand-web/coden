@@ -151,6 +151,7 @@ function mergePackageJson(content: string) {
   }
   pkg.devDependencies = {
     ...(pkg.devDependencies || {}),
+    '@types/node': pkg.devDependencies?.['@types/node'] || '^22.10.0',
   };
   return JSON.stringify(pkg, null, 2);
 }
@@ -1295,6 +1296,7 @@ export function applyCodenFullstackKit(input: FullstackKitInput): FullstackGener
 
   const packageFile = fileByPath(input.files, 'package.json');
   upsertFile(byPath, 'package.json', mergePackageJson(packageFile?.content || '{}'), 'json');
+  upsertFile(byPath, 'src/vite-env.d.ts', '/// <reference types="vite/client" />\n', 'ts');
   upsertFile(byPath, 'src/lib/codenCloud.ts', buildCodenCloudClient(), 'ts');
   upsertFile(byPath, 'src/lib/appData.ts', buildAppDataLayer(input.requirement), 'ts');
   upsertFile(byPath, 'src/lib/validation.ts', buildValidationLayer(blueprint), 'ts');

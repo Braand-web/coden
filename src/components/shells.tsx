@@ -1,6 +1,6 @@
 import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { EASE_DRAWER, EASE_OUT } from "../lib/ease";
+import { EASE_DRAWER } from "../lib/ease";
 import { cn } from "../lib/utils";
 import { CodenBrand } from "./brand/coden-logo";
 import { Button, IconButton } from "./ui/primitives";
@@ -77,15 +77,12 @@ export function MarketingHeader({ signInLabel = "Créer mon application" }: { si
     };
   }, [closeMenu, open]);
 
-  return <motion.header
+  return <header
     ref={headerRef}
     id="landing-navbar"
     className={cn("coden-react-marketing-header", open && "is-open")}
     data-header-state={scrolled ? "scrolled" : "top"}
     data-locale={locale}
-    initial={false}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: reduced ? 0 : .18, ease: EASE_OUT }}
   >
     <CodenBrand className="coden-react-brand" label={locale === "fr" ? "Accueil Coden" : "Coden home"} />
     <nav className="coden-react-nav" id="landing-nav-menu" aria-label={locale === "fr" ? "Navigation principale" : "Main navigation"}>
@@ -119,7 +116,7 @@ export function MarketingHeader({ signInLabel = "Créer mon application" }: { si
         </motion.div>
       </> : null}
     </AnimatePresence>
-  </motion.header>;
+  </header>;
 }
 
 export function MarketingFooter() {

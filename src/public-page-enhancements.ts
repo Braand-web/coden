@@ -412,7 +412,8 @@ export function installSharedFaq(options: PublicEnhancementOptions = {}) {
 
 export function installPublicPageEnhancements(options: PublicEnhancementOptions = {}) {
   const navbar = document.querySelector('.seo-nav, .navbar');
-  if (!document.querySelector('[data-theme-toggle], #theme-btn, #theme-btn-dashboard')) {
+  const sharedHeaderOwnsTheme = Boolean(document.getElementById('coden-marketing-header-root'));
+  if (!sharedHeaderOwnsTheme && !document.querySelector('[data-theme-toggle], #theme-btn, #theme-btn-dashboard')) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'coden-public-theme-toggle';

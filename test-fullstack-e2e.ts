@@ -284,7 +284,7 @@ assert.equal(securityFailures.length, 0, `security scan failed:\n${securityFailu
 // when the sandbox cannot reach the npm registry for a full install.
 {
   const esbuild = await import('esbuild');
-  const compilable = files.filter(file => /\.(ts|tsx|js|jsx)$/.test(file.path));
+  const compilable = files.filter(file => /\.(ts|tsx|js|jsx)$/.test(file.path) && !/\.d\.ts$/.test(file.path));
   assert.ok(compilable.length >= 8, `expected the generated app to contain source files, found ${compilable.length}`);
   for (const file of compilable) {
     const loader = file.path.endsWith('.tsx')
@@ -311,13 +311,22 @@ assert.equal(securityFailures.length, 0, `security scan failed:\n${securityFailu
 
 // ── Materialize and actually run install/build/test/lint ────────────────────
 
-const workdir = await mkdtemp(path.join(tmpdir(), 'coden-fullstack-e2e-'));
+const keepOutput = process.env.CODEN_E2E_KEEP_OUTPUT === '1';
+const workdir = keepOutput
+  ? path.resolve(process.cwd(), '.tmp', 'coden-generated-crm')
+  : await mkdtemp(path.join(tmpdir(), 'coden-fullstack-e2e-'));
 
-function run(command: string, args: string[], timeoutMs: number) {
+if (keepOutput) {
+  await rm(workdir, { recursive: true, force: true });
+  await mkdir(workdir, { recursive: true });
+}
+
+function run(command: string, args: string[], timeoutMs: number, shell = false) {
   const result = spawnSync(command, args, {
     cwd: workdir,
     encoding: 'utf8',
     timeout: timeoutMs,
+    shell,
     env: {
       PATH: process.env.PATH || '',
       HOME: process.env.HOME || workdir,
@@ -330,6 +339,12 @@ function run(command: string, args: string[], timeoutMs: number) {
     },
   });
   return result;
+}
+
+function runNpm(args: string[], timeoutMs: number) {
+  const npmCli = String(process.env.npm_execpath || '').trim();
+  if (npmCli) return run(process.execPath, [npmCli, ...args], timeoutMs);
+  return run(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, timeoutMs, process.platform === 'win32');
 }
 
 try {
@@ -347,14 +362,15 @@ try {
   const NETWORK_ERROR_RE = /ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|network|registry\.npmjs\.org.*(?:timeout|failed)|ERR_SOCKET|request to .* failed/i;
 
   const installStarted = Date.now();
-  const install = run('npm', ['install', '--no-fund', '--no-audit'], 540_000);
+  const install = runNpm(['install', '--no-fund', '--no-audit'], 540_000);
   const installDuration = Math.round((Date.now() - installStarted) / 100) / 10;
-  const installOutput = `${install.stdout || ''}\n${install.stderr || ''}`.trim();
+  const installOutput = `${install.stdout || ''}\n${install.stderr || ''}\n${install.error?.message || ''}`.trim();
 
   if (install.status !== 0) {
     // status === null means the process was killed (timeout); combined with a
     // network signature it is an environment limitation, not a code defect.
-    const looksEnvironmental = install.status === null || NETWORK_ERROR_RE.test(installOutput);
+    const timedOut = install.error && 'code' in install.error && install.error.code === 'ETIMEDOUT';
+    const looksEnvironmental = timedOut || NETWORK_ERROR_RE.test(installOutput);
     if (looksEnvironmental) {
       console.log(`[fullstack-e2e] SKIPPED: npm install could not complete in this environment after ${installDuration}s (network/registry unavailable). Structure + security validation already passed. Run with network access to exercise the full build.`);
       process.exit(0);
@@ -371,7 +387,7 @@ try {
 
   for (const step of steps) {
     const startedAt = Date.now();
-    const result = run('npm', step.args, step.timeoutMs);
+    const result = runNpm(step.args, step.timeoutMs);
     const duration = Math.round((Date.now() - startedAt) / 100) / 10;
     const output = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
     assert.equal(
@@ -384,5 +400,9 @@ try {
 
   console.log('fullstack e2e: generated app installs, builds, tests and typechecks — functional.');
 } finally {
-  await rm(workdir, { recursive: true, force: true });
+  if (keepOutput) {
+    console.log(`[fullstack-e2e] generated app retained at ${workdir}`);
+  } else {
+    await rm(workdir, { recursive: true, force: true });
+  }
 }

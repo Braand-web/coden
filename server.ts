@@ -1703,6 +1703,78 @@ function normalizeGeneratedFiles(rawFiles: any, options: { ensureIndex?: boolean
   return files.slice(0, 80);
 }
 
+type AssistantAttachmentRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+  createdAt: number;
+  expiresAt: number;
+};
+
+const assistantAttachments = new Map<string, AssistantAttachmentRecord>();
+const ASSISTANT_ATTACHMENT_TTL_MS = 30 * 60_000;
+const ASSISTANT_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
+const ASSISTANT_ATTACHMENT_ALLOWED_TYPES = new Set([
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'text/plain', 'text/markdown', 'application/json', 'text/csv', 'application/pdf',
+]);
+
+function attachmentBuffer(dataUrl: string, mimeType: string) {
+  const match = /^data:([^;,]+);base64,([a-z0-9+/=]+)$/i.exec(String(dataUrl || ''));
+  if (!match || match[1].toLowerCase() !== mimeType.toLowerCase()) throw new Error('Attachment encoding is invalid.');
+  return Buffer.from(match[2], 'base64');
+}
+
+function attachmentSignatureIsValid(buffer: Buffer, mimeType: string) {
+  if (mimeType === 'image/png') return buffer.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
+  if (mimeType === 'image/jpeg') return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  if (mimeType === 'image/webp') return buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP';
+  if (mimeType === 'image/gif') return /^GIF8[79]a$/.test(buffer.subarray(0, 6).toString());
+  if (mimeType === 'application/pdf') return buffer.subarray(0, 5).toString() === '%PDF-';
+  return !buffer.includes(0);
+}
+
+function cleanupAssistantAttachments(now = Date.now()) {
+  assistantAttachments.forEach((record, id) => {
+    if (record.expiresAt <= now) assistantAttachments.delete(id);
+  });
+}
+
+function resolveAssistantAttachments(userId: string, rawIds: unknown) {
+  cleanupAssistantAttachments();
+  const ids = Array.isArray(rawIds) ? rawIds.map(String).slice(0, 6) : [];
+  const records = ids
+    .map(id => assistantAttachments.get(id))
+    .filter((record): record is AssistantAttachmentRecord => Boolean(record && record.userId === userId && record.expiresAt > Date.now()));
+  let total = 0;
+  return records.filter(record => {
+    total += record.size;
+    return total <= 12 * 1024 * 1024;
+  });
+}
+
+function assistantAttachmentContext(records: AssistantAttachmentRecord[]) {
+  let remaining = 24_000;
+  const blocks: string[] = [];
+  for (const record of records) {
+    if (record.mimeType.startsWith('image/')) continue;
+    const buffer = attachmentBuffer(record.dataUrl, record.mimeType);
+    if (record.mimeType === 'application/pdf') {
+      blocks.push(`Attachment: ${record.name} (PDF, ${record.size} bytes). Use its presence as context; no unverified extraction is available.`);
+      continue;
+    }
+    const text = redactSecrets(buffer.toString('utf8')).replace(/\u0000/g, '').slice(0, remaining);
+    if (!text) continue;
+    blocks.push(`Attachment: ${record.name}\n${text}`);
+    remaining -= text.length;
+    if (remaining <= 0) break;
+  }
+  return blocks.join('\n\n');
+}
+
 function inferGeneratedLanguage(filePath: string): string {
   const normalized = String(filePath || '').toLowerCase();
   if (normalized.endsWith('.tsx')) return 'tsx';
@@ -4214,8 +4286,9 @@ function buildAgentTextMessages(input: {
   decision: IntentDecision;
   researchContext?: string;
   executionContract?: ExecutionContract;
+  visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
 }): ChatMessage[] {
-  const { project, prompt, files, decision, researchContext, executionContract } = input;
+  const { project, prompt, files, decision, researchContext, executionContract, visionInputs } = input;
   const languageInstruction = isLikelyFrenchPrompt(prompt)
     ? 'Answer in natural French.'
     : 'Answer in the same language as the user.';
@@ -4247,7 +4320,16 @@ function buildAgentTextMessages(input: {
     },
     {
       role: 'user',
-      content: JSON.stringify({
+      content: visionInputs?.length ? buildVisionMessageContent(JSON.stringify({
+        project: { name: project.name, status: project.status, preview_status: project.preview_status },
+        request: prompt,
+        intent: decision.intent,
+        intent_category: decision.intentUnderstanding?.category || decision.understandingCategory,
+        auto_plan_required: decision.autoPlanRequired,
+        execution_contract: executionContract || undefined,
+        files: fileSummary,
+        researchContext: researchContext || undefined,
+      }), visionInputs) : JSON.stringify({
         project: { name: project.name, status: project.status, preview_status: project.preview_status },
         request: prompt,
         intent: decision.intent,
@@ -4272,6 +4354,7 @@ async function createAgentTextResponse(input: {
   researchContext?: string;
   allowLocalFallback?: boolean;
   signal?: AbortSignal;
+  visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -4297,12 +4380,13 @@ async function createAgentTextResponse(input: {
     files,
     stream: false,
     timeoutMs: decision.intent === 'conversation' ? 12_000 : decision.intent === 'plan' ? 30_000 : 45_000,
+    hasVisionInput: Boolean(input.visionInputs?.length),
   });
 
   try {
     const result = await providerGateway.chat(
       selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract }),
+      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs }),
       {
         maxAttempts: decision.intent === 'conversation' ? 1 : 2,
         timeoutMs: runtimeOptions.runtime.timeoutMs,
@@ -4342,6 +4426,7 @@ async function streamAgentTextResponse(input: {
   allowLocalFallback?: boolean;
   signal?: AbortSignal;
   onToken?: (chunk: string, meta: { index: number; model: string }) => Promise<void> | void;
+  visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
 }): Promise<{ text: string; model: string; cost_usd: number; streamed: boolean }> {
   const { project, prompt, files, decision, researchContext, onToken } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -4372,6 +4457,7 @@ async function streamAgentTextResponse(input: {
     files,
     stream: true,
     timeoutMs: textResponseTimeoutMs,
+    hasVisionInput: Boolean(input.visionInputs?.length),
   });
   let text = '';
   let model: string = selectedModel;
@@ -4383,7 +4469,7 @@ async function streamAgentTextResponse(input: {
   try {
     for await (const event of providerGateway.streamChat(
       selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract }),
+      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs }),
       {
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
@@ -8873,6 +8959,60 @@ app.post('/api/ai/route', async (req, res) => {
   }
 });
 
+app.post('/api/assistant/attachments', (req: any, res: any) => {
+  const requestId = `attachment_${randomUUID()}`;
+  const authUser = requireAuthenticatedUser(req, res, requestId);
+  if (!authUser) return;
+  const name = sanitizeWorkspaceText(req.body?.name || '', 240).trim();
+  const mimeType = String(req.body?.mimeType || '').trim().toLowerCase();
+  const declaredSize = Number(req.body?.size || 0);
+  const dataUrl = String(req.body?.dataUrl || '');
+  if (!name || !ASSISTANT_ATTACHMENT_ALLOWED_TYPES.has(mimeType)) {
+    return res.status(400).json({ success: false, error: 'Attachment type is not allowed.', request_id: requestId });
+  }
+  try {
+    const buffer = attachmentBuffer(dataUrl, mimeType);
+    if (!buffer.length || buffer.length > ASSISTANT_ATTACHMENT_MAX_BYTES || declaredSize !== buffer.length) {
+      return res.status(413).json({ success: false, error: 'Attachment size is invalid.', request_id: requestId });
+    }
+    if (!attachmentSignatureIsValid(buffer, mimeType)) {
+      return res.status(400).json({ success: false, error: 'Attachment content does not match its declared type.', request_id: requestId });
+    }
+    cleanupAssistantAttachments();
+    const id = `att_${randomUUID()}`;
+    const now = Date.now();
+    assistantAttachments.set(id, {
+      id,
+      userId: String(authUser.id),
+      name,
+      mimeType,
+      size: buffer.length,
+      dataUrl,
+      createdAt: now,
+      expiresAt: now + ASSISTANT_ATTACHMENT_TTL_MS,
+    });
+    return res.status(201).json({
+      success: true,
+      attachment: { id, name, mimeType, size: buffer.length, status: 'ready', expiresAt: new Date(now + ASSISTANT_ATTACHMENT_TTL_MS).toISOString() },
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Attachment upload failed.', request_id: requestId });
+  }
+});
+
+app.delete('/api/assistant/attachments/:attachmentId', (req: any, res: any) => {
+  const requestId = `attachment_delete_${randomUUID()}`;
+  const authUser = requireAuthenticatedUser(req, res, requestId);
+  if (!authUser) return;
+  const id = String(req.params.attachmentId || '');
+  const record = assistantAttachments.get(id);
+  if (!record || record.userId !== String(authUser.id)) {
+    return res.status(404).json({ success: false, error: 'Attachment not found.', request_id: requestId });
+  }
+  assistantAttachments.delete(id);
+  return res.json({ success: true, request_id: requestId });
+});
+
 // POST /assistant/decision
 // The Dashboard asks the server to resolve Auto/Build/Plan before choosing a
 // surface. The browser must not infer “this needs the Builder” from keywords.
@@ -8880,11 +9020,14 @@ app.post('/api/assistant/decision', async (req: any, res: any) => {
   const requestId = `decision_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
-  const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
-  if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required.', request_id: requestId });
+  const basePrompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
+  if (!basePrompt) return res.status(400).json({ success: false, error: 'Prompt is required.', request_id: requestId });
 
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode || req.body?.mode);
   const userId = String(authUser.id);
+  const attachmentRecords = resolveAssistantAttachments(userId, req.body?.attachmentIds);
+  const attachmentContext = assistantAttachmentContext(attachmentRecords);
+  const prompt = attachmentContext ? `${basePrompt}\n\nVerified user attachments:\n${attachmentContext}` : basePrompt;
   const requestedProjectId = String(req.body?.projectId || '').trim();
   let hasFiles = false;
   let lastPlan: string | undefined;
@@ -8966,8 +9109,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
   const userId = String(authUser.id);
-  const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
-  if (!prompt) {
+  const basePrompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
+  if (!basePrompt) {
     return res.status(400).json({
       success: false,
       error: 'Prompt is required.',
@@ -8977,6 +9120,9 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       suggested_action: 'write_message',
     });
   }
+  const attachmentRecords = resolveAssistantAttachments(userId, req.body?.attachmentIds);
+  const attachmentContext = assistantAttachmentContext(attachmentRecords);
+  const prompt = attachmentContext ? `${basePrompt}\n\nVerified user attachments:\n${attachmentContext}` : basePrompt;
   if (!enforceRateLimit(`assistant_chat:${userId}`, 30, 60_000)) {
     return res.status(429).json({
       success: false,
@@ -9075,6 +9221,9 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       modelId: selectedModel,
       userCredits: wallet,
       allowLocalFallback: selectedModel === 'auto',
+      visionInputs: attachmentRecords
+        .filter(record => record.mimeType.startsWith('image/'))
+        .map(record => ({ url: record.dataUrl, detail: 'auto' as const })),
     });
 
     const content = redactSecrets(agentText.text || '').trim();
@@ -9119,8 +9268,8 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
   const userId = String(authUser.id);
-  const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
-  if (!prompt) {
+  const basePrompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
+  if (!basePrompt) {
     return res.status(400).json({
       success: false,
       error: 'Prompt is required.',
@@ -9130,6 +9279,9 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
       suggested_action: 'write_message',
     });
   }
+  const attachmentRecords = resolveAssistantAttachments(userId, req.body?.attachmentIds);
+  const attachmentContext = assistantAttachmentContext(attachmentRecords);
+  const prompt = attachmentContext ? `${basePrompt}\n\nVerified user attachments:\n${attachmentContext}` : basePrompt;
   if (!enforceRateLimit(`assistant_chat:${userId}`, 30, 60_000)) {
     return res.status(429).json({
       success: false,
@@ -9292,6 +9444,9 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
       userCredits: wallet,
       allowLocalFallback: selectedModel === 'auto',
       signal: chatAbortController.signal,
+      visionInputs: attachmentRecords
+        .filter(record => record.mimeType.startsWith('image/'))
+        .map(record => ({ url: record.dataUrl, detail: 'auto' as const })),
       onToken: (chunk) => {
         if (!streamAborted) stream.emit('assistant_delta', { text: chunk });
       },

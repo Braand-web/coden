@@ -1,4 +1,4 @@
-const baseUrl = (process.env.CODEN_PROD_URL || 'https://www.coden.fun').replace(/\/+$/, '');
+const baseUrl = (process.env.CODEN_PROD_URL || 'https://coden.fun').replace(/\/+$/, '');
 const paths = ['/', '/auth.html', '/pricing.html', '/builder.html'];
 
 async function check(path) {
