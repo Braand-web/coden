@@ -34,7 +34,7 @@ assert.equal(CODEN_UNIVERSAL_BUILDER_PROMPT_VERSION, 'coden-universal-builder-pr
 assert.equal(CODEN_MESSAGE_STREAMING_PROMPT_VERSION, 'coden-message-streaming-prompt-v2');
 assert.equal(CODEN_AUTO_INFRASTRUCTURE_PROMPT_VERSION, 'coden-auto-infrastructure-prompt-v1');
 
-for (const prompt of [routerPrompt, textPrompt, generationPrompt]) {
+for (const prompt of [routerPrompt, textPrompt]) {
   assert.ok(prompt.includes('This contract has priority over every lower-level Coden prompt policy'), 'every prompt must include the root system contract');
   assert.ok(prompt.includes('Product engineering operating contract'), 'every prompt must include the product engineering operating contract');
   assert.ok(prompt.includes('Coden is not specialized in one app category'), 'every prompt must keep Coden general-purpose');
@@ -74,6 +74,11 @@ for (const prompt of [routerPrompt, textPrompt, generationPrompt]) {
   assert.ok(prompt.includes('ALL GREEN means BUILD'), 'every prompt must include the autonomous go/no-go rule');
   assert.ok(prompt.includes('The mode is never declared, it is revealed through behavior'), 'every prompt must keep modes internal');
 }
+
+assert.ok(generationPrompt.includes('This contract has priority over every lower-level Coden prompt policy'), 'generation must keep the root contract');
+assert.ok(generationPrompt.includes('Product engineering operating contract'), 'generation must keep the engineering contract');
+assert.ok(generationPrompt.includes('Never invent file contents, tool results, API behavior, tests, preview status, deployment status, or success'), 'generation must remain truthful');
+assert.ok(generationPrompt.length < 55_000, `generation prompt must stay output-focused, received ${generationPrompt.length} characters`);
 
 assert.ok(MODE_SELECTION_PROMPT.includes('DISCUSS leads to PLAN'), 'mode prompt must include transitions');
 assert.ok(MODE_SELECTION_PROMPT.includes('Never print DISCUSS, PLAN, BUILD, ASK'), 'mode prompt must forbid exposing internal modes');

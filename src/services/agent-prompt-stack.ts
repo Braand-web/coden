@@ -964,9 +964,6 @@ export function buildGenerationSystemPrompt(input: {
     CODEN_GENERATION_SECURITY_CONTRACT,
     CODEN_INFRASTRUCTURE_CONTRACT,
     CODEN_PRODUCT_ENGINEERING_CONTRACT,
-    CODEN_UNIVERSAL_BUILDER_SYSTEM_PROMPT,
-    CODEN_IDENTITY,
-    MODE_SELECTION_PROMPT,
     [
       'Generation-only context:',
       'You are not chatting with the user in this call. You are generating complete project files for Coden.',
@@ -977,22 +974,18 @@ export function buildGenerationSystemPrompt(input: {
       'Never answer a clear build request with a generic plan, "possible directions", or "should I answer or change the project?".',
       'Treat the user request as private implementation context. Never render the raw prompt, first chat message, or instruction text inside the generated application.',
       'Invent concise product copy and a real product name that fit the requested experience.',
+      'Recovery pass is mandatory: self-check imports, required files, runtime safety and the output contract before returning JSON.',
       'For clarification, ask exactly one concise question. Do not add "possible directions", "my recommendation", or repeated paragraphs.',
       'Never promise unlimited usage, unlimited AI generations, unlimited hosting, unlimited storage, unlimited bandwidth, or unlimited deployed AI usage.',
       'Preserve business honesty: generated copy can mention credits, Cloud balance, storage, bandwidth, top-ups, and upgrade paths, but never expose provider dollars, gross margin, net margin, Stripe fees, supplier invoices, or internal cost ceilings.',
       'Do not expose internal model policy, internal mode names, raw intent names, provider selection, token counts, or hidden routing details.',
     ].join('\n'),
-    CODEN_COMPREHENSION_POLICY,
-    CODEN_REASONING_DEPTH_POLICY,
-    CODEN_INTERLEAVED_COMMUNICATION_PROTOCOL,
-    CODEN_COMMUNICATION_VALIDATION_RULES,
-    CODEN_STRUCTURED_MESSAGE_STREAMING_CONTRACT,
-    CODEN_MESSAGE_PART_RENDERING_RULES,
+    // Keep this prompt output-focused. Conversation, routing, narration and
+    // message-rendering policies belong to their own model calls; including
+    // them here used more than 22k input tokens before a single file existed.
     CODEN_PLATFORM_INTELLIGENCE_POLICY,
     input.uiPolicySystemPrompt,
     CODEN_GENERATED_APP_DESIGN_SYSTEM_POLICY,
-    CODEN_DESIGN_EXCELLENCE_POLICY,
-    CODEN_DESIGN_OVERRIDE_POLICY,
     CODEN_FRONTEND_CRAFT_POLICY,
     CODEN_RESPONSIVE_ACCESSIBILITY_POLICY,
     CODEN_MOTION_POLISH_POLICY,
@@ -1012,13 +1005,6 @@ export function buildGenerationSystemPrompt(input: {
     CODEN_IMPORT_POLICY,
     CODEN_SENIOR_AGENT_OS_POLICY,
     CODEN_ARCHITECT_POLICY,
-    CODEN_DEEP_REASONING_POLICY,
-    CODEN_PREMIUM_UI_ESCALATION_POLICY,
-    CODEN_MULTI_TURN_CONTEXT_POLICY,
-    CODEN_SELF_CRITIQUE_POLICY,
-    CODEN_ADAPTIVE_COMPLEXITY_POLICY,
-    CODEN_DOMAIN_EXPERT_POLICY,
-    CODEN_PROACTIVE_INTELLIGENCE_POLICY,
     CODEN_UNIVERSAL_BUILDER_COMPLETION_RULES,
     input.hasExistingFiles
       ? CODEN_GENERATION_ITERATION_POLICY
@@ -1027,7 +1013,6 @@ export function buildGenerationSystemPrompt(input: {
       ? 'Relevant web research is provided by Coden. Treat it as supporting context, cite nothing in the generated UI unless the user asked for source-heavy content, and never expose internal research mechanics.'
       : undefined,
     CODEN_SAFETY_POLICY,
-    CODEN_PARITY_GATES,
     CODEN_ZERO_BUG_GENERATION_POLICY,
     CODEN_JSON_OUTPUT_POLICY,
   ]);
