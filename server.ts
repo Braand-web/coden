@@ -5717,7 +5717,7 @@ async function generateFilesWithAi(input: {
       ? normalizeProviderModelForBackend(input.modelId)
       : DEFAULT_PROVIDER_MODEL_ID;
   validateAllowedModel(selectedModel);
-  assertAgentModelCapabilities(selectedModel, { streaming: true, structuredOutput: true, toolCalling: true });
+  assertAgentModelCapabilities(selectedModel, { structuredOutput: true });
 
   const fileManifest = input.existingFiles
     .map(file => `${file.path} (${file.content.length} chars)`)
@@ -5963,13 +5963,11 @@ async function generateFilesWithAi(input: {
   
   while (attempt < 2) {
 
-    // Stream tokens live so the client sees progress in real time
-    let fullText = '';
-    let streamedModel: string = selectedModel;
-    let streamedCost = 0;
-
     try {
-      for await (const event of providerGateway.streamChat(currentGenerationModel, [
+      // Generated source is an atomic structured artifact. Streaming its raw
+      // JSON makes provider disconnects more likely and can never be rendered
+      // as assistant prose, so request one bounded structured response.
+      const generationResult = await providerGateway.chat(currentGenerationModel, [
         {
           role: 'system',
           content: buildGenerationSystemPrompt({
@@ -5997,29 +5995,21 @@ async function generateFilesWithAi(input: {
           content: buildGenerationUserContent('Use these visual references as real multimodal input for this generation.'),
         }] : []),
       ], {
+        maxAttempts: 1,
         timeoutMs: runtimeOptions?.runtime.timeoutMs || 120_000,
         runtimeConfig: runtimeOptions?.providerConfig,
         runtimeConfigForModel: runtimeOptions?.runtimeConfigForModel,
         allowFallback: false,
         signal: input.signal,
-      })) {
-        if (event.type === 'token') {
-          fullText += event.text;
-          streamedModel = event.model;
-        } else if (event.type === 'usage') {
-          streamedCost = event.cost_usd;
-          streamedModel = event.model;
-        }
-      }
+      });
+      result = generationResult;
+      totalCostUsd += generationResult.cost_usd;
     } catch (streamErr: any) {
-      // A failed stream is terminal for this run. Starting a second model
+      // A failed request is terminal for this run. Starting a second model
       // request here would duplicate work and could produce contradictory files.
       console.warn('[coden:generate_stream_failed]', { message: streamErr?.message });
       throw streamErr;
     }
-
-    result = { text: fullText, model: streamedModel, cost_usd: streamedCost };
-    totalCostUsd += streamedCost;
     const architectReqs = input.seniorAgentContext?.architect_blueprint?.quality_gates || [];
     const judgeEval = evaluateAgentOutput(input.prompt, result.text, appType, architectReqs);
 
@@ -6031,11 +6021,11 @@ async function generateFilesWithAi(input: {
 
     // Use a different model for the judge retry to avoid self-agreement bias
     const judgeModelId = modelRouter.selectJudgeModel(
-      streamedModel,
+      result.model,
       input.userCredits ?? 999,
       input.project ? String((input.project as any).plan_key || 'free') : 'free',
     );
-    if (judgeModelId !== streamedModel) {
+    if (judgeModelId !== result.model) {
       console.log(`[AGENT_JUDGE] Retrying with judge model: ${judgeModelId}`);
     }
 

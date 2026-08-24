@@ -74,7 +74,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
   const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   assert.match(
     serverSource,
-    /providerGateway\.streamChat\(currentGenerationModel,/,
+    /providerGateway\.chat\(currentGenerationModel,/,
     'The quality-gate retry must invoke the selected judge model instead of silently reusing the failed model.',
   );
   assert.match(
@@ -91,6 +91,11 @@ for (const modelId of AI_ALLOWED_MODELS) {
     serverSource,
     /input\.onEvent\?\.\(\{ type: 'token'/,
     'Raw generation JSON and source code must never be streamed as assistant prose.',
+  );
+  assert.doesNotMatch(
+    serverSource,
+    /providerGateway\.streamChat\(currentGenerationModel/,
+    'Full project JSON must use an atomic structured provider response.',
   );
   assert.match(
     serverSource,
