@@ -1845,6 +1845,7 @@ export function ensureSettingsPanel() {
   overlay.classList.add('settings-overlay');
   overlay.dataset.codenSettingsManaged = SETTINGS_MANAGED_VERSION;
   overlay.setAttribute('aria-hidden', overlay.classList.contains('open') ? 'false' : 'true');
+  overlay.inert = !overlay.classList.contains('open');
 
   let panel = document.getElementById('settings-panel') as HTMLElement | null;
   if (!panel) {
@@ -1864,6 +1865,7 @@ export function ensureSettingsPanel() {
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-modal', 'true');
   panel.setAttribute('aria-labelledby', 'settings-active-title');
+  panel.inert = !panel.classList.contains('open');
 
   const hasManagedMarkup =
     panel.dataset.codenSettingsManaged === SETTINGS_MANAGED_VERSION &&
@@ -1912,6 +1914,8 @@ export function openSettings(tab: SettingsTab = 'profile') {
   parts.panel.classList.add('open');
   parts.overlay.setAttribute('aria-hidden', 'false');
   parts.panel.setAttribute('aria-hidden', 'false');
+  parts.overlay.inert = false;
+  parts.panel.inert = false;
   document.body.style.overflow = 'hidden';
   const search = parts.panel.querySelector<HTMLInputElement>('[data-settings-search]');
   if (search) search.value = '';
@@ -1930,6 +1934,8 @@ export function closeSettings() {
   panel?.classList.remove('open');
   overlay?.setAttribute('aria-hidden', 'true');
   panel?.setAttribute('aria-hidden', 'true');
+  if (overlay) overlay.inert = true;
+  if (panel) panel.inert = true;
   document.body.style.overflow = '';
 }
 

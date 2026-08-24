@@ -42,9 +42,16 @@ export function toggleTheme(): CodenTheme {
   const current = document.documentElement.getAttribute('data-theme');
   const next: CodenTheme = current === 'dark' ? 'light' : 'dark';
   try { localStorage.setItem(CODEN_THEME_KEY, next); } catch { /* theme remains applied for this session */ }
-  const transition = (document as Document & { startViewTransition?: (callback: () => void) => unknown }).startViewTransition;
+  const transition = (document as Document & {
+    startViewTransition?: (callback: () => void) => { finished?: Promise<unknown> };
+  }).startViewTransition;
   if (typeof transition === 'function' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    transition(() => applyTheme(next));
+    try {
+      const viewTransition = transition.call(document, () => applyTheme(next));
+      void viewTransition?.finished?.catch(() => undefined);
+    } catch {
+      applyTheme(next);
+    }
   } else {
     applyTheme(next);
   }

@@ -59,6 +59,26 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
+    modelId: 'openai/gpt-5.6-luna',
+    task: 'intent',
+  });
+  assert.equal(runtime.responseFormat.type, 'json_schema');
+  if (runtime.responseFormat.type !== 'json_schema') throw new Error('Intent routing must use a JSON schema.');
+  const schema = runtime.responseFormat.schema as any;
+  const required = new Set(schema.required || []);
+  for (const field of [
+    'intent', 'confidence', 'auto_plan_required', 'selected_model_policy',
+    'reason', 'user_visible_reason', 'normalized_prompt', 'required_capabilities',
+    'objective', 'clarification',
+  ]) {
+    assert.equal(required.has(field), true, `Intent JSON schema must require ${field}.`);
+  }
+  assert.ok(schema.properties.objective, 'Intent JSON schema must describe the validated objective contract.');
+  assert.ok(schema.properties.clarification, 'Intent JSON schema must describe the clarification contract.');
+}
+
+{
+  const runtime = buildAIModelRuntimeConfig({
     modelId: 'deepseek/deepseek-v4-pro',
     task: 'intent',
   });

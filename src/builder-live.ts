@@ -1933,6 +1933,12 @@ function finishLiveRun(card: HTMLElement | null, summary = '') {
   if (id && conversationApi?.finishLiveRun) conversationApi.finishLiveRun(id, summary);
 }
 
+function failLiveRun(card: HTMLElement | null, summary: string, status: 'failed' | 'cancelled' | 'incomplete' = 'failed') {
+  const id = messageHandleId(card);
+  if (id && conversationApi?.failLiveRun) conversationApi.failLiveRun(id, summary, status);
+  else updateMessage(card, summary);
+}
+
 function repairTextEncoding(value: unknown): string {
   let text = String(value ?? '');
   if (!text) return text;
@@ -5565,9 +5571,11 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       journal.activeText = '';
       journal.finalText = stoppedText;
       scheduleJournal(true);
+      failLiveRun(status, stoppedText, 'cancelled');
       if (generationTouchesPreview) setEmptyPreviewState('idle', stopRequested ? 'Generation stopped' : 'Build cancelled');
     } else {
       const errorText = error instanceof Error ? error.message : 'Generation failed.';
+      const runStatus = error instanceof CodenStreamIncompleteError ? 'incomplete' : 'failed';
       clearMessageShimmer(status);
       if (useAgentFlow) {
         flowStatus = 'failed';
@@ -5581,6 +5589,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       journal.activeText = '';
       journal.finalText = errorText;
       scheduleJournal(true);
+      failLiveRun(status, errorText, runStatus);
       if (generationTouchesPreview) setEmptyPreviewState('idle', 'Preview non vérifiée');
     }
   } finally {

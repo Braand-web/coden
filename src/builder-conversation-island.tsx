@@ -98,6 +98,7 @@ export type CodenConversationApi = {
   applyStreamEvent: (id: string, event: CodenStreamEvent) => void;
   appendAssistantDelta: (id: string, text: string) => void;
   finishLiveRun: (id: string, summary?: string) => void;
+  failLiveRun: (id: string, message: string, status?: 'failed' | 'cancelled' | 'incomplete') => void;
   removeMessage: (id: string) => void;
   addAction: (id: string, label: string, onClick: () => void) => void;
   clear: () => void;
@@ -662,6 +663,25 @@ function createStore() {
         }
         message.working = false;
         if (!message.content && !pendingDeltas.has(id) && run.summary) message.content = run.summary;
+      });
+    },
+    failLiveRun(id, summary, status = 'failed') {
+      mutate(() => {
+        const message = find(id);
+        if (!message) return;
+        flushPendingDeltas(id);
+        const run = ensureLiveRun(message);
+        run.status = status === 'cancelled' ? 'cancelled' : 'failed';
+        run.summary = summary;
+        run.activeText = '';
+        addLine(run, summary, 'failed');
+        if (run.view) {
+          run.view.status = status;
+          run.view.hasFinal = false;
+          run.view.warnings = [...run.view.warnings, summary];
+        }
+        message.content = summary;
+        message.working = false;
       });
     },
     removeMessage(id) {

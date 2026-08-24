@@ -641,6 +641,27 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/favicon.ico', (_req, res) => {
+  res.redirect(308, '/favicon.svg');
+});
+
+app.post('/api/landing/conversion', (req, res) => {
+  const event = req.body && typeof req.body === 'object' ? req.body : {};
+  const name = String(event.event_name || event.event || event.name || '').trim().slice(0, 80);
+  if (!name || !/^[a-z0-9:_-]+$/i.test(name)) {
+    return res.status(400).json({ success: false, error: 'Invalid conversion event.' });
+  }
+  if (!enforceRateLimit(`conversion:${req.ip || 'unknown'}`, 120, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Too many conversion events.' });
+  }
+  console.info('[coden:conversion]', {
+    event: name,
+    place: String(event.place || event.surface || event.metadata?.place || event.metadata?.surface || '').slice(0, 80) || null,
+    source: String(event.source || event.metadata?.source || '').slice(0, 80) || null,
+  });
+  return res.status(202).json({ success: true, accepted: true });
+});
+
 function setAnalyticsCors(res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -11224,13 +11245,35 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
   const recentHistory = await getRecentDecisionHistory(project.id, 6);
-  const initialDecision = await resolveAgentDecision({
-    prompt: agentPrompt,
-    requestedMode,
-    hasFiles: existingFiles.length > 0,
-    lastPlan,
-    recentHistory,
-  });
+  let initialDecision: IntentDecision;
+  try {
+    initialDecision = await resolveAgentDecision({
+      prompt: agentPrompt,
+      requestedMode,
+      hasFiles: existingFiles.length > 0,
+      lastPlan,
+      recentHistory,
+    });
+  } catch (error: any) {
+    const diagnostic = diagnoseProviderError(error);
+    if (isStream) {
+      streamV2?.emit('error', {
+        message: diagnostic.message,
+        recoverable: diagnostic.status >= 500 || diagnostic.status === 429,
+        diagnostic_code: diagnostic.diagnostic_code,
+      });
+    }
+    return respondJson(diagnostic.status, {
+      success: false,
+      needs_fix: true,
+      error: diagnostic.message,
+      message: diagnostic.message,
+      diagnostic_code: diagnostic.diagnostic_code,
+      request_id: requestId,
+      suggested_action: diagnostic.suggested_action,
+      verification: { status: 'needs_fix' },
+    });
+  }
   const decision: IntentDecision = initialDecision;
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
