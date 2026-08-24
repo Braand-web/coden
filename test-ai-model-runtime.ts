@@ -67,6 +67,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(runtime.responseFormat.type, 'json_object', 'Fullstack generation must request structured JSON output.');
   assert.deepEqual(runtime.tools, [], 'Monolithic file generation must not expose tool calls that its stream cannot consume.');
   assert.equal(runtime.toolChoice, 'none');
+  assert.equal(runtime.thinking.budgetTokens, 4096, 'Fast fullstack generation must reserve output budget for project files.');
 }
 
 {
@@ -85,6 +86,11 @@ for (const modelId of AI_ALLOWED_MODELS) {
     serverSource,
     /providerGateway\.chat\(repairModel,/,
     'Malformed generation repair must use the effective model from the latest attempt.',
+  );
+  assert.doesNotMatch(
+    serverSource,
+    /input\.onEvent\?\.\(\{ type: 'token'/,
+    'Raw generation JSON and source code must never be streamed as assistant prose.',
   );
 }
 

@@ -5735,7 +5735,6 @@ async function generateFilesWithAi(input: {
       mode: 'generation',
       stream: false,
       timeoutMs: Math.min(120_000, input.skillBudget?.maxDurationMs || 120_000),
-      maxTokens: 32_000,
       hasVisionInput: Boolean(input.visionInputs?.length),
     })
     : null;
@@ -6003,8 +6002,6 @@ async function generateFilesWithAi(input: {
         if (event.type === 'token') {
           fullText += event.text;
           streamedModel = event.model;
-          // Forward live tokens to SSE client — enables real-time streaming cursor in UI
-          input.onEvent?.({ type: 'token', text: event.text, model: event.model });
         } else if (event.type === 'usage') {
           streamedCost = event.cost_usd;
           streamedModel = event.model;
@@ -11493,18 +11490,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       ? deriveProjectName(prompt)
       : project.name;
     const generation = await generateFilesWithAi({
-      onEvent: (event) => {
-        if (!isStream || streamAborted) return;
-        // The v2 stream is the only public transport. Legacy generation
-        // events stay internal and are normalized once here.
-        if (streamV2 && event && typeof event === 'object') {
-          const anyEvent = event as { type?: string; step?: string; message?: string; text?: string; content?: string };
-          if (anyEvent.type === 'token') {
-            const text = String(anyEvent.text ?? anyEvent.content ?? '');
-            if (text) streamV2.emit('assistant_delta', { text });
-          }
-        }
-      },
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
       project,
