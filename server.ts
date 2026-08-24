@@ -5954,6 +5954,7 @@ async function generateFilesWithAi(input: {
   let attempt = 0;
   let result: any = null;
   let currentPrompt = composedPrompt;
+  let currentGenerationModel = selectedModel;
   
   while (attempt < 2) {
 
@@ -5963,7 +5964,7 @@ async function generateFilesWithAi(input: {
     let streamedCost = 0;
 
     try {
-      for await (const event of providerGateway.streamChat(selectedModel, [
+      for await (const event of providerGateway.streamChat(currentGenerationModel, [
         {
           role: 'system',
           content: buildGenerationSystemPrompt({
@@ -6036,6 +6037,7 @@ async function generateFilesWithAi(input: {
     }
 
     currentPrompt = buildRetryPrompt(input.prompt, judgeEval);
+    currentGenerationModel = judgeModelId;
     attempt++;
   }
 
@@ -6054,7 +6056,9 @@ async function generateFilesWithAi(input: {
     });
     let repairedByModel = false;
     try {
-      const repairResult = await providerGateway.chat(selectedModel, [
+      const repairModel = normalizeProviderModelForBackend(result?.model || currentGenerationModel);
+      validateAllowedModel(repairModel);
+      const repairResult = await providerGateway.chat(repairModel, [
         {
           role: 'system',
           content: buildGenerationSystemPrompt({

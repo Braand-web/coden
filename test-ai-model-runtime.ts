@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { AI_ALLOWED_MODELS, MODEL_REGISTRY, type AllowedModelId } from './src/config/ai-models.ts';
 import {
   buildAIModelRuntimeConfig,
@@ -55,6 +56,25 @@ for (const modelId of AI_ALLOWED_MODELS) {
   const providerConfig = buildProviderRequestConfig(runtime);
   assert.equal(providerConfig.adapter, 'anthropic');
   assert.deepEqual(providerConfig.responseFormat, { type: 'json_instruction' });
+}
+
+{
+  const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+  assert.match(
+    serverSource,
+    /providerGateway\.streamChat\(currentGenerationModel,/,
+    'The quality-gate retry must invoke the selected judge model instead of silently reusing the failed model.',
+  );
+  assert.match(
+    serverSource,
+    /currentGenerationModel = judgeModelId;/,
+    'A failed generation must switch the next attempt to the judge model selected by the router.',
+  );
+  assert.match(
+    serverSource,
+    /providerGateway\.chat\(repairModel,/,
+    'Malformed generation repair must use the effective model from the latest attempt.',
+  );
 }
 
 {
