@@ -5734,7 +5734,11 @@ async function generateFilesWithAi(input: {
       files: input.existingFiles,
       mode: 'generation',
       stream: false,
-      timeoutMs: Math.min(120_000, input.skillBudget?.maxDurationMs || 120_000),
+      // A structured full project needs more wall time than a conversational
+      // response. Keep the request bounded, but never inherit a short skill
+      // budget that makes an otherwise healthy generation fail mid-object.
+      timeoutMs: Math.max(120_000, Math.min(150_000, input.skillBudget?.maxDurationMs || 150_000)),
+      maxTokens: 16_000,
       hasVisionInput: Boolean(input.visionInputs?.length),
     })
     : null;
@@ -5769,7 +5773,7 @@ async function generateFilesWithAi(input: {
 
   // ✅ Parallel specialist agents — run concurrently before main generation
   let parallelAgentContext = '';
-  if (CODEN_SKILL_FLAGS.subagents && input.existingFiles.length >= 0 && ['build', 'edit'].includes(input.decision?.intent || '')) {
+  if (CODEN_SKILL_FLAGS.subagents && input.existingFiles.length > 0 && ['build', 'edit'].includes(input.decision?.intent || '')) {
     try {
       const agentCtx: ParallelAgentContext = {
         projectName: input.projectName,

@@ -248,7 +248,9 @@ function reasoningEffortForTask(profile: AIModelCapabilityProfile, task: AIWorkf
 function thinkingBudgetForTask(profile: AIModelCapabilityProfile, task: AIWorkflowTask): number {
   if (!profile.supports.reasoningControl) return 0;
   if (['security', 'database'].includes(task) && (profile.reasoning === 'frontier' || profile.reasoning === 'high')) return 16384;
-  if (task === 'backend_generation') return profile.reasoning === 'frontier' ? 8192 : 4096;
+  // Full-project JSON is output-bound. A small private reasoning allowance
+  // preserves planning quality without consuming the file-generation budget.
+  if (task === 'backend_generation') return profile.reasoning === 'frontier' ? 2048 : 1024;
   if (['debug', 'planning', 'frontend_generation'].includes(task)) return 8192;
   if (['design', 'tests'].includes(task)) return 4096;
   return 2048;

@@ -67,7 +67,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(runtime.responseFormat.type, 'json_object', 'Fullstack generation must request structured JSON output.');
   assert.deepEqual(runtime.tools, [], 'Monolithic file generation must not expose tool calls that its stream cannot consume.');
   assert.equal(runtime.toolChoice, 'none');
-  assert.equal(runtime.thinking.budgetTokens, 4096, 'Fast fullstack generation must reserve output budget for project files.');
+  assert.equal(runtime.thinking.budgetTokens, 1024, 'Fast fullstack generation must reserve output budget for project files.');
 }
 
 {
@@ -91,6 +91,11 @@ for (const modelId of AI_ALLOWED_MODELS) {
     serverSource,
     /input\.onEvent\?\.\(\{ type: 'token'/,
     'Raw generation JSON and source code must never be streamed as assistant prose.',
+  );
+  assert.match(
+    serverSource,
+    /input\.existingFiles\.length > 0/,
+    'Fresh projects must not spend their generation budget on edit-oriented subagents.',
   );
 }
 
