@@ -218,7 +218,17 @@ export function getAllAIModelCapabilityProfiles() {
 }
 
 function taskNeedsStructuredOutput(task: AIWorkflowTask) {
-  return ['intent', 'planning', 'database', 'security', 'tests', 'deploy'].includes(task);
+  return [
+    'intent',
+    'planning',
+    'frontend_generation',
+    'backend_generation',
+    'design',
+    'database',
+    'security',
+    'tests',
+    'deploy',
+  ].includes(task);
 }
 
 function taskNeedsToolCalling(task: AIWorkflowTask) {
@@ -378,6 +388,7 @@ export function buildAIModelRuntimeConfig(input: {
   task: AIWorkflowTask;
   stream?: boolean;
   preferStructuredOutput?: boolean;
+  allowTools?: boolean;
   hasVisionInput?: boolean;
   estimatedInputTokens?: number;
   timeoutMs?: number;
@@ -388,7 +399,7 @@ export function buildAIModelRuntimeConfig(input: {
   const responseFormat = input.preferStructuredOutput === false
     ? { type: 'text' } as RuntimeResponseFormat
     : responseFormatForTask(profile, task);
-  const tools = toolsForTask(profile, task);
+  const tools = input.allowTools === false ? [] : toolsForTask(profile, task);
   const reasoningEffort = reasoningEffortForTask(profile, task);
   const stream = Boolean(input.stream && profile.supports.streaming);
   const longContextEnabled = profile.supports.longContext && (

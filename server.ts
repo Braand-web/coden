@@ -4237,6 +4237,7 @@ function createProviderRuntimeOptions(input: {
     modelId: input.model,
     task,
     stream: input.stream,
+    allowTools: input.mode !== 'generation',
     timeoutMs: input.timeoutMs,
     maxTokens: input.maxTokens, // undefined = use profile default (now properly sized)
     hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
@@ -4251,6 +4252,7 @@ function createProviderRuntimeOptions(input: {
       modelId,
       task,
       stream: input.stream,
+      allowTools: input.mode !== 'generation',
       timeoutMs: input.timeoutMs,
       maxTokens: input.maxTokens,
       hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),

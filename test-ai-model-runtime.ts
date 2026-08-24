@@ -59,6 +59,17 @@ for (const modelId of AI_ALLOWED_MODELS) {
 }
 
 {
+  const runtime = buildAIModelRuntimeConfig({
+    modelId: 'google/gemini-3.7-flash',
+    task: 'backend_generation',
+    allowTools: false,
+  });
+  assert.equal(runtime.responseFormat.type, 'json_object', 'Fullstack generation must request structured JSON output.');
+  assert.deepEqual(runtime.tools, [], 'Monolithic file generation must not expose tool calls that its stream cannot consume.');
+  assert.equal(runtime.toolChoice, 'none');
+}
+
+{
   const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   assert.match(
     serverSource,
