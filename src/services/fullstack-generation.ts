@@ -42,6 +42,17 @@ const PAYMENT_ACTIONS_PATH = 'src/lib/paymentActions.ts';
 const STRIPE_WEBHOOK_FUNCTION_PATH = 'supabase/functions/stripe-webhook/index.ts';
 const VERSIONED_MIGRATION_PATH = 'supabase/migrations/0001_coden_fullstack.sql';
 
+// Locked together and exercised by test:fullstack-e2e. Generated fullstack
+// projects must not depend on whichever versions happen to be latest when a
+// user exports or publishes the app.
+const TANSTACK_START_VERSION = '1.168.49';
+const TANSTACK_ROUTER_VERSION = '1.170.32';
+const TANSTACK_QUERY_VERSION = '5.102.2';
+const CLOUDFLARE_VITE_PLUGIN_VERSION = '1.53.1';
+const WRANGLER_VERSION = '4.125.0';
+const VITE_VERSION = '7.3.6';
+const VITE_REACT_VERSION = '5.2.0';
+
 function normalizePath(value: string) {
   return String(value || '').replace(/\\/g, '/').replace(/^\.\/+/, '');
 }
@@ -123,37 +134,151 @@ function mergePackageJson(content: string) {
     pkg = {};
   }
 
-  const tanstackStart = Boolean(
-    pkg.dependencies?.['@tanstack/react-start'] ||
-    pkg.devDependencies?.['@tanstack/react-start'] ||
-    pkg.dependencies?.['@tanstack/react-router'] ||
-    pkg.devDependencies?.['@tanstack/react-router'],
-  );
-
   pkg.scripts = {
-    dev: 'vite',
-    build: tanstackStart ? 'vite build && tsc --noEmit' : 'vite build',
+    dev: 'vite dev',
+    build: 'vite build && tsc --noEmit',
     test: 'node --experimental-strip-types src/app.test.ts && node --experimental-strip-types src/fullstack.test.ts',
     lint: 'tsc --noEmit',
+    preview: 'vite preview',
+    deploy: 'npm run build && wrangler deploy',
+    'cf-typegen': 'wrangler types',
     ...(pkg.scripts || {}),
   };
+  // These scripts describe the locked runtime and therefore intentionally win
+  // over model-provided Vite-only scripts.
+  pkg.scripts.dev = 'vite dev';
+  pkg.scripts.build = 'vite build && tsc --noEmit';
+  pkg.scripts.preview = 'vite preview';
+  pkg.scripts.deploy = 'npm run build && wrangler deploy';
+  pkg.scripts['cf-typegen'] = 'wrangler types';
   if (!String(pkg.scripts.test || '').includes('src/fullstack.test.ts')) {
     pkg.scripts.test = `${String(pkg.scripts.test || 'node --experimental-strip-types src/app.test.ts').trim()} && node --experimental-strip-types src/fullstack.test.ts`;
   }
 
   pkg.dependencies = {
     ...(pkg.dependencies || {}),
-    '@supabase/supabase-js': pkg.dependencies?.['@supabase/supabase-js'] || '^2.106.0',
-    zod: pkg.dependencies?.zod || '^4.2.1',
+    '@tanstack/react-start': TANSTACK_START_VERSION,
+    '@tanstack/react-router': TANSTACK_ROUTER_VERSION,
+    '@tanstack/react-query': TANSTACK_QUERY_VERSION,
+    '@supabase/supabase-js': pkg.dependencies?.['@supabase/supabase-js'] || '2.106.0',
+    zod: pkg.dependencies?.zod || '4.4.3',
   };
-  if (tanstackStart) {
-    pkg.dependencies['@tanstack/react-query'] = pkg.dependencies['@tanstack/react-query'] || '^5.90.0';
-  }
   pkg.devDependencies = {
     ...(pkg.devDependencies || {}),
-    '@types/node': pkg.devDependencies?.['@types/node'] || '^22.10.0',
+    '@cloudflare/vite-plugin': CLOUDFLARE_VITE_PLUGIN_VERSION,
+    '@vitejs/plugin-react': VITE_REACT_VERSION,
+    vite: VITE_VERSION,
+    wrangler: WRANGLER_VERSION,
+    '@types/node': '22.20.1',
   };
   return JSON.stringify(pkg, null, 2);
+}
+
+function buildTanStackViteConfig() {
+  return [
+    "import { cloudflare } from '@cloudflare/vite-plugin';",
+    "import { tanstackStart } from '@tanstack/react-start/plugin/vite';",
+    "import react from '@vitejs/plugin-react';",
+    "import { defineConfig } from 'vite';",
+    '',
+    'export default defineConfig({',
+    '  plugins: [',
+    "    cloudflare({ viteEnvironment: { name: 'ssr' } }),",
+    '    tanstackStart(),',
+    '    react(),',
+    '  ],',
+    '});',
+    '',
+  ].join('\n');
+}
+
+function buildTanStackRouter() {
+  return [
+    "import { QueryClient } from '@tanstack/react-query';",
+    "import { createRouter } from '@tanstack/react-router';",
+    "import { routeTree } from './routeTree.gen';",
+    '',
+    'export function getRouter() {',
+    '  const queryClient = new QueryClient({',
+    '    defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },',
+    '  });',
+    '  return createRouter({',
+    '    routeTree,',
+    '    context: { queryClient },',
+    "    defaultPreload: 'intent',",
+    '    scrollRestoration: true,',
+    '  });',
+    '}',
+    '',
+    'declare module \'@tanstack/react-router\' {',
+    '  interface Register {',
+    '    router: ReturnType<typeof getRouter>;',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function buildTanStackRootRoute(projectName: string) {
+  return [
+    "import type { QueryClient } from '@tanstack/react-query';",
+    "import { QueryClientProvider } from '@tanstack/react-query';",
+    "import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from '@tanstack/react-router';",
+    "import '../index.css';",
+    '',
+    'type RouterContext = { queryClient: QueryClient };',
+    '',
+    'export const Route = createRootRouteWithContext<RouterContext>()({',
+    '  head: () => ({',
+    `    meta: [{ title: ${JSON.stringify(projectName || 'Coden App')} }],`,
+    '  }),',
+    '  component: RootDocument,',
+    '});',
+    '',
+    'function RootDocument() {',
+    '  const { queryClient } = Route.useRouteContext();',
+    '  return (',
+    '    <html lang="fr">',
+    '      <head><HeadContent /></head>',
+    '      <body>',
+    '        <QueryClientProvider client={queryClient}>',
+    '          <Outlet />',
+    '        </QueryClientProvider>',
+    '        <Scripts />',
+    '      </body>',
+    '    </html>',
+    '  );',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function buildTanStackIndexRoute() {
+  return [
+    "import { createFileRoute } from '@tanstack/react-router';",
+    "import App from '../App';",
+    '',
+    "export const Route = createFileRoute('/')({ component: App });",
+    '',
+  ].join('\n');
+}
+
+function buildWranglerConfig(projectName: string) {
+  const workerName = String(projectName || 'coden-app')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'coden-app';
+  return [
+    '{',
+    '  "$schema": "node_modules/wrangler/config-schema.json",',
+    `  "name": ${JSON.stringify(workerName)},`,
+    '  "compatibility_date": "2026-08-24",',
+    '  "compatibility_flags": ["nodejs_compat"],',
+    '  "main": "@tanstack/react-start/server-entry"',
+    '}',
+    '',
+  ].join('\n');
 }
 
 function buildCodenCloudClient() {
@@ -1296,6 +1421,14 @@ export function applyCodenFullstackKit(input: FullstackKitInput): FullstackGener
 
   const packageFile = fileByPath(input.files, 'package.json');
   upsertFile(byPath, 'package.json', mergePackageJson(packageFile?.content || '{}'), 'json');
+  // Normalize every data-backed generation to the same tested TanStack Start
+  // runtime. The model remains responsible for the product UI in App.tsx;
+  // Coden supplies only the framework, routing and deployment contract.
+  upsertFile(byPath, 'vite.config.ts', buildTanStackViteConfig(), 'ts');
+  upsertFile(byPath, 'wrangler.jsonc', buildWranglerConfig(input.projectName), 'json');
+  upsertFile(byPath, 'src/router.tsx', buildTanStackRouter(), 'tsx');
+  upsertFile(byPath, 'src/routes/__root.tsx', buildTanStackRootRoute(input.projectName), 'tsx');
+  upsertFile(byPath, 'src/routes/index.tsx', buildTanStackIndexRoute(), 'tsx');
   upsertFile(byPath, 'src/vite-env.d.ts', '/// <reference types="vite/client" />\n', 'ts');
   upsertFile(byPath, 'src/lib/codenCloud.ts', buildCodenCloudClient(), 'ts');
   upsertFile(byPath, 'src/lib/appData.ts', buildAppDataLayer(input.requirement), 'ts');

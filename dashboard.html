@@ -2073,7 +2073,7 @@
         <span class="nav-label sidebar-section-label" id="sidebar-projects-label" data-i18n="dash.projects">Projects</span>
         <div id="sidebar-projects-list" style="display: flex; flex-direction: column; width: 100%;">
           <div class="empty-nav-state" style="padding: 10px; font-size: 11px; color: var(--text-sub); font-style: italic;" data-i18n="dash.noProjects">
-            Aucun projet pour le moment
+            No projects yet
           </div>
         </div>
         </section>
@@ -2461,7 +2461,7 @@
             curtain.classList.add('falling');
             setTimeout(() => {
                 window.location.href = targetUrl;
-            }, 180);
+            }, 600);
         } else {
             window.location.href = targetUrl;
         }
@@ -2547,13 +2547,13 @@
       try {
         const ms = Date.now() - new Date(isoString).getTime();
         const mins = Math.floor(ms / 60000);
-        if (mins < 1) return 'à l’instant';
-        if (mins < 60) return `il y a ${mins} min`;
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
         const hrs = Math.floor(mins / 60);
-        if (hrs < 24) return `il y a ${hrs} h`;
-        return 'il y a 1 j';
+        if (hrs < 24) return `${hrs}h ago`;
+        return '1d ago';
       } catch (e) {
-        return 'récemment';
+        return 'recently';
       }
     }
 
@@ -2577,7 +2577,7 @@
         if (totalCount === 0) {
           sidebarList.innerHTML = `
             <div class="empty-nav-state" style="padding: 10px; font-size: 11px; color: var(--text-sub); font-style: italic;">
-              Aucun projet pour le moment
+              No projects yet
             </div>
           `;
         } else {
@@ -2602,8 +2602,8 @@
                 <line x1="9" y1="21" x2="9" y2="9"></line>
               </svg>
             </div>
-            <h3 class="empty-title">Aucun projet pour le moment.</h3>
-            <p class="empty-desc">Décrivez votre première idée dans le composer.</p>
+            <h3 class="empty-title">Your workspace is quiet</h3>
+            <p class="empty-desc">Describe your first idea above or click 'New Project' to start building something amazing.</p>
           </div>
         `;
       } else {
@@ -2621,7 +2621,7 @@
             <div class="project-card-body">
               <div class="project-card-title">
                 <span class="card-name">${escapeHtml(proj.name)}</span>
-                <span class="card-meta">${escapeHtml(getTemplateLabel(proj.template))} &middot; Mis à jour ${escapeHtml(relativeTime(proj.updated_at || proj.created_at || proj.createdAt))}</span>
+                <span class="card-meta">${escapeHtml(getTemplateLabel(proj.template))} &middot; Updated ${escapeHtml(relativeTime(proj.updated_at || proj.created_at || proj.createdAt))}</span>
               </div>
             </div>
           </div>
@@ -3113,8 +3113,8 @@
     sidebarMedia.addEventListener?.('change', syncSidebarMode);
 
   </script>
-  <div class="settings-overlay" id="settings-overlay" aria-hidden="true" inert></div>
-  <div class="settings-panel" id="settings-panel" aria-hidden="true" inert>
+  <div class="settings-overlay" id="settings-overlay"></div>
+  <div class="settings-panel" id="settings-panel">
     <div class="settings-header">
       <h2 class="settings-title">Settings</h2>
       <button class="btn-close-settings" id="btn-close-settings">✕</button>

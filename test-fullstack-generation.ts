@@ -5,6 +5,7 @@ import {
   shouldApplyCodenFullstackKit,
   validateCodenFullstackFiles,
 } from './src/services/fullstack-generation.ts';
+import { resolveGeneratedAppProfile } from './src/services/generated-app-runtime.ts';
 import { inferProductionBlueprint } from './src/services/production-blueprints.ts';
 
 const prompt = 'Create a CRM with login, clients, notes, invoices, uploads and persistent database.';
@@ -67,6 +68,10 @@ const files = applyCodenFullstackKit({
 const byPath = new Map(files.map(file => [file.path, file.content]));
 
 assert.ok(byPath.has('src/lib/codenCloud.ts'));
+assert.ok(byPath.has('src/router.tsx'));
+assert.ok(byPath.has('src/routes/__root.tsx'));
+assert.ok(byPath.has('src/routes/index.tsx'));
+assert.ok(byPath.has('wrangler.jsonc'));
 assert.ok(byPath.has('src/lib/appData.ts'));
 assert.ok(byPath.has('src/lib/validation.ts'));
 assert.ok(byPath.has('src/lib/authGuard.ts'));
@@ -77,6 +82,12 @@ assert.ok(byPath.has('supabase/schema.sql'));
 assert.ok(byPath.has('src/fullstack.test.ts'));
 assert.equal(byPath.get('src/vite-env.d.ts'), '/// <reference types="vite/client" />\n');
 assert.match(byPath.get('package.json') || '', /@supabase\/supabase-js/);
+assert.match(byPath.get('package.json') || '', /@tanstack\/react-start/);
+assert.match(byPath.get('package.json') || '', /@tanstack\/react-router/);
+assert.match(byPath.get('package.json') || '', /@tanstack\/react-query/);
+assert.match(byPath.get('vite.config.ts') || '', /tanstackStart\(\)/);
+assert.match(byPath.get('vite.config.ts') || '', /cloudflare\(/);
+assert.equal(resolveGeneratedAppProfile({ prompt, files, requirement }), 'tanstack-fullstack');
 assert.match(byPath.get('package.json') || '', /@types\/node/);
 assert.match(byPath.get('package.json') || '', /"zod"/);
 assert.match(byPath.get('package.json') || '', /src\/fullstack\.test\.ts/);
