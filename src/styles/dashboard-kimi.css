@@ -1,0 +1,268 @@
+/*
+ * Coden dashboard — Kimi-style redesign.
+ *
+ * Clones the Kimi.com layout & dark palette (persistent left sidebar +
+ * centered hero with a big wordmark, large input and a featured-cards row),
+ * adapted to Coden. Implemented as a pure restyle of the EXISTING dashboard
+ * markup so every dashboard-live.ts DOM hook keeps working — no element is
+ * added or removed, the look is rebuilt entirely in CSS.
+ *
+ * Accent: Kimi blue (#3b82f6). Loaded after dashboard-polish.css so it wins.
+ */
+
+/* ── Dashboard alias layer ────────────────────────────────────────────────
+   The Kimi layout is preserved, but its palette is no longer a second
+   design system. Every value resolves to the canonical Coden Forge tokens. */
+:root {
+  --kimi-bg: var(--bg);
+  --kimi-sidebar: var(--bg-panel);
+  --kimi-surface: var(--bg-surface);
+  --kimi-surface-raised: var(--bg-elevated);
+  --kimi-border: var(--border);
+  --kimi-border-strong: var(--border-mid, var(--border));
+  --kimi-text: var(--text);
+  --kimi-muted: var(--text-muted);
+  --kimi-sub: var(--text-sub);
+  --kimi-blue: var(--accent-blue);
+  --kimi-blue-soft: var(--accent-blue-soft);
+  --kimi-blue-hover: var(--accent-blue-hover);
+  --kimi-ease: var(--coden-ease, cubic-bezier(.16, 1, .3, 1));
+  --accent-spark: var(--accent-blue);
+}
+
+body { background: var(--kimi-bg); }
+
+/* ── Sidebar: Kimi rail ──────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--kimi-sidebar) !important;
+  border-right: 1px solid var(--kimi-border) !important;
+  padding: 12px 10px !important;
+  gap: 4px !important;
+}
+
+.sidebar-logo .logo-text {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 16px;
+}
+
+/* "New project" becomes the prominent Kimi New-Chat button with a ⌘K chip. */
+.btn-new-project-sidebar {
+  background: var(--kimi-surface-raised) !important;
+  border: 1px solid var(--kimi-border-strong) !important;
+  color: var(--kimi-text) !important;
+  border-radius: 12px !important;
+  height: 44px !important;
+  font-weight: 650 !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 0 14px !important;
+  position: relative;
+  transition: background 140ms var(--kimi-ease), border-color 140ms var(--kimi-ease);
+}
+.btn-new-project-sidebar:hover {
+  background: var(--kimi-blue-soft) !important;
+  border-color: var(--kimi-blue) !important;
+}
+.btn-new-project-sidebar::after {
+  content: 'Ctrl K';
+  position: absolute;
+  right: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--kimi-sub);
+  border: 1px solid var(--kimi-border);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.nav-label {
+  color: var(--kimi-sub) !important;
+  font-size: 11px !important;
+  letter-spacing: 0.04em;
+  text-transform: none !important;
+  padding: 12px 8px 4px !important;
+}
+
+/* Recent projects look like Kimi's chat history. */
+#sidebar-projects-list [data-project-recent],
+#sidebar-projects-list a,
+#sidebar-projects-list button {
+  border-radius: 9px;
+  transition: background 120ms var(--kimi-ease);
+}
+#sidebar-projects-list [data-project-recent]:hover,
+#sidebar-projects-list a:hover,
+#sidebar-projects-list button:hover {
+  background: var(--kimi-surface-raised);
+}
+
+/* Move the profile + credits to the bottom (Kimi places the account there). */
+.sidebar { display: flex; flex-direction: column; }
+.sidebar-logo   { order: 0; }
+.sidebar-nav    { order: 1; flex: 1 1 auto; overflow-y: auto; }
+.sidebar-credits{ order: 2; margin-top: auto; }
+.sidebar-profile{ order: 3; }
+.sidebar-footer { order: 4; }
+
+.sidebar-profile {
+  border: 1px solid var(--kimi-border) !important;
+  background: var(--kimi-surface) !important;
+  border-radius: 12px !important;
+  padding: 8px !important;
+  margin-top: 8px;
+}
+.profile-avatar {
+  background: linear-gradient(135deg, #8b5cf6, var(--kimi-blue)) !important;
+  color: #fff !important;
+}
+
+.sidebar-credits {
+  border: 1px solid var(--kimi-border) !important;
+  background: var(--kimi-surface) !important;
+  border-radius: 12px !important;
+}
+.plan-badge {
+  background: var(--kimi-blue-soft) !important;
+  color: #93c5fd !important;
+  border: none !important;
+}
+.credits-fill { background: linear-gradient(90deg, var(--kimi-blue), #60a5fa) !important; }
+
+.sidebar-promo {
+  background: linear-gradient(160deg, var(--kimi-blue-soft), transparent) !important;
+  border: 1px solid var(--kimi-border) !important;
+  border-radius: 12px !important;
+}
+.btn-promo-upgrade { background: var(--kimi-blue) !important; color: #fff !important; border: none !important; }
+
+/* ── Main area: Kimi centered hero ───────────────────────────────────────── */
+.main-area { background: var(--kimi-bg) !important; }
+
+/* Slim, quiet topbar — Kimi keeps only the "Upgrade your plan" pill centered. */
+.topbar {
+  border-bottom: none !important;
+  background: transparent !important;
+  justify-content: center !important;
+  position: relative;
+}
+.topbar-title,
+.topbar .search-wrapper { display: none !important; }
+.topbar-right { position: static !important; }
+.btn-create-top {
+  background: var(--kimi-blue-soft) !important;
+  color: #93c5fd !important;
+  border: none !important;
+  border-radius: 999px !important;
+  font-weight: 600 !important;
+  padding: 7px 16px !important;
+}
+.btn-create-top::before { content: '✦ '; }
+
+/* Center the workspace and give it Kimi's airy vertical rhythm. */
+.content-area {
+  max-width: 860px;
+  margin: 0 auto;
+  padding-top: 6vh !important;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* The big CODEN wordmark above the input (Kimi shows "KIMI"). */
+.create-section { background: transparent !important; border: none !important; padding: 0 !important; }
+.create-section::before {
+  content: 'CODEN';
+  display: block;
+  text-align: center;
+  font-weight: 800;
+  font-size: clamp(48px, 8vw, 84px);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--kimi-text);
+  margin-bottom: 28px;
+  background: linear-gradient(180deg, var(--kimi-text), color-mix(in srgb, var(--kimi-text) 55%, transparent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: kimi-rise 360ms var(--kimi-ease) both;
+}
+/* The old serif title/subtitle are replaced by the wordmark. */
+.create-title, .create-subtitle { display: none !important; }
+
+@keyframes kimi-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Big rounded Kimi input. */
+.create-section .input-wrapper {
+  background: var(--kimi-surface) !important;
+  border: 1px solid var(--kimi-border-strong) !important;
+  border-radius: 22px !important;
+  padding: 16px 18px !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  transition: border-color 140ms var(--kimi-ease), box-shadow 140ms var(--kimi-ease);
+}
+.create-section .input-wrapper:focus-within {
+  border-color: var(--kimi-blue) !important;
+  box-shadow: 0 0 0 4px var(--kimi-blue-soft), 0 8px 30px rgba(0, 0, 0, 0.32);
+}
+.create-section #ai-textarea {
+  font-size: 15px !important;
+  min-height: 56px !important;
+  color: var(--kimi-text) !important;
+}
+.create-section #ai-textarea::placeholder { color: var(--kimi-sub) !important; }
+
+/* Circular send button (Kimi). */
+#submit-btn, .btn-create-top.send, .submit-btn {
+  border-radius: 999px !important;
+}
+.create-section #submit-btn {
+  width: 40px !important; height: 40px !important;
+  border-radius: 999px !important;
+  background: var(--kimi-blue) !important;
+  color: #fff !important;
+  display: grid !important; place-items: center !important;
+}
+
+/* ── Featured cards row (Kimi "Featured Agent cases") ────────────────────── */
+.projects-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)) !important;
+  gap: 16px !important;
+}
+.project-card {
+  background: var(--kimi-surface) !important;
+  border: 1px solid var(--kimi-border) !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  transition: transform 160ms var(--kimi-ease), border-color 160ms var(--kimi-ease);
+}
+.project-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--kimi-blue) !important;
+}
+
+.section-label { color: var(--kimi-text) !important; }
+.section-label span { color: var(--kimi-sub) !important; }
+
+/* Warm, on-brand empty states. */
+.empty-state {
+  background: var(--kimi-surface) !important;
+  border: 1px solid var(--kimi-border) !important;
+  border-radius: 16px !important;
+  background-image: radial-gradient(circle at 30% 16%, var(--kimi-blue-soft), transparent 55%);
+}
+.empty-state .empty-icon { color: var(--kimi-blue) !important; opacity: .9 !important; }
+.empty-state .empty-title { color: var(--kimi-text) !important; }
+
+.activity-list { background: transparent !important; }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .create-section::before { animation: none !important; }
+  .project-card { transition: none !important; }
+}
