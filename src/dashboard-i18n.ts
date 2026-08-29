@@ -17,8 +17,16 @@ const STORAGE_KEY = 'coden-lang';
 
 const FR: Record<string, string> = {
   'dash.title': 'Tableau de bord',
+  'dash.newConversation': 'Nouvelle conversation',
   'dash.search': 'Rechercher des projets…',
   'dash.newProjectTop': 'Nouveau projet',
+  'dash.signIn': 'Se connecter',
+  'dash.searchNav': 'Recherche',
+  'dash.studioNav': 'Coden Studio',
+  'dash.modelsNav': 'Modèles',
+  'dash.pluginsNav': 'Plugins',
+  'dash.promptTitle': 'Que veux-tu accomplir ?',
+  'dash.promptPlaceholder': 'Demander à Coden…',
   'dash.create': 'Créer',
   'dash.workspace': 'Espace de travail',
   'dash.welcomeTitle': 'Construisez la suite, simplement.',
@@ -42,6 +50,8 @@ const FR: Record<string, string> = {
   'dash.emptyTitle': 'Votre espace est calme',
   'dash.emptyDesc': 'Décrivez votre première idée ci-dessus ou ouvrez une nouvelle session du builder.',
   'dash.recentActivity': 'Activité récente',
+  'dash.allProjects': 'Tous les projets',
+  'dash.noActivity': 'Aucune activité enregistrée pour le moment.',
 };
 
 let currentLang: Lang = 'en';

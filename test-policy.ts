@@ -12,8 +12,10 @@ import {
 const EXPECTED_ALLOWED_MODELS = [
   'openai/gpt-5.6-luna',
   'google/gemini-3.7-flash',
-  'deepseek/deepseek-v4-pro',
+  'deepseek/deepseek-v4-pro-0813',
   'openai/gpt-5.6-terra',
+  'qwen/qwen3.8-27b',
+  'z-ai/glm-5.3',
   'anthropic/claude-sonnet-5',
   'x-ai/grok-4.6',
   'openai/gpt-5.6-sol',

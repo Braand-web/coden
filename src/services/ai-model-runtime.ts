@@ -124,6 +124,8 @@ const PROVIDER_ADAPTERS: Record<ModelProvider, RuntimeProviderAdapter> = {
   openai: 'openai',
   google: 'gemini',
   deepseek: 'deepseek',
+  qwen: 'openrouter',
+  zai: 'openrouter',
   xai: 'xai',
 };
 

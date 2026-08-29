@@ -1,0 +1,836 @@
+/* Coden conversation dashboard
+   A calm, single-focus shell inspired by the supplied reference layout. */
+
+:root {
+  --coden-conversation-sidebar: 320px;
+  --coden-conversation-border: rgba(255, 255, 255, .12);
+  --coden-conversation-surface: #202126;
+  --coden-conversation-page: #101114;
+  --coden-conversation-muted: #a6adbf;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"],
+body[data-coden-surface="dashboard"] {
+  background: var(--coden-conversation-page);
+}
+
+body[data-coden-surface="dashboard"] .dashboard {
+  min-height: 100dvh;
+  height: 100dvh;
+  background: var(--coden-conversation-page);
+}
+
+body[data-coden-surface="dashboard"] .sidebar {
+  width: var(--coden-conversation-sidebar) !important;
+  min-width: var(--coden-conversation-sidebar);
+  padding: 0 !important;
+  border-right: 1px solid var(--coden-conversation-border) !important;
+  background: #18191e !important;
+  opacity: 1 !important;
+  transition: width 220ms cubic-bezier(.22, 1, .36, 1), min-width 220ms cubic-bezier(.22, 1, .36, 1), transform 220ms cubic-bezier(.22, 1, .36, 1) !important;
+}
+
+body[data-coden-surface="dashboard"] .sidebar.collapsed {
+  width: 72px !important;
+  min-width: 72px;
+  opacity: 1 !important;
+  pointer-events: auto;
+  border-right-width: 1px !important;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-logo {
+  height: 86px !important;
+  min-height: 86px !important;
+  flex: 0 0 86px !important;
+  flex-shrink: 0 !important;
+  padding: 0 26px !important;
+  gap: 12px;
+  border-bottom: 1px solid var(--coden-conversation-border) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-sidebar-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+body[data-coden-surface="dashboard"] .logo-text {
+  font-family: "Instrument Sans", Inter, system-ui, sans-serif;
+  font-style: normal;
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+body[data-coden-surface="dashboard"] .btn-sidebar-toggle,
+body[data-coden-surface="dashboard"] .btn-sidebar-expand {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px;
+  border-radius: 9px;
+  color: #aeb4c2;
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+body[data-coden-surface="dashboard"] .btn-sidebar-toggle:hover,
+body[data-coden-surface="dashboard"] .btn-sidebar-toggle:focus-visible,
+body[data-coden-surface="dashboard"] .btn-sidebar-expand:hover,
+body[data-coden-surface="dashboard"] .btn-sidebar-expand:focus-visible {
+  color: #fff;
+  background: rgba(255,255,255,.08);
+  outline: none;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 24px 15px 18px !important;
+  overflow: auto;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-section-quick {
+  margin-bottom: 28px;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-section-create {
+  margin-bottom: 30px;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-section-label {
+  padding: 0 18px;
+  color: #8f96a6;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-quick-link,
+body[data-coden-surface="dashboard"] .btn-new-project-sidebar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  gap: 16px;
+  padding: 0 18px;
+  border: 0 !important;
+  border-radius: 9px !important;
+  color: #f3f4f6 !important;
+  background: transparent !important;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-quick-link {
+  cursor: pointer;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-quick-link:hover,
+body[data-coden-surface="dashboard"] .sidebar-quick-link:focus-visible,
+body[data-coden-surface="dashboard"] .btn-new-project-sidebar:hover,
+body[data-coden-surface="dashboard"] .btn-new-project-sidebar:focus-visible {
+  color: #fff !important;
+  background: rgba(255,255,255,.07) !important;
+  outline: none;
+}
+
+body[data-coden-surface="dashboard"] .btn-new-project-sidebar {
+  justify-content: flex-start;
+  min-height: 52px;
+  padding-inline: 18px !important;
+  background: #212228 !important;
+  border: 1px solid rgba(255,255,255,.13) !important;
+  font-weight: 700;
+}
+
+body[data-coden-surface="dashboard"] .btn-new-project-sidebar svg,
+body[data-coden-surface="dashboard"] .sidebar-quick-link svg {
+  color: #d6dbe5;
+  flex: 0 0 auto;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-section-projects {
+  gap: 16px;
+}
+
+body[data-coden-surface="dashboard"] #sidebar-projects-list {
+  gap: 3px;
+  padding-inline: 4px;
+}
+
+body[data-coden-surface="dashboard"] .nav-project {
+  min-height: 40px;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  color: #f0f1f4;
+  background: transparent !important;
+  text-align: left;
+}
+
+body[data-coden-surface="dashboard"] .nav-project:hover,
+body[data-coden-surface="dashboard"] .nav-project:focus-visible,
+body[data-coden-surface="dashboard"] .nav-project.active {
+  background: rgba(255,255,255,.07) !important;
+  outline: none;
+}
+
+body[data-coden-surface="dashboard"] .project-nav-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  height: auto !important;
+  padding: 0 15px 24px !important;
+  border-top: 0 !important;
+  background: transparent !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-nav {
+  display: flex !important;
+  flex-direction: column;
+  padding: 0 15px 18px !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-create {
+  order: 1;
+  margin-bottom: 0;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-quick {
+  order: 2;
+  margin-bottom: 0;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-projects,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-create .sidebar-section-label {
+  display: none !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-create .btn-new-project-sidebar {
+  min-height: 51px;
+  margin: 0;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-quick {
+  gap: 8px;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-footer {
+  gap: 0;
+  padding: 0 15px 16px !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-secondary-nav {
+  display: flex !important;
+  gap: 3px;
+  padding-bottom: 16px;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-footer .sidebar-quick-link {
+  min-height: 44px;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-secondary-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--coden-conversation-border);
+}
+
+body[data-coden-surface="dashboard"] .sidebar-lang {
+  order: 3;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--coden-conversation-border);
+  border-radius: 9px;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-footer-actions {
+  order: 4;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-local-sign-in {
+  display: none;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 9px;
+  color: #f6f7f9;
+  font-size: 15px;
+  font-weight: 600;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+body[data-coden-surface="dashboard"] .sidebar-local-sign-in:hover,
+body[data-coden-surface="dashboard"] .sidebar-local-sign-in:focus-visible {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.24);
+  outline: none;
+}
+
+body[data-coden-surface="dashboard"] .main-area {
+  min-width: 0;
+  background: var(--coden-conversation-page) !important;
+}
+
+body[data-coden-surface="dashboard"] .topbar {
+  height: 86px !important;
+  padding: 0 24px !important;
+  border-bottom: 1px solid var(--coden-conversation-border) !important;
+  background: var(--coden-conversation-page) !important;
+}
+
+body[data-coden-surface="dashboard"] .topbar > div:first-child {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body[data-coden-surface="dashboard"] .topbar-title {
+  display: block !important;
+  overflow: hidden;
+  color: #aeb4c3 !important;
+  font-family: "Instrument Sans", Inter, system-ui, sans-serif !important;
+  font-size: 17px !important;
+  font-style: normal !important;
+  font-weight: 450 !important;
+  letter-spacing: 0 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body[data-coden-surface="dashboard"] .topbar-right {
+  margin-left: auto !important;
+  gap: 12px !important;
+}
+
+body[data-coden-surface="dashboard"] .topbar .search-wrapper,
+body[data-coden-surface="dashboard"] .search-wrapper {
+  display: none !important;
+}
+
+body[data-coden-surface="dashboard"] .btn-create-top {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px !important;
+  border-radius: 999px !important;
+  background: #202a3e !important;
+  color: #a9c7ff !important;
+}
+
+body[data-coden-surface="dashboard"] .topbar .search-wrapper.dashboard-search-visible {
+  display: flex !important;
+}
+
+body[data-coden-surface="dashboard"] .dashboard-sign-in {
+  display: none;
+  min-width: 135px;
+  min-height: 44px;
+  padding: 0 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 11px;
+  background: #212228;
+  color: #f8f8fa;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+body[data-coden-surface="dashboard"] .dashboard-sign-in:hover,
+body[data-coden-surface="dashboard"] .dashboard-sign-in:focus-visible {
+  background: #292a31;
+  border-color: rgba(255,255,255,.24);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+body[data-coden-surface="dashboard"] .btn-theme-toggle {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 50% !important;
+  border: 1px solid rgba(255,255,255,.13) !important;
+}
+
+body[data-coden-surface="dashboard"] .content-area {
+  width: 100%;
+  max-width: none !important;
+  min-height: calc(100dvh - 86px);
+  margin: 0 !important;
+  padding: 0 24px 52px !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0 !important;
+  overflow: auto;
+  background: var(--coden-conversation-page) !important;
+}
+
+body[data-coden-surface="dashboard"] .create-section {
+  width: min(100%, 960px) !important;
+  max-width: 960px !important;
+  /* Keep the composition vertically aligned with the reference without
+     making the title/composer drift as the viewport changes. */
+  margin: clamp(16px, 3vh, 36px) auto 0 !important;
+  padding: 0 !important;
+  align-items: center !important;
+  text-align: center !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="dashboard"] .create-section::before {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 36px;
+  display: block;
+  content: "";
+  background: url('/favicon.svg') center / contain no-repeat;
+  animation: coden-dashboard-mark-in 280ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+body[data-coden-surface="dashboard"] .create-title {
+  display: block !important;
+  margin: 0 0 36px !important;
+  color: #f4f5f7 !important;
+  font-family: "Instrument Sans", Inter, system-ui, sans-serif !important;
+  font-size: clamp(30px, 3vw, 42px) !important;
+  font-weight: 720 !important;
+  letter-spacing: -.035em !important;
+  line-height: 1.1 !important;
+}
+
+body[data-coden-surface="dashboard"] .create-subtitle,
+body[data-coden-surface="dashboard"] .chips-row {
+  display: none !important;
+}
+
+body[data-coden-surface="dashboard"] .input-wrapper {
+  width: 100% !important;
+  max-width: 960px !important;
+  min-height: 168px;
+  padding: 24px 24px 14px !important;
+  border: 1px solid rgba(255,255,255,.16) !important;
+  border-radius: 20px !important;
+  background: var(--coden-conversation-surface) !important;
+  box-shadow: 0 16px 38px rgba(0,0,0,.18) !important;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+body[data-coden-surface="dashboard"] .input-wrapper:focus-within {
+  border-color: rgba(132, 154, 255, .58) !important;
+  background: #21242b !important;
+  box-shadow: 0 0 0 3px rgba(91, 123, 255, .16), 0 16px 38px rgba(0,0,0,.2) !important;
+}
+
+body[data-coden-surface="dashboard"] #ai-textarea {
+  width: 100%;
+  min-height: 84px !important;
+  max-height: 180px;
+  padding: 0 !important;
+  color: #f2f3f6 !important;
+  font-size: 19px !important;
+  line-height: 1.55 !important;
+  text-align: left !important;
+}
+
+body[data-coden-surface="dashboard"] #ai-textarea::placeholder {
+  color: #99a1b5 !important;
+  opacity: 1;
+}
+
+body[data-coden-surface="dashboard"] .input-actions {
+  height: 44px !important;
+  min-height: 44px;
+  padding: 0 !important;
+  align-items: center;
+}
+
+body[data-coden-surface="dashboard"] .actions-left,
+body[data-coden-surface="dashboard"] .actions-right {
+  align-items: center;
+  gap: 8px !important;
+}
+
+body[data-coden-surface="dashboard"] .actions-left::after {
+  content: 'Coden';
+  margin-left: 8px;
+  color: #aeb4c3;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+body[data-coden-surface="dashboard"] .icon-btn,
+body[data-coden-surface="dashboard"] .prompt-mode-btn,
+body[data-coden-surface="dashboard"] .model-select {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px !important;
+}
+
+body[data-coden-surface="dashboard"] .model-select,
+body[data-coden-surface="dashboard"] .prompt-mode-btn {
+  padding-inline: 12px !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  background: transparent !important;
+  color: #d8dce5 !important;
+}
+
+body[data-coden-surface="dashboard"] .model-label-prefix {
+  display: none;
+}
+
+body[data-coden-surface="dashboard"] .submit-btn {
+  width: 56px !important;
+  height: 56px !important;
+  min-width: 56px;
+  border-radius: 16px !important;
+  background: #526cf5 !important;
+  color: white !important;
+  box-shadow: 0 8px 22px rgba(82,108,245,.22);
+  transition: transform 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+body[data-coden-surface="dashboard"] .submit-btn:hover:not(:disabled),
+body[data-coden-surface="dashboard"] .submit-btn:focus-visible:not(:disabled) {
+  background: #6179ff !important;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+body[data-coden-surface="dashboard"] .submit-btn:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+body[data-coden-surface="dashboard"] > #curtain {
+  display: none !important;
+}
+
+body[data-coden-surface="dashboard"] .content-area > section:not(.create-section) {
+  width: min(100%, 960px);
+  margin-top: 52px;
+}
+
+body[data-coden-surface="dashboard"] .grid-header,
+body[data-coden-surface="dashboard"] .content-area > section:not(.create-section) > .section-label {
+  color: #aeb4c3;
+}
+
+/* The reference is a signed-out local surface: keep the real authenticated
+   controls available for users, while presenting a clean guest shell locally. */
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-profile,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-credits,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-promo {
+  display: none !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-lang,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-footer-actions,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-section-projects,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .btn-theme-toggle,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-profile,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-credits,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-promo,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .btn-create-top {
+  display: none !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-local-sign-in,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .dashboard-sign-in {
+  display: inline-flex;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-local-sign-in {
+  min-height: 60px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  gap: 16px;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .sidebar-local-sign-in::before {
+  content: 'o';
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #526cf5;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+@media (min-width: 901px) {
+  html[data-local-preview="true"] body[data-coden-surface="dashboard"] .btn-sidebar-toggle,
+  html[data-local-preview="true"] body[data-coden-surface="dashboard"] .btn-sidebar-expand {
+    display: none !important;
+  }
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .content-area > section:not(.create-section) {
+  display: none !important;
+}
+
+/* The signed-out reference keeps the composer intentionally quiet: model and
+   mode routing remain available in the authenticated Dashboard/Builder, but
+   they must not compete with the single primary action in local preview. */
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-right {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 40px;
+  margin-left: auto;
+  gap: 0 !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-right .model-select,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-right .prompt-mode {
+  display: none !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-left {
+  width: auto;
+  gap: 0 !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-left .icon-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-left [data-prompt-action="voice"] {
+  display: none !important;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .actions-left::after {
+  margin-left: 8px;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .submit-wrapper,
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .submit-btn {
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 10px !important;
+}
+
+@keyframes coden-dashboard-mark-in {
+  from { opacity: 0; transform: translateY(6px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 900px) {
+  body[data-coden-surface="dashboard"] .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1100;
+    width: min(86vw, 320px) !important;
+    min-width: 0;
+    transform: translateX(-100%);
+  }
+
+  body[data-coden-surface="dashboard"] .dashboard.sidebar-mobile-open .sidebar {
+    transform: translateX(0);
+  }
+
+  body[data-coden-surface="dashboard"] .sidebar.collapsed {
+    width: min(86vw, 320px) !important;
+    transform: translateX(-100%);
+  }
+
+  body[data-coden-surface="dashboard"] .dashboard.sidebar-mobile-open .sidebar.collapsed {
+    transform: translateX(0);
+  }
+
+  body[data-coden-surface="dashboard"] .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+    background: rgba(0,0,0,.58);
+    backdrop-filter: blur(3px);
+  }
+
+  body[data-coden-surface="dashboard"] .topbar {
+    height: 64px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .topbar-title {
+    font-size: 15px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .content-area {
+    min-height: calc(100dvh - 64px);
+    padding-inline: 16px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .create-section {
+    margin-top: 32px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .create-section::before {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 26px;
+  }
+
+  body[data-coden-surface="dashboard"] .create-title {
+    margin-bottom: 26px !important;
+    font-size: clamp(28px, 6vw, 36px) !important;
+  }
+
+  body[data-coden-surface="dashboard"] .input-wrapper {
+    min-height: 156px;
+    padding: 18px !important;
+    border-radius: 16px !important;
+  }
+
+  body[data-coden-surface="dashboard"] #ai-textarea {
+    min-height: 76px !important;
+    font-size: 16px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .actions-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 560px) {
+  body[data-coden-surface="dashboard"] .topbar {
+    padding-inline: 12px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .topbar-right {
+    gap: 6px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .topbar-title {
+    max-width: 42vw;
+  }
+
+  body[data-coden-surface="dashboard"] .dashboard-sign-in {
+    min-height: 40px;
+    padding-inline: 11px;
+    font-size: 12px;
+  }
+
+  body[data-coden-surface="dashboard"] .create-section {
+    margin-top: 24px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .create-title {
+    font-size: 28px !important;
+  }
+
+body[data-coden-surface="dashboard"] .input-actions {
+    align-items: flex-end;
+  }
+
+  body[data-coden-surface="dashboard"] .actions-left::after {
+    display: none;
+  }
+
+  body[data-coden-surface="dashboard"] .actions-right {
+    flex: 0 0 223px;
+    width: 223px;
+    min-width: 223px;
+    gap: 4px !important;
+    flex-wrap: nowrap !important;
+  }
+
+  body[data-coden-surface="dashboard"] .model-select,
+  body[data-coden-surface="dashboard"] .prompt-mode-btn {
+    min-width: 40px;
+    min-height: 40px;
+    padding-inline: 8px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .model-select {
+    flex: 0 0 85px;
+    width: 85px;
+    min-width: 85px;
+  }
+
+  body[data-coden-surface="dashboard"] .prompt-mode {
+    flex: 0 0 82px;
+    width: 82px;
+    min-width: 82px;
+  }
+
+  body[data-coden-surface="dashboard"] .coden-agent-mode-trigger {
+    width: 82px;
+    min-width: 82px;
+    padding-inline: 8px !important;
+  }
+
+  body[data-coden-surface="dashboard"] .submit-wrapper {
+    flex: 0 0 48px;
+    width: 48px;
+  }
+
+  body[data-coden-surface="dashboard"] .submit-btn {
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px;
+    border-radius: 14px !important;
+  }
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .dashboard-local-preview-status {
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #aeb4c3;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+html[data-local-preview="true"] body[data-coden-surface="dashboard"] .dashboard-local-preview-status::before {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-coden-surface="dashboard"] .sidebar,
+  body[data-coden-surface="dashboard"] .sidebar-quick-link,
+  body[data-coden-surface="dashboard"] .submit-btn,
+  body[data-coden-surface="dashboard"] .input-wrapper {
+    transition: none !important;
+  }
+
+  body[data-coden-surface="dashboard"] .create-section::before {
+    animation: none !important;
+  }
+}

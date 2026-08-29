@@ -1,6 +1,25 @@
 import type { CodenStreamEvent } from '../lib/stream-protocol';
 
-export type AgentMode = 'auto' | 'build' | 'plan';
+export type AgentMode = 'auto' | 'build' | 'plan' | 'ask' | 'fix' | 'review' | 'research';
+
+export type AgentPublicPhase =
+  | 'understanding'
+  | 'inspecting'
+  | 'researching'
+  | 'planning'
+  | 'building'
+  | 'connecting_backend'
+  | 'integrating'
+  | 'testing'
+  | 'checking_preview'
+  | 'fixing'
+  | 'preparing_deployment'
+  | 'deploying';
+
+export type InlineUserDecision =
+  | { type: 'clarification'; question: string; choices?: string[] }
+  | { type: 'confirmation'; action: string; summary: string; confirmLabel: string; cancelLabel: string }
+  | { type: 'missing_integration'; integration: string; requiredEnvironmentVariables: string[] };
 
 export type AgentResolvedAction =
   | 'answer'
@@ -10,6 +29,8 @@ export type AgentResolvedAction =
   | 'edit'
   | 'debug'
   | 'verify'
+  | 'review'
+  | 'research'
   | 'confirm'
   | 'blocked';
 
@@ -113,13 +134,13 @@ export function isAgentTerminalStatus(status: AgentRunStatus) {
 }
 
 export function normalizeAgentMode(value: unknown): AgentMode {
-  return value === 'build' || value === 'plan' ? value : 'auto';
+  return value === 'build' || value === 'plan' || value === 'ask' || value === 'fix' || value === 'review' || value === 'research' ? value : 'auto';
 }
 
 export function modeLabel(mode: AgentMode, locale: 'fr' | 'en' = 'fr') {
   const labels = locale === 'fr'
-    ? { auto: 'Auto', build: 'Build', plan: 'Plan' }
-    : { auto: 'Auto', build: 'Build', plan: 'Plan' };
+    ? { auto: 'Auto', build: 'Build', plan: 'Plan', ask: 'Ask', fix: 'Fix', review: 'Review', research: 'Research' }
+    : { auto: 'Auto', build: 'Build', plan: 'Plan', ask: 'Ask', fix: 'Fix', review: 'Review', research: 'Research' };
   return labels[mode];
 }
 
@@ -161,19 +182,27 @@ export function runStatusLabel(status: AgentRunStatus, locale: 'fr' | 'en' = 'fr
 
 export function creditPolicyFor(mode: AgentMode): AgentCreditPolicy {
   if (mode === 'plan') return 'plan-reduced';
-  if (mode === 'build') return 'build';
+  if (mode === 'build' || mode === 'fix') return 'build';
   return 'metered';
 }
 
 export function statusFromStreamEvent(event: CodenStreamEvent, current: AgentRunStatus): AgentRunStatus {
   switch (event.type) {
     case 'understanding': return 'understanding';
+    case 'activity_changed':
+      if (!event.active) return current;
+      if (event.phase === 'planning') return 'planning';
+      if (event.phase === 'testing' || event.phase === 'checking_preview') return 'verifying';
+      if (event.phase === 'understanding' || event.phase === 'inspecting' || event.phase === 'researching') return 'understanding';
+      return 'executing';
     case 'clarification': return 'clarifying';
     case 'plan': return 'planning';
     case 'verification_started': return 'verifying';
     case 'verification_completed': return event.status === 'pass' ? 'completed' : event.status === 'fail' ? 'needs_fix' : 'incomplete';
     case 'approval_requested': return 'awaiting_confirmation';
     case 'error': return 'failed';
+    case 'cancelled': return 'cancelled';
+    case 'blocked': return 'blocked';
     case 'done': return current === 'failed' || current === 'needs_fix' ? current : 'completed';
     case 'assistant_delta': return current === 'idle' || current === 'submitting' || current === 'understanding' ? 'executing' : current;
     case 'file_start':

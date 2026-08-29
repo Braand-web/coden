@@ -19,8 +19,6 @@ import type { CodenStreamEvent } from "./lib/stream-protocol";
 import { applyAgentStreamEvent, createAgentRunViewModel, type AgentRunViewModel } from "./services/agent-run-store";
 import type { AgentMode } from "./services/agent-run-contract";
 import { AgentRunPanel } from "./components/agent/agent-run-panel";
-import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "./components/ai-elements/tool";
-import { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai-elements/sources";
 import "./styles/agent-surface.css";
 
 hljs.registerLanguage("bash", bash);
@@ -519,6 +517,29 @@ function createStore() {
           case "assistant_delta":
             run.assistantText += event.text;
             enqueueAssistantDelta(message, event.text);
+            break;
+          case "activity_changed":
+            run.activeText = event.message;
+            message.working = event.active;
+            break;
+          case "assistant_message_completed":
+            message.working = false;
+            break;
+          case "decision_required":
+            message.working = false;
+            break;
+          case "preview_ready":
+          case "deployment_ready":
+            message.working = false;
+            break;
+          case "cancelled":
+            run.status = "cancelled";
+            message.working = false;
+            break;
+          case "blocked":
+            run.status = "failed";
+            run.summary = event.message;
+            message.working = false;
             break;
           case "file_start":
             run.activeText = event.path;
@@ -1127,12 +1148,7 @@ function RichResponse({ content }: { content: string }) {
 function MessageView({ message }: { message: CodenConversationMessage }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-  const hasStreamedText = isAssistant && message.content.trim().length > 0;
-  const showThinking = isAssistant && message.working;
   const run = message.liveRun;
-  const tools = run?.tools || [];
-  const sources = run?.sources || [];
-  const attachments = run?.attachments || [];
 
   if (isAssistant && run?.view) {
     const retryAction = message.actions?.find((action) => /r[ée]essayer|retry/i.test(action.label));
@@ -1144,9 +1160,6 @@ function MessageView({ message }: { message: CodenConversationMessage }) {
           streamText={message.content}
           onRetry={retryAction?.onClick}
           onBuildPlan={buildPlanAction?.onClick}
-          tools={tools}
-          sources={sources}
-          attachments={attachments}
         />
         {message.actions?.length ? (
           <div className="coden-chat-actions">
@@ -1178,60 +1191,27 @@ function MessageView({ message }: { message: CodenConversationMessage }) {
     );
   }
 
+  if (isAssistant) {
+    return (
+      <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
+        <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
+          {message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
+          {message.actions?.length ? (
+            <div className="coden-chat-actions">
+              {message.actions.map((action) => (
+                <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
       <div className="coden-chat-bubble">
-        {showThinking && !hasStreamedText ? (
-          <span className="coden-agent-pending" aria-hidden="true">
-            <span /><span /><span />
-          </span>
-        ) : null}
-        {isAssistant && tools.length > 0 ? (
-          <div className="coden-tools-stack">
-            {tools.map((tool) => (
-              <Tool key={tool.id} defaultOpen={false}>
-                <ToolHeader name={tool.name} status={tool.status} />
-                <ToolContent>
-                  {tool.input !== undefined ? <ToolInput input={tool.input} /> : null}
-                  {tool.output !== undefined || tool.error ? (
-                    <ToolOutput
-                      errorText={tool.error}
-                      output={tool.output ? <pre className="coden-tool-output-pre"><code>{tool.output}</code></pre> : null}
-                    />
-                  ) : null}
-                </ToolContent>
-              </Tool>
-            ))}
-          </div>
-        ) : null}
-        {hasStreamedText ? <Response>{message.content}</Response> : null}
-        {isAssistant && sources.length > 0 ? (
-          <Sources>
-            <SourcesTrigger count={sources.length} />
-            <SourcesContent>
-              {sources.map((s) => (
-                <Source key={s.id} href={s.url} title={s.title || s.url} />
-              ))}
-            </SourcesContent>
-          </Sources>
-        ) : null}
-        {isAssistant && attachments.length > 0 ? (
-          <div className="coden-attachments">
-            {attachments.map((a) => (
-              a.url ? (
-                <a key={a.id} className="coden-attachment" href={a.url} target="_blank" rel="noreferrer">
-                  <span className="coden-attachment-name">{a.name}</span>
-                  {a.mediaType ? <span className="coden-attachment-meta">{a.mediaType}</span> : null}
-                </a>
-              ) : (
-                <span key={a.id} className="coden-attachment">
-                  <span className="coden-attachment-name">{a.name}</span>
-                  {a.mediaType ? <span className="coden-attachment-meta">{a.mediaType}</span> : null}
-                </span>
-              )
-            ))}
-          </div>
-        ) : null}
+        {message.content}
         {message.actions?.length ? (
           <div className="coden-chat-actions">
             {message.actions.map((action) => (

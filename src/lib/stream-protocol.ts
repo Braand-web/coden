@@ -72,6 +72,13 @@ export type CodenPlanStep = {
 export type CodenStreamEventType =
   | 'mode_requested'
   | 'mode_resolved'
+  | 'activity_changed'
+  | 'assistant_message_completed'
+  | 'decision_required'
+  | 'preview_ready'
+  | 'deployment_ready'
+  | 'cancelled'
+  | 'blocked'
   | 'status'
   | 'milestone'
   | 'phase'
@@ -104,6 +111,13 @@ export type CodenStreamEventType =
 const EVENT_TYPES: readonly CodenStreamEventType[] = [
   'mode_requested',
   'mode_resolved',
+  'activity_changed',
+  'assistant_message_completed',
+  'decision_required',
+  'preview_ready',
+  'deployment_ready',
+  'cancelled',
+  'blocked',
   'status',
   'milestone',
   'phase',
@@ -328,14 +342,72 @@ export interface CodenAttachmentEvent extends CodenStreamEventBase {
 
 export interface CodenModeRequestedEvent extends CodenStreamEventBase {
   type: 'mode_requested';
-  mode: 'auto' | 'build' | 'plan';
+  mode: 'auto' | 'build' | 'plan' | 'ask' | 'fix' | 'review' | 'research';
 }
 
 export interface CodenModeResolvedEvent extends CodenStreamEventBase {
   type: 'mode_resolved';
-  mode: 'auto' | 'build' | 'plan';
+  mode: 'auto' | 'build' | 'plan' | 'ask' | 'fix' | 'review' | 'research';
   action: string;
   confidence?: number;
+}
+
+export type CodenAgentPublicPhase =
+  | 'understanding'
+  | 'inspecting'
+  | 'researching'
+  | 'planning'
+  | 'building'
+  | 'connecting_backend'
+  | 'integrating'
+  | 'testing'
+  | 'checking_preview'
+  | 'fixing'
+  | 'preparing_deployment'
+  | 'deploying';
+
+export interface CodenActivityChangedEvent extends CodenStreamEventBase {
+  type: 'activity_changed';
+  phase: CodenAgentPublicPhase;
+  message: string;
+  active: boolean;
+}
+
+export interface CodenAssistantMessageCompletedEvent extends CodenStreamEventBase {
+  type: 'assistant_message_completed';
+  messageId?: string;
+}
+
+export interface CodenDecisionRequiredEvent extends CodenStreamEventBase {
+  type: 'decision_required';
+  decision:
+    | { type: 'clarification'; question: string; choices?: string[] }
+    | { type: 'confirmation'; action: string; summary: string; confirmLabel: string; cancelLabel: string }
+    | { type: 'missing_integration'; integration: string; requiredEnvironmentVariables: string[] };
+}
+
+export interface CodenPreviewReadyEvent extends CodenStreamEventBase {
+  type: 'preview_ready';
+  sessionId: string;
+  url?: string;
+  artifactHash?: string;
+}
+
+export interface CodenDeploymentReadyEvent extends CodenStreamEventBase {
+  type: 'deployment_ready';
+  artifactHash: string;
+  target: string;
+}
+
+export interface CodenCancelledEvent extends CodenStreamEventBase {
+  type: 'cancelled';
+  message?: string;
+}
+
+export interface CodenBlockedEvent extends CodenStreamEventBase {
+  type: 'blocked';
+  message: string;
+  code?: string;
 }
 
 export interface CodenSkillResolvedEvent extends CodenStreamEventBase {
@@ -378,6 +450,13 @@ export interface CodenVerificationCompletedEvent extends CodenStreamEventBase {
 export type CodenStreamEvent =
   | CodenModeRequestedEvent
   | CodenModeResolvedEvent
+  | CodenActivityChangedEvent
+  | CodenAssistantMessageCompletedEvent
+  | CodenDecisionRequiredEvent
+  | CodenPreviewReadyEvent
+  | CodenDeploymentReadyEvent
+  | CodenCancelledEvent
+  | CodenBlockedEvent
   | CodenStatusEvent
   | CodenMilestoneEvent
   | CodenPhaseEvent

@@ -3,7 +3,7 @@ export type UserPlan = (typeof UserPlan)[keyof typeof UserPlan];
 
 export const AIModelTier = { ECONOMY: 'Economy', STANDARD: 'Standard', PRO: 'Pro', PREMIUM: 'Premium' } as const;
 export type AIModelTier = (typeof AIModelTier)[keyof typeof AIModelTier];
-export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'deepseek' | 'xai';
+export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'deepseek' | 'qwen' | 'zai' | 'xai';
 export type ModelStrength = 'low' | 'medium' | 'high' | 'frontier';
 export type ModelSpeed = 'fast' | 'balanced' | 'deliberate';
 export type ModelReliability = 'standard' | 'high' | 'experimental';
@@ -93,14 +93,24 @@ export const MODEL_REGISTRY = [
       speed: 'fast', reliability: 'high', bestFor: ['vision', 'audio', 'video', 'long_context', 'fast_agentic', 'ui_analysis'] },
   },
   {
-    id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro', provider: 'deepseek',
+    id: 'deepseek/deepseek-v4-pro-0813', label: 'DeepSeek V4 Pro 0813', provider: 'deepseek',
     contextWindow: 1_048_576, maxOutputTokens: 65_536,
     tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 2,
-    inputUsdPerMillion: 0.396894, outputUsdPerMillion: 0.793788,
+    inputUsdPerMillion: 0.66, outputUsdPerMillion: 1.98,
     description: 'Excellent rapport qualité-prix pour le code, le debug et les traitements longs.',
     capabilities: { ...commonTextTools, supportsPromptCaching: false,
       reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'medium', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['code_generation', 'debug', 'tests', 'long_context', 'economy'] },
+  },
+  {
+    id: 'qwen/qwen3.8-27b', label: 'Qwen3.8 27B', provider: 'qwen',
+    contextWindow: 1_000_000, maxOutputTokens: 65_536,
+    tier: AIModelTier.STANDARD, minPlan: UserPlan.PRO, creditFloor: 4,
+    inputUsdPerMillion: 0.425, outputUsdPerMillion: 2.55, isNew: true,
+    description: 'Worker multimodal économique pour code, analyse de fichiers et tâches de fond.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true, supportsVideo: true,
+      reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'medium', securityLevel: 'medium',
+      speed: 'balanced', reliability: 'standard', bestFor: ['code_generation', 'multimodal', 'background_work', 'long_context', 'economy'] },
   },
   {
     id: 'openai/gpt-5.6-terra', label: 'Terra', provider: 'openai',
@@ -111,6 +121,16 @@ export const MODEL_REGISTRY = [
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
       reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'high', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['full_stack_generation', 'multi_file_edits', 'product_reasoning', 'routine_builds'] },
+  },
+  {
+    id: 'z-ai/glm-5.3', label: 'GLM-5.3', provider: 'zai',
+    contextWindow: 1_048_576, maxOutputTokens: 128_000,
+    tier: AIModelTier.STANDARD, minPlan: UserPlan.PRO, creditFloor: 6,
+    inputUsdPerMillion: 1.4, outputUsdPerMillion: 4.4, isNew: true,
+    description: 'Agent coding longue durée pour builds multi-fichiers et boucles d’outils.',
+    capabilities: { ...commonTextTools, supportsStructuredOutput: false,
+      reasoningLevel: 'high', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'high', securityLevel: 'high',
+      speed: 'balanced', reliability: 'high', bestFor: ['long_horizon_coding', 'multi_file_edits', 'tool_use', 'full_stack_generation'] },
   },
   {
     id: 'anthropic/claude-sonnet-5', label: 'Sonnet 5', provider: 'anthropic',
@@ -179,11 +199,13 @@ export const PROVIDER_META: Record<ModelProvider, { label: string; color: string
   openai: { label: 'OpenAI', color: '#0F9F7A', textColor: '#fff', icon: 'openai' },
   google: { label: 'Google', color: '#4285F4', textColor: '#fff', icon: 'google' },
   deepseek: { label: 'DeepSeek', color: '#4D6BFE', textColor: '#fff', icon: 'deepseek' },
+  qwen: { label: 'Qwen', color: '#6854D9', textColor: '#fff', icon: 'qwen' },
+  zai: { label: 'Z.ai', color: '#111827', textColor: '#fff', icon: 'zai' },
   xai: { label: 'xAI', color: '#111827', textColor: '#fff', icon: 'xai' },
 };
 
 export function getModelsByProvider() {
-  const initial: Record<ModelProvider, ModelDefinition[]> = { anthropic: [], openai: [], google: [], deepseek: [], xai: [] };
+  const initial: Record<ModelProvider, ModelDefinition[]> = { anthropic: [], openai: [], google: [], deepseek: [], qwen: [], zai: [], xai: [] };
   return MODEL_REGISTRY.reduce<Record<ModelProvider, ModelDefinition[]>>((acc, model) => {
     acc[model.provider].push(model);
     return acc;

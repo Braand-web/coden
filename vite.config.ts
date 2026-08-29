@@ -58,9 +58,31 @@ function codenPublicRedirects() {
   };
 }
 
+function codenHtmlFileSlashNormalization() {
+  return {
+    name: 'coden-html-file-slash-normalization',
+    enforce: 'pre' as const,
+    configureServer(server: { middlewares: { use: (handler: (req: any, res: any, next: () => void) => void) => void } }) {
+      server.middlewares.use((req, _res, next) => {
+        const rawUrl = String(req.url || '/');
+        const match = rawUrl.match(/^(\/(?:[^/?#]+\/)*[^/?#]+\.html)\/(\?[^#]*)?$/i);
+        if (!match) {
+          next();
+          return;
+        }
+        // Vite treats /dashboard.html/ as a directory and serves the SPA
+        // fallback (the landing page). Rewrite it to the real MPA document
+        // before Vite's HTML fallback runs.
+        req.url = `${match[1]}${match[2] || ''}`;
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [codenPublicRedirects(), tailwindcss()],
+    plugins: [codenHtmlFileSlashNormalization(), codenPublicRedirects(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

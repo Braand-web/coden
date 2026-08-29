@@ -84,7 +84,7 @@ export type ParallelAgentContext = {
 
 const DEFAULT_MODELS: Record<AgentModelTier, AllowedModelId> = {
   fast:      'openai/gpt-5.6-luna',
-  balanced:  'deepseek/deepseek-v4-pro',
+  balanced:  'deepseek/deepseek-v4-pro-0813',
   reasoning: 'anthropic/claude-sonnet-5',
   design:    'anthropic/claude-sonnet-5',
 };

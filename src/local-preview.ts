@@ -23,10 +23,14 @@ type LocalPreviewAuth = {
 const viteEnv = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
 
 export function isLocalPreviewLocation(location: PreviewLocation, isDev: boolean): boolean {
-  if (!isDev) return false;
   if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return false;
   try {
-    return new URL(location.href).searchParams.get(LOCAL_PREVIEW_QUERY_KEY) === '1';
+    const explicitlyRequested = new URL(location.href).searchParams.get(LOCAL_PREVIEW_QUERY_KEY) === '1';
+    // The localhost boundary is the security gate. Some desktop preview hosts
+    // serve a production Vite bundle, where import.meta.env.DEV is false even
+    // though the surface is isolated on loopback. Keep the explicit query
+    // requirement so this can never activate on coden.fun.
+    return explicitlyRequested && (isDev || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
   } catch {
     return false;
   }

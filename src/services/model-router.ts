@@ -108,11 +108,11 @@ export class ModelRouter {
 
       switch (context.mode) {
         case 'Fast':
-          selectedModel = firstAffordable(['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro']);
+          selectedModel = firstAffordable(['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro-0813']);
           break;
 
         case 'Balanced':
-          selectedModel = firstAffordable(['openai/gpt-5.6-terra', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4-pro']);
+          selectedModel = firstAffordable(['openai/gpt-5.6-terra', 'z-ai/glm-5.3', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4-pro-0813']);
           break;
 
         case 'Pro':
@@ -149,15 +149,15 @@ export class ModelRouter {
     const complexity = context.taskComplexity || 'medium';
     if (!this.hasSpecificCapabilityNeeds(context)) {
       if (complexity === 'simple') {
-        return this.firstAvailable(models, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro']);
+        return this.firstAvailable(models, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro-0813']);
       }
       if (complexity === 'complex') {
-        return this.firstAvailable(models, ['anthropic/claude-sonnet-5', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol', 'deepseek/deepseek-v4-pro']);
+        return this.firstAvailable(models, ['anthropic/claude-sonnet-5', 'z-ai/glm-5.3', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol', 'deepseek/deepseek-v4-pro-0813']);
       }
       if (complexity === 'extreme') {
         return this.firstAvailable(models, ['openai/gpt-5.6-sol', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5', 'anthropic/claude-sonnet-5']);
       }
-      return this.firstAvailable(models, ['openai/gpt-5.6-terra', 'anthropic/claude-sonnet-5', 'openai/gpt-5.6-luna', 'deepseek/deepseek-v4-pro']);
+      return this.firstAvailable(models, ['openai/gpt-5.6-terra', 'z-ai/glm-5.3', 'anthropic/claude-sonnet-5', 'openai/gpt-5.6-luna', 'deepseek/deepseek-v4-pro-0813']);
     }
     const scored = models.map(modelId => ({
       modelId,
@@ -280,7 +280,7 @@ export class ModelRouter {
       'anthropic/claude-sonnet-5',
       'openai/gpt-5.6-sol',
       'openai/gpt-5.6-terra',
-      'deepseek/deepseek-v4-pro',
+      'deepseek/deepseek-v4-pro-0813',
       'x-ai/grok-4.6',
       'google/gemini-3.7-flash',
       'openai/gpt-5.6-luna',

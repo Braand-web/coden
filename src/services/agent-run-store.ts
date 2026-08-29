@@ -7,6 +7,8 @@ import {
   type AgentPlan,
   type AgentRunContract,
   type AgentRunStatus,
+  type AgentPublicPhase,
+  type InlineUserDecision,
   type VerificationCheck,
 } from './agent-run-contract.ts';
 
@@ -25,6 +27,9 @@ export type AgentRunViewModel = AgentRunContract & {
   checks: VerificationCheck[];
   error?: string;
   warnings: string[];
+  publicActivity?: { phase: AgentPublicPhase; message: string; active: boolean; sequence: number };
+  lastAssistantSequence: number;
+  decision?: InlineUserDecision;
 };
 
 export function createAgentRunViewModel(input: Partial<AgentRunContract> & { runId: string; prompt: string; requestedMode?: AgentMode }): AgentRunViewModel {
@@ -41,7 +46,7 @@ export function createAgentRunViewModel(input: Partial<AgentRunContract> & { run
     model: input.model || 'unknown',
     planId: input.planId,
     contextHash: input.contextHash,
-    canMutateFiles: input.canMutateFiles ?? requestedMode !== 'plan',
+    canMutateFiles: input.canMutateFiles ?? (requestedMode === 'auto' || requestedMode === 'build' || requestedMode === 'fix'),
     requiresConfirmation: Boolean(input.requiresConfirmation),
     creditPolicy: input.creditPolicy || creditPolicyFor(requestedMode),
     objective: input.objective,
@@ -54,6 +59,7 @@ export function createAgentRunViewModel(input: Partial<AgentRunContract> & { run
     files: [],
     checks: input.verification?.checks || [],
     warnings: [],
+    lastAssistantSequence: 0,
   };
 }
 
@@ -81,6 +87,62 @@ function upsertCheck(state: AgentRunViewModel, check: VerificationCheck) {
   };
 }
 
+function phaseForLegacyEvent(event: CodenStreamEvent): AgentPublicPhase | null {
+  if (event.type === 'status') {
+    const message = event.message.toLowerCase();
+    if (/deploy|publication/.test(message)) return 'deploying';
+    if (/preview/.test(message)) return 'checking_preview';
+    if (/test|verif|vérif|check/.test(message)) return 'testing';
+    if (/fix|corr|répar|repair/.test(message)) return 'fixing';
+    if (/build|génér|gener|constru|cod/.test(message)) return 'building';
+    if (/plan|architect/.test(message)) return 'planning';
+    if (/inspect|analys/.test(message)) return 'inspecting';
+    return 'understanding';
+  }
+  if (event.type === 'understanding') return 'understanding';
+  if (event.type === 'verification_started' || event.type === 'check') return 'testing';
+  if (event.type === 'file_start' || event.type === 'file_delta' || event.type === 'file_done') return 'building';
+  if (event.type === 'milestone') {
+    return ({ understanding: 'understanding', inspecting: 'inspecting', planning: 'planning', generating: 'building', checking: 'testing', fixing: 'fixing', preview_ready: 'checking_preview' } as const)[event.milestone];
+  }
+  if (event.type === 'phase') {
+    return ({ understand: 'understanding', decide: 'understanding', plan: 'planning', reason: 'planning', build: 'building', verify: 'testing', fix: 'fixing', recap: 'checking_preview' } as const)[event.phase];
+  }
+  return null;
+}
+
+function publicMessageForPhase(phase: AgentPublicPhase, language: 'fr' | 'en') {
+  const fr: Record<AgentPublicPhase, string> = {
+    understanding: 'Coden analyse votre demande…',
+    inspecting: 'Coden inspecte le projet…',
+    researching: 'Coden vérifie les sources utiles…',
+    planning: 'Coden prépare l’architecture…',
+    building: 'Coden construit l’application…',
+    connecting_backend: 'Coden connecte le backend…',
+    integrating: 'Coden assemble les composants…',
+    testing: 'Coden lance les tests…',
+    checking_preview: 'Coden vérifie la preview…',
+    fixing: 'Coden corrige les derniers problèmes…',
+    preparing_deployment: 'Coden prépare le déploiement…',
+    deploying: 'Coden déploie l’application…',
+  };
+  const en: Record<AgentPublicPhase, string> = {
+    understanding: 'Coden is analyzing your request…',
+    inspecting: 'Coden is inspecting the project…',
+    researching: 'Coden is checking relevant sources…',
+    planning: 'Coden is preparing the architecture…',
+    building: 'Coden is building the application…',
+    connecting_backend: 'Coden is connecting the backend…',
+    integrating: 'Coden is integrating the components…',
+    testing: 'Coden is running tests…',
+    checking_preview: 'Coden is checking the preview…',
+    fixing: 'Coden is fixing the remaining issues…',
+    preparing_deployment: 'Coden is preparing the deployment…',
+    deploying: 'Coden is deploying the application…',
+  };
+  return (language === 'fr' ? fr : en)[phase];
+}
+
 export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenStreamEvent): AgentRunViewModel {
   if (event.runId && event.runId !== previous.runId) return previous;
   const state: AgentRunViewModel = {
@@ -95,6 +157,13 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
   };
 
   applyStatus(state, statusFromStreamEvent(event, state.status));
+
+  const legacyPhase = phaseForLegacyEvent(event);
+  if (legacyPhase) {
+    const active = event.type === 'milestone' || event.type === 'phase' ? event.state === 'active' : true;
+    const explicit = event.type === 'status' ? event.message : event.type === 'milestone' || event.type === 'phase' ? event.label : undefined;
+    state.publicActivity = { phase: legacyPhase, message: explicit || publicMessageForPhase(legacyPhase, state.language), active, sequence: event.sequence || event.id };
+  }
 
   switch (event.type) {
     case 'mode_requested':
@@ -115,6 +184,7 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
       break;
     case 'clarification':
       state.clarification = { question: event.question, options: event.options };
+      state.decision = { type: 'clarification', question: event.question, choices: event.options };
       addActivity(state, { id: 'clarification', label: event.question, status: 'active' });
       break;
     case 'plan': {
@@ -146,6 +216,31 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
       break;
     case 'assistant_delta':
       state.assistantText += event.text;
+      state.lastAssistantSequence = event.sequence || event.id;
+      break;
+    case 'assistant_message_completed':
+      state.publicActivity = state.publicActivity ? { ...state.publicActivity, active: false } : undefined;
+      break;
+    case 'activity_changed':
+      state.publicActivity = { phase: event.phase, message: event.message, active: event.active, sequence: event.sequence || event.id };
+      break;
+    case 'decision_required':
+      state.decision = event.decision;
+      break;
+    case 'preview_ready':
+      state.publicActivity = { phase: 'checking_preview', message: publicMessageForPhase('checking_preview', state.language), active: false, sequence: event.sequence || event.id };
+      break;
+    case 'deployment_ready':
+      state.publicActivity = { phase: 'preparing_deployment', message: publicMessageForPhase('preparing_deployment', state.language), active: false, sequence: event.sequence || event.id };
+      break;
+    case 'cancelled':
+      state.hasFinal = true;
+      state.publicActivity = state.publicActivity ? { ...state.publicActivity, active: false } : undefined;
+      break;
+    case 'blocked':
+      state.error = event.message;
+      state.hasFinal = true;
+      state.publicActivity = state.publicActivity ? { ...state.publicActivity, active: false } : undefined;
       break;
     case 'file_start':
       if (!state.files.includes(event.path)) state.files.push(event.path);
@@ -178,12 +273,14 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
       break;
     case 'approval_requested':
       state.requiresConfirmation = true;
+      state.decision = { type: 'confirmation', action: event.action, summary: event.summary, confirmLabel: state.language === 'fr' ? 'Confirmer' : 'Confirm', cancelLabel: state.language === 'fr' ? 'Annuler' : 'Cancel' };
       addActivity(state, { id: 'approval', label: event.summary, status: 'active' });
       break;
     case 'done':
       state.hasFinal = true;
       state.terminalSequence = event.id;
       if (state.status !== 'failed' && state.status !== 'needs_fix') applyStatus(state, 'completed');
+      state.publicActivity = state.publicActivity ? { ...state.publicActivity, active: false } : undefined;
       break;
     default:
       break;

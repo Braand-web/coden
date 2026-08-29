@@ -9,6 +9,7 @@ import './styles/dashboard-polish.css';
 import './styles/dashboard-kimi.css';
 import './styles/dashboard-kimi-sidebar.css';
 import './styles/dashboard-coden.css';
+import './styles/dashboard-orygin.css';
 import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import './conversion-events';
@@ -29,7 +30,7 @@ import { AgentRunPanel } from './components/agent/agent-run-panel';
 import { applyAgentStreamEvent, createAgentRunViewModel, type AgentRunViewModel } from './services/agent-run-store';
 import { openCodenStream } from './lib/stream-client';
 import { isCodenStreamEvent, type CodenStreamEvent } from './lib/stream-protocol';
-import type { AgentMode } from './services/agent-run-contract';
+import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-run-contract';
 
 initThemeController();
 initCodenNavigationTransitions();
@@ -64,7 +65,7 @@ type UserWorkspaceState = {
   last_route?: string;
 };
 
-type DashboardMode = 'auto' | 'plan' | 'build';
+type DashboardMode = AgentMode;
 type PlanKey = 'free' | 'pro' | 'scale' | 'enterprise';
 
 type BillingWalletResponse = {
@@ -226,15 +227,15 @@ function showProjectError(message: string) {
 
 function selectedDashboardMode(): DashboardMode {
   const root = document.querySelector('.prompt-mode') as HTMLElement | null;
-  return root?.dataset.promptMode === 'plan' ? 'plan' : root?.dataset.promptMode === 'build' ? 'build' : 'auto';
+  return normalizeAgentMode(root?.dataset.promptMode);
 }
 
 function setDashboardMode(mode: DashboardMode) {
-  const selected = mode === 'plan' ? 'plan' : mode === 'build' ? 'build' : 'auto';
+  const selected = normalizeAgentMode(mode);
   const root = document.querySelector('.prompt-mode') as HTMLElement | null;
   const label = document.querySelector('.prompt-mode-label');
   root?.setAttribute('data-prompt-mode', selected);
-  if (label) label.textContent = selected === 'plan' ? 'Plan' : selected === 'build' ? 'Build' : 'Auto';
+  if (label) label.textContent = modeLabel(selected, dashboardIsFrench() ? 'fr' : 'en');
   document.querySelectorAll('[data-prompt-mode-option]').forEach(option => {
     option.classList.toggle('active', (option as HTMLElement).dataset.promptModeOption === selected);
   });
@@ -334,16 +335,25 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function dashboardIsFrench() {
+  return (document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('fr');
+}
+
+function dashboardCopy(fr: string, en: string) {
+  return dashboardIsFrench() ? fr : en;
+}
+
 function relativeTime(isoString?: string) {
-  if (!isoString) return 'recently';
+  if (!isoString) return dashboardCopy('récemment', 'recently');
   const delta = Date.now() - new Date(isoString).getTime();
-  if (!Number.isFinite(delta)) return 'recently';
+  if (!Number.isFinite(delta)) return dashboardCopy('récemment', 'recently');
   const mins = Math.max(0, Math.floor(delta / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return dashboardCopy('à l’instant', 'just now');
+  if (mins < 60) return dashboardCopy(`il y a ${mins} min`, `${mins}m ago`);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return dashboardCopy(`il y a ${hours} h`, `${hours}h ago`);
+  const days = Math.floor(hours / 24);
+  return dashboardCopy(`il y a ${days} j`, `${days}d ago`);
 }
 
 function projectAccent(index: number) {
@@ -352,7 +362,10 @@ function projectAccent(index: number) {
 }
 
 function projectDescription(project: DashboardProject) {
-  return project.prompt || 'Open the builder to plan, generate and preview this project.';
+  return project.prompt || dashboardCopy(
+    'Ouvrez le Builder pour planifier, générer et prévisualiser ce projet.',
+    'Open the builder to plan, generate and preview this project.',
+  );
 }
 
 function projectState(project: DashboardProject): 'draft' | 'ready' | 'published' | 'building' | 'needs-fix' {
@@ -366,7 +379,13 @@ function projectState(project: DashboardProject): 'draft' | 'ready' | 'published
 }
 
 function projectStateLabel(state: ReturnType<typeof projectState>) {
-  const labels: Record<ReturnType<typeof projectState>, string> = {
+  const labels: Record<ReturnType<typeof projectState>, string> = dashboardIsFrench() ? {
+    draft: 'Brouillon',
+    ready: 'Aperçu vérifié',
+    published: 'Publié',
+    building: 'En construction',
+    'needs-fix': 'À corriger',
+  } : {
     draft: 'Draft',
     ready: 'Preview verified',
     published: 'Published',
@@ -396,15 +415,15 @@ function isRecentProject(project: DashboardProject) {
 function projectHealthItems(project: DashboardProject, state: ReturnType<typeof projectState>) {
   return [
     {
-      label: 'Preview',
+      label: dashboardCopy('Aperçu', 'Preview'),
       status: state === 'ready' || state === 'published' ? 'ok' : state === 'building' ? 'working' : state === 'needs-fix' ? 'issue' : 'idle',
     },
     {
-      label: 'Live',
+      label: dashboardCopy('En ligne', 'Live'),
       status: state === 'published' ? 'ok' : 'idle',
     },
     {
-      label: 'Recent',
+      label: dashboardCopy('Récent', 'Recent'),
       status: isRecentProject(project) ? 'ok' : 'idle',
     },
   ];
@@ -412,11 +431,11 @@ function projectHealthItems(project: DashboardProject, state: ReturnType<typeof 
 
 function projectTimelineItems(project: DashboardProject, state: ReturnType<typeof projectState>) {
   const items = [
-    `Created ${relativeTime(project.created_at)}`,
-    `Updated ${relativeTime(project.updated_at || project.created_at)}`,
+    dashboardCopy(`Créé ${relativeTime(project.created_at)}`, `Created ${relativeTime(project.created_at)}`),
+    dashboardCopy(`Mis à jour ${relativeTime(project.updated_at || project.created_at)}`, `Updated ${relativeTime(project.updated_at || project.created_at)}`),
   ];
-  if (state === 'published') items.push('Live');
-  if (state === 'needs-fix') items.push('Needs review');
+  if (state === 'published') items.push(dashboardCopy('En ligne', 'Live'));
+  if (state === 'needs-fix') items.push(dashboardCopy('À vérifier', 'Needs review'));
   return items.slice(0, 3);
 }
 
@@ -442,7 +461,11 @@ function projectPreviewFrame(project: DashboardProject, state: ReturnType<typeof
   return `
     <div class="project-preview-empty" aria-hidden="true">
       <span class="project-preview-mark">${escapeHtml((project.name || 'H').slice(0, 1).toUpperCase())}</span>
-      <span>${state === 'needs-fix' ? 'Needs fix' : state === 'building' ? 'Building' : 'No preview yet'}</span>
+      <span>${state === 'needs-fix'
+        ? dashboardCopy('À corriger', 'Needs fix')
+        : state === 'building'
+          ? dashboardCopy('En construction', 'Building')
+          : dashboardCopy('Aucun aperçu vérifié', 'No verified preview')}</span>
     </div>
   `;
 }
@@ -461,6 +484,20 @@ function installDashboardUxPolish() {
   style.textContent = `
     .sidebar-profile {
       position: relative;
+    }
+
+    .sidebar-profile .profile-info {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+
+    .sidebar-profile .profile-email {
+      display: block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .profile-settings-btn {
@@ -493,13 +530,21 @@ function installDashboardUxPolish() {
 
     .create-section[data-chat-state="conversation"],
     .create-section[data-chat-state="promoting"] {
-      flex: 1 1 auto;
+      flex: 0 1 auto;
+      width: min(100%, 960px);
+      max-height: calc(100dvh - 108px);
       min-height: 0;
-      margin: 0 auto;
+      height: auto;
+      margin: 18px auto 24px;
+      padding: 18px 20px !important;
       display: flex;
       flex-direction: column;
-      justify-content: flex-end;
+      justify-content: flex-start;
       gap: 10px;
+      overflow: hidden;
+      border: 1px solid var(--kimi-border) !important;
+      border-radius: 20px !important;
+      background: var(--kimi-surface) !important;
     }
 
     /* Le chat occupe toute la zone : un seul scroll (le fil des messages),
@@ -507,7 +552,7 @@ function installDashboardUxPolish() {
        conversation (prise en charge facon Claude/ChatGPT). */
     .content-area:has(.create-section[data-chat-state="conversation"]),
     .content-area:has(.create-section[data-chat-state="promoting"]) {
-      overflow: hidden;
+      overflow: auto;
       min-height: 0;
     }
     .content-area:has(.create-section[data-chat-state="conversation"]) > :not(.create-section),
@@ -527,8 +572,9 @@ function installDashboardUxPolish() {
     .dashboard-chat-thread {
       display: none;
       width: 100%;
-      flex: 1 1 auto;
+      flex: 0 1 auto;
       min-height: 0;
+      max-height: min(440px, calc(100dvh - 300px));
       overflow-y: auto;
       overflow-x: hidden;
       padding: 6px 2px 10px;
@@ -657,10 +703,11 @@ function installDashboardUxPolish() {
 
     .create-section[data-chat-state="conversation"] .input-wrapper,
     .create-section[data-chat-state="promoting"] .input-wrapper {
-      position: sticky;
-      bottom: 12px;
+      position: relative;
+      bottom: auto;
       z-index: 4;
-      margin-top: auto;
+      margin-top: 0;
+      flex: 0 0 auto;
       backdrop-filter: blur(16px);
     }
 
@@ -674,8 +721,10 @@ function installDashboardUxPolish() {
     .create-section[data-chat-state="conversation"] #ai-textarea,
     .create-section[data-chat-state="promoting"] #ai-textarea {
       min-height: 40px !important;
+      max-height: 120px !important;
       padding-top: 8px !important;
       font-size: 14px !important;
+      overflow-y: auto;
     }
 
     /* La compaction du composer (repos -> conversation) s'anime en douceur. */
@@ -733,6 +782,16 @@ function installDashboardUxPolish() {
     .create-section[data-chat-state="conversation"]::before,
     .create-section[data-chat-state="promoting"]::before {
       display: none !important;
+    }
+
+    .dashboard-chat-message.system .dashboard-chat-bubble {
+      width: min(100%, 720px);
+      border: 1px solid color-mix(in srgb, var(--danger, #f06b7a) 38%, var(--border));
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--danger, #f06b7a) 8%, transparent);
+      color: var(--danger, #f06b7a);
+      padding: 10px 12px;
+      white-space: normal;
     }
 
     @keyframes dashboard-chat-rise {
@@ -1214,6 +1273,18 @@ function installDashboardUxPolish() {
       }
       .dashboard-chat-pending i { animation: none !important; opacity: .7; }
     }
+
+    @media (max-width: 640px) {
+      .create-section[data-chat-state="conversation"],
+      .create-section[data-chat-state="promoting"] {
+        width: 100%;
+        max-height: calc(100dvh - 82px);
+        margin: 8px auto 16px;
+        padding: 12px !important;
+        border-radius: 16px !important;
+      }
+      .dashboard-chat-thread { max-height: min(360px, calc(100dvh - 280px)); }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -1229,9 +1300,9 @@ function renderLiveProjects(projects: DashboardProject[]) {
   if (projectSelect) {
     const preferred = selectedDashboardProjectId() || dashboardWorkspaceState?.last_project_id || '';
     projectSelect.innerHTML = [
-      '<option value="">Sélectionner un projet</option>',
+      `<option value="">${dashboardCopy('Sélectionner un projet', 'Select a project')}</option>`,
       ...projects.map(project => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)} · ${escapeHtml(relativeTime(project.updated_at || project.created_at))}</option>`),
-      '<option value="__new__">Créer un nouveau projet</option>',
+      `<option value="__new__">${dashboardCopy('Créer un nouveau projet', 'Create a new project')}</option>`,
     ].join('');
     if (preferred && projects.some(project => project.id === preferred)) {
       setDashboardProject(preferred, false);
@@ -1249,7 +1320,7 @@ function renderLiveProjects(projects: DashboardProject[]) {
             <span class="project-nav-name">${escapeHtml(project.name)}</span>
           </button>
         `).join('')
-      : '<div class="empty-nav-state">Aucun projet</div>';
+      : `<div class="empty-nav-state">${dashboardCopy('Aucun projet', 'No projects')}</div>`;
     sidebarList.querySelectorAll<HTMLElement>('.nav-project').forEach(button => {
       button.addEventListener('click', () => {
         const id = button.dataset.id;
@@ -1263,7 +1334,7 @@ function renderLiveProjects(projects: DashboardProject[]) {
     grid.innerHTML = `
       <div class="empty-state">
         <h3 class="empty-title">Aucun projet pour le moment.</h3>
-        <p class="empty-desc">Décrivez votre première idée dans le composer.</p>
+          <p class="empty-desc">${dashboardCopy('Décrivez votre première idée dans le composer.', 'Describe your first idea in the composer.')}</p>
       </div>
     `;
     return;
@@ -1278,16 +1349,16 @@ function renderLiveProjects(projects: DashboardProject[]) {
       <div class="project-card" data-id="${escapeHtml(project.id)}" data-project-state="${state}" data-project-recent="${isRecentProject(project) ? 'true' : 'false'}" style="--project-accent:${accent}">
         <div class="project-preview-shell">
           ${projectPreviewFrame(project, state)}
-          <div class="project-hover-actions" aria-label="Project actions">
-            <button class="project-hover-button" type="button" data-project-action="edit">Continue</button>
-            ${liveUrl ? `<button class="project-hover-button" type="button" data-project-action="live" data-live-url="${escapeHtml(liveUrl)}">View live</button>` : ''}
-            <button class="project-hover-button danger btn-card-delete" type="button" data-project-action="delete">Delete</button>
+          <div class="project-hover-actions" aria-label="${dashboardCopy('Actions du projet', 'Project actions')}">
+            <button class="project-hover-button" type="button" data-project-action="edit">${dashboardCopy('Ouvrir', 'Open')}</button>
+            ${liveUrl ? `<button class="project-hover-button" type="button" data-project-action="live" data-live-url="${escapeHtml(liveUrl)}">${dashboardCopy('Voir en ligne', 'View live')}</button>` : ''}
+            <button class="project-hover-button danger btn-card-delete" type="button" data-project-action="delete">${dashboardCopy('Supprimer', 'Delete')}</button>
           </div>
         </div>
         <div class="project-card-body">
           <div class="project-card-title">
             <span class="card-name">${escapeHtml(project.name)}</span>
-            <span class="card-meta">${escapeHtml(projectKind(project))} &middot; Updated ${escapeHtml(updated)}</span>
+            <span class="card-meta">${escapeHtml(projectKind(project))} &middot; ${dashboardCopy('Mis à jour', 'Updated')} ${escapeHtml(updated)}</span>
           </div>
           <span class="status-badge project-status ${state}">${escapeHtml(projectStateLabel(state))}</span>
         </div>
@@ -1368,8 +1439,8 @@ async function loadLiveProjects() {
     if (grid) {
       grid.innerHTML = `
         <div class="empty-state">
-          <h3 class="empty-title">Projects unavailable</h3>
-          <p class="empty-desc">${escapeHtml(error instanceof Error ? error.message : 'Unable to load projects from Supabase.')}</p>
+          <h3 class="empty-title">${dashboardCopy('Projets indisponibles', 'Projects unavailable')}</h3>
+          <p class="empty-desc">${dashboardCopy('Impossible de charger les projets. Réessayez dans un instant.', 'Unable to load projects. Please try again in a moment.')}</p>
         </div>
       `;
     }
@@ -1598,9 +1669,45 @@ function bindDashboardConnectors() {
   });
 }
 
+function bindConversationSidebarActions() {
+  document.querySelectorAll<HTMLButtonElement>('[data-dashboard-action]').forEach(button => {
+    if (button.dataset.codenConversationActionBound === 'true') return;
+    button.dataset.codenConversationActionBound = 'true';
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      const action = button.dataset.dashboardAction;
+      if (action === 'search') {
+        const searchWrapper = document.querySelector('.topbar .search-wrapper') as HTMLElement | null;
+        const searchInput = searchWrapper?.querySelector('input') as HTMLInputElement | null;
+        searchWrapper?.classList.add('dashboard-search-visible');
+        searchInput?.focus();
+        return;
+      }
+      if (action === 'studio') {
+        const projectId = selectedDashboardProjectId();
+        window.location.href = projectId ? builderUrl(projectId) : (isLocalPreviewEnabled() ? localPreviewUrl('/builder.html?new=1') : '/builder.html?new=1');
+        return;
+      }
+      if (action === 'models') {
+        const modelButton = document.getElementById('model-select-btn') as HTMLElement | null;
+        modelButton?.click();
+        return;
+      }
+      if (action === 'plugins') {
+        openConnectorsPanel();
+      }
+    });
+  });
+}
+
 function initDashboardChrome() {
   if (dashboardChromeInitialized) return;
   dashboardChromeInitialized = true;
+  if (isLocalPreviewEnabled()) {
+    // The local preview is a stable, signed-out reference surface. Do not let
+    // a persisted authenticated preference force the reference into the rail.
+    document.querySelector('.sidebar')?.classList.remove('collapsed');
+  }
   installDashboardUxPolish();
   initCodenMotion();
   ensureSettingsPanel();
@@ -1622,6 +1729,7 @@ function initDashboardChrome() {
   initProviderModelSelectors();
   bindAiUsageSettings();
   bindDashboardConnectors();
+  bindConversationSidebarActions();
 }
 
 function bindLiveProjectCreation() {
@@ -1659,7 +1767,7 @@ function bindLiveProjectCreation() {
     try {
       await startCreateProjectFlow({
         prompt,
-        mode: selectedDashboardMode(),
+        mode: selectedDashboardMode() === 'plan' ? 'plan' : selectedDashboardMode() === 'build' || selectedDashboardMode() === 'fix' ? 'build' : 'auto',
         source: 'modal',
         projectName: name,
         template,
@@ -1687,6 +1795,28 @@ function dashboardMessageId(role: DashboardChatRole) {
 
 function dashboardSelectedModel() {
   return localStorage.getItem('coden-selected-model') || 'auto';
+}
+
+function dashboardUserFacingError(error: unknown) {
+  const payload = (error as { payload?: unknown } | null)?.payload;
+  const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const code = typeof record.diagnostic_code === 'string' ? record.diagnostic_code : '';
+  if (code === 'AGENT_DECISION_UNAVAILABLE') {
+    return 'Le modèle sélectionné n’a pas pu analyser cette demande. Choisissez Auto ou un autre modèle, puis réessayez.';
+  }
+  if (code === 'PROJECT_RUN_REQUIRED') {
+    return 'Cette demande doit être exécutée dans le Builder avec un projet.';
+  }
+  if (code === 'RATE_LIMITED') {
+    return 'Trop de demandes rapprochées. Attendez un instant puis réessayez.';
+  }
+  if (code === 'INSUFFICIENT_CREDITS') {
+    return 'Crédits insuffisants pour cette demande. Réduisez la demande ou vérifiez votre forfait.';
+  }
+  if (code === 'AUTH_SESSION_UNAVAILABLE') {
+    return 'Votre session a expiré. Reconnectez-vous pour continuer.';
+  }
+  return 'La demande n’a pas pu être traitée. Votre prompt est conservé : réessayez ou choisissez un autre modèle.';
 }
 
 function dashboardSetChatState(state: 'idle' | 'conversation' | 'promoting') {
@@ -1718,6 +1848,8 @@ function dashboardChatHtml(text: string) {
 function renderDashboardChat() {
   const thread = ensureDashboardChatThread();
   if (!thread) return;
+  const wasNearBottom = thread.scrollHeight === 0
+    || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
   dashboardAgentRoots.forEach(root => root.unmount());
   dashboardAgentRoots.clear();
   // No indentation/newlines inside the bubble: it has white-space: pre-wrap,
@@ -1756,7 +1888,7 @@ function renderDashboardChat() {
       },
     }));
   });
-  thread.scrollTop = thread.scrollHeight;
+  if (wasNearBottom) thread.scrollTop = thread.scrollHeight;
 }
 
 function renderDashboardAgentMessage(message: DashboardChatMessage) {
@@ -1889,14 +2021,14 @@ async function streamDashboardConversation(prompt: string, assistantMessageId: s
       if (!current?.view) return;
       current.view = applyAgentStreamEvent(current.view, event);
       if (event.type === 'assistant_delta') current.content = current.view.assistantText;
-      if (event.type === 'done') current.streaming = false;
+      if (['assistant_message_completed', 'done', 'error', 'cancelled', 'blocked'].includes(event.type)) current.streaming = false;
       scheduleDashboardAgentRender(assistantMessageId);
     },
     onEvent: (_type, data) => {
       if (!isCodenStreamEvent(data)) return;
       if (data.type === 'error') {
         const current = dashboardChatMessages.find(item => item.id === assistantMessageId);
-        if (current?.view) current.view.error = data.message;
+        if (current?.view) current.view.error = dashboardUserFacingError(data);
       }
     },
   });
@@ -1914,13 +2046,14 @@ async function streamDashboardConversation(prompt: string, assistantMessageId: s
     const current = dashboardChatMessages.find(item => item.id === assistantMessageId);
     if (current?.view) {
       current.view.status = handle.isCancelled() ? 'cancelled' : 'failed';
-      current.view.error = error instanceof Error && error.message.trim() ? error.message.trim() : 'Le flux IA a échoué.';
+      current.view.error = handle.isCancelled() ? 'Run annulé.' : dashboardUserFacingError(error);
       current.streaming = false;
       scheduleDashboardAgentRender(assistantMessageId);
     }
   } finally {
     dashboardStreamHandles.delete(assistantMessageId);
     dashboardAssistantBusy = false;
+    document.getElementById('ai-textarea')?.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 
@@ -1955,6 +2088,8 @@ async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode, 
   const submit = document.getElementById('submit-btn') as HTMLButtonElement | null;
   if (!submit) return;
   const original = submit.innerHTML;
+  dashboardAssistantBusy = true;
+  submit.disabled = true;
   dashboardSetChatState('promoting');
   const statusMessageId = appendDashboardMessage('system', '', true);
   submit.classList.add('is-loading');
@@ -1981,7 +2116,7 @@ async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode, 
     if (planId) sessionStorage.setItem('coden-approved-plan-id', planId);
     await startCreateProjectFlow({
       prompt,
-      mode,
+      mode: mode === 'plan' ? 'plan' : mode === 'build' || mode === 'fix' ? 'build' : 'auto',
       source: 'dashboard',
       projectName: projectNameFromPrompt(prompt),
       model: dashboardSelectedModel(),
@@ -1997,9 +2132,12 @@ async function promoteDashboardPromptToBuilder(prompt: string, mode: AgentMode, 
       },
     });
   } catch (error) {
-    updateDashboardMessage(statusMessageId, error instanceof Error ? error.message : 'Impossible de démarrer le projet pour le moment.', false);
+    updateDashboardMessage(statusMessageId, dashboardUserFacingError(error), false);
     submit.classList.remove('is-loading');
     submit.innerHTML = original;
+  } finally {
+    dashboardAssistantBusy = false;
+    document.getElementById('ai-textarea')?.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 
@@ -2024,7 +2162,7 @@ function bindDashboardComposerControls() {
   };
   const applySlashCommand = () => {
     const raw = textarea.value.trim().toLowerCase();
-    const commands: Record<string, DashboardMode> = { '/auto': 'auto', '/build': 'build', '/plan': 'plan' };
+    const commands: Record<string, DashboardMode> = { '/auto': 'auto', '/build': 'build', '/plan': 'plan', '/ask': 'ask', '/fix': 'fix', '/review': 'review', '/research': 'research' };
     const mode = commands[raw];
     if (!mode) return false;
     setDashboardMode(mode);
@@ -2086,7 +2224,9 @@ function bindDashboardPromptCreation() {
     status.className = 'dashboard-local-preview-status';
     status.setAttribute('role', 'status');
     status.textContent = 'Génération IA et modifications désactivées dans l’aperçu local.';
-    inputWrapper?.appendChild(status);
+    // Keep the truthful local-preview notice outside the composer so it cannot
+    // change the composer height or look like assistant content.
+    createSection?.appendChild(status);
   }
   submit.addEventListener('click', async event => {
     if (isLocalPreviewEnabled()) {
@@ -2103,14 +2243,19 @@ function bindDashboardPromptCreation() {
     event.stopImmediatePropagation();
     const mode = selectedDashboardMode();
     const effectivePrompt = prompt || 'Analyse les pièces jointes fournies et propose la prochaine action utile.';
+    // Consume the composer immediately. Keeping the submitted value visible
+    // while the user bubble is already rendered creates a misleading duplicate
+    // prompt and makes the composer look like a second message.
+    textarea.value = '';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    dashboardAssistantBusy = true;
+    submit.disabled = true;
     dashboardSetChatState('conversation');
     appendDashboardMessage('user', effectivePrompt);
     submit.classList.add('is-loading');
     try {
       const decision = await requestDashboardDecision(effectivePrompt, mode);
       if (decision.success === false) throw new Error(decision.message || decision.error || 'La décision de l’agent est indisponible.');
-      textarea.value = '';
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
       const needsProject = Boolean(decision.requires_project) || ['build', 'edit', 'debug', 'verify'].includes(String(decision.resolved_action));
       if (needsProject) {
         await promoteDashboardPromptToBuilder(effectivePrompt, mode);
@@ -2129,12 +2274,21 @@ function bindDashboardPromptCreation() {
       }
       void streamDashboardConversation(effectivePrompt, assistantId, mode);
     } catch (error) {
+      const failedId = appendDashboardRunMessage(effectivePrompt, mode);
+      const failedMessage = dashboardChatMessages.find(item => item.id === failedId);
+      if (failedMessage?.view) {
+        failedMessage.view.status = 'failed';
+        failedMessage.view.error = dashboardUserFacingError(error);
+        failedMessage.streaming = false;
+      }
+      renderDashboardChat();
       textarea.focus();
       submit.classList.remove('is-loading');
       submit.innerHTML = submit.dataset.defaultMarkup || submit.innerHTML;
       submit.disabled = false;
       submit.removeAttribute('aria-disabled');
-      appendDashboardMessage('system', error instanceof Error ? error.message : 'La demande n’a pas pu être traitée.', false);
+      dashboardAssistantBusy = false;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }, true);
 }

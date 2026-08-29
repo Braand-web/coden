@@ -118,7 +118,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'deepseek/deepseek-v4-pro',
+    modelId: 'deepseek/deepseek-v4-pro-0813',
     task: 'intent',
   });
   const providerConfig = buildProviderRequestConfig(runtime);

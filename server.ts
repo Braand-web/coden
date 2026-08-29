@@ -47,6 +47,7 @@ import {
   createCodenStreamEmitter,
   CODEN_SSE_HEADERS,
   CODEN_SSE_HEARTBEAT_INTERVAL_MS,
+  type CodenAgentPublicPhase,
   type CodenStreamEmitter,
   type CodenStreamMilestone,
 } from './src/lib/stream-protocol.ts';
@@ -224,6 +225,19 @@ import {
   resolveGeneratedAppProfile,
   validateGeneratedAppManifest,
 } from './src/services/generated-app-runtime.ts';
+import {
+  createProjectManifest,
+  serializeProjectManifest,
+  validateProjectManifest,
+} from './src/services/universal-project-manifest.ts';
+import { immutableArtifactHash } from './src/services/deployment-adapters.ts';
+import { readCodenAgentFeatureFlags } from './src/config/coden-agent-feature-flags.ts';
+import {
+  UNLIMITED_TEST_CREDIT_DISPLAY_BALANCE,
+  UNLIMITED_TEST_CREDIT_METADATA_KEY,
+  canActivateUnlimitedTestCredits,
+  userHasUnlimitedTestCredits,
+} from './src/services/unlimited-test-credits.ts';
 import { containsSecret, redactSecretPayload, redactSecrets } from './src/services/secret-redaction.ts';
 import {
   MEDIA_MODEL_REGISTRY,
@@ -263,6 +277,7 @@ import {
 dotenv.config();
 
 const CODEN_SKILL_FLAGS = readCodenSkillFeatureFlags(process.env);
+const CODEN_AGENT_FLAGS = readCodenAgentFeatureFlags(process.env);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -270,6 +285,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const staticRoot = path.join(__dirname, 'dist');
+
+function requireCodenAgentFeature(res: any, enabled: boolean, feature: string) {
+  if (enabled) return true;
+  res.status(503).json({
+    success: false,
+    error: `${feature} is temporarily unavailable.`,
+    code: 'CODEN_FEATURE_DISABLED',
+    feature,
+  });
+  return false;
+}
+
 const MAX_PROJECT_ASSET_BYTES = 4 * 1024 * 1024;
 const ANALYTICS_MAX_ROWS = 10000;
 const ANALYTICS_CURRENT_VISITOR_WINDOW_MS = 5 * 60 * 1000;
@@ -478,6 +505,17 @@ function getOptionalAuthState(req: any) {
 }
 
 const DEFAULT_PLATFORM_ADMIN_EMAILS = ['novacore629@gmail.com'];
+const unlimitedTestCreditUserIds = new Set<string>();
+
+function rememberUnlimitedTestCreditUser(user: any) {
+  if (user?.id && userHasUnlimitedTestCredits(user)) {
+    unlimitedTestCreditUserIds.add(String(user.id));
+  }
+}
+
+function hasUnlimitedTestCredits(userId: unknown) {
+  return unlimitedTestCreditUserIds.has(String(userId || ''));
+}
 
 function normalizeAdminEmail(value: unknown) {
   return String(value || '').trim().toLowerCase();
@@ -532,6 +570,7 @@ async function requireAuth(req: any, res: any, next: any) {
     return res.status(401).json(authSessionUnavailablePayload(undefined, 'Invalid or expired session'));
   }
 
+  rememberUnlimitedTestCreditUser(user);
   req.user = user;
   req.auth = {
     user,
@@ -576,6 +615,7 @@ app.get('/api/auth/me', requireAuth, async (req: any, res) => {
       email: auth.email,
       role: auth.user.role,
       is_platform_admin: isPlatformAdmin(req),
+      unlimited_test_credits: hasUnlimitedTestCredits(auth.userId),
     },
     plan: {
       key: plan.key,
@@ -638,6 +678,35 @@ app.get('/api/health', (_req, res) => {
     diagnostics: {
       supabase: supabaseDiagnostics,
     },
+  });
+});
+
+app.post('/api/users/me/test-credit-access/activate', requireAuth, async (req: any, res: any) => {
+  const auth = getRequiredAuth(req);
+  if (!canActivateUnlimitedTestCredits(auth.email, process.env)) {
+    return res.status(404).json({ success: false, error: 'Test credit access is not available for this account.' });
+  }
+
+  const client = requireSupabase('Unlimited test credit activation');
+  const appMetadata = auth.user?.app_metadata && typeof auth.user.app_metadata === 'object'
+    ? auth.user.app_metadata
+    : {};
+  const activatedAt = new Date().toISOString();
+  const { data, error } = await client.auth.admin.updateUserById(auth.userId, {
+    app_metadata: {
+      ...appMetadata,
+      [UNLIMITED_TEST_CREDIT_METADATA_KEY]: true,
+      coden_test_credit_activated_at: appMetadata.coden_test_credit_activated_at || activatedAt,
+    },
+  });
+  if (error || !data?.user) {
+    return res.status(500).json({ success: false, error: 'Test credit access could not be activated.' });
+  }
+
+  unlimitedTestCreditUserIds.add(auth.userId);
+  return res.json({
+    success: true,
+    test_credit_access: { unlimited: true, activated_at: data.user.app_metadata?.coden_test_credit_activated_at || activatedAt },
   });
 });
 
@@ -1140,7 +1209,7 @@ type AgentEvent = {
 
 type AgentIntent = 'conversation' | 'clarification_required' | 'plan' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'external_keys_required' | 'credits_required';
 type AgentNextAction = 'answer' | 'ask_clarification' | 'plan_only' | 'plan_then_build' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'collect_external_keys' | 'show_upgrade';
-type AgentRequestedMode = 'auto' | 'plan' | 'build';
+type AgentRequestedMode = 'auto' | 'plan' | 'build' | 'ask' | 'fix' | 'review' | 'research';
 type StudioContextKind = 'chat' | 'design' | 'decks' | 'media';
 type RecentHistoryMessage = { role: 'user' | 'assistant'; content: string };
 type AgentDecisionInput = { prompt: string; requestedMode?: string; hasFiles: boolean; lastPlan?: string; recentHistory?: RecentHistoryMessage[] };
@@ -1244,7 +1313,7 @@ function canUseFastAnswerPath(decision: IntentDecision, prompt: string) {
 }
 
 function normalizeRequestedMode(value: any): AgentRequestedMode {
-  return value === 'plan' ? 'plan' : value === 'build' ? 'build' : 'auto';
+  return value === 'plan' || value === 'build' || value === 'ask' || value === 'fix' || value === 'review' || value === 'research' ? value : 'auto';
 }
 
 function normalizeStudioContext(value: any): StudioContextKind {
@@ -1851,7 +1920,7 @@ function createReactAppFromStandaloneHtml(html: string, projectName: string): st
   ].join('\n');
 }
 
-function ensureModernFrontendProject(files: GeneratedFile[], projectName: string, promptOrDescription = ''): GeneratedFile[] {
+function ensureModernFrontendProject(files: GeneratedFile[], projectName: string, promptOrDescription = '', projectId = 'unassigned'): GeneratedFile[] {
   const now = new Date().toISOString();
   const byPath = new Map(files.map(file => [file.path.replace(/\\/g, '/'), { ...file }]));
   const addIfMissing = (filePath: string, content: string, language = inferGeneratedLanguage(filePath)) => {
@@ -2047,6 +2116,23 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
     ...outputFiles.filter(file => file.path !== runtimeManifest.path),
     runtimeManifest,
   ].slice(0, 100);
+
+  if (CODEN_AGENT_FLAGS.universalManifest) {
+    const universalManifest = createProjectManifest({
+      projectId,
+      name: projectName || 'Coden App',
+      files: outputFiles,
+    });
+    outputFiles = [
+      ...outputFiles.filter(file => file.path.replace(/\\/g, '/') !== 'coden.project.json'),
+      {
+        path: 'coden.project.json',
+        content: serializeProjectManifest(universalManifest),
+        language: 'json',
+        updated_at: now,
+      },
+    ].slice(0, 100);
+  }
 
   return outputFiles;
 }
@@ -3399,7 +3485,7 @@ class AgentOrchestrator {
       requestedMode,
       hasLastPlan: Boolean(input.lastPlan),
     });
-    const forceBuild = requestedMode === 'build';
+    const forceBuild = requestedMode === 'build' || requestedMode === 'fix';
     const words = text.split(/\s+/).filter(Boolean);
     const hasAny = (hints: string[]) => hints.some(hint => lower.includes(hint));
     const decision = (patch: Partial<IntentDecision> & Pick<IntentDecision, 'intent' | 'confidence' | 'userVisibleReason'>): IntentDecision => ({
@@ -3424,6 +3510,74 @@ class AgentOrchestrator {
         nextAction: 'plan_only',
         selectedModelPolicy: 'economy',
         userVisibleReason: 'Coden will prepare a plan without touching files.',
+      });
+    }
+
+    if (requestedMode === 'ask') {
+      return decision({
+        intent: 'conversation',
+        confidence: 1,
+        requiresCredits: !isGreetingPrompt(text),
+        nextAction: 'answer',
+        selectedModelPolicy: 'economy',
+        userVisibleReason: 'Ask mode answers without modifying project files or rebuilding the preview.',
+      });
+    }
+
+    if (requestedMode === 'review') {
+      return decision({
+        intent: input.hasFiles ? 'verify' : 'clarification_required',
+        confidence: input.hasFiles ? 1 : 0.9,
+        requiresCredits: input.hasFiles,
+        requiresPreviewRebuild: false,
+        nextAction: input.hasFiles ? 'verify' : 'ask_clarification',
+        selectedModelPolicy: 'balanced',
+        requiredCapabilities: ['reasoning', 'code', 'security'],
+        userVisibleReason: input.hasFiles ? 'Review mode inspects the project without mutating files.' : 'Review mode needs an existing project.',
+        clarification: input.hasFiles ? undefined : {
+          question: isLikelyFrenchPrompt(text) ? 'Quel projet veux-tu auditer ?' : 'Which project should Coden review?',
+          choices: [],
+          recommendation: isLikelyFrenchPrompt(text) ? 'Sélectionne un projet existant.' : 'Select an existing project.',
+        },
+      });
+    }
+
+    if (requestedMode === 'research') {
+      return decision({
+        intent: 'conversation',
+        confidence: 1,
+        requiresCredits: true,
+        nextAction: 'answer',
+        selectedModelPolicy: 'balanced',
+        requiredCapabilities: ['reasoning', 'web'],
+        userVisibleReason: 'Research mode uses real sources and does not modify project files.',
+      });
+    }
+
+    if (requestedMode === 'fix') {
+      if (!input.hasFiles) {
+        return decision({
+          intent: 'clarification_required',
+          confidence: 0.92,
+          nextAction: 'ask_clarification',
+          userVisibleReason: 'Fix mode needs an existing project and a reproducible target.',
+          clarification: {
+            question: isLikelyFrenchPrompt(text) ? 'Quel projet et quel bug dois-je corriger ?' : 'Which project and bug should Coden fix?',
+            choices: [],
+            recommendation: isLikelyFrenchPrompt(text) ? 'Sélectionne le projet puis décris le comportement observé.' : 'Select the project, then describe the observed behavior.',
+          },
+        });
+      }
+      return decision({
+        intent: 'debug_fix',
+        confidence: 1,
+        requiresFileChanges: true,
+        requiresPreviewRebuild: true,
+        requiresCredits: true,
+        nextAction: 'debug_fix',
+        selectedModelPolicy: 'balanced',
+        requiredCapabilities: ['code', 'reasoning', 'tools'],
+        userVisibleReason: 'Fix mode reproduces the issue, applies a targeted patch, and retests the same path.',
       });
     }
 
@@ -3938,6 +4092,48 @@ function guardAiDecisionWithUnderstanding(
     understandingCategory: understanding.category,
     intentUnderstanding: understanding,
   });
+
+  if (requestedMode === 'ask' || requestedMode === 'research') {
+    return withUnderstanding({
+      ...aiDecision,
+      requestedMode,
+      intent: 'conversation',
+      requiresFileChanges: false,
+      requiresPreviewRebuild: false,
+      autoPlanRequired: false,
+      nextAction: 'answer',
+      userVisibleReason: requestedMode === 'research'
+        ? 'Research mode returns sourced guidance without modifying files.'
+        : 'Ask mode answers without modifying files.',
+    });
+  }
+  if (requestedMode === 'review') {
+    return withUnderstanding({
+      ...aiDecision,
+      requestedMode,
+      intent: input.hasFiles ? 'verify' : 'clarification_required',
+      requiresFileChanges: false,
+      requiresPreviewRebuild: false,
+      autoPlanRequired: false,
+      nextAction: input.hasFiles ? 'verify' : 'ask_clarification',
+      userVisibleReason: input.hasFiles ? 'Review mode is read-only.' : 'Review mode needs an existing project.',
+      clarification: input.hasFiles ? undefined : fallback.clarification,
+    });
+  }
+  if (requestedMode === 'fix') {
+    return withUnderstanding({
+      ...aiDecision,
+      requestedMode,
+      intent: input.hasFiles ? 'debug_fix' : 'clarification_required',
+      requiresFileChanges: input.hasFiles,
+      requiresPreviewRebuild: input.hasFiles,
+      requiresCredits: input.hasFiles,
+      autoPlanRequired: false,
+      nextAction: input.hasFiles ? 'debug_fix' : 'ask_clarification',
+      userVisibleReason: input.hasFiles ? 'Fix mode reproduces, patches, and retests the issue.' : 'Fix mode needs an existing project.',
+      clarification: input.hasFiles ? undefined : fallback.clarification,
+    });
+  }
 
   // Understanding is context for the model and for observability only. It is
   // deliberately not allowed to replace the model's action with a local
@@ -5492,7 +5688,7 @@ function runAutoFixEngine(project: GeneratedProject, files: GeneratedFile[], err
   if (!shouldForceModernVite && !shouldFixDestructive && !markerClean.changed) {
     return { files, changed: false, changedPaths: [], summaries: [] };
   }
-  working = shouldForceModernVite ? ensureModernFrontendProject(working, project.name, promptForFix) : working;
+  working = shouldForceModernVite ? ensureModernFrontendProject(working, project.name, promptForFix, project.id) : working;
   const byPath = new Map(working.map(file => [generatedPath(file.path), { ...file, path: generatedPath(file.path) }]));
 
   if (shouldForceModernVite || !byPath.has('index.html')) {
@@ -5788,7 +5984,7 @@ async function generateFilesWithAi(input: {
         // ✅ Dynamic model resolution — each agent gets the best model for its tier
         availableModels: {
           fast:      'openai/gpt-5.6-luna',
-          balanced:  'deepseek/deepseek-v4-pro',
+          balanced:  'deepseek/deepseek-v4-pro-0813',
           reasoning: selectedModel, // use the already-resolved primary model for reasoning tasks
           design:    /gemini-3\.7|sonnet-5|opus-5|gpt-5\.6-sol/i.test(selectedModel)
                        ? selectedModel
@@ -8586,10 +8782,12 @@ function getDbHelpers() {
   const client = requireSupabase('Billing and usage persistence');
   return {
     getWallet: async (orgId: string) => {
+      if (hasUnlimitedTestCredits(orgId)) return UNLIMITED_TEST_CREDIT_DISPLAY_BALANCE;
       const wallet = await ensureCreditWalletRow(client, orgId);
       return getCreditBalanceFromRow(wallet);
     },
     updateWallet: async (orgId: string, diff: number) => {
+      if (hasUnlimitedTestCredits(orgId)) return UNLIMITED_TEST_CREDIT_DISPLAY_BALANCE;
       const wallet = await ensureCreditWalletRow(client, orgId);
       const balanceColumn = getCreditBalanceColumn(wallet);
       const current = getCreditBalanceFromRow(wallet);
@@ -8608,6 +8806,9 @@ function getDbHelpers() {
     createReservation: async (orgId: string, amount: number, refId: string) => {
       const expires_at = new Date(Date.now() + 15 * 60000).toISOString();
       const reservationId = randomUUID();
+      if (hasUnlimitedTestCredits(orgId)) {
+        return { id: reservationId, wallet_id: orgId, amount, status: 'virtual', reference_id: refId, expires_at };
+      }
       const ownerColumns = ['wallet_id', 'organization_id', 'user_id'];
       for (const ownerColumn of ownerColumns) {
         let res: Record<string, any> = { id: reservationId, [ownerColumn]: orgId, amount, status: 'reserved', reference_id: refId, expires_at };
@@ -8750,6 +8951,7 @@ app.get('/api/billing/wallet', async (req, res) => {
     organization_id: orgId,
     plan: plan.key,
     balance,
+    unlimited: hasUnlimitedTestCredits(orgId),
     buckets: {
       monthly_credits: plan.credits,
       daily_promo_credits: plan.dailyCredits ?? null,
@@ -9371,6 +9573,13 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
           : decision.intent;
   stream.emit('mode_requested', { mode: requestedMode });
   stream.emit('mode_resolved', { mode: decision.requestedMode, action: resolvedAction, confidence: decision.confidence });
+  stream.emit('activity_changed', {
+    phase: requestedMode === 'research' ? 'researching' : requestedMode === 'plan' ? 'planning' : 'understanding',
+    message: isLikelyFrenchPrompt(prompt)
+      ? (requestedMode === 'research' ? 'Coden recherche les informations utiles…' : requestedMode === 'plan' ? 'Coden prépare le plan…' : 'Coden analyse votre demande…')
+      : (requestedMode === 'research' ? 'Coden is researching the relevant information…' : requestedMode === 'plan' ? 'Coden is preparing the plan…' : 'Coden is analyzing your request…'),
+    active: true,
+  });
   if (decision.modelObjective) {
     stream.emit('understanding', {
       summary: decision.modelObjective.goal,
@@ -9396,6 +9605,7 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
         acceptanceCriteria: decision.modelObjective.acceptanceCriteria,
       });
     }
+
   }
   if (decision.clarification) {
     stream.emit('clarification', { question: decision.clarification.question, options: decision.clarification.choices });
@@ -9472,6 +9682,7 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
 
     const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
     await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`);
+    stream.emit('assistant_message_completed', { messageId: assistantMessageId });
     stream.emit('done', {
       payload: {
         success: true,
@@ -10114,6 +10325,7 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
     success: true,
     wallet: {
       balance,
+      unlimited: hasUnlimitedTestCredits(userId),
       monthly_credits: plan.credits,
       daily_promo_credits: plan.dailyCredits ?? null,
       topup_credits: null,
@@ -10200,7 +10412,8 @@ app.get('/api/projects/:id/events', async (req: any, res) => {
 // POST /projects/:id/messages (THE AI ENGINE AND CREDIT BALANCER)
 app.post('/api/projects/:id/messages', async (req: any, res: any) => {
   const projectId = req.params.id;
-  const { messages, mode, customModelId, userId, orgId = DEFAULT_ORG_ID, taskComplexity = 'medium' } = req.body;
+  const { messages, mode, customModelId, userId, taskComplexity = 'medium' } = req.body;
+  const orgId = getUserOrgId(req);
   const clientHelpers = getDbHelpers();
 
   try {
@@ -11205,6 +11418,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     return res.status(status).json(payload);
   };
+  const frenchActivity = isLikelyFrenchPrompt(prompt);
+  const emitActivity = (phase: CodenAgentPublicPhase, fr: string, en: string, active = true) => {
+    if (isStream && streamV2 && !streamAborted) {
+      streamV2.emit('activity_changed', { phase, message: frenchActivity ? fr : en, active });
+    }
+  };
 
   const helpers = getDbHelpers();
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
@@ -11242,6 +11461,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   }
   const decision: IntentDecision = initialDecision;
+  emitActivity(
+    decision.intent === 'plan' ? 'planning' : decision.intent === 'verify' ? 'inspecting' : decision.intent === 'debug_fix' ? 'fixing' : 'understanding',
+    decision.intent === 'plan' ? 'Coden prépare le plan…' : decision.intent === 'verify' ? 'Coden inspecte le projet…' : decision.intent === 'debug_fix' ? 'Coden reproduit le problème…' : 'Coden analyse votre demande…',
+    decision.intent === 'plan' ? 'Coden is preparing the plan…' : decision.intent === 'verify' ? 'Coden is inspecting the project…' : decision.intent === 'debug_fix' ? 'Coden is reproducing the issue…' : 'Coden is analyzing your request…',
+  );
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
     intent: decision.intent,
@@ -11348,6 +11572,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skill: { id: skill.id, version: skill.version, budget: skillBudget },
     };
     agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
+    activeAgentRunControllers.set(agentRunId, generationAbortController);
+    const releaseActiveRun = () => {
+      activeAgentRunControllers.delete(agentRunId);
+      pendingAgentRunInstructions.delete(agentRunId);
+    };
+    res.once('finish', releaseActiveRun);
+    res.once('close', releaseActiveRun);
   }
   await saveProjectMessage({
     organization_id: project.organization_id,
@@ -11449,10 +11680,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         throw error;
       }
     }
-    const basePrompt = req.body?.useLastPlan && lastPlan ? `${lastPlan}\n\nUser confirmed build: ${agentPrompt}` : agentPrompt;
+    const steeredAgentPrompt = promptWithPendingAgentInstructions(agentPrompt, agentRunId);
+    const basePrompt = req.body?.useLastPlan && lastPlan ? `${lastPlan}\n\nUser confirmed build: ${steeredAgentPrompt}` : steeredAgentPrompt;
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
+    emitActivity('building', 'Coden construit l’application…', 'Coden is building the application…');
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
@@ -11483,13 +11716,15 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       prompt,
       { ensureIndex: true },
     );
-    files = ensureModernFrontendProject(files, generationProjectName, prompt);
+    files = ensureModernFrontendProject(files, generationProjectName, prompt, project.id);
     const projectForRun: GeneratedProject = { ...project, name: generationProjectName, prompt };
 
+    emitActivity('checking_preview', 'Coden prépare et vérifie la preview…', 'Coden is preparing and checking the preview…');
     let pipeline = runPreviewPipeline(projectForRun, files);
     let finalFiles = files;
     let autoFix = null as any;
     if (pipeline.status === 'failed') {
+      emitActivity('fixing', 'Coden corrige les problèmes détectés…', 'Coden is fixing the detected issues…');
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
         const fix = applyAutoFix(projectForRun, finalFiles, pipeline.errors);
@@ -11561,6 +11796,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         platformType: uiPolicy.appType,
       }).filter(isBlockingVerificationFailure);
     }
+    emitActivity('testing', 'Coden lance les vérifications finales…', 'Coden is running the final checks…');
     if (isStream && streamV2 && !streamAborted) streamV2.emit('verification_started', {});
     let finalGate = await finalReliabilityAutoFix({
       project: projectForRun,
@@ -11699,7 +11935,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const finalizerDecision = { ...decision, intent: 'conversation', requiresFileChanges: false, requiresPreviewRebuild: false, requiresCredits: false } as IntentDecision;
       const finalizer = await createAgentTextResponse({
         project: recoverableProject,
-        prompt: `${agentPromptForText}\n\nWrite the final user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. Facts: ${JSON.stringify(factLedger.facts)}`,
+        prompt: `${promptWithPendingAgentInstructions(agentPromptForText, agentRunId)}\n\nWrite the final user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. Facts: ${JSON.stringify(factLedger.facts)}`,
         files: finalFiles,
         decision: finalizerDecision,
         modelId: effectiveModelSelection,
@@ -11791,6 +12027,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         fact_ledger: factLedger,
       };
       if (isStream) {
+        streamV2?.emit('assistant_delta', { text: summary });
+        streamV2?.emit('assistant_message_completed', {});
         streamV2?.emit('done', { payload: finalPayload });
         return res.end();
       } else {
@@ -11926,6 +12164,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       fact_ledger: factLedger,
     };
     if (isStream) {
+      streamV2?.emit('assistant_delta', { text: finalSummary });
+      streamV2?.emit('assistant_message_completed', {});
       streamV2?.emit('done', { payload: finalPayload });
       return res.end();
     } else {
@@ -11977,7 +12217,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 });
 
+const previewSessionRegistry = new Map<string, {
+  id: string;
+  projectId: string;
+  userId: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string;
+  preview: Record<string, unknown>;
+}>();
+
 app.post('/api/projects/:id/preview', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProject(req.params.id, auth.userId, req);
@@ -11998,20 +12249,58 @@ app.post('/api/projects/:id/preview', requireAuth, async (req: any, res: any) =>
       updated_at: new Date().toISOString(),
     };
     await saveProject(updatedProject, contract.files);
+    const sessionId = `preview_${randomUUID()}`;
+    const createdAt = new Date();
+    previewSessionRegistry.set(sessionId, {
+      id: sessionId,
+      projectId: project.id,
+      userId: auth.userId,
+      status: verification.status,
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(createdAt.getTime() + 60 * 60 * 1000).toISOString(),
+      preview: { build: verification.build, browser: verification.browser, has_html: Boolean(html) },
+    });
     return res.status(verification.verified ? 200 : 422).json({
       success: verification.verified,
       needs_fix: !verification.verified,
+      session_id: sessionId,
       preview: {
         status: verification.status,
         html,
         build: verification.build,
         browser: verification.browser,
       },
+      universal_manifest: contract.universalManifest,
       files: contract.files,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, needs_fix: true, preview: { status: 'failed' }, error: error?.message || 'Preview verification failed.' });
   }
+});
+
+app.get('/api/projects/:id/preview/:sessionId', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, auth.userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const session = previewSessionRegistry.get(req.params.sessionId);
+  if (!session || session.projectId !== project.id || session.userId !== auth.userId) return res.status(404).json({ success: false, error: 'Preview session not found.' });
+  if (Date.parse(session.expiresAt) <= Date.now()) {
+    previewSessionRegistry.delete(session.id);
+    return res.status(410).json({ success: false, error: 'Preview session expired.' });
+  }
+  return res.json({ success: session.status === 'verified' || session.status === 'ready', session });
+});
+
+app.delete('/api/projects/:id/preview/:sessionId', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, auth.userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const session = previewSessionRegistry.get(req.params.sessionId);
+  if (!session || session.projectId !== project.id || session.userId !== auth.userId) return res.status(404).json({ success: false, error: 'Preview session not found.' });
+  previewSessionRegistry.delete(session.id);
+  return res.json({ success: true, session_id: session.id, status: 'stopped' });
 });
 
 app.post('/api/projects/:id/build/cancel', async (req: any, res: any) => {
@@ -12140,6 +12429,68 @@ app.get('/api/projects/:id/agent/memory', async (req: any, res: any) => {
   res.json({ success: true, memory });
 });
 
+app.post('/api/projects/:id/agent/runs/:runId/instructions', async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.userSteering, 'user_steering')) return;
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const run = await getAgentRun(project.id, req.params.runId);
+  if (!run) return res.status(404).json({ success: false, error: 'Agent run not found.' });
+  if (['completed', 'failed', 'cancelled', 'blocked'].includes(String((run as any).status || ''))) {
+    return res.status(409).json({ success: false, error: 'This run is already finished. Start a new run for another change.' });
+  }
+  if (!enforceRateLimit(`agent-instruction:${userId}:${req.params.runId}`, 20, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Too many instructions. Wait a moment before sending another.' });
+  }
+  const text = redactSecrets(String(req.body?.instruction || req.body?.text || '')).trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ success: false, error: 'Instruction is required.' });
+  const instruction: PendingAgentInstruction = { id: `instruction_${randomUUID()}`, text, createdAt: new Date().toISOString(), userId };
+  queueAgentRunInstruction(req.params.runId, instruction);
+  await saveAgentRunStep({
+    agent_run_id: req.params.runId,
+    project,
+    user_id: userId,
+    sequence_number: Date.now(),
+    event_type: 'user_instruction',
+    status: 'pending',
+    message: 'User instruction queued for the next safe checkpoint.',
+    payload: { instruction_id: instruction.id, instruction: text, apply_at: 'next_safe_checkpoint' },
+  });
+  await updateAgentRunV3Meta(req.params.runId, {
+    pending_user_instructions: publicPendingAgentInstructions(req.params.runId),
+    definition_of_done_updated_at: instruction.createdAt,
+  }).catch(() => null);
+  return res.status(202).json({
+    success: true,
+    instruction_id: instruction.id,
+    run_id: req.params.runId,
+    status: 'queued',
+    apply_at: 'next_safe_checkpoint',
+    message: 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.',
+  });
+});
+
+app.post('/api/projects/:id/agent/runs/:runId/confirm', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const run = await getAgentRun(project.id, req.params.runId);
+  if (!run) return res.status(404).json({ success: false, error: 'Agent run not found.' });
+  const action = sanitizeWorkspaceText(req.body?.action || '').trim().slice(0, 120);
+  if (!action) return res.status(400).json({ success: false, error: 'Confirmed action is required.' });
+  await saveAgentRunStep({
+    agent_run_id: req.params.runId,
+    project,
+    user_id: userId,
+    sequence_number: Date.now(),
+    event_type: 'user_confirmation',
+    status: 'completed',
+    message: `User confirmed action: ${action}.`,
+    payload: { action, confirmed: true, plan_id: req.body?.planId || null },
+  });
+  return res.json({ success: true, run_id: req.params.runId, action, confirmed: true });
+});
+
 app.post('/api/projects/:id/agent/runs/:runId/cancel', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -12169,6 +12520,9 @@ app.post('/api/projects/:id/versions/:versionId/rollback', async (req: any, res:
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  activeAgentRunControllers.get(req.params.runId)?.abort();
+  activeAgentRunControllers.delete(req.params.runId);
+  pendingAgentRunInstructions.delete(req.params.runId);
   if (!requireProjectCapability(req, res, 'build', project)) return;
   if (req.body?.confirmed !== true && req.body?.approvalGranted !== true) {
     return res.status(409).json({ success: false, requires_confirmation: true, error: 'Explicit confirmation is required before rolling back this project.' });
@@ -13224,6 +13578,18 @@ app.use((req, res, next) => {
   return res.redirect(301, target);
 });
 
+// A trailing slash after an MPA document (for example
+// /dashboard.html/?localPreview=1) must never fall through to index.html.
+// Canonicalize it before static serving so the landing and product shells
+// cannot be mixed by a browser or deployment proxy.
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const match = String(req.path || '').match(/^(\/(?:[^/]+\/)*[^/]+\.html)\/$/i);
+  if (!match) return next();
+  const query = req.originalUrl?.slice(String(req.path).length + 1) || '';
+  return res.redirect(308, `${match[1]}${query}`);
+});
+
 const privateDocumentPaths = new Set([
   '/auth.html',
   '/dashboard.html',
@@ -13273,8 +13639,45 @@ async function readGeneratedRuntimeContract(project: GeneratedProject) {
   if (!manifest) {
     manifest = createGeneratedAppManifest({ prompt: project.prompt || project.name, files });
   }
-  const validation = validateGeneratedAppManifest(manifest);
-  return { files, manifest, validation };
+  const universalEntry = files.find(file => file.path.replace(/\\/g, '/') === 'coden.project.json');
+  let universalManifest: any = null;
+  if (universalEntry) {
+    try { universalManifest = JSON.parse(universalEntry.content); } catch { universalManifest = null; }
+  }
+  if (!universalManifest || !validateProjectManifest(universalManifest).valid) {
+    universalManifest = createProjectManifest({ projectId: project.id, name: project.name, files });
+  }
+  const universalValidation = validateProjectManifest(universalManifest);
+  const validation = [
+    ...validateGeneratedAppManifest(manifest),
+    ...universalValidation.errors.map(error => `coden.project.json: ${error}`),
+  ];
+  return { files, manifest, universalManifest, validation, warnings: universalValidation.warnings };
+}
+
+type PendingAgentInstruction = { id: string; text: string; createdAt: string; userId: string };
+const activeAgentRunControllers = new Map<string, AbortController>();
+const pendingAgentRunInstructions = new Map<string, PendingAgentInstruction[]>();
+
+function queueAgentRunInstruction(runId: string, instruction: PendingAgentInstruction) {
+  const current = pendingAgentRunInstructions.get(runId) || [];
+  current.push(instruction);
+  pendingAgentRunInstructions.set(runId, current.slice(-20));
+}
+
+function publicPendingAgentInstructions(runId: string) {
+  return (pendingAgentRunInstructions.get(runId) || []).map(({ id, text, createdAt }) => ({ id, text, created_at: createdAt }));
+}
+
+function promptWithPendingAgentInstructions(prompt: string, runId: string) {
+  const instructions = publicPendingAgentInstructions(runId);
+  if (!instructions.length) return prompt;
+  return [
+    prompt,
+    '',
+    'New user steering instructions received during this run. Apply them at the next safe checkpoint, preserve valid artifacts, and do not create a second project or run:',
+    ...instructions.map((instruction, index) => `${index + 1}. ${instruction.text}`),
+  ].join('\n');
 }
 
 async function persistGeneratedRuntimeContract(project: GeneratedProject, manifest: any, sourceRunId?: string) {
@@ -13315,7 +13718,7 @@ app.get('/api/projects/:id/runtime-profile', requireAuth, async (req: any, res: 
     const contract = await readGeneratedRuntimeContract(project);
     if (contract.validation.length) return res.status(422).json({ success: false, manifest: contract.manifest, validation: contract.validation });
     await persistGeneratedRuntimeContract(project, contract.manifest);
-    return res.json({ success: true, manifest: contract.manifest });
+    return res.json({ success: true, manifest: contract.manifest, universal_manifest: contract.universalManifest, warnings: contract.warnings });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Runtime profile could not be loaded.' });
   }
@@ -13344,6 +13747,7 @@ app.post('/api/projects/:id/preview/start', requireAuth, async (req: any, res: a
       needs_fix: !verification.verified,
       status: verification.status,
       manifest: contract.manifest,
+      universal_manifest: contract.universalManifest,
       checks: [
         { key: 'build', status: verification.build.status, detail: verification.build.error || verification.build.output_directory },
         ...(verification.browser?.checks || []),
@@ -13559,6 +13963,13 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     if (contract.validation.length) {
       return res.status(422).json({ success: false, error: 'Generated app manifest is invalid.', validation: contract.validation, manifest: contract.manifest, request_id: requestId });
     }
+    const artifactHash = immutableArtifactHash({
+      files: contract.files.map(file => ({ path: file.path, content: file.content })),
+      manifest: contract.universalManifest,
+      previewSessionId: String((context as any).previewSessionId || project.id),
+      verificationPassed: publishStatus.can_publish,
+      securityBlockers: [],
+    });
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
     let result: Awaited<ReturnType<typeof publishProjectToCloudflare>>;
     try {
@@ -13602,7 +14013,7 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
       custom_domain: publishStatus.custom_domain,
       badge_required: publishStatus.badge_required,
       status: 'ready',
-      commit_hash: req.body?.commitHash || null,
+      commit_hash: artifactHash,
       branch: req.body?.branch || 'main',
       created_at: createdAt,
     };
@@ -13624,7 +14035,7 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     const nextStatus = buildPublishStatus({ ...context, latestDeployment: deploy });
     return res.json({
       success: true,
-      deployment: sanitizeDeploymentForUser(deploy, result.codenUrl || nextStatus.public_url, nextStatus.custom_domain),
+      deployment: { ...sanitizeDeploymentForUser(deploy, result.codenUrl || nextStatus.public_url, nextStatus.custom_domain), artifact_hash: artifactHash },
       publish: { ...nextStatus, public_url: result.codenUrl || nextStatus.public_url },
     });
   } catch (e: any) {
@@ -13644,6 +14055,62 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
 app.post('/api/projects/:id/publish', requireAuth, publishCloudflareProjectForRequest);
 app.post('/api/projects/:id/publish-cf', requireAuth, publishCloudflareProjectForRequest);
 app.post('/api/projects/:id/deploy', requireAuth, publishCloudflareProjectForRequest);
+app.post('/api/projects/:id/deployments', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.deploymentAdapters, 'deployment_adapters')) return;
+  return publishCloudflareProjectForRequest(req, res);
+});
+
+app.get('/api/projects/:id/deployments/:deploymentId', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.deploymentAdapters, 'deployment_adapters')) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProjectForPublish(req.params.id, auth.userId, req);
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const client = requireSupabase('Deployment lookup');
+  const { data, error } = await client.from('deployments').select('*').eq('project_id', project.id).eq('id', req.params.deploymentId).maybeSingle();
+  if (error || !data) return res.status(404).json({ success: false, error: 'Deployment not found.' });
+  const domain = await getPrimaryCustomDomain(project.id);
+  return res.json({ success: true, deployment: sanitizeDeploymentForUser(data, getPublishPublicUrl(project, domain), domain), artifact_hash: data.commit_hash || null });
+});
+
+app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, async (req: any, res: any) => {
+  if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.deploymentAdapters, 'deployment_adapters')) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProjectForPublish(req.params.id, auth.userId, req);
+  if (!requireProjectCapability(req, res, 'deploy', project)) return;
+  if (req.body?.confirmed !== true && req.body?.approvalGranted !== true) {
+    return res.status(409).json({ success: false, requires_confirmation: true, error: 'Explicit confirmation is required before rollback.' });
+  }
+  const client = requireSupabase('Deployment rollback');
+  const { data: target, error } = await client.from('deployments').select('*').eq('project_id', project.id).eq('id', req.params.deploymentId).maybeSingle();
+  if (error || !target || !isPublishedDeploymentReady(target)) return res.status(404).json({ success: false, error: 'A ready rollback deployment was not found.' });
+  const healthUrl = String(target.deployment_url || target.public_url || '');
+  if (!/^https:\/\//i.test(healthUrl)) return res.status(409).json({ success: false, error: 'The target deployment has no immutable HTTPS artifact URL.' });
+  const health = await fetch(healthUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
+  if (!health?.ok) return res.status(409).json({ success: false, error: 'The rollback artifact is no longer reachable.' });
+  const rollback = {
+    ...target,
+    id: randomUUID(),
+    status: 'ready',
+    created_at: new Date().toISOString(),
+    commit_hash: target.commit_hash || null,
+    branch: target.branch || 'main',
+  };
+  delete (rollback as any).updated_at;
+  await saveDeploymentRecord(rollback);
+  await client.from('publications').update({
+    last_deployment_id: target.provider_deployment_id,
+    default_url: target.deployment_url,
+    status: 'ready',
+    published_at: rollback.created_at,
+  }).eq('project_id', project.id).catch(() => null);
+  const domain = await getPrimaryCustomDomain(project.id);
+  return res.json({
+    success: true,
+    rollback_of: target.id,
+    deployment: sanitizeDeploymentForUser(rollback, getPublishPublicUrl(project, domain), domain),
+    artifact_hash: rollback.commit_hash,
+  });
+});
 
 app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, res: any) => {
   try {

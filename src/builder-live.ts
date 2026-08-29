@@ -27,6 +27,7 @@ import { redactSecretPayload, redactSecrets } from './services/secret-redaction'
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
 import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
+import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-run-contract';
 
 initThemeController();
 import {
@@ -39,7 +40,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-type ChatMode = 'auto' | 'plan' | 'build';
+type ChatMode = AgentMode;
 type PromptUiContext = 'chat_simple' | 'clarification_only' | 'planning_only' | 'project_mission' | 'critical_action';
 type StudioWorkshop = 'chat' | 'design' | 'decks' | 'media';
 type MessageHandle = HTMLElement & { __codenMessageId?: string };
@@ -4182,13 +4183,15 @@ async function ensureModelSelector() {
 }
 
 function ensurePlanBuildControls() {
-  const submitWrapper = document.querySelector('.submit-wrapper');
+  const submit = document.getElementById('chat-submit-btn');
+  const submitWrapper = document.querySelector('.submit-wrapper') || submit?.parentElement;
   if (!submitWrapper) return;
   let wrapper = document.getElementById('chat-mode-wrapper');
   if (!wrapper) {
     wrapper = document.createElement('div');
     wrapper.id = 'chat-mode-wrapper';
-    submitWrapper.insertAdjacentElement('beforebegin', wrapper);
+    if (submit) submit.insertAdjacentElement('beforebegin', wrapper);
+    else submitWrapper.appendChild(wrapper);
   }
   if (wrapper.dataset.codenAgentModeMounted === 'true') return;
   wrapper.dataset.codenAgentModeMounted = 'true';
@@ -4205,12 +4208,12 @@ function ensurePlanBuildControls() {
 }
 
 function setChatMode(mode: ChatMode) {
-  selectedChatMode = mode === 'plan' ? 'plan' : mode === 'build' ? 'build' : 'auto';
+  selectedChatMode = normalizeAgentMode(mode);
   window.dispatchEvent(new CustomEvent('coden-agent-mode-sync', { detail: { mode: selectedChatMode } }));
   const label = document.getElementById('chat-mode-label');
   const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
   const menu = document.getElementById('chat-mode-menu');
-  if (label) label.textContent = selectedChatMode === 'plan' ? 'Plan' : selectedChatMode === 'build' ? 'Build' : 'Auto';
+  if (label) label.textContent = modeLabel(selectedChatMode, (document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
   if (button) {
     button.style.background = selectedChatMode === 'auto' ? 'transparent' : 'var(--accent-hover)';
     button.style.color = selectedChatMode === 'plan' ? 'var(--blue, var(--accent))' : 'var(--text)';
@@ -5446,7 +5449,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       ...effectiveExtra,
     };
 
-    if (requestedMode === 'build' || requestedMode === 'auto') {
+    if (requestedMode === 'build' || requestedMode === 'fix' || requestedMode === 'auto') {
       generationTouchesPreview = true;
       activeGenerationTouchesPreview = true;
       activateBuilderView('preview');
@@ -6569,23 +6572,24 @@ function bindChat() {
     send(selectedChatMode);
   }, true);
 
-  document.getElementById('btn-chat-mode')?.addEventListener('click', (event) => {
-    event.preventDefault();
-    const menu = document.getElementById('chat-mode-menu');
-    const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
-    const nextOpen = menu?.style.display !== 'block';
-    if (menu) menu.style.display = nextOpen ? 'block' : 'none';
-    button?.setAttribute('aria-expanded', String(nextOpen));
-  });
-
-  document.querySelectorAll('[data-chat-mode]').forEach(option => {
-    option.addEventListener('click', (event) => {
+  const sharedModeMounted = document.getElementById('chat-mode-wrapper')?.dataset.codenAgentModeMounted === 'true';
+  if (!sharedModeMounted) {
+    document.getElementById('btn-chat-mode')?.addEventListener('click', (event) => {
       event.preventDefault();
-      const rawMode = (option as HTMLElement).dataset.chatMode;
-      const mode: ChatMode = rawMode === 'plan' ? 'plan' : rawMode === 'build' ? 'build' : 'auto';
-      setChatMode(mode);
+      const menu = document.getElementById('chat-mode-menu');
+      const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
+      const nextOpen = menu?.style.display !== 'block';
+      if (menu) menu.style.display = nextOpen ? 'block' : 'none';
+      button?.setAttribute('aria-expanded', String(nextOpen));
     });
-  });
+
+    document.querySelectorAll('[data-chat-mode]').forEach(option => {
+      option.addEventListener('click', (event) => {
+        event.preventDefault();
+        setChatMode(normalizeAgentMode((option as HTMLElement).dataset.chatMode));
+      });
+    });
+  }
 
   document.addEventListener('click', (event) => {
     const wrapper = document.getElementById('chat-mode-wrapper');
