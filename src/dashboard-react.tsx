@@ -194,7 +194,7 @@ function Composer({ onStatus }: { onStatus: (value: string) => void }) {
           <Paperclip size={18} strokeWidth={1.7} aria-hidden="true" />
         </button>
         <span className="coden-orygin-composer-name">Coden</span>
-        <button className="coden-orygin-send" type="submit" aria-label="Envoyer" disabled={busy || !value.trim()}>
+        <button className="coden-orygin-send" type="submit" aria-label="Envoyer" disabled={isLocal || busy || !value.trim()}>
           {busy ? <LoaderCircle size={18} className="coden-orygin-spin" aria-hidden="true" /> : <ArrowUp size={18} strokeWidth={2.4} aria-hidden="true" />}
         </button>
       </div>
