@@ -238,6 +238,12 @@ import {
   canActivateUnlimitedTestCredits,
   userHasUnlimitedTestCredits,
 } from './src/services/unlimited-test-credits.ts';
+import {
+  TEMPORARY_GENERATION_ACCESS_TOKEN,
+  isTemporaryGenerationAccessAllowed,
+  isTemporaryGenerationRoute,
+  readTemporaryGenerationAccessConfig,
+} from './src/services/temporary-generation-access.ts';
 import { containsSecret, redactSecretPayload, redactSecrets } from './src/services/secret-redaction.ts';
 import {
   MEDIA_MODEL_REGISTRY,
@@ -580,6 +586,106 @@ async function requireAuth(req: any, res: any, next: any) {
   return next();
 }
 
+type TemporaryGenerationPrincipal = {
+  user: any;
+  expiresAt: number;
+};
+
+let temporaryGenerationUserCache: {
+  email: string;
+  user: any;
+  fetchedAt: number;
+} | null = null;
+
+async function resolveTemporaryGenerationPrincipal(req: any): Promise<TemporaryGenerationPrincipal | null> {
+  const config = readTemporaryGenerationAccessConfig(process.env);
+  if (!isTemporaryGenerationAccessAllowed(req, process.env)) return null;
+
+  const now = Date.now();
+  if (
+    temporaryGenerationUserCache &&
+    temporaryGenerationUserCache.email === config.email &&
+    temporaryGenerationUserCache.fetchedAt > now - 5 * 60_000
+  ) {
+    return { user: temporaryGenerationUserCache.user, expiresAt: config.expiresAt };
+  }
+
+  const client = getSupabase();
+  const listUsers = (client?.auth as any)?.admin?.listUsers;
+  if (typeof listUsers !== 'function') return null;
+
+  try {
+    const { data, error } = await listUsers.call((client.auth as any).admin, { page: 1, perPage: 1000 });
+    if (error) return null;
+    const user = (data?.users || []).find((candidate: any) => String(candidate?.email || '').trim().toLowerCase() === config.email);
+    if (!user?.id) return null;
+
+    temporaryGenerationUserCache = { email: config.email, user, fetchedAt: now };
+    if (config.unlimitedCredits || canActivateUnlimitedTestCredits(user.email, process.env)) {
+      unlimitedTestCreditUserIds.add(String(user.id));
+    }
+    return { user, expiresAt: config.expiresAt };
+  } catch (error: any) {
+    console.warn('[coden:temporary_generation_user_unavailable]', {
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+    return null;
+  }
+}
+
+function attachTemporaryGenerationPrincipal(req: any, principal: TemporaryGenerationPrincipal) {
+  req.user = principal.user;
+  req.auth = {
+    user: principal.user,
+    userId: String(principal.user.id),
+    email: String(principal.user.email || ''),
+  };
+  req.codenTemporaryGenerationAccess = true;
+  req.codenTemporaryGenerationExpiresAt = principal.expiresAt;
+}
+
+async function requireAuthWithTemporaryGeneration(req: any, res: any, next: any) {
+  const authHeader = String(req.headers.authorization || '');
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token || token === TEMPORARY_GENERATION_ACCESS_TOKEN) {
+    const principal = await resolveTemporaryGenerationPrincipal(req);
+    if (principal) {
+      attachTemporaryGenerationPrincipal(req, principal);
+      return next();
+    }
+    if (token === TEMPORARY_GENERATION_ACCESS_TOKEN) {
+      return res.status(403).json({ success: false, error: 'Temporary generation access is not available from this network.' });
+    }
+  }
+  return requireAuth(req, res, next);
+}
+
+function requireProjectAuthWithTemporaryGeneration(req: any, res: any, next: any) {
+  if (isTemporaryGenerationRoute(req.method, req.originalUrl || req.url || '')) {
+    return requireAuthWithTemporaryGeneration(req, res, next);
+  }
+  return requireAuth(req, res, next);
+}
+
+app.get('/api/auth/temporary-generation', async (req: any, res: any) => {
+  const principal = await resolveTemporaryGenerationPrincipal(req);
+  if (!principal) return res.status(404).json({ success: false, error: 'Not found.' });
+
+  const config = readTemporaryGenerationAccessConfig(process.env);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    success: true,
+    temporary_access: true,
+    expires_at: new Date(principal.expiresAt).toISOString(),
+    user: {
+      id: String(principal.user.id),
+      email: String(principal.user.email || ''),
+      user_metadata: principal.user.user_metadata || {},
+    },
+    unlimited_test_credits: Boolean(config.unlimitedCredits || hasUnlimitedTestCredits(principal.user.id)),
+  });
+});
+
 function requireAuthenticatedUser(req: any, res: any, requestId?: string) {
   try {
     return getRequiredAuth(req, requestId).user;
@@ -599,7 +705,7 @@ function getAuthenticatedUserOrThrow(req: any, requestId?: string) {
   return getRequiredAuth(req, requestId).user;
 }
 
-app.get('/api/auth/me', requireAuth, async (req: any, res) => {
+app.get('/api/auth/me', requireAuthWithTemporaryGeneration, async (req: any, res) => {
   const auth = getRequiredAuth(req);
   let planKey = 'free';
   try {
@@ -616,6 +722,10 @@ app.get('/api/auth/me', requireAuth, async (req: any, res) => {
       role: auth.user.role,
       is_platform_admin: isPlatformAdmin(req),
       unlimited_test_credits: hasUnlimitedTestCredits(auth.userId),
+      temporary_generation_access: Boolean(req.codenTemporaryGenerationAccess),
+      temporary_generation_expires_at: req.codenTemporaryGenerationExpiresAt
+        ? new Date(req.codenTemporaryGenerationExpiresAt).toISOString()
+        : null,
     },
     plan: {
       key: plan.key,
@@ -743,16 +853,16 @@ app.options('/api/analytics/collect', (_req, res) => {
   res.status(204).end();
 });
 
-app.use('/api/billing/wallet', requireAuth);
-app.use('/api/billing/ledger', requireAuth);
+app.use('/api/billing/wallet', requireAuthWithTemporaryGeneration);
+app.use('/api/billing/ledger', requireAuthWithTemporaryGeneration);
 app.use('/api/billing/checkout', requireAuth);
 app.use('/api/billing/portal', requireAuth);
 app.use('/api/ai/estimate', requireAuth);
 app.use('/api/ai/route', requireAuth);
-app.use('/api/users/me', requireAuth);
+app.use('/api/users/me', requireAuthWithTemporaryGeneration);
 app.use('/api/admin', requireAuth);
-app.use('/api/assistant', requireAuth);
-app.use('/api/projects', requireAuth);
+app.use('/api/assistant', requireAuthWithTemporaryGeneration);
+app.use('/api/projects', requireProjectAuthWithTemporaryGeneration);
 
 // Runtime data must live in Supabase. The only in-memory state kept here is
 // short-lived rate-limit counters, which are not product data.
@@ -9065,7 +9175,7 @@ app.get('/api/ai/models', (req, res) => {
 // GET /ai/model-runtime
 // Public, redacted model runtime view. It exposes capability routing and health
 // signals, never provider secrets or raw provider payloads.
-app.get('/api/ai/model-runtime', requireAuth, (req: any, res) => {
+app.get('/api/ai/model-runtime', requireAuthWithTemporaryGeneration, (req: any, res) => {
   const profiles = getAllAIModelCapabilityProfiles().map(profile => ({
     id: profile.id,
     provider: profile.provider,
@@ -12227,7 +12337,7 @@ const previewSessionRegistry = new Map<string, {
   preview: Record<string, unknown>;
 }>();
 
-app.post('/api/projects/:id/preview', requireAuth, async (req: any, res: any) => {
+app.post('/api/projects/:id/preview', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
   try {
     const auth = getRequiredAuth(req);
@@ -12278,7 +12388,7 @@ app.post('/api/projects/:id/preview', requireAuth, async (req: any, res: any) =>
   }
 });
 
-app.get('/api/projects/:id/preview/:sessionId', requireAuth, async (req: any, res: any) => {
+app.get('/api/projects/:id/preview/:sessionId', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
   const auth = getRequiredAuth(req);
   const project = await loadProject(req.params.id, auth.userId, req);
@@ -12292,7 +12402,7 @@ app.get('/api/projects/:id/preview/:sessionId', requireAuth, async (req: any, re
   return res.json({ success: session.status === 'verified' || session.status === 'ready', session });
 });
 
-app.delete('/api/projects/:id/preview/:sessionId', requireAuth, async (req: any, res: any) => {
+app.delete('/api/projects/:id/preview/:sessionId', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.previewAdapters, 'preview_adapters')) return;
   const auth = getRequiredAuth(req);
   const project = await loadProject(req.params.id, auth.userId, req);
@@ -13709,7 +13819,7 @@ async function persistGeneratedRuntimeContract(project: GeneratedProject, manife
   });
 }
 
-app.get('/api/projects/:id/runtime-profile', requireAuth, async (req: any, res: any) => {
+app.get('/api/projects/:id/runtime-profile', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProject(req.params.id, auth.userId, req);
@@ -13724,7 +13834,7 @@ app.get('/api/projects/:id/runtime-profile', requireAuth, async (req: any, res: 
   }
 });
 
-app.post('/api/projects/:id/preview/start', requireAuth, async (req: any, res: any) => {
+app.post('/api/projects/:id/preview/start', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProject(req.params.id, auth.userId, req);
@@ -13762,7 +13872,7 @@ app.post('/api/projects/:id/preview/start', requireAuth, async (req: any, res: a
   }
 });
 
-app.post('/api/projects/:id/build', requireAuth, async (req: any, res: any) => {
+app.post('/api/projects/:id/build', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   const buildId = String(req.headers['idempotency-key'] || req.body?.build_id || `build_${randomUUID()}`).slice(0, 140);
   try {
     const auth = getRequiredAuth(req);
@@ -13812,7 +13922,7 @@ app.post('/api/projects/:id/build', requireAuth, async (req: any, res: any) => {
   }
 });
 
-app.get('/api/projects/:id/builds/:buildId', requireAuth, async (req: any, res: any) => {
+app.get('/api/projects/:id/builds/:buildId', requireAuthWithTemporaryGeneration, async (req: any, res: any) => {
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProject(req.params.id, auth.userId, req);

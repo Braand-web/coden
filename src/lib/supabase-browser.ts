@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { hasSupabaseBrowserConfig, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase-config';
+import { TEMPORARY_GENERATION_ACCESS_TOKEN } from '../services/temporary-generation-access';
 
 export const CODEN_AUTH_STORAGE_KEY = 'coden.auth.session.v2';
 
@@ -20,6 +21,51 @@ export type VerifiedSession = {
   session: BrowserSession;
   user: BrowserUser;
 };
+
+let temporaryGenerationSession: VerifiedSession | null = null;
+let temporaryGenerationSessionExpiresAt = 0;
+let temporaryGenerationSignedOutUntil = 0;
+
+async function getTemporaryGenerationSession(): Promise<VerifiedSession | null> {
+  if (temporaryGenerationSignedOutUntil > Date.now()) return null;
+  if (temporaryGenerationSession && temporaryGenerationSessionExpiresAt > Date.now()) return temporaryGenerationSession;
+
+  try {
+    const response = await fetch('/api/auth/temporary-generation', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      temporaryGenerationSession = null;
+      temporaryGenerationSessionExpiresAt = 0;
+      return null;
+    }
+
+    const payload = await response.json().catch(() => null);
+    const user = payload?.user;
+    const expiresAt = Date.parse(String(payload?.expires_at || ''));
+    if (!payload?.temporary_access || !user?.id || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      temporaryGenerationSession = null;
+      temporaryGenerationSessionExpiresAt = 0;
+      return null;
+    }
+
+    temporaryGenerationSession = {
+      user: user as BrowserUser,
+      session: {
+        access_token: TEMPORARY_GENERATION_ACCESS_TOKEN,
+        token_type: 'bearer',
+        user,
+      } as BrowserSession,
+    };
+    temporaryGenerationSessionExpiresAt = expiresAt;
+    return temporaryGenerationSession;
+  } catch {
+    return null;
+  }
+}
 
 export function safeRedirectTarget(candidate?: string | null): string {
   const fallback = '/dashboard.html';
@@ -118,31 +164,31 @@ async function verifySessionUser(session: BrowserSession): Promise<{ verified: V
 }
 
 export async function refreshVerifiedSession(): Promise<VerifiedSession | null> {
-  if (!hasSupabaseBrowserConfig()) return null;
+  if (!hasSupabaseBrowserConfig()) return getTemporaryGenerationSession();
   try {
     const { data, error } = await supabase.auth.refreshSession();
     if (error || !data?.session) {
       if (isConfirmedInvalidSessionError(error)) await signOutLocalQuietly();
-      return null;
+      return getTemporaryGenerationSession();
     }
 
     const verified = await verifySessionUser(data.session);
     if (verified.verified) return verified.verified;
     if (isConfirmedInvalidSessionError(verified.error)) await signOutLocalQuietly();
-    return null;
+    return getTemporaryGenerationSession();
   } catch (error) {
     if (isConfirmedInvalidSessionError(error)) await signOutLocalQuietly();
-    return null;
+    return getTemporaryGenerationSession();
   }
 }
 
 export async function getVerifiedSession(options: { allowRefresh?: boolean } = {}): Promise<VerifiedSession | null> {
-  if (!hasSupabaseBrowserConfig()) return null;
+  if (!hasSupabaseBrowserConfig()) return getTemporaryGenerationSession();
   const allowRefresh = options.allowRefresh !== false;
   try {
     const { data, error } = await supabase.auth.getSession();
     const session = data?.session;
-    if (error || !session) return null;
+    if (error || !session) return getTemporaryGenerationSession();
 
     const verified = await verifySessionUser(session);
     if (verified.verified) return verified.verified;
@@ -153,12 +199,15 @@ export async function getVerifiedSession(options: { allowRefresh?: boolean } = {
     }
 
     if (isConfirmedInvalidSessionError(verified.error)) await signOutLocalQuietly();
-    return null;
+    return getTemporaryGenerationSession();
   } catch {
-    return null;
+    return getTemporaryGenerationSession();
   }
 }
 
 export async function signOutCurrentDevice(): Promise<void> {
   await signOutLocalQuietly();
+  temporaryGenerationSession = null;
+  temporaryGenerationSessionExpiresAt = 0;
+  temporaryGenerationSignedOutUntil = Date.now() + 2_000;
 }
