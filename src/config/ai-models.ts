@@ -235,9 +235,23 @@ export const AI_MODEL_CAPABILITIES = buildRecord<ModelCapabilities>(model => ({
   maxOutputTokens: model.maxOutputTokens,
 }));
 
-// OpenRouter may route the same slug between healthy providers. Coden never
-// switches to a different model silently; that requires a new explicit run.
-export const AI_MODEL_FALLBACKS = buildRecord<AllowedModelId[]>(() => []);
+// A fallback is allowed only for an Auto-routed request that has not produced
+// usable user-visible output yet. Explicit model choices stay pinned. Keep the
+// chains short and within the same or a lower accessible tier so a recovery is
+// bounded, explainable and never turns into an unbounded multi-model run.
+export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
+  'openai/gpt-5.6-luna': ['google/gemini-3.7-flash'],
+  'google/gemini-3.7-flash': ['deepseek/deepseek-v4-pro-0813'],
+  'deepseek/deepseek-v4-pro-0813': ['openai/gpt-5.6-luna'],
+  'qwen/qwen3.8-27b': ['openai/gpt-5.6-terra'],
+  'openai/gpt-5.6-terra': ['z-ai/glm-5.3'],
+  'z-ai/glm-5.3': ['openai/gpt-5.6-terra'],
+  'anthropic/claude-sonnet-5': ['openai/gpt-5.6-terra'],
+  'x-ai/grok-4.6': ['anthropic/claude-sonnet-5'],
+  'openai/gpt-5.6-sol': ['anthropic/claude-opus-5'],
+  'anthropic/claude-opus-5': ['openai/gpt-5.6-sol'],
+  'anthropic/claude-fable-5': ['anthropic/claude-opus-5'],
+};
 
 export type ModelCreditRate = {
   id: ModelSelectionId;

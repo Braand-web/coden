@@ -19,7 +19,22 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.ok(profile.bestUse.length > 0);
   assert.ok(profile.recommended.maxTokens >= 3000);
   assert.ok(profile.recommended.timeoutMs >= 12_000);
-  assert.equal(profile.fallbackPrimary, null, 'A run must not switch model silently.');
+  if (profile.fallbackPrimary) {
+    assert.ok(
+      AI_ALLOWED_MODELS.includes(profile.fallbackPrimary),
+      'An Auto recovery candidate must be an allowed model.',
+    );
+    assert.notEqual(profile.fallbackPrimary, modelId, 'A recovery candidate cannot point back to itself.');
+  }
+}
+
+{
+  const luna = getAIModelCapabilityProfile('openai/gpt-5.6-luna');
+  assert.equal(
+    luna.fallbackPrimary,
+    'google/gemini-3.7-flash',
+    'The capability registry must expose Luna’s bounded Auto recovery candidate.',
+  );
 }
 
 {
@@ -74,6 +89,16 @@ for (const modelId of AI_ALLOWED_MODELS) {
   const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(serverSource, /modelRouter\.selectJudgeModel\(/, 'Generation must not silently switch to a judge model.');
   assert.match(serverSource, /providerGateway\.chat\(selectedModel,/, 'Generation must use the model selected for this run exactly once.');
+  assert.match(
+    serverSource,
+    /allowModelFallback: requestedModelSelection === 'auto'/,
+    'Only an Auto generation run may use a bounded compatible-model recovery.',
+  );
+  assert.match(
+    serverSource,
+    /validateResult: input\.allowModelFallback/,
+    'Auto recovery must reject an unusable generated project before showing it to the user.',
+  );
   assert.match(
     serverSource,
     /providerGateway\.chat\(repairModel,/,

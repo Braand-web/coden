@@ -65,16 +65,31 @@ export class ProviderGateway {
     runtimeConfig?: ProviderRequestConfig;
     runtimeConfigForModel?: (modelId: AllowedModelId) => ProviderRequestConfig | undefined;
     allowFallback?: boolean;
+    onFallback?: (event: { from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
+    validateResult?: (result: ChatCompletionResult) => void;
     signal?: AbortSignal;
   } = {}): Promise<ChatCompletionResult> {
     const primary = this.requireProviderModel(modelId);
-    const candidates = this.candidatesFor(primary, options.allowFallback !== false);
+    // Cross-model recovery is opt-in. Callers enable it only for Auto before
+    // a user-visible result exists; every other request remains model-pinned.
+    const candidates = this.candidatesFor(primary, options.allowFallback === true);
     const maxAttempts = Math.max(1, options.maxAttempts || 2);
     let lastError: any = null;
 
     for (const candidate of candidates) {
       const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
-      if (candidate !== primary) this.noteFallbackUse(candidate);
+      if (candidate !== primary) {
+        this.noteFallbackUse(candidate);
+        try {
+          options.onFallback?.({
+            from: primary,
+            to: candidate,
+            reason: this.classifyError(lastError, primary).diagnosticCode,
+          });
+        } catch {
+          // Observability must never break the recovery path.
+        }
+      }
       const circuitError = this.getCircuitError(candidate);
       if (circuitError) {
         lastError = circuitError;
@@ -85,6 +100,7 @@ export class ProviderGateway {
         this.noteRequest(candidate);
         try {
           const result = await this.chatWithProvider(candidate, messages, options.timeoutMs || 45_000, candidateRuntimeConfig, options.signal);
+          options.validateResult?.(result);
           this.noteMetricSuccess(candidate, Date.now() - startedAt);
           this.noteSuccess(candidate);
           return result;
@@ -125,7 +141,8 @@ export class ProviderGateway {
     signal?: AbortSignal;
   } = {}): AsyncGenerator<StreamChatEvent> {
     const primary = this.requireProviderModel(modelId);
-    const candidates = this.candidatesFor(primary, options.allowFallback !== false);
+    // A stream can recover only when its Auto caller explicitly opts in.
+    const candidates = this.candidatesFor(primary, options.allowFallback === true);
     let lastError: any = null;
 
     for (const candidate of candidates) {
@@ -314,6 +331,14 @@ export class ProviderGateway {
 
   private classifyError(error: any, modelId: string): ProviderGatewayError {
     if (error instanceof ProviderGatewayError) return error;
+    if (String(error?.diagnosticCode || '') === 'MODEL_OUTPUT_PARSE_FAILED') {
+      return new ProviderGatewayError('The selected AI model returned an unusable project artifact.', {
+        diagnosticCode: 'MODEL_OUTPUT_PARSE_FAILED',
+        statusCode: 502,
+        retryable: true,
+        modelId,
+      });
+    }
     const message = String(error?.message || error || 'AI provider request failed.');
     if (/auto must be resolved/i.test(message)) {
       return new ProviderGatewayError(message, { diagnosticCode: 'AUTO_MODEL_NOT_RESOLVED', statusCode: 500, retryable: false, modelId });
@@ -393,8 +418,8 @@ export class ProviderGateway {
     if (/timeout|AbortError|aborted|OpenRouter HTTP 5|ECONNRESET|ENOTFOUND|fetch failed|network|provider|upstream/i.test(message)) {
       const isTimeout = /timeout|AbortError|aborted/i.test(message);
       return new ProviderGatewayError(isTimeout
-        ? 'The selected AI model did not answer in time. Coden did not switch models.'
-        : 'The selected AI model is temporarily unavailable. Coden did not switch models.', {
+        ? 'The selected AI model did not answer in time.'
+        : 'The selected AI model is temporarily unavailable.', {
         diagnosticCode: isTimeout ? 'PROVIDER_TIMEOUT' : 'PROVIDER_UNAVAILABLE',
         statusCode: isTimeout ? 504 : 502,
         retryable: true,

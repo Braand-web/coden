@@ -4721,7 +4721,9 @@ async function createAgentTextResponse(input: {
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
         runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
-        allowFallback: false,
+        // Auto may make one real provider fallback before any user-visible
+        // response exists. Explicit model selections remain pinned.
+        allowFallback: Boolean(input.allowLocalFallback),
         signal: input.signal,
       },
     );
@@ -4803,7 +4805,9 @@ async function streamAgentTextResponse(input: {
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
         runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
-        allowFallback: false,
+        // Stream fallback is safe only before the gateway has yielded a token;
+        // ProviderGateway enforces that invariant.
+        allowFallback: Boolean(input.allowLocalFallback),
         signal: input.signal,
       },
     )) {
@@ -6002,7 +6006,8 @@ async function generateFilesWithAi(input: {
   skill?: CodenSkill;
   skillBudget?: CodenSkillBudget;
   signal?: AbortSignal;
-  onEvent?: (event: any) => void;
+  allowModelFallback?: boolean;
+  onEvent?: (event: { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
 }): Promise<{ files: GeneratedFile[]; summary: string; appName: string; model: string; cost_usd: number }> {
   const hasLiveKey = hasLiveAiProvider();
   if (!hasLiveKey) {
@@ -6043,8 +6048,8 @@ async function generateFilesWithAi(input: {
       // A structured full project needs more wall time than a conversational
       // response. Keep the request bounded, but never inherit a short skill
       // budget that makes an otherwise healthy generation fail mid-object.
-      timeoutMs: Math.max(120_000, Math.min(150_000, input.skillBudget?.maxDurationMs || 150_000)),
-      maxTokens: 16_000,
+      timeoutMs: Math.max(90_000, Math.min(150_000, input.skillBudget?.maxDurationMs || 150_000)),
+      maxTokens: input.existingFiles.length ? 16_000 : 20_000,
       hasVisionInput: Boolean(input.visionInputs?.length),
     })
     : null;
@@ -6296,10 +6301,28 @@ async function generateFilesWithAi(input: {
         }] : []),
       ], {
         maxAttempts: 1,
-        timeoutMs: runtimeOptions?.runtime.timeoutMs || 120_000,
+        // Auto receives one bounded recovery path. A pinned model keeps its
+        // full generation budget; an Auto run gets two <= 75s attempts rather
+        // than silently waiting several minutes on one unhealthy provider.
+        timeoutMs: input.allowModelFallback
+          ? Math.min(runtimeOptions?.runtime.timeoutMs || 120_000, 75_000)
+          : runtimeOptions?.runtime.timeoutMs || 120_000,
         runtimeConfig: runtimeOptions?.providerConfig,
         runtimeConfigForModel: runtimeOptions?.runtimeConfigForModel,
-        allowFallback: false,
+        allowFallback: Boolean(input.allowModelFallback),
+        onFallback: input.allowModelFallback
+          ? event => input.onEvent?.({ type: 'model_fallback', ...event })
+          : undefined,
+        // A malformed artifact is equivalent to an unavailable generator for
+        // Auto. Validate before accepting the result so the gateway can try
+        // its one compatible fallback without creating a second project/run.
+        validateResult: input.allowModelFallback
+          ? candidate => {
+            parseGeneratedOutput(input.projectName, candidate.text, input.prompt, {
+              hasExistingFiles: input.existingFiles.length > 0,
+            });
+          }
+          : undefined,
         signal: input.signal,
       });
       totalCostUsd += result.cost_usd;
@@ -11810,6 +11833,16 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skill,
       skillBudget,
       signal: generationAbortController.signal,
+      allowModelFallback: requestedModelSelection === 'auto',
+      onEvent: event => {
+        if (event.type === 'model_fallback') {
+          emitActivity(
+            'building',
+            'Coden bascule vers un modèle de secours compatible…',
+            'Coden is switching to a compatible fallback model…',
+          );
+        }
+      },
       // ✅ Pass recent history for conflict detection
       recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
     });

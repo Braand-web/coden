@@ -64,10 +64,60 @@ class FakeAnthropic {
   const gateway = new ProviderGateway(fake as any);
   await assert.rejects(() => gateway.chat('anthropic/claude-sonnet-5', messages, {
     maxAttempts: 1,
+    allowFallback: false,
     runtimeConfig: { adapter: 'gemini', metadata: { model_id: 'primary' } },
     runtimeConfigForModel: modelId => ({ adapter: modelId.startsWith('anthropic/') ? 'anthropic' : 'gemini', metadata: { model_id: modelId } }),
   }));
-  assert.equal(fake.calls.length, 1, 'A failed run must not switch to another model.');
+  assert.equal(fake.calls.length, 1, 'An explicit pinned model must not switch to another model.');
+}
+
+{
+  const fake = new FakeOpenRouter();
+  fake.failures.push(new Error('AbortError: provider timeout'));
+  const gateway = new ProviderGateway(fake as any);
+  const transitions: Array<{ from: string; to: string; reason: string }> = [];
+  const result = await gateway.chat('openai/gpt-5.6-luna', messages, {
+    maxAttempts: 1,
+    allowFallback: true,
+    onFallback: transition => transitions.push(transition),
+  });
+  assert.equal(result.text, 'ok');
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash']);
+  assert.deepEqual(transitions, [{
+    from: 'openai/gpt-5.6-luna',
+    to: 'google/gemini-3.7-flash',
+    reason: 'PROVIDER_TIMEOUT',
+  }]);
+}
+
+{
+  const fake = new FakeOpenRouter();
+  fake.chat = async (modelId: string) => {
+    fake.calls.push(modelId);
+    return {
+      text: fake.calls.length === 1 ? 'malformed-project-artifact' : 'valid-project-artifact',
+      model: modelId,
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      cost_usd: 0.001,
+    };
+  };
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.chat('openai/gpt-5.6-luna', messages, {
+    maxAttempts: 1,
+    allowFallback: true,
+    validateResult: candidate => {
+      if (candidate.text !== 'malformed-project-artifact') return;
+      const error: any = new Error('Generated project JSON is invalid.');
+      error.diagnosticCode = 'MODEL_OUTPUT_PARSE_FAILED';
+      throw error;
+    },
+  });
+  assert.equal(result.text, 'valid-project-artifact');
+  assert.deepEqual(
+    fake.calls,
+    ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash'],
+    'Auto recovery must retry a malformed artifact with the configured compatible model.',
+  );
 }
 
 {
