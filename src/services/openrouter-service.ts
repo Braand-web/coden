@@ -30,6 +30,21 @@ export function resolveOpenRouterApiKey(env: OpenRouterEnv = process.env, fallba
   return '';
 }
 
+/**
+ * node-fetch emits an `error` event directly on a resolved response body when
+ * its request signal aborts. The awaited request/stream still observes that
+ * abort, but Node terminates the process if the readable has no error
+ * listener. Attach a no-op listener before consuming the body so a cancelled
+ * user run is contained to that run instead of restarting the API process.
+ */
+export function attachAbortErrorListener(body: unknown): void {
+  const errorEmitter = body as {
+    on?: (event: string, listener: (...args: any[]) => void) => unknown;
+  } | null | undefined;
+  if (typeof errorEmitter?.on !== 'function') return;
+  errorEmitter.on('error', () => undefined);
+}
+
 export type ChatContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
@@ -134,6 +149,7 @@ export class OpenRouterService {
           body: JSON.stringify(payload)
         });
 
+        attachAbortErrorListener(response.body);
         clearTimeout(timeout);
 
         if (!response.ok) {
@@ -231,6 +247,8 @@ export class OpenRouterService {
           stream_options: { include_usage: true }
         })
       });
+
+      attachAbortErrorListener(response.body);
 
       if (!response.ok) {
         const errMsg = await this.readProviderError(response);

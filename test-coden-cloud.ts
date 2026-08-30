@@ -39,6 +39,14 @@ import {
 }
 
 {
+  const result = detectCodenCloudRequirements('Crée une application de tâches sans backend, avec localStorage et sans service externe.');
+  assert.equal(hasCodenCloudRequirement(result), false, 'An explicit local-only request must not become a managed database app.');
+  assert.equal(result.needs_database, false);
+  assert.equal(result.needs_auth, false);
+  assert.deepEqual(result.detected_from_prompt, ['local_only']);
+}
+
+{
   const result = detectCodenCloudRequirements('Create a business CRM with a dedicated isolated backend for compliance.');
   assert.equal(result.needs_database, true);
   assert.equal(result.recommended_mode, 'dedicated');

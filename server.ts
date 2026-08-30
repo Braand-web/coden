@@ -1317,6 +1317,18 @@ type AgentEvent = {
   created_at?: string;
 };
 
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
+
+/**
+ * The event tables use PostgreSQL `integer` columns. Epoch milliseconds
+ * overflow them; epoch seconds stay ordered and valid while `created_at`
+ * preserves the order of actions that happen in the same second.
+ */
+function persistenceSequenceNumber(timestamp = Date.now()) {
+  const value = Number.isFinite(timestamp) ? timestamp : Date.now();
+  return Math.max(1, Math.min(POSTGRES_INTEGER_MAX, Math.floor(value / 1_000)));
+}
+
 type AgentIntent = 'conversation' | 'clarification_required' | 'plan' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'external_keys_required' | 'credits_required';
 type AgentNextAction = 'answer' | 'ask_clarification' | 'plan_only' | 'plan_then_build' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'collect_external_keys' | 'show_upgrade';
 type AgentRequestedMode = 'auto' | 'plan' | 'build' | 'ask' | 'fix' | 'review' | 'research';
@@ -12488,7 +12500,7 @@ app.post('/api/projects/:id/build/cancel', async (req: any, res: any) => {
     organization_id: project.organization_id,
     project_id: project.id,
     user_id: userId,
-    sequence_number: Date.now(),
+    sequence_number: persistenceSequenceNumber(),
     event_type: 'cancelled',
     message: 'Build cancelled by user.',
     payload: { build_session_id: buildSessionId, agent_run_id: agentRunId || null },
@@ -12557,7 +12569,7 @@ app.post('/api/projects/:id/agent/feedback', async (req: any, res: any) => {
     organization_id: project.organization_id || userId,
     project_id: project.id,
     user_id: userId,
-    sequence_number: Date.now(),
+    sequence_number: persistenceSequenceNumber(),
     event_type: 'user_feedback',
     message: `User feedback: ${feedback}.`,
     payload: redactAgentPayload({
@@ -12623,7 +12635,7 @@ app.post('/api/projects/:id/agent/runs/:runId/instructions', async (req: any, re
     agent_run_id: req.params.runId,
     project,
     user_id: userId,
-    sequence_number: Date.now(),
+    sequence_number: persistenceSequenceNumber(),
     event_type: 'user_instruction',
     status: 'pending',
     message: 'User instruction queued for the next safe checkpoint.',
@@ -12655,7 +12667,7 @@ app.post('/api/projects/:id/agent/runs/:runId/confirm', async (req: any, res: an
     agent_run_id: req.params.runId,
     project,
     user_id: userId,
-    sequence_number: Date.now(),
+    sequence_number: persistenceSequenceNumber(),
     event_type: 'user_confirmation',
     status: 'completed',
     message: `User confirmed action: ${action}.`,
@@ -12673,7 +12685,7 @@ app.post('/api/projects/:id/agent/runs/:runId/cancel', async (req: any, res: any
     organization_id: project.organization_id,
     project_id: project.id,
     user_id: userId,
-    sequence_number: Date.now(),
+    sequence_number: persistenceSequenceNumber(),
     event_type: 'cancelled',
     message: 'Agent run cancelled by user.',
     payload: { agent_run_id: req.params.runId, request_id: req.body?.requestId || null },

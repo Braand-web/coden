@@ -24,6 +24,9 @@ assert.match(server, /function isProjectFilesMissingError\(error: any\)[\s\S]*?c
 assert.doesNotMatch(server, /return \/project_files\|relation/);
 assert.match(server, /const \{ error: memoryPersistError \} = await persistenceClient\.from\('project_memory'\)\.insert\(rows\)/);
 assert.match(server, /const \{ error: designTokenPersistError \} = await persistenceClient[\s\S]*?\.insert\(designRows\)/);
+assert.match(server, /function persistenceSequenceNumber\(timestamp = Date\.now\(\)\)/);
+assert.match(server, /Math\.floor\(value \/ 1_000\)/);
+assert.doesNotMatch(server, /sequence_number:\s*Date\.now\(\)/);
 
 assert.match(builder, /payload\.preview\.status !== 'idle'/);
 assert.match(builder, /restoreStreamPartsFromPayloadEvents\(payload\)/);

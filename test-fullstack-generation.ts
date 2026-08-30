@@ -69,9 +69,11 @@ const byPath = new Map(files.map(file => [file.path, file.content]));
 
 assert.ok(byPath.has('src/lib/codenCloud.ts'));
 assert.ok(byPath.has('src/router.tsx'));
+assert.ok(byPath.has('src/routeTree.gen.ts'));
 assert.ok(byPath.has('src/routes/__root.tsx'));
 assert.ok(byPath.has('src/routes/index.tsx'));
 assert.ok(byPath.has('wrangler.jsonc'));
+assert.match(byPath.get('tsconfig.json') || '', /"moduleResolution": "Bundler"/);
 assert.ok(byPath.has('src/lib/appData.ts'));
 assert.ok(byPath.has('src/lib/validation.ts'));
 assert.ok(byPath.has('src/lib/authGuard.ts'));
@@ -87,6 +89,7 @@ assert.match(byPath.get('package.json') || '', /@tanstack\/react-router/);
 assert.match(byPath.get('package.json') || '', /@tanstack\/react-query/);
 assert.match(byPath.get('vite.config.ts') || '', /tanstackStart\(\)/);
 assert.match(byPath.get('vite.config.ts') || '', /cloudflare\(/);
+assert.match(byPath.get('src/routeTree.gen.ts') || '', /rootRoute\.addChildren\(\[indexRoute\]\)/);
 assert.equal(resolveGeneratedAppProfile({ prompt, files, requirement }), 'tanstack-fullstack');
 assert.match(byPath.get('package.json') || '', /@types\/node/);
 assert.match(byPath.get('package.json') || '', /"zod"/);
@@ -112,6 +115,7 @@ assert.doesNotMatch(files.map(file => file.content).join('\n'), /service[_-]?rol
 const checks = validateCodenFullstackFiles(files, requirement);
 assert.equal(checks.filter(check => check.status === 'fail').length, 0, checks.map(check => `${check.key}: ${check.message}`).join('\n'));
 assert.ok(checks.some(check => check.key === 'fullstack_client_present'));
+assert.ok(checks.some(check => check.key === 'fullstack_route_tree_present' && check.status === 'pass'));
 assert.ok(checks.some(check => check.key === 'fullstack_rls_enabled'));
 assert.ok(checks.some(check => check.key === 'fullstack_data_api_grants'));
 assert.ok(checks.some(check => check.key === 'fullstack_all_private_tables_rls'));

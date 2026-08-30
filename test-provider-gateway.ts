@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { PassThrough } from 'node:stream';
 import { ProviderGateway, ProviderGatewayError } from './src/services/provider-gateway.ts';
-import { resolveOpenRouterApiKey, type ChatMessage } from './src/services/openrouter-service.ts';
+import { attachAbortErrorListener, resolveOpenRouterApiKey, type ChatMessage } from './src/services/openrouter-service.ts';
 import { resolveAnthropicApiKey, resolveDirectAnthropicModelId } from './src/services/anthropic-service.ts';
 
 const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
+
+{
+  const body = new PassThrough();
+  attachAbortErrorListener(body);
+  assert.doesNotThrow(() => body.emit('error', new Error('The operation was aborted.')));
+}
 
 class FakeOpenRouter {
   calls: string[] = [];

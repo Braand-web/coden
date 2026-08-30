@@ -70,6 +70,20 @@ const DEDICATED_BACKEND_PATTERNS = [
   /\b(d[ée]di[ée]|isol[ée]|entreprise|professionnel|backend priv[ée]|base s[ée]par[ée]e|conformit[ée])\b/i,
 ];
 
+// A user can deliberately request an offline/client-only app even when the
+// product itself contains words such as “tasks”, “records” or “clients”.
+// Those words are useful backend signals in the general case, but an explicit
+// local-only constraint must win; otherwise Coden turns a fast Vite preview
+// into a needlessly heavy full-stack project.
+const LOCAL_ONLY_RUNTIME_PATTERNS = [
+  /\b(no backend|without (?:a )?backend|backendless|frontend[- ]only|client[- ]side only|localstorage|browser storage|offline[- ]only)\b/i,
+  /\b(sans (?:backend|base de donn[ée]es?|api|service externe)|uniquement (?:c[ôo]t[ée] client|en local)|stockage local)\b/i,
+];
+
+function explicitlyRequestsLocalOnlyRuntime(text: string) {
+  return LOCAL_ONLY_RUNTIME_PATTERNS.some(pattern => pattern.test(text));
+}
+
 export function detectCodenCloudRequirements(prompt: string): CodenCloudRequirement {
   const text = String(prompt || '').trim();
   const detected = new Set<string>();
@@ -83,6 +97,14 @@ export function detectCodenCloudRequirements(prompt: string): CodenCloudRequirem
     recommended_mode: DEDICATED_BACKEND_PATTERNS.some(pattern => pattern.test(text)) ? 'dedicated' : 'shared',
     summary: 'No managed backend required.',
   };
+
+  if (explicitlyRequestsLocalOnlyRuntime(text)) {
+    return {
+      ...requirement,
+      detected_from_prompt: ['local_only'],
+      summary: 'Local-only runtime requested; no managed backend required.',
+    };
+  }
 
   for (const signal of BACKEND_SIGNAL_PATTERNS) {
     if (signal.patterns.some(pattern => pattern.test(text))) {
