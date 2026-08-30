@@ -4372,7 +4372,22 @@ async function ensureProject() {
 
   if (currentProjectId) {
     rememberLastBuilderProjectId(currentProjectId);
-    return apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
+    try {
+      return await apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
+    } catch (error) {
+      // A bookmarked project can legitimately disappear (for example after a
+      // workspace migration). Do not leave its id in memory: the next build
+      // would otherwise receive a 404 and incorrectly present it as a missing
+      // streaming endpoint. Start from a clean project flow instead.
+      const status = Number((error as { status?: unknown })?.status || 0);
+      if (status !== 404) throw error;
+      const staleProjectId = currentProjectId;
+      forgetLastBuilderProjectId(staleProjectId);
+      currentProjectId = '';
+      userWorkspaceState = null;
+      window.history.replaceState({}, '', '/builder.html?new=1');
+      return emptyBuilderProjectPayload(null);
+    }
   }
 
   const userState = await apiFetch<{ success: boolean; state: UserWorkspaceState | null }>('/api/users/me/workspace-state').catch(() => null);
