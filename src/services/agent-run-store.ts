@@ -144,9 +144,22 @@ function publicMessageForPhase(phase: AgentPublicPhase, language: 'fr' | 'en') {
 }
 
 export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenStreamEvent): AgentRunViewModel {
-  if (event.runId && event.runId !== previous.runId) return previous;
+  // A client starts with a message-scoped placeholder before the server has
+  // acknowledged a run. Adopt the first authoritative run id so its SSE
+  // activity and assistant deltas are not silently discarded. Once bound, a
+  // different run id still cannot mutate this conversation item.
+  const canAdoptServerRunId = Boolean(
+    event.runId
+    && event.runId !== previous.runId
+    && previous.status === 'submitting'
+    && previous.lastAssistantSequence === 0
+    && !previous.hasFinal
+    && /:run$/.test(previous.runId),
+  );
+  if (event.runId && event.runId !== previous.runId && !canAdoptServerRunId) return previous;
   const state: AgentRunViewModel = {
     ...previous,
+    runId: canAdoptServerRunId ? String(event.runId) : previous.runId,
     objective: previous.objective ? { ...previous.objective } : undefined,
     plan: previous.plan ? { ...previous.plan, steps: previous.plan.steps.map((step) => ({ ...step })) } : undefined,
     verification: previous.verification ? { ...previous.verification, checks: previous.verification.checks.map((check) => ({ ...check })) } : undefined,

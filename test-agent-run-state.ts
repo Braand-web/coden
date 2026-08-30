@@ -4,6 +4,32 @@ import type { CodenStreamEvent } from './src/lib/stream-protocol.ts';
 
 const event = <T extends CodenStreamEvent>(value: T) => value;
 const base = { v: 'coden-stream-v2' as const, runId: 'run_test', ts: Date.now() };
+
+const provisional = createAgentRunViewModel({ runId: 'message_test:run', prompt: 'Créer une app', requestedMode: 'build' });
+const boundRun = applyAgentStreamEvent(provisional, event({
+  ...base,
+  id: 0,
+  sequence: 0,
+  type: 'activity_changed',
+  phase: 'understanding',
+  message: 'Coden analyse votre demande…',
+  active: true,
+}));
+assert.equal(boundRun.runId, 'run_test');
+assert.equal(boundRun.publicActivity?.message, 'Coden analyse votre demande…');
+const unrelatedRun = applyAgentStreamEvent(boundRun, event({
+  ...base,
+  runId: 'run_unrelated',
+  id: 1,
+  sequence: 1,
+  type: 'activity_changed',
+  phase: 'building',
+  message: 'Ne doit pas remplacer le run lié.',
+  active: true,
+}));
+assert.equal(unrelatedRun.runId, 'run_test');
+assert.equal(unrelatedRun.publicActivity?.message, 'Coden analyse votre demande…');
+
 let state = createAgentRunViewModel({ runId: 'run_test', prompt: 'Créer une app', requestedMode: 'plan', model: 'test-model' });
 
 state = applyAgentStreamEvent(state, event({ ...base, id: 1, sequence: 1, type: 'mode_requested', mode: 'plan' }));

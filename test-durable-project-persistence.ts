@@ -29,5 +29,6 @@ assert.match(builder, /payload\.preview\.status !== 'idle'/);
 assert.match(builder, /restoreStreamPartsFromPayloadEvents\(payload\)/);
 assert.match(builder, /restoreLatestStreamPartsFromRunHistory\(payload\)/);
 assert.match(builder, /payload\?\.success === false && !payload\?\.needs_fix/);
+assert.match(builder, /if \(stopRequested \|\| \(error as Error\)\.name === 'AbortError'\)/);
 
 console.log('Durable project persistence tests passed.');

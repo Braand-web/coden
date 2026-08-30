@@ -5580,7 +5580,10 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     if (generationTouchesPreview && !previewHtml) setEmptyPreviewState('idle', 'Preview non vérifiée');
     return;
   } catch (error) {
-    if ((error as Error).name === 'AbortError') {
+    // The stream reader can surface cancellation as an incomplete stream
+    // instead of a native AbortError. The explicit user intent is the source
+    // of truth, so never present a deliberate stop as a transport defect.
+    if (stopRequested || (error as Error).name === 'AbortError') {
       const stoppedText = stopRequested
         ? (speaksFrench ? 'Génération arrêtée.' : 'Generation stopped.')
         : (speaksFrench ? 'Build annulé.' : 'Build cancelled.');
