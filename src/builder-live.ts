@@ -5489,7 +5489,11 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     }, activeAbort?.signal);
     {
       const statusCode = Number(payload?.status_code || 200);
-      if (statusCode >= 400 || payload?.success === false) {
+      // A recoverable draft deliberately returns success:false + needs_fix so
+      // the UI can preserve the generated files, preview and real summary.
+      // Treating it as a transport failure discarded all of that work and
+      // surfaced the misleading "Generation failed with 200" message.
+      if (statusCode >= 400 || (payload?.success === false && !payload?.needs_fix)) {
         throw new Error(String(payload?.message || payload?.error || `Generation failed with ${statusCode}`));
       }
     }

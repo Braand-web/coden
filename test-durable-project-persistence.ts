@@ -20,9 +20,14 @@ assert.match(server, /await refreshDurableProjectSnapshot\(updatedProject, final
 assert.match(server, /field: 'messages_snapshot'/);
 assert.match(server, /field: 'events_snapshot'/);
 assert.match(server, /recovery_source: recovered\.recovery_source/);
+assert.match(server, /function isProjectFilesMissingError\(error: any\)[\s\S]*?could not find the table/i);
+assert.doesNotMatch(server, /return \/project_files\|relation/);
+assert.match(server, /const \{ error: memoryPersistError \} = await persistenceClient\.from\('project_memory'\)\.insert\(rows\)/);
+assert.match(server, /const \{ error: designTokenPersistError \} = await persistenceClient[\s\S]*?\.insert\(designRows\)/);
 
 assert.match(builder, /payload\.preview\.status !== 'idle'/);
 assert.match(builder, /restoreStreamPartsFromPayloadEvents\(payload\)/);
 assert.match(builder, /restoreLatestStreamPartsFromRunHistory\(payload\)/);
+assert.match(builder, /payload\?\.success === false && !payload\?\.needs_fix/);
 
 console.log('Durable project persistence tests passed.');

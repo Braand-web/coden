@@ -6441,9 +6441,10 @@ async function generateFilesWithAi(input: {
             await persistenceClient.from('project_memory').delete().in('id', toDelete);
           }
         }
-        await persistenceClient.from('project_memory').insert(rows).catch((err: any) => {
-          console.warn('[coden:memory_persist_failed]', { message: err?.message });
-        });
+        const { error: memoryPersistError } = await persistenceClient.from('project_memory').insert(rows);
+        if (memoryPersistError) {
+          console.warn('[coden:memory_persist_failed]', { message: memoryPersistError.message });
+        }
       }
     } catch (persistErr: any) {
       console.warn('[coden:memory_persist_error]', { message: persistErr?.message });
@@ -6455,18 +6456,20 @@ async function generateFilesWithAi(input: {
       if (designSystem.tokens.length > 0) {
         const designRows = designSystemToMemoryRows(designSystem, input.project.id);
         // Replace existing design token entry
-        await persistenceClient
+        const { error: designTokenDeleteError } = await persistenceClient
           .from('project_memory')
           .delete()
           .eq('project_id', input.project.id)
-          .eq('memory_type', 'design_token')
-          .catch(() => null);
-        await persistenceClient
+          .eq('memory_type', 'design_token');
+        if (designTokenDeleteError) {
+          console.warn('[coden:design_token_cleanup_failed]', { message: designTokenDeleteError.message });
+        }
+        const { error: designTokenPersistError } = await persistenceClient
           .from('project_memory')
-          .insert(designRows)
-          .catch((err: any) => {
-            console.warn('[coden:design_token_persist_failed]', { message: err?.message });
-          });
+          .insert(designRows);
+        if (designTokenPersistError) {
+          console.warn('[coden:design_token_persist_failed]', { message: designTokenPersistError.message });
+        }
       }
     } catch (dtPersistErr: any) {
       console.warn('[coden:design_token_persist_error]', { message: dtPersistErr?.message });
@@ -6705,7 +6708,8 @@ function projectFileRows(files: GeneratedFile[], project: GeneratedProject) {
 }
 
 function isProjectFilesMissingError(error: any) {
-  return /project_files|relation .* does not exist|table .* does not exist/i.test(error?.message || '');
+  const message = String(error?.message || '');
+  return /(?:relation|table)\s+["'`]?[^\s"'`]*project_files[^\s"'`]*["'`]?\s+(?:does not exist|not found)|could not find the table\s+["'`]?[^\s"'`]*project_files[^\s"'`]*["'`]?\s+in the schema cache/i.test(message);
 }
 
 function stripSchemaColumnFromProjectFileRows(rows: Record<string, any>[], error: any) {
@@ -11558,6 +11562,15 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
   };
 
+  // The decision call can take noticeable time on a live provider. Emit the
+  // first real activity before awaiting it so a connected Builder never looks
+  // frozen while Coden is already analysing the request.
+  emitActivity(
+    'understanding',
+    'Coden analyse votre demande…',
+    'Coden is analyzing your request…',
+  );
+
   const helpers = getDbHelpers();
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
@@ -11594,11 +11607,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   }
   const decision: IntentDecision = initialDecision;
-  emitActivity(
-    decision.intent === 'plan' ? 'planning' : decision.intent === 'verify' ? 'inspecting' : decision.intent === 'debug_fix' ? 'fixing' : 'understanding',
-    decision.intent === 'plan' ? 'Coden prépare le plan…' : decision.intent === 'verify' ? 'Coden inspecte le projet…' : decision.intent === 'debug_fix' ? 'Coden reproduit le problème…' : 'Coden analyse votre demande…',
-    decision.intent === 'plan' ? 'Coden is preparing the plan…' : decision.intent === 'verify' ? 'Coden is inspecting the project…' : decision.intent === 'debug_fix' ? 'Coden is reproducing the issue…' : 'Coden is analyzing your request…',
-  );
+  const decisionPhase = decision.intent === 'plan'
+    ? 'planning'
+    : decision.intent === 'verify'
+      ? 'inspecting'
+      : decision.intent === 'debug_fix'
+        ? 'fixing'
+        : 'understanding';
+  if (decisionPhase !== 'understanding') {
+    emitActivity(
+      decisionPhase,
+      decisionPhase === 'planning'
+        ? 'Coden prépare le plan…'
+        : decisionPhase === 'inspecting'
+          ? 'Coden inspecte le projet…'
+          : 'Coden reproduit le problème…',
+      decisionPhase === 'planning'
+        ? 'Coden is preparing the plan…'
+        : decisionPhase === 'inspecting'
+          ? 'Coden is inspecting the project…'
+          : 'Coden is reproducing the issue…',
+    );
+  }
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
     intent: decision.intent,
