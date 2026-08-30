@@ -2366,7 +2366,11 @@ function classifyPromptUiContext(value: string, mode: ChatMode): PromptUiContext
       ? 'plan'
       : mode === 'build'
         ? currentFiles.length ? 'edit' : 'build'
-        : 'conversation';
+        // Auto must preserve a project mission once the prompt is no longer a
+        // simple conversation. The server Decision Core remains the authority
+        // for the concrete action; this local branch only chooses the correct
+        // transport (project generation instead of the chat stream).
+        : 'build';
   const contract = buildExecutionContract({
     prompt: value,
     requestedMode: mode,
