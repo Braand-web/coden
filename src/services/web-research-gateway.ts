@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { redactSecrets } from './secret-redaction.ts';
 
 export type ResearchStatus = 'completed' | 'skipped' | 'failed';

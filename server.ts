@@ -16,7 +16,6 @@ import path from 'path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 import WebSocket from 'ws';
 
 // Import our custom services
@@ -4304,7 +4303,10 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     timeoutMs: routerRuntime.timeoutMs,
     runtimeConfig,
     runtimeConfigForModel,
-    allowFallback: false,
+    // Intent routing is internal and has not produced any user-visible output.
+    // A short compatible fallback keeps Auto responsive when the economy
+    // router is degraded without changing a user-pinned generation model.
+    allowFallback: true,
   });
   const rawDecision = await parseOrRepairStructuredObject(
     result.text,
@@ -9709,7 +9711,10 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
   });
 
   const stream = createCodenStreamEmitter((chunk: string) => {
-    if (!streamAborted && !res.writableEnded) res.write(chunk);
+    if (!streamAborted && !res.writableEnded) {
+      res.write(chunk);
+      (res as any).flush?.();
+    }
   }, 0, requestId);
   const resolvedAction = decision.intent === 'clarification_required'
     ? 'clarify'
@@ -11537,7 +11542,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
     streamV2 = createCodenStreamEmitter((chunk: string) => {
       if (streamAborted || res.writableEnded) return;
-      try { res.write(chunk); } catch { /* client closed */ }
+      try {
+        res.write(chunk);
+        // Flush each public event through compression/proxy middleware so the
+        // real activity shimmer appears while the provider is still working.
+        (res as any).flush?.();
+      } catch { /* client closed */ }
     }, 0, requestId);
     // Heartbeat every 15s to prevent proxy timeouts (Railway, nginx, Vercel all close idle SSE after ~30s)
     const heartbeat = setInterval(() => {

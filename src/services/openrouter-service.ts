@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { validateAllowedModel } from './ai-validator.ts';
 import { MODEL_REGISTRY } from '../config/ai-models.ts';
 import { toOpenRouterChatPayloadExtras, type ProviderRequestConfig } from './provider-adapters.ts';
@@ -28,21 +27,6 @@ export function resolveOpenRouterApiKey(env: OpenRouterEnv = process.env, fallba
     if (clean && !clean.includes('***')) return clean;
   }
   return '';
-}
-
-/**
- * node-fetch emits an `error` event directly on a resolved response body when
- * its request signal aborts. The awaited request/stream still observes that
- * abort, but Node terminates the process if the readable has no error
- * listener. Attach a no-op listener before consuming the body so a cancelled
- * user run is contained to that run instead of restarting the API process.
- */
-export function attachAbortErrorListener(body: unknown): void {
-  const errorEmitter = body as {
-    on?: (event: string, listener: (...args: any[]) => void) => unknown;
-  } | null | undefined;
-  if (typeof errorEmitter?.on !== 'function') return;
-  errorEmitter.on('error', () => undefined);
 }
 
 export type ChatContentPart =
@@ -138,9 +122,10 @@ export class OpenRouterService {
 
     while (attempt < retryAttempts) {
       attempt++;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        timeout = setTimeout(() => controller.abort(), timeoutMs);
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
@@ -148,9 +133,6 @@ export class OpenRouterService {
           signal: combineAbortSignals(signal, controller.signal) as any,
           body: JSON.stringify(payload)
         });
-
-        attachAbortErrorListener(response.body);
-        clearTimeout(timeout);
 
         if (!response.ok) {
           const errMsg = await this.readProviderError(response);
@@ -212,6 +194,8 @@ export class OpenRouterService {
         console.warn(`[OPENROUTER CLIENT] Attempt ${attempt} failed: ${err.message}. Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // exponential backoff
+      } finally {
+        if (timeout) clearTimeout(timeout);
       }
     }
 
@@ -247,8 +231,6 @@ export class OpenRouterService {
           stream_options: { include_usage: true }
         })
       });
-
-      attachAbortErrorListener(response.body);
 
       if (!response.ok) {
         const errMsg = await this.readProviderError(response);

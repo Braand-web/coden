@@ -1,15 +1,29 @@
 import assert from 'node:assert/strict';
-import { PassThrough } from 'node:stream';
+import fs from 'node:fs';
 import { ProviderGateway, ProviderGatewayError } from './src/services/provider-gateway.ts';
-import { attachAbortErrorListener, resolveOpenRouterApiKey, type ChatMessage } from './src/services/openrouter-service.ts';
+import { resolveOpenRouterApiKey, type ChatMessage } from './src/services/openrouter-service.ts';
 import { resolveAnthropicApiKey, resolveDirectAnthropicModelId } from './src/services/anthropic-service.ts';
 
 const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
 {
-  const body = new PassThrough();
-  attachAbortErrorListener(body);
-  assert.doesNotThrow(() => body.emit('error', new Error('The operation was aborted.')));
+  const providerFiles = [
+    'server.ts',
+    'src/services/openrouter-service.ts',
+    'src/services/anthropic-service.ts',
+    'src/services/web-research-gateway.ts',
+  ];
+  for (const file of providerFiles) {
+    assert.doesNotMatch(
+      fs.readFileSync(new URL(file, import.meta.url), 'utf8'),
+      /from ['\"]node-fetch['\"]/,
+      `${file} must use the Node 22 native fetch implementation.`,
+    );
+  }
+  const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+  assert.match(packageJson.engines.node, /^>=22/, 'Production must run Node 22+ for native fetch and current Supabase clients.');
+  assert.equal(packageJson.dependencies['node-fetch'], undefined);
+  assert.equal(packageJson.dependencies['@types/node-fetch'], undefined);
 }
 
 class FakeOpenRouter {
