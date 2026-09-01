@@ -202,6 +202,124 @@ export class ProviderGateway {
     throw this.classifyError(lastError, primary);
   }
 
+  /**
+   * Collect a provider stream into one atomic completion.
+   *
+   * Project generation must remain atomic because partial JSON cannot be
+   * applied safely, but it should not use a non-streaming HTTP request that
+   * can sit silent until a large artifact is complete. This method consumes
+   * the provider stream privately, validates the complete artifact, and only
+   * then returns it to the caller. Since no partial output escapes, Auto may
+   * safely try one configured fallback after a provider or validation error.
+   */
+  async streamingCompletion(modelId: string, messages: ChatMessage[], options: {
+    timeoutMs?: number;
+    runtimeConfig?: ProviderRequestConfig;
+    runtimeConfigForModel?: (modelId: AllowedModelId) => ProviderRequestConfig | undefined;
+    allowFallback?: boolean;
+    onFallback?: (event: { from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
+    validateResult?: (result: ChatCompletionResult) => void;
+    signal?: AbortSignal;
+  } = {}): Promise<ChatCompletionResult> {
+    const primary = this.requireProviderModel(modelId);
+    const candidates = this.candidatesFor(primary, options.allowFallback === true);
+    let lastError: any = null;
+
+    const collect = async (
+      candidate: AllowedModelId,
+      runtimeConfig?: ProviderRequestConfig,
+    ): Promise<ChatCompletionResult> => {
+      let text = '';
+      let model: string = candidate;
+      let usage: ChatCompletionResult['usage'] = {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0,
+      };
+      let costUsd = 0;
+      let toolCalls: ChatCompletionResult['tool_calls'];
+
+      for await (const event of this.streamWithProvider(
+        candidate,
+        messages,
+        options.timeoutMs || 90_000,
+        runtimeConfig,
+        options.signal,
+      )) {
+        model = event.model || model;
+        if (event.type === 'token') text += event.text;
+        if (event.type === 'usage') {
+          usage = event.usage;
+          costUsd = event.cost_usd;
+        }
+        if (event.type === 'tool_calls') {
+          toolCalls = event.tool_calls as ChatCompletionResult['tool_calls'];
+        }
+      }
+
+      return {
+        text,
+        model,
+        tool_calls: toolCalls,
+        usage,
+        cost_usd: costUsd,
+      };
+    };
+
+    for (const candidate of candidates) {
+      const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
+      if (candidate !== primary) {
+        this.noteFallbackUse(candidate);
+        try {
+          options.onFallback?.({
+            from: primary,
+            to: candidate,
+            reason: this.classifyError(lastError, primary).diagnosticCode,
+          });
+        } catch {
+          // Observability must never break recovery.
+        }
+      }
+
+      const circuitError = this.getCircuitError(candidate);
+      if (circuitError) {
+        lastError = circuitError;
+        continue;
+      }
+
+      const startedAt = Date.now();
+      this.noteRequest(candidate);
+      try {
+        const result = await collect(candidate, candidateRuntimeConfig);
+        options.validateResult?.(result);
+        this.noteMetricSuccess(candidate, Date.now() - startedAt);
+        this.noteSuccess(candidate);
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        let classified = this.classifyError(error, candidate);
+        if (classified.diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG' && candidateRuntimeConfig) {
+          try {
+            this.noteRetry(candidate);
+            const result = await collect(candidate, undefined);
+            options.validateResult?.(result);
+            this.noteMetricSuccess(candidate, Date.now() - startedAt);
+            this.noteSuccess(candidate);
+            return result;
+          } catch (degradedError: any) {
+            lastError = degradedError;
+            classified = this.classifyError(degradedError, candidate);
+          }
+        }
+        this.noteFailure(candidate, classified.retryable);
+        this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
+        if (!classified.retryable) throw classified;
+      }
+    }
+
+    throw this.classifyError(lastError, primary);
+  }
+
   getCircuitSnapshot() {
     const now = Date.now();
     return Array.from(this.circuits.entries()).map(([model_id, state]) => ({

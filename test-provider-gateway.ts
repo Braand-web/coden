@@ -44,7 +44,7 @@ class FakeOpenRouter {
     };
   }
 
-  async *streamChat(modelId: string) {
+  async *streamChat(modelId: string): AsyncGenerator<any> {
     this.calls.push(modelId);
     const failure = this.failures.shift();
     if (failure) throw failure;
@@ -90,6 +90,57 @@ class FakeAnthropic {
     runtimeConfigForModel: modelId => ({ adapter: modelId.startsWith('anthropic/') ? 'anthropic' : 'gemini', metadata: { model_id: modelId } }),
   }));
   assert.equal(fake.calls.length, 1, 'An explicit pinned model must not switch to another model.');
+}
+
+{
+  const fake = new FakeOpenRouter();
+  fake.streamChat = async function* (modelId: string) {
+    this.calls.push(modelId);
+    yield { type: 'token' as const, text: '{"files":', model: modelId };
+    yield { type: 'token' as const, text: '[]}', model: modelId };
+    yield {
+      type: 'usage' as const,
+      usage: { prompt_tokens: 2, completion_tokens: 2, total_tokens: 4 },
+      cost_usd: 0.002,
+      model: modelId,
+    };
+  };
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, {
+    allowFallback: false,
+    validateResult: candidate => assert.equal(candidate.text, '{"files":[]}'),
+  });
+  assert.equal(result.text, '{"files":[]}');
+  assert.equal(result.usage.total_tokens, 4);
+  assert.equal(result.cost_usd, 0.002);
+}
+
+{
+  const fake = new FakeOpenRouter();
+  fake.streamChat = async function* (modelId: string) {
+    this.calls.push(modelId);
+    yield {
+      type: 'token' as const,
+      text: this.calls.length === 1 ? 'malformed' : '{"files":[]}',
+      model: modelId,
+    };
+  };
+  const transitions: Array<{ from: string; to: string; reason: string }> = [];
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, {
+    allowFallback: true,
+    validateResult: candidate => {
+      if (candidate.text === 'malformed') {
+        const error: any = new Error('Generated project JSON is invalid.');
+        error.diagnosticCode = 'MODEL_OUTPUT_PARSE_FAILED';
+        throw error;
+      }
+    },
+    onFallback: transition => transitions.push(transition),
+  });
+  assert.equal(result.text, '{"files":[]}');
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash']);
+  assert.equal(transitions[0]?.reason, 'MODEL_OUTPUT_PARSE_FAILED');
 }
 
 {

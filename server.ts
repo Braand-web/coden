@@ -4568,16 +4568,40 @@ function applyTypedIntentLifecycle(input: AgentDecisionInput, decision: IntentDe
 async function resolveAgentDecision(input: AgentDecisionInput) {
   const fallback = intentRouter.decide(input);
   const finalize = (decision: IntentDecision): IntentDecision => applyTypedIntentLifecycle(input, decision);
+  const safeFallback = (reason: string): IntentDecision => finalize({
+    ...fallback,
+    routingSource: 'fallback',
+    reason: `Validated server fallback: ${reason}`.slice(0, 240),
+    userVisibleReason: fallback.userVisibleReason || 'Coden selected the safest available action for this request.',
+  });
+
+  // Explicit Plan is intentionally deterministic and read-only. It used to
+  // skip classifyIntentWithAi and then fail because a null model decision was
+  // treated as an outage. The server decision is already guarded by the same
+  // typed execution contract and is the correct result for this mode.
+  if (!agentIntentNeedsAiRouter(fallback)) {
+    return safeFallback('explicit mode does not require model classification');
+  }
   if (!hasLiveAiProvider()) {
-    throw new Error('A live AI provider is required for agent decisions. No local intent fallback is available.');
+    return safeFallback('live intent classifier unavailable');
   }
   try {
     const modelDecision = await classifyIntentWithAi(input, fallback);
     if (!modelDecision) throw new Error('The selected AI model returned no valid intent decision.');
     return finalize(modelDecision);
-  } catch (error) {
-    console.warn('[coden:agent_router_failed]', { message: normalizeProviderError(error) });
-    throw error;
+  } catch (error: any) {
+    const diagnostic = diagnoseProviderError(error);
+    console.warn('[coden:agent_router_fallback]', {
+      diagnostic_code: diagnostic.diagnostic_code,
+      message: normalizeProviderError(error),
+      fallback_intent: fallback.intent,
+      requested_mode: fallback.requestedMode,
+    });
+    // Intent classification is advisory. A malformed/slow provider response
+    // must not take down the whole product. The fallback remains subject to
+    // permissions, credit gates, execution contracts and critical-action
+    // confirmations later in the request lifecycle.
+    return safeFallback(diagnostic.diagnostic_code);
   }
 }
 
@@ -6267,12 +6291,15 @@ async function generateFilesWithAi(input: {
       decision: input.decision,
       files: input.existingFiles,
       mode: 'generation',
-      stream: false,
+      stream: true,
       // A structured full project needs more wall time than a conversational
       // response. Keep the request bounded, but never inherit a short skill
       // budget that makes an otherwise healthy generation fail mid-object.
       timeoutMs: Math.max(90_000, Math.min(150_000, input.skillBudget?.maxDurationMs || 150_000)),
-      maxTokens: input.existingFiles.length ? 16_000 : 20_000,
+      // Prefer a complete, previewable first slice over a huge initial dump.
+      // Follow-up turns can extend the app without making the first preview
+      // wait for 20k output tokens.
+      maxTokens: input.existingFiles.length ? 10_000 : 12_000,
       hasVisionInput: Boolean(input.visionInputs?.length),
     })
     : null;
@@ -6492,10 +6519,10 @@ async function generateFilesWithAi(input: {
 
   let result: any = null;
   try {
-      // Generated source is an atomic structured artifact. Streaming its raw
-      // JSON makes provider disconnects more likely and can never be rendered
-      // as assistant prose, so request one bounded structured response.
-      result = await providerGateway.chat(selectedModel, [
+      // Generated source remains atomic, but the provider response is consumed
+      // as a private stream so large artifacts cannot time out while waiting
+      // for one monolithic JSON response. Nothing is applied until validation.
+      result = await providerGateway.streamingCompletion(selectedModel, [
         {
           role: 'system',
           content: buildGenerationSystemPrompt({
@@ -6523,13 +6550,9 @@ async function generateFilesWithAi(input: {
           content: buildGenerationUserContent('Use these visual references as real multimodal input for this generation.'),
         }] : []),
       ], {
-        maxAttempts: 1,
-        // Auto receives one bounded recovery path. A pinned model keeps its
-        // full generation budget; an Auto run gets two <= 75s attempts rather
-        // than silently waiting several minutes on one unhealthy provider.
-        timeoutMs: input.allowModelFallback
-          ? Math.min(runtimeOptions?.runtime.timeoutMs || 120_000, 75_000)
-          : runtimeOptions?.runtime.timeoutMs || 120_000,
+        // This is an idle timeout. OpenRouterService also enforces a bounded
+        // hard deadline, while active token delivery keeps the request alive.
+        timeoutMs: runtimeOptions?.runtime.timeoutMs || 120_000,
         runtimeConfig: runtimeOptions?.providerConfig,
         runtimeConfigForModel: runtimeOptions?.runtimeConfigForModel,
         allowFallback: Boolean(input.allowModelFallback),

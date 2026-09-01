@@ -211,14 +211,24 @@ export class OpenRouterService {
   async *streamChat(
     modelId: string,
     messages: ChatMessage[],
-    timeoutMs = 120_000,  // increased from 90s — long code generations can take 2-3min
+    timeoutMs = 120_000,
     runtimeConfig?: ProviderRequestConfig,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamChatEvent> {
     validateAllowedModel(modelId);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    // A healthy large code generation can exceed the conversational timeout,
+    // but it must never remain silent or run forever. Reset the idle timer on
+    // every network chunk and retain a separate hard deadline.
+    let idleTimeout: ReturnType<typeof setTimeout> | undefined;
+    const armIdleTimeout = () => {
+      if (idleTimeout) clearTimeout(idleTimeout);
+      idleTimeout = setTimeout(() => controller.abort(), timeoutMs);
+    };
+    armIdleTimeout();
+    const hardTimeoutMs = Math.max(timeoutMs, Math.min(timeoutMs * 3, 360_000));
+    const hardTimeout = setTimeout(() => controller.abort(), hardTimeoutMs);
 
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -250,6 +260,7 @@ export class OpenRouterService {
       const toolCalls = new ToolCallStreamAccumulator();
 
       for await (const chunk of response.body as any) {
+        armIdleTimeout();
         buffer += Buffer.from(chunk).toString('utf8');
         const parts = buffer.split('\n\n');
         buffer = parts.pop() || '';
@@ -326,7 +337,8 @@ export class OpenRouterService {
         }
       }
     } finally {
-      clearTimeout(timeout);
+      if (idleTimeout) clearTimeout(idleTimeout);
+      clearTimeout(hardTimeout);
     }
   }
 

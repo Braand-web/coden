@@ -88,7 +88,16 @@ for (const modelId of AI_ALLOWED_MODELS) {
 {
   const serverSource = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(serverSource, /modelRouter\.selectJudgeModel\(/, 'Generation must not silently switch to a judge model.');
-  assert.match(serverSource, /providerGateway\.chat\(selectedModel,/, 'Generation must use the model selected for this run exactly once.');
+  assert.match(
+    serverSource,
+    /providerGateway\.streamingCompletion\(selectedModel,/,
+    'Generation must privately aggregate the selected model stream into one atomic project artifact.',
+  );
+  assert.doesNotMatch(
+    serverSource,
+    /Math\.min\(runtimeOptions\?\.runtime\.timeoutMs \|\| 120_000, 75_000\)/,
+    'Auto generation must not reintroduce the 75-second monolithic artifact timeout.',
+  );
   assert.match(
     serverSource,
     /allowModelFallback: requestedModelSelection === 'auto'/,
