@@ -82,4 +82,36 @@ assert.ok(
   'Manifest validation must reject build output paths outside the project.',
 );
 
+// A managed backend is always reached from the browser with the same public
+// Coden Cloud config, so declaring `coden-cloud-supabase` without that config
+// makes the manifest invalid and generation throws. These signals each select a
+// managed backend on their own, and every one of them used to produce an empty
+// requiredPublicEnv -- a single word like "Upload" in button copy was enough to
+// make an otherwise fine app impossible to generate.
+for (const [label, markup] of [
+  ['storage', '<button>Upload a photo</button>'],
+  ['payments', '<p>Subscription plans</p>'],
+  ['invoicing', '<p>Invoice history</p>'],
+  ['checkout', '<button>Checkout</button>'],
+  ['realtime', '<p>realtime updates</p>'],
+] as const) {
+  const manifest = createGeneratedAppManifest({
+    files: [
+      { path: 'package.json', content: JSON.stringify({ dependencies: { react: '^19.0.0' } }) },
+      { path: 'index.html', content: '<div id="root"></div>' },
+      { path: 'src/App.tsx', content: `export default function App(){ return <main><h1>App</h1>${markup}</main>; }` },
+    ],
+  });
+  assert.equal(manifest.backend, 'coden-cloud-supabase', `${label} must select the managed backend`);
+  assert.ok(
+    manifest.requiredPublicEnv.some(env => env.name.includes('SUPABASE')),
+    `${label} backend must declare its public runtime configuration`,
+  );
+  assert.deepEqual(validateGeneratedAppManifest(manifest), [], `${label} manifest must be valid`);
+}
+
+// The invariant in the other direction: an app with no backend must not be made
+// to carry backend configuration it never uses.
+assert.equal(staticManifest.requiredPublicEnv.length, 0);
+
 console.log('test-generated-app-runtime passed');

@@ -222,7 +222,13 @@ export function createGeneratedAppManifest(input: {
     devCommand: 'npm run dev',
     outputDirectory: 'dist',
     routes: inferRoutes(input.files),
-    requiredPublicEnv: managedBackend && (hasDatabase || hasAuth)
+    // Every managed backend is reached from the browser with the same public
+    // Coden Cloud config, whether it is used for data, auth, storage, realtime,
+    // payments or edge functions. Deriving this from `managedBackend` — the
+    // same flag that selects the backend above — keeps the manifest internally
+    // consistent: declaring `coden-cloud-supabase` without its public runtime
+    // configuration is rejected by validateGeneratedAppManifest.
+    requiredPublicEnv: managedBackend
       ? [
           { name: 'VITE_CODEN_CLOUD_SUPABASE_URL', scope: 'public', required: true, description: 'URL publique du backend Coden Cloud.' },
           { name: 'VITE_CODEN_CLOUD_SUPABASE_ANON_KEY', scope: 'public', required: true, description: 'Clé publishable du backend Coden Cloud.' },
