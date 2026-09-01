@@ -44,12 +44,24 @@ import {
 import { parseOrRepairStructuredObject } from './src/services/structured-output.ts';
 import {
   createCodenStreamEmitter,
+  serializeCodenStreamEvent,
   CODEN_SSE_HEADERS,
+  CODEN_SSE_HEARTBEAT,
   CODEN_SSE_HEARTBEAT_INTERVAL_MS,
   type CodenAgentPublicPhase,
+  type CodenStreamEvent,
   type CodenStreamEmitter,
   type CodenStreamMilestone,
 } from './src/lib/stream-protocol.ts';
+import {
+  CodenAgentHarness,
+  InMemoryAgentHarnessStore,
+  SupabaseAgentHarnessStore,
+  buildDefinitionOfDone,
+  createHarnessTurnIdempotencyKey,
+  type HarnessThread,
+  type HarnessTurn,
+} from './src/services/agent-harness/index.ts';
 import {
   messagePartsFromContent,
   messageTextFromParts,
@@ -230,6 +242,7 @@ import {
   validateProjectManifest,
 } from './src/services/universal-project-manifest.ts';
 import { immutableArtifactHash } from './src/services/deployment-adapters.ts';
+import { applyGeneratedMigration } from './src/services/supabase-provisioning.ts';
 import { readCodenAgentFeatureFlags } from './src/config/coden-agent-feature-flags.ts';
 import {
   UNLIMITED_TEST_CREDIT_DISPLAY_BALANCE,
@@ -783,6 +796,12 @@ app.get('/api/health', (_req, res) => {
         ? 'cloudflare-pages-legacy'
         : 'cloudflare-workers',
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+      agent_harness: 'coden-harness/v3',
+      agent_harness_persistence: Boolean(
+        process.env.CODEN_SUPABASE_MGMT_TOKEN ||
+        process.env.SUPABASE_MANAGEMENT_TOKEN ||
+        process.env.SUPABASE_ACCESS_TOKEN
+      ) ? 'managed_migration' : 'service_role_with_memory_fallback',
     },
     diagnostics: {
       supabase: supabaseDiagnostics,
@@ -1326,6 +1345,196 @@ const POSTGRES_INTEGER_MAX = 2_147_483_647;
 function persistenceSequenceNumber(timestamp = Date.now()) {
   const value = Number.isFinite(timestamp) ? timestamp : Date.now();
   return Math.max(1, Math.min(POSTGRES_INTEGER_MAX, Math.floor(value / 1_000)));
+}
+
+const inMemoryAgentHarness = new CodenAgentHarness(new InMemoryAgentHarnessStore());
+let persistentAgentHarness: CodenAgentHarness | null = null;
+const activeHarnessTurnControllers = new Map<string, AbortController>();
+const activeHarnessAgentRunIds = new Map<string, string>();
+
+function getPersistentAgentHarness() {
+  if (!persistentAgentHarness) {
+    const client = getSupabase();
+    if (!client) return null;
+    persistentAgentHarness = new CodenAgentHarness(new SupabaseAgentHarnessStore(client));
+  }
+  return persistentAgentHarness;
+}
+
+function isMissingAgentHarnessSchemaError(error: unknown) {
+  return /agent_(threads|turns|items|harness_events|instructions)|append_agent_harness_event|schema cache|PGRST205|42P01/i.test(String((error as any)?.message || error || ''));
+}
+
+type ActiveAgentHarnessContext = {
+  harness: CodenAgentHarness;
+  thread: HarnessThread;
+  turn: HarnessTurn;
+  assistantItemId: string;
+};
+
+async function prepareAgentHarnessContext(input: {
+  project: GeneratedProject;
+  userId: string;
+  prompt: string;
+  requestedMode: string;
+  requestId: string;
+  clientMessageId?: string;
+}) {
+  if (!isUuid(input.project.id) || !isUuid(input.userId)) return null;
+
+  const createWithHarness = async (harness: CodenAgentHarness): Promise<ActiveAgentHarnessContext> => {
+    let thread = await harness.store.findActiveThread(input.project.id, input.userId);
+    if (thread?.activeTurnId) {
+      const activeTurn = await harness.store.getTurn(thread.activeTurnId);
+      const expectedKey = createHarnessTurnIdempotencyKey({
+        userId: input.userId,
+        projectId: input.project.id,
+        requestId: input.requestId,
+        clientMessageId: input.clientMessageId,
+      });
+      if (activeTurn?.idempotencyKey !== expectedKey) thread = null;
+    }
+    if (!thread) {
+      thread = await harness.createThread({
+        organizationId: input.project.organization_id || input.userId,
+        projectId: input.project.id,
+        userId: input.userId,
+        title: input.prompt.slice(0, 100),
+        metadata: { source: 'builder', runtime: 'coden-harness/v3' },
+      });
+    }
+    const turnResult = await harness.createTurn({
+      threadId: thread.id,
+      userId: input.userId,
+      prompt: input.prompt,
+      requestedMode: input.requestedMode,
+      idempotencyKey: createHarnessTurnIdempotencyKey({
+        userId: input.userId,
+        projectId: input.project.id,
+        requestId: input.requestId,
+        clientMessageId: input.clientMessageId,
+      }),
+      definitionOfDone: buildDefinitionOfDone({
+        prompt: input.prompt,
+        mode: input.requestedMode,
+        hasBackend: /backend|api|full[ -]?stack|serveur/i.test(input.prompt),
+        hasDatabase: /database|base de donn|supabase|postgres|sql/i.test(input.prompt),
+        requiresDeployment: /deploy|publ|production|mise en ligne/i.test(input.prompt),
+      }),
+    });
+    let turn = turnResult.turn;
+    if (turn.status === 'queued') turn = await harness.transitionTurn(turn.id, 'running', { requestId: input.requestId });
+    const assistantItem = await harness.createItem({
+      threadId: thread.id,
+      turnId: turn.id,
+      kind: 'assistant_message',
+      role: 'assistant',
+      status: 'running',
+      title: 'Coden response',
+      payload: { requestId: input.requestId },
+    });
+    return { harness, thread, turn, assistantItemId: assistantItem.id };
+  };
+
+  const persistent = getPersistentAgentHarness();
+  if (persistent) {
+    try {
+      return await createWithHarness(persistent);
+    } catch (error) {
+      if (!isMissingAgentHarnessSchemaError(error)) throw error;
+      console.warn('[coden:harness_persistence_unavailable]', { message: String((error as any)?.message || error) });
+    }
+  }
+  return createWithHarness(inMemoryAgentHarness);
+}
+
+function createHarnessStreamObserver(context: ActiveAgentHarnessContext | null) {
+  let terminal = false;
+  let assistantCompleted = false;
+  return async (event: CodenStreamEvent) => {
+    if (!context) return;
+    await context.harness.recordPublicStreamEvent({
+      threadId: context.thread.id,
+      turnId: context.turn.id,
+      itemId: context.assistantItemId,
+      event,
+    });
+    if (event.type === 'assistant_message_completed' && !assistantCompleted) {
+      assistantCompleted = true;
+      await context.harness.transitionItem(context.assistantItemId, 'completed', { messageId: event.messageId || null });
+      return;
+    }
+    if (terminal) return;
+    if (event.type === 'cancelled') {
+      terminal = true;
+      await context.harness.cancelTurn(context.turn.id, context.turn.userId, event.message || 'cancelled');
+      return;
+    }
+    if (event.type === 'blocked') {
+      terminal = true;
+      if (!assistantCompleted) await context.harness.transitionItem(context.assistantItemId, 'blocked', { code: event.code || null });
+      await context.harness.transitionTurn(context.turn.id, 'blocked', { code: event.code || null, message: event.message });
+      return;
+    }
+    if (event.type === 'done') {
+      terminal = true;
+      const payload = (event.payload || {}) as any;
+      const failed = payload?.success === false || Number(payload?.status_code || 200) >= 400;
+      if (!assistantCompleted) await context.harness.transitionItem(context.assistantItemId, failed ? 'failed' : 'completed', { terminal: true });
+      await context.harness.transitionTurn(context.turn.id, failed ? 'failed' : 'completed', {
+        requestId: event.runId || null,
+        statusCode: payload?.status_code || 200,
+      });
+    }
+  };
+}
+
+async function resolveAgentHarnessThread(threadId: string) {
+  const persistent = getPersistentAgentHarness();
+  if (persistent) {
+    try {
+      const thread = await persistent.store.getThread(threadId);
+      if (thread) return { harness: persistent, thread };
+    } catch (error) {
+      if (!isMissingAgentHarnessSchemaError(error)) throw error;
+    }
+  }
+  const thread = await inMemoryAgentHarness.store.getThread(threadId);
+  return thread ? { harness: inMemoryAgentHarness, thread } : null;
+}
+
+async function ensureAgentHarnessSchema() {
+  const projectRef = getSupabaseProjectRef(process.env.SUPABASE_URL || '');
+  if (!projectRef) return { applied: false, reason: 'missing_project_ref' };
+  const client = getSupabase();
+  if (client) {
+    const probe = await client.from('agent_threads').select('id').limit(1);
+    if (!probe.error) {
+      console.log('[coden:harness_schema_ready]', { projectRef, source: 'existing_schema' });
+      return { applied: false, ready: true, reason: 'already_available' };
+    }
+    if (!isMissingAgentHarnessSchemaError(probe.error)) {
+      console.warn('[coden:harness_schema_probe_failed]', {
+        projectRef,
+        reason: redactSecrets(probe.error.message || 'schema_probe_failed', '[redacted]'),
+      });
+      return { applied: false, ready: false, reason: 'schema_probe_failed' };
+    }
+  }
+  const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20260831090000_coden_agent_harness_v3.sql');
+  if (!fs.existsSync(migrationPath)) return { applied: false, reason: 'migration_file_missing' };
+  const sql = fs.readFileSync(migrationPath, 'utf8');
+  const result = await applyGeneratedMigration({ projectRef, sql, dryRun: false });
+  if (!result.applied) {
+    console.warn('[coden:harness_schema_not_applied]', {
+      projectRef,
+      reason: result.error || 'management_api_unavailable',
+      status: result.status || null,
+    });
+  } else {
+    console.log('[coden:harness_schema_ready]', { projectRef, statements: result.safety.statements });
+  }
+  return result;
 }
 
 type AgentIntent = 'conversation' | 'clarification_required' | 'plan' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'external_keys_required' | 'credits_required';
@@ -9700,14 +9909,43 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
     });
   }
 
+  let chatHarnessContext: ActiveAgentHarnessContext | null = null;
+  if (canPersistConversation) {
+    try {
+      chatHarnessContext = await prepareAgentHarnessContext({
+        project,
+        userId,
+        prompt,
+        requestedMode,
+        requestId,
+        clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
+      });
+    } catch (error: any) {
+      return res.status(409).json({
+        success: false,
+        error: error?.message || 'The agent mission could not start.',
+        diagnostic_code: 'HARNESS_START_FAILED',
+        request_id: requestId,
+      });
+    }
+  }
+
   Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
+  if (chatHarnessContext) {
+    res.setHeader('X-Coden-Thread-Id', chatHarnessContext.thread.id);
+    res.setHeader('X-Coden-Turn-Id', chatHarnessContext.turn.id);
+  }
   res.flushHeaders?.();
 
   let streamAborted = false;
   const chatAbortController = new AbortController();
-  req.on('close', () => {
+  res.on('close', () => {
+    if (res.writableEnded) return;
     streamAborted = true;
-    chatAbortController.abort();
+    chatAbortController.abort('client_disconnected');
+    if (chatHarnessContext) {
+      void chatHarnessContext.harness.cancelTurn(chatHarnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
+    }
   });
 
   const stream = createCodenStreamEmitter((chunk: string) => {
@@ -9715,7 +9953,16 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
       res.write(chunk);
       (res as any).flush?.();
     }
-  }, 0, requestId);
+  }, 0, requestId, {
+    threadId: chatHarnessContext?.thread.id,
+    turnId: chatHarnessContext?.turn.id,
+    itemId: chatHarnessContext?.assistantItemId,
+    onEvent: createHarnessStreamObserver(chatHarnessContext),
+    onObserverError: (error) => console.error('[coden:harness_chat_event_persistence_failed]', {
+      requestId,
+      message: redactSecrets((error as any)?.message || String(error), '[redacted]'),
+    }),
+  });
   const resolvedAction = decision.intent === 'clarification_required'
     ? 'clarify'
     : decision.intent === 'debug_fix'
@@ -9865,6 +10112,7 @@ app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
     }
   } finally {
     clearInterval(heartbeat);
+    await stream.flush();
     if (!res.writableEnded) res.end();
   }
 });
@@ -11533,11 +11781,35 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     return res.status(400).json({ success: false, error: 'This request cannot be generated safely.' });
   }
 
-  // Coden Stream v2 typed emitter. A single emitter owns ordering and the
-  // terminal event; no legacy token stream is emitted from this endpoint.
+  const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
+  let harnessContext: ActiveAgentHarnessContext | null = null;
+  if (isStream) {
+    try {
+      harnessContext = await prepareAgentHarnessContext({
+        project,
+        userId,
+        prompt,
+        requestedMode,
+        requestId,
+        clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
+      });
+    } catch (error: any) {
+      console.error('[coden:harness_start_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      return res.status(409).json({ success: false, error: error?.message || 'The agent mission could not start.', diagnostic_code: 'HARNESS_START_FAILED', request_id: requestId });
+    }
+  }
+
+  // The public SSE remains wire-compatible with Stream v2 while every event
+  // is now owned and persisted by the V3 Thread -> Turn -> Item harness.
   let streamV2: CodenStreamEmitter | null = null;
   let streamAborted = false;
   const generationAbortController = new AbortController();
+  if (harnessContext) {
+    activeHarnessTurnControllers.set(harnessContext.turn.id, generationAbortController);
+    const releaseHarnessController = () => activeHarnessTurnControllers.delete(harnessContext!.turn.id);
+    res.once('finish', releaseHarnessController);
+    res.once('close', releaseHarnessController);
+  }
   if (isStream) {
     Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
     streamV2 = createCodenStreamEmitter((chunk: string) => {
@@ -11548,7 +11820,20 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         // real activity shimmer appears while the provider is still working.
         (res as any).flush?.();
       } catch { /* client closed */ }
-    }, 0, requestId);
+    }, 0, requestId, {
+      threadId: harnessContext?.thread.id,
+      turnId: harnessContext?.turn.id,
+      itemId: harnessContext?.assistantItemId,
+      onEvent: createHarnessStreamObserver(harnessContext),
+      onObserverError: (error) => console.error('[coden:harness_event_persistence_failed]', {
+        requestId,
+        message: redactSecrets((error as any)?.message || String(error), '[redacted]'),
+      }),
+    });
+    if (harnessContext) {
+      res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
+      res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
+    }
     // Heartbeat every 15s to prevent proxy timeouts (Railway, nginx, Vercel all close idle SSE after ~30s)
     const heartbeat = setInterval(() => {
       try { streamV2?.heartbeat(); } catch { clearInterval(heartbeat); }
@@ -11557,6 +11842,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       streamAborted = true;
       generationAbortController.abort();
       clearInterval(heartbeat);
+      if (harnessContext && !res.writableEnded) {
+        void harnessContext.harness.cancelTurn(harnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
+      }
     });
     // Flush headers right away so the client starts reading the stream immediately.
     res.flushHeaders?.();
@@ -11566,11 +11854,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   // delivered as a `done` event: a raw res.json() after the event-stream headers
   // leaves the client SSE parser without any `data:` line, which surfaces as
   // "Generation failed or empty response".
-  const respondJson = (status: number, payload: any) => {
+  const respondJson = async (status: number, payload: any) => {
     if (isStream) {
       if (!res.writableEnded) {
         // Exactly one typed v2 terminal event for this request.
         streamV2?.emit('done', { payload: { status_code: status, ...payload } });
+        await streamV2?.flush();
         res.end();
       }
       return;
@@ -11594,7 +11883,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   );
 
   const helpers = getDbHelpers();
-  const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
@@ -11758,9 +12046,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     };
     agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
     activeAgentRunControllers.set(agentRunId, generationAbortController);
+    if (harnessContext) activeHarnessAgentRunIds.set(harnessContext.turn.id, agentRunId);
     const releaseActiveRun = () => {
       activeAgentRunControllers.delete(agentRunId);
       pendingAgentRunInstructions.delete(agentRunId);
+      if (harnessContext) {
+        activeHarnessTurnControllers.delete(harnessContext.turn.id);
+        activeHarnessAgentRunIds.delete(harnessContext.turn.id);
+      }
     };
     res.once('finish', releaseActiveRun);
     res.once('close', releaseActiveRun);
@@ -12527,6 +12820,133 @@ app.post('/api/projects/:id/build/resume', async (req: any, res: any) => {
     message: 'Resume is ready. Send the original prompt again with confirmedCost or externalKeysConfirmed.',
     project_id: project.id,
   });
+});
+
+app.get('/api/projects/:id/agent/threads', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const persistent = getPersistentAgentHarness();
+  try {
+    const threads = persistent
+      ? await persistent.store.listThreads(project.id, userId, Number(req.query?.limit || 20))
+      : await inMemoryAgentHarness.store.listThreads(project.id, userId, Number(req.query?.limit || 20));
+    return res.json({ success: true, harness_version: 'coden-harness/v3', threads });
+  } catch (error) {
+    if (!isMissingAgentHarnessSchemaError(error)) throw error;
+    const threads = await inMemoryAgentHarness.store.listThreads(project.id, userId, Number(req.query?.limit || 20));
+    return res.json({ success: true, harness_version: 'coden-harness/v3', persistence: 'memory_fallback', threads });
+  }
+});
+
+app.get('/api/projects/:id/agent/threads/:threadId', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const activeTurn = resolved.thread.activeTurnId ? await resolved.harness.store.getTurn(resolved.thread.activeTurnId) : null;
+  return res.json({ success: true, harness_version: 'coden-harness/v3', thread: resolved.thread, active_turn: activeTurn });
+});
+
+app.get('/api/projects/:id/agent/threads/:threadId/events', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const after = Math.max(0, Number(req.headers['last-event-id'] || req.query?.after || 0));
+  const requestedTurnId = String(req.query?.turnId || '').trim();
+  const limit = Math.max(1, Math.min(Number(req.query?.limit || 1_000), 2_000));
+  const loadStreamEvents = async (afterStreamSequence: number) => {
+    const storedEvents = await resolved.harness.replayPublicEvents(resolved.thread.id, 0, 2_000);
+    return storedEvents
+      .filter(stored => stored.type === 'public.stream' && (!requestedTurnId || stored.turnId === requestedTurnId))
+      .map(stored => (stored.payload as any)?.event as CodenStreamEvent | undefined)
+      .filter((event): event is CodenStreamEvent => event !== undefined)
+      .filter(event => Number(event.sequence || event.id || 0) > afterStreamSequence)
+      .slice(0, limit);
+  };
+  const events = await loadStreamEvents(after);
+  const wantsSse = String(req.query?.format || '').toLowerCase() === 'sse' || String(req.headers.accept || '').includes('text/event-stream');
+  if (!wantsSse) return res.json({ success: true, harness_version: 'coden-harness/v3', thread_id: resolved.thread.id, events });
+
+  Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
+  res.setHeader('X-Coden-Thread-Id', resolved.thread.id);
+  res.flushHeaders?.();
+  let cursor = after;
+  let terminal = false;
+  const deadline = Date.now() + 20_000;
+  while (!res.writableEnded && Date.now() < deadline && !terminal) {
+    const batch = cursor === after ? events : await loadStreamEvents(cursor);
+    for (const event of batch) {
+      const sequence = Number(event.sequence || event.id || 0);
+      if (sequence <= cursor) continue;
+      res.write(serializeCodenStreamEvent(event));
+      cursor = sequence;
+      terminal = ['done', 'cancelled', 'blocked'].includes(event.type);
+    }
+    if (terminal) break;
+    res.write(CODEN_SSE_HEARTBEAT);
+    await new Promise(resolve => setTimeout(resolve, 750));
+  }
+  return res.end();
+});
+
+app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const text = redactSecrets(String(req.body?.instruction || req.body?.text || '')).trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ success: false, error: 'Instruction is required.' });
+  const instruction = await resolved.harness.steer({ turnId: req.params.turnId, userId, text });
+  const activeRunId = activeHarnessAgentRunIds.get(req.params.turnId);
+  if (activeRunId) {
+    queueAgentRunInstruction(activeRunId, {
+      id: instruction.id,
+      text,
+      createdAt: instruction.createdAt,
+      userId,
+    });
+    await updateAgentRunV3Meta(activeRunId, {
+      pending_user_instructions: publicPendingAgentInstructions(activeRunId),
+      definition_of_done_updated_at: instruction.createdAt,
+    }).catch(() => null);
+  }
+  return res.status(202).json({ success: true, harness_version: 'coden-harness/v3', instruction, message: 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.' });
+});
+
+app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/cancel', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const turn = await resolved.harness.cancelTurn(req.params.turnId, userId);
+  activeHarnessTurnControllers.get(req.params.turnId)?.abort();
+  return res.json({ success: true, harness_version: 'coden-harness/v3', turn });
+});
+
+app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/approvals/:itemId', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const result = await resolved.harness.resolveApproval(req.params.itemId, req.body?.approved === true, userId);
+  return res.json({ success: true, harness_version: 'coden-harness/v3', ...result });
 });
 
 app.get('/api/projects/:id/agent/runs', async (req: any, res: any) => {
@@ -14549,6 +14969,9 @@ app.get('/api/projects/:id/workflows/:workflowId/runs', requireAuth, async (req:
 
 app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
+  void ensureAgentHarnessSchema().catch((error: any) => {
+    console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  });
 
   registerJobHandler('workflow_run', async (job, onProgress) => {
     const client = getSupabase();

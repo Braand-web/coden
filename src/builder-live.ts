@@ -291,6 +291,8 @@ let lastWalletBalance: number | null = null;
 let lastPlan = '';
 let lastBuildSessionId = '';
 let lastAgentRunId = '';
+let activeHarnessThreadId = '';
+let activeHarnessTurnId = '';
 let activeGenerationTouchesPreview = false;
 let activeAbort: AbortController | null = null;
 let activeStreamHandle: { cancel: () => void } | null = null;
@@ -2472,11 +2474,19 @@ async function streamSimpleConversation(card: HTMLElement | null, prompt: string
         modelId: selectedModel(),
         projectId: currentProjectId || undefined,
         messages: recentConversationForAssistant(prompt),
+        clientMessageId: messageId ? `${messageId}_user` : undefined,
         assistantMessageId: messageId || undefined,
       }),
     },
     signal: activeAbort?.signal,
+    resumeRequest: currentProjectId ? ({ threadId, turnId }) => ({
+      url: `${API_BASE_URL}/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(threadId)}/events?format=sse${turnId ? `&turnId=${encodeURIComponent(turnId)}` : ''}`,
+      init: { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+    }) : undefined,
     onEvent: (type, data) => {
+      if (data?.runId) lastAgentRunId = String(data.runId);
+      if (data?.threadId) activeHarnessThreadId = String(data.threadId);
+      if (data?.turnId) activeHarnessTurnId = String(data.turnId);
       const id = messageId;
       if (id && conversationApi && isCodenStreamEvent(data)) conversationApi.applyStreamEvent(id, data);
       if (type === 'assistant_delta') {
@@ -2488,7 +2498,7 @@ async function streamSimpleConversation(card: HTMLElement | null, prompt: string
         finalPayload = data?.payload || data;
       }
     },
-    maxRetries: 0,
+    maxRetries: currentProjectId ? 4 : 0,
   });
   activeStreamHandle = stream;
   try {
@@ -2528,13 +2538,17 @@ async function streamProjectGeneration(
       body: JSON.stringify(requestBody),
     },
     signal,
+    resumeRequest: ({ threadId, turnId }) => ({
+      url: `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/agent/threads/${encodeURIComponent(threadId)}/events?format=sse${turnId ? `&turnId=${encodeURIComponent(turnId)}` : ''}`,
+      init: { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+    }),
     onConnected: () => { streamObserved = true; },
     onEvent: (type, data) => {
       streamObserved = true;
       if (type === 'done') finalPayload = data?.payload || data;
       onEvent(type, data);
     },
-    maxRetries: 0,
+    maxRetries: 4,
   });
   activeStreamHandle = stream;
   try {
@@ -3441,11 +3455,13 @@ function syncSubmitButtonState() {
   if (!submit) return;
   const hasPrompt = Boolean(input?.value.trim());
   const shouldStop = isGenerating;
-  submit.innerHTML = shouldStop ? stopIconSvg : sendIconSvg;
+  const shouldSendInstruction = isGenerating && hasPrompt;
+  submit.innerHTML = shouldStop && !shouldSendInstruction ? stopIconSvg : sendIconSvg;
   submit.classList.toggle('active', shouldStop || hasPrompt);
   submit.classList.toggle('is-generating', shouldStop);
-  submit.setAttribute('aria-label', shouldStop ? 'Stop generation' : 'Send message');
-  submit.setAttribute('title', shouldStop ? 'Stop generation' : 'Send message');
+  const submitLabel = shouldSendInstruction ? 'Send instruction' : shouldStop ? 'Stop generation' : 'Send message';
+  submit.setAttribute('aria-label', submitLabel);
+  submit.setAttribute('title', submitLabel);
   submit.setAttribute('aria-disabled', shouldStop || hasPrompt ? 'false' : 'true');
   submit.style.pointerEvents = 'auto';
   submit.style.cursor = shouldStop || hasPrompt ? 'pointer' : 'not-allowed';
@@ -4429,7 +4445,7 @@ function projectNameFromPrompt(prompt: string) {
 async function ensureProjectForPrompt(prompt: string) {
   if (currentProjectId) return;
   const initialPrompt = prompt || getInitialDashboardPrompt() || 'Create a polished fullstack web application.';
-  const selectedName = currentProjectName && currentProjectName !== 'Projet sans titre'
+  const selectedName = !isNewProjectRoute() && currentProjectName && currentProjectName !== 'Projet sans titre'
     ? currentProjectName
     : projectNameFromPrompt(initialPrompt);
   const created = await apiFetch<ProjectPayload>('/api/projects', {
@@ -5464,6 +5480,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       requestedMode,
       useLastPlan,
       modelId: selectedModel(),
+      clientMessageId: messageHandleId(status) || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),
       ...effectiveExtra,
     };
@@ -5477,8 +5494,14 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
 
     // Stream generation events into the React Response surface, then use the
     // authoritative done payload to refresh files and preview atomically.
+    activeHarnessThreadId = '';
+    activeHarnessTurnId = '';
+    lastAgentRunId = '';
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
     let payload: any = await streamProjectGeneration(currentProjectId, requestBody, (type, data) => {
+      if (data?.runId) lastAgentRunId = String(data.runId);
+      if (data?.threadId) activeHarnessThreadId = String(data.threadId);
+      if (data?.turnId) activeHarnessTurnId = String(data.turnId);
       const id = messageHandleId(status);
       if (id && conversationApi && isCodenStreamEvent(data)) {
         conversationApi.applyStreamEvent(id, data);
@@ -5640,6 +5663,12 @@ async function cancelBuild() {
   activeAbort?.abort();
   activeStreamHandle?.cancel();
   if (currentProjectId) {
+    if (activeHarnessThreadId && activeHarnessTurnId) {
+      await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'cancelled_by_user' }),
+      }).catch(() => null);
+    }
     await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/build/cancel`, {
       method: 'POST',
       body: JSON.stringify({ buildSessionId: lastBuildSessionId, agentRunId: lastAgentRunId }),
@@ -5653,6 +5682,27 @@ async function cancelBuild() {
   }
   if (activeGenerationTouchesPreview) setEmptyPreviewState('idle', 'Generation stopped');
   setBusy(false);
+}
+
+async function sendActiveHarnessInstruction(text: string) {
+  if (!currentProjectId || !text.trim()) return;
+  const instruction = repairTextEncoding(text).trim().slice(0, 4000);
+  appendMessage('user', instruction);
+  try {
+    const endpoint = activeHarnessThreadId && activeHarnessTurnId
+      ? `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/instructions`
+      : lastAgentRunId
+        ? `/api/projects/${encodeURIComponent(currentProjectId)}/agent/runs/${encodeURIComponent(lastAgentRunId)}/instructions`
+        : '';
+    if (!endpoint) throw new Error('The active agent turn is not ready to receive instructions yet.');
+    const response = await apiFetch<{ message?: string }>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ instruction }),
+    });
+    appendMessage('assistant', response.message || 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.');
+  } catch (error) {
+    appendMessage('assistant', error instanceof Error ? error.message : 'The instruction could not be queued.');
+  }
 }
 
 async function exportCode() {
@@ -6562,7 +6612,6 @@ function bindChat() {
   });
 
   const send = (mode: ChatMode) => {
-    if (isGenerating) return;
     const value = repairTextEncoding(input.value).trim();
     if (!value) return;
     input.value = '';
@@ -6570,6 +6619,10 @@ function bindChat() {
     submit.classList.remove('active');
     syncSubmitButtonState();
     scheduleWorkspaceSave({ draft_prompt: '', selected_mode: mode }, true);
+    if (isGenerating) {
+      void sendActiveHarnessInstruction(value);
+      return;
+    }
     void generateFromPrompt(value, mode, false, { studioContext: studioPromptContextPayload() });
   };
 
@@ -6583,7 +6636,6 @@ function bindChat() {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (isGenerating) return;
       send(selectedChatMode);
     }
   }, true);
@@ -6592,7 +6644,9 @@ function bindChat() {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (isGenerating) {
-      void cancelBuild();
+      const value = repairTextEncoding(input.value).trim();
+      if (value) send(selectedChatMode);
+      else void cancelBuild();
       return;
     }
     send(selectedChatMode);

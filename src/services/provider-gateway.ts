@@ -138,6 +138,7 @@ export class ProviderGateway {
     runtimeConfig?: ProviderRequestConfig;
     runtimeConfigForModel?: (modelId: AllowedModelId) => ProviderRequestConfig | undefined;
     allowFallback?: boolean;
+    onFallback?: (event: { from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
     signal?: AbortSignal;
   } = {}): AsyncGenerator<StreamChatEvent> {
     const primary = this.requireProviderModel(modelId);
@@ -147,7 +148,18 @@ export class ProviderGateway {
 
     for (const candidate of candidates) {
       const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
-      if (candidate !== primary) this.noteFallbackUse(candidate);
+      if (candidate !== primary) {
+        this.noteFallbackUse(candidate);
+        try {
+          options.onFallback?.({
+            from: primary,
+            to: candidate,
+            reason: this.classifyError(lastError, primary).diagnosticCode,
+          });
+        } catch {
+          // Observability must never break provider recovery.
+        }
+      }
       const circuitError = this.getCircuitError(candidate);
       if (circuitError) {
         lastError = circuitError;

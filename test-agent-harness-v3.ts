@@ -1,0 +1,112 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {
+  CodenAgentHarness,
+  HarnessToolRegistry,
+  InMemoryAgentHarnessStore,
+  assertNoWriterResourceConflict,
+  buildExecutionPlan,
+  createHarnessTurnIdempotencyKey,
+  runnableExecutionNodes,
+} from './src/services/agent-harness/index.ts';
+
+const store = new InMemoryAgentHarnessStore();
+const harness = new CodenAgentHarness(store, new HarnessToolRegistry());
+
+const thread = await harness.createThread({ organizationId: 'org_1', projectId: 'project_1', userId: 'user_1', title: 'CRM mission' });
+assert.equal(thread.status, 'active');
+
+const idempotencyKey = createHarnessTurnIdempotencyKey({ userId: 'user_1', projectId: 'project_1', requestId: 'request_1' });
+const first = await harness.createTurn({
+  threadId: thread.id,
+  userId: 'user_1',
+  prompt: 'Crée un CRM full-stack avec pipeline et import CSV.',
+  requestedMode: 'build',
+  idempotencyKey,
+});
+assert.equal(first.created, true);
+const duplicate = await harness.createTurn({
+  threadId: thread.id,
+  userId: 'user_1',
+  prompt: 'This duplicate must not create a second turn.',
+  requestedMode: 'build',
+  idempotencyKey,
+});
+assert.equal(duplicate.created, false);
+assert.equal(duplicate.turn.id, first.turn.id);
+
+await harness.transitionTurn(first.turn.id, 'running');
+const instruction = await harness.steer({ turnId: first.turn.id, userId: 'user_1', text: 'Ajoute aussi un import CSV.' });
+assert.equal(instruction.status, 'pending');
+assert.deepEqual((await harness.consumePendingInstructions(first.turn.id)).map(item => item.text), ['Ajoute aussi un import CSV.']);
+assert.equal((await store.listPendingInstructions(first.turn.id)).length, 0);
+
+const reader = await harness.startTool({ turnId: first.turn.id, role: 'explorer', toolName: 'workspace.read' });
+await harness.completeTool(reader.id, { files: 12 });
+const writer = await harness.startTool({ turnId: first.turn.id, role: 'frontend', toolName: 'workspace.patch', resourceKeys: ['src/App.tsx'] });
+await assert.rejects(
+  harness.startTool({ turnId: first.turn.id, role: 'backend', toolName: 'workspace.patch', resourceKeys: ['src/App.tsx'] }),
+  /already owned/,
+);
+await harness.completeTool(writer.id, { patchHash: 'sha256:test' });
+const nextWriter = await harness.startTool({ turnId: first.turn.id, role: 'backend', toolName: 'workspace.patch', resourceKeys: ['src/App.tsx'] });
+await harness.completeTool(nextWriter.id);
+
+await assert.rejects(harness.startTool({ turnId: first.turn.id, role: 'explorer', toolName: 'deployment.publish' }), /cannot use/);
+await assert.rejects(harness.startTool({ turnId: first.turn.id, role: 'orchestrator', toolName: 'deployment.publish' }), /requires explicit approval/);
+const approval = await harness.requestApproval(first.turn.id, 'deployment.publish', 'Publish the verified artifact.');
+assert.equal((await store.getTurn(first.turn.id))?.status, 'waiting_for_user');
+await harness.resolveApproval(approval.id, true, 'user_1');
+assert.equal((await store.getTurn(first.turn.id))?.status, 'running');
+const publish = await harness.startTool({ turnId: first.turn.id, role: 'orchestrator', toolName: 'deployment.publish', approvalGranted: true });
+await harness.completeTool(publish.id, { deploymentId: 'deployment_1' });
+
+await harness.recordPublicStreamEvent({
+  threadId: thread.id,
+  turnId: first.turn.id,
+  event: {
+    v: 'coden-stream-v2', runId: first.turn.id, id: 1, sequence: 1, ts: Date.now(), type: 'activity_changed',
+    phase: 'building', message: 'Coden construit l’application…', active: true,
+  },
+});
+const replay = await harness.replayPublicEvents(thread.id);
+assert.ok(replay.some(event => event.type === 'public.stream'));
+assert.deepEqual(replay.map(event => event.sequence), [...replay.map(event => event.sequence)].sort((a, b) => a - b));
+
+await harness.saveCheckpoint(first.turn.id, { phase: 'testing', artifactHash: 'sha256:artifact' });
+await harness.transitionTurn(first.turn.id, 'verifying');
+await harness.transitionTurn(first.turn.id, 'completed', { verified: true });
+assert.equal((await store.getThread(thread.id))?.activeTurnId, undefined);
+await assert.rejects(harness.transitionTurn(first.turn.id, 'running'), /Invalid harness turn transition/);
+
+const plan = buildExecutionPlan({ prompt: 'Build a CRM', mode: 'build', hasExistingFiles: false, hasBackend: true, hasDatabase: true });
+assertNoWriterResourceConflict(plan.nodes);
+assert.deepEqual(runnableExecutionNodes(plan, new Set(), new Set()).map(node => node.id), ['inspect']);
+assert.ok(plan.definitionOfDone.some(item => item.id === 'backend_health'));
+assert.ok(plan.definitionOfDone.some(item => item.id === 'database'));
+assert.throws(() => assertNoWriterResourceConflict([
+  { id: 'a', title: 'A', role: 'frontend', dependencies: [], resourceKeys: ['src/App.tsx'], optional: false },
+  { id: 'b', title: 'B', role: 'backend', dependencies: [], resourceKeys: ['src/App.tsx'], optional: false },
+]), /resource conflict/);
+
+const cancelThread = await harness.createThread({ organizationId: 'org_1', projectId: 'project_2', userId: 'user_1' });
+const cancelTurn = await harness.createTurn({ threadId: cancelThread.id, userId: 'user_1', prompt: 'Build', idempotencyKey: 'cancel_1' });
+await harness.transitionTurn(cancelTurn.turn.id, 'running');
+const signal = harness.signalForTurn(cancelTurn.turn.id);
+await harness.cancelTurn(cancelTurn.turn.id, 'user_1');
+assert.equal(signal.aborted, true);
+assert.equal((await store.getTurn(cancelTurn.turn.id))?.status, 'cancelled');
+
+const migration = fs.readFileSync(new URL('./supabase/migrations/20260831090000_coden_agent_harness_v3.sql', import.meta.url), 'utf8');
+for (const table of ['agent_threads', 'agent_turns', 'agent_items', 'agent_harness_events', 'agent_instructions']) {
+  assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`, 'i'));
+  assert.match(migration, new RegExp(`revoke all on table public\\.${table} from anon, authenticated`, 'i'));
+}
+assert.match(migration, /grant select on table public\.agent_harness_events to authenticated/i);
+assert.doesNotMatch(migration, /grant (?:insert|update|delete|all) on table public\.agent_harness_events to authenticated/i);
+assert.match(migration, /kind in \('user_message', 'assistant_message', 'plan', 'approval'\)/i);
+assert.match(migration, /visibility = 'public'/i);
+assert.match(migration, /security invoker/i);
+assert.match(migration, /unique \(thread_id, sequence\)/i);
+
+console.log('agent harness v3 tests passed');

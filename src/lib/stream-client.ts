@@ -147,6 +147,12 @@ export interface OpenCodenStreamOptions {
   signal?: AbortSignal;
   /** Called once the first HTTP stream connection is accepted. */
   onConnected?: () => void;
+  /**
+   * Returns a read-only replay request after the initial POST disconnects.
+   * The resolver is only called when the server supplied a durable thread id,
+   * so reconnecting can never create a second model run.
+   */
+  resumeRequest?: (state: { threadId: string; turnId?: string; lastEventId: number | null }) => { url: string; init?: RequestInit } | null;
 }
 
 export interface CodenStreamHandle {
@@ -160,9 +166,6 @@ export interface CodenStreamHandle {
 
 export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHandle {
   const controller = new AbortController();
-  // A resumed request would otherwise start a second model run because the
-  // server does not replay a persisted event log yet. Manual Retry creates a
-  // new explicit run; the transport never duplicates one implicitly.
   const maxRetries = Math.max(0, options.maxRetries ?? 0);
   const idleTimeoutMs = Math.max(0, options.idleTimeoutMs ?? 45_000);
   let lastEventId: number | null = null;
@@ -170,6 +173,8 @@ export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHan
   let idleTimedOut = false;
   let terminalEventReceived = false;
   let assistantContentReceived = false;
+  let durableThreadId = '';
+  let durableTurnId = '';
   let highestAcceptedSequence = -1;
   const seenEventKeys = new Set<string>();
   const externalSignal = options.signal;
@@ -182,6 +187,8 @@ export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHan
   externalSignal?.addEventListener('abort', abortFromOutside, { once: true });
 
   const handleEvent: JsonSseEventHandler = (type, data) => {
+    if (typeof data?.threadId === 'string') durableThreadId = data.threadId;
+    if (typeof data?.turnId === 'string') durableTurnId = data.turnId;
     if (data && (typeof data.sequence === 'number' || typeof data.id === 'number')) {
       const sequence = typeof data.sequence === 'number' ? data.sequence : data.id;
       const eventKey = `${typeof data.runId === 'string' ? data.runId : ''}:${sequence}`;
@@ -209,12 +216,16 @@ export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHan
     let attempt = 0;
     while (true) {
       try {
-        const headers = new Headers(options.init?.headers || {});
+        const resume = attempt > 0 && durableThreadId
+          ? options.resumeRequest?.({ threadId: durableThreadId, turnId: durableTurnId || undefined, lastEventId }) || null
+          : null;
+        const requestUrl = resume?.url || options.url;
+        const requestInit = resume?.init || options.init;
+        const headers = new Headers(requestInit?.headers || {});
         headers.set('Accept', 'text/event-stream');
         if (lastEventId !== null) headers.set('Last-Event-ID', String(lastEventId));
-
-        const response = await fetch(options.url, {
-          ...options.init,
+        const response = await fetch(requestUrl, {
+          ...requestInit,
           headers,
           signal: controller.signal,
         });
@@ -222,9 +233,6 @@ export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHan
         if (!response.ok) throw new CodenStreamHttpError(response.status);
         if (!response.body) throw new Error('Streaming responses are not supported in this environment.');
         options.onConnected?.();
-
-        // A successful connection resets the backoff window.
-        attempt = 0;
 
         const parser = createJsonSseParser(handleEvent);
         const reader = response.body.getReader();
@@ -257,11 +265,13 @@ export function openCodenStream(options: OpenCodenStreamOptions): CodenStreamHan
       } catch (error) {
         if (idleTimedOut) throw new CodenStreamIncompleteError('The AI stream was silent for too long and was stopped.');
         if (cancelled || controller.signal.aborted) return;
-        if (assistantContentReceived) throw error;
+        if (assistantContentReceived && (!durableThreadId || !options.resumeRequest)) throw error;
         // Client errors are not retryable; surface them immediately.
         if (error instanceof CodenStreamHttpError && error.status >= 400 && error.status < 500) {
           throw error;
         }
+        const originalMethod = String(options.init?.method || 'GET').toUpperCase();
+        if (originalMethod !== 'GET' && (!durableThreadId || !options.resumeRequest)) throw error;
         attempt += 1;
         if (attempt > maxRetries) throw error;
         options.onRetry?.(attempt, lastEventId);

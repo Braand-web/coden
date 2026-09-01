@@ -56,6 +56,7 @@ export function redactManagementToken(value: string): string {
 export function resolveManagementToken(explicit?: string): string {
   return (
     explicit ||
+    process.env.CODEN_SUPABASE_MGMT_TOKEN ||
     process.env.SUPABASE_MANAGEMENT_TOKEN ||
     process.env.SUPABASE_ACCESS_TOKEN ||
     ''

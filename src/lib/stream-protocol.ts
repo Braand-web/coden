@@ -152,6 +152,10 @@ interface CodenStreamEventBase {
   v: typeof CODEN_STREAM_PROTOCOL_VERSION;
   /** Stable run identity when the server persists/replays events. */
   runId?: string;
+  /** Durable Agent Harness hierarchy. Optional while legacy clients migrate. */
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
   /** Monotonic sequence number, mirrored in the SSE `id:` field. */
   id: number;
   /** v2 name for the same monotonic sequence. Kept alongside id during migration. */
@@ -510,8 +514,18 @@ type CodenStreamEventInput<T extends CodenStreamEventType> = Omit<
 export interface CodenStreamEmitter {
   emit<T extends CodenStreamEventType>(type: T, body: CodenStreamEventInput<T>): CodenStreamEvent;
   heartbeat(): void;
+  /** Waits until asynchronous persistence observers have consumed every event. */
+  flush(): Promise<void>;
   readonly lastId: number;
 }
+
+export type CodenStreamEmitterContext = {
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  onEvent?: (event: CodenStreamEvent) => void | Promise<void>;
+  onObserverError?: (error: unknown, event: CodenStreamEvent) => void;
+};
 
 /**
  * Server-side helper: creates a sequenced emitter bound to a raw write
@@ -524,14 +538,19 @@ export function createCodenStreamEmitter(
   write: (chunk: string) => void,
   startId = 0,
   runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+  context: CodenStreamEmitterContext = {},
 ): CodenStreamEmitter {
   let sequence = startId;
+  let observerQueue = Promise.resolve();
   return {
     emit(type, body) {
       sequence += 1;
       const event = {
         v: CODEN_STREAM_PROTOCOL_VERSION,
         runId,
+        threadId: context.threadId,
+        turnId: context.turnId,
+        itemId: context.itemId,
         id: sequence,
         sequence,
         ts: Date.now(),
@@ -539,10 +558,19 @@ export function createCodenStreamEmitter(
         ...body,
       } as unknown as CodenStreamEvent;
       write(serializeCodenStreamEvent(event));
+      if (context.onEvent) {
+        observerQueue = observerQueue
+          .then(() => context.onEvent?.(event))
+          .then(() => undefined)
+          .catch(error => context.onObserverError?.(error, event));
+      }
       return event;
     },
     heartbeat() {
       write(CODEN_SSE_HEARTBEAT);
+    },
+    flush() {
+      return observerQueue;
     },
     get lastId() {
       return sequence;
