@@ -93,6 +93,7 @@ import {
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
 import {
+  canReassignProjectSlug,
   deriveProjectName,
   isAutomaticallyDerivedProjectName,
   sanitizeSuggestedProjectName,
@@ -2090,6 +2091,25 @@ async function uniqueSlug(base: string, ownerId: string, excludeProjectId = ''):
     if (!existing.has(next)) return next;
   }
   return `${candidate}-${randomUUID().slice(0, 8)}`;
+}
+
+/**
+ * Resolve the slug a project keeps when its name changes, whether the rename
+ * came from the user or from a regeneration that kept following the prompt.
+ * The published-slug rule itself lives in `canReassignProjectSlug`.
+ */
+async function resolveStableProjectSlug(
+  project: Pick<GeneratedProject, 'id' | 'name' | 'slug'>,
+  nextName: string,
+  ownerId: string,
+): Promise<string> {
+  // Skip the deployment lookup entirely when the name is unchanged.
+  if (nextName === project.name) return project.slug;
+  const hasLiveDeployment = Boolean(await getLatestPublishedDeployment(project.id));
+  if (!canReassignProjectSlug({ currentName: project.name, nextName, hasLiveDeployment })) {
+    return project.slug;
+  }
+  return uniqueSlug(nextName, ownerId, project.id);
 }
 
 function isSafeProjectFilePath(filePath: string): boolean {
@@ -11150,7 +11170,7 @@ app.patch('/api/projects/:id', async (req: any, res: any) => {
   const updatedProject = {
     ...project,
     name,
-    slug: await uniqueSlug(name, userId, project.id),
+    slug: await resolveStableProjectSlug(project, name, userId),
     updated_at: new Date().toISOString(),
   };
   await saveProject(updatedProject);
@@ -12505,7 +12525,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const recoverableProject: GeneratedProject = {
         ...project,
         name: generatedProjectName,
-        slug: generatedProjectName !== project.name ? await uniqueSlug(generatedProjectName, userId) : project.slug,
+        slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
         prompt,
         model_id: generation.model,
         status: project.status || 'draft',
@@ -12640,7 +12660,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const updatedProject: GeneratedProject = {
       ...project,
       name: generatedProjectName,
-      slug: generatedProjectName !== project.name ? await uniqueSlug(generatedProjectName, userId) : project.slug,
+      slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
       prompt,
       model_id: generation.model,
       status: project.status || 'draft',

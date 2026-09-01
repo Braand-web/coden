@@ -58,6 +58,21 @@ export function isAutomaticallyDerivedProjectName(name = '', prompt = '') {
     || clean.toLowerCase() === String(prompt || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 90);
 }
 
+/**
+ * A project's slug is its public address: `<slug>.<root domain>` is the link the
+ * user shares once the app is published. Reassigning it would strand that link
+ * on the previously deployed build and orphan the old deployment, so a project
+ * that is already live keeps its slug no matter how its display name evolves.
+ */
+export function canReassignProjectSlug(input: {
+  currentName: string;
+  nextName: string;
+  hasLiveDeployment: boolean;
+}): boolean {
+  if (input.nextName === input.currentName) return false;
+  return !input.hasLiveDeployment;
+}
+
 export function sanitizeSuggestedProjectName(value: unknown, prompt = '') {
   const clean = String(value || '')
     .replace(/[^\p{L}\p{N}\s&'-]/gu, ' ')
