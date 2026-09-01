@@ -154,6 +154,7 @@ import {
 } from './src/services/agent-v2.ts';
 import {
   HybridProjectRunner,
+  isVerificationCapabilityUnavailable,
   runnerChecksToVerificationChecks,
   type RunnerResult,
 } from './src/services/project-runner.ts';
@@ -12439,11 +12440,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const verificationSummary = finalGate.verificationSummary;
     let reliabilitySummary = finalGate.reliabilitySummary;
     const qualitySummary = finalGate.qualitySummary;
+    // `runnerResult.status` is already 'failed' whenever any check really
+    // failed, so the remaining question is only whether verification was able
+    // to run at all.
     const runnerSkipped = Boolean(
       strictRunnerRequired &&
-      (!runnerResult || runnerResult.status !== 'passed' || runnerResult.checks.some(check => (
-        check.status === 'skipped' || /browser_runner_disabled|browser_runner_unavailable/i.test(check.message)
-      ))),
+      (!runnerResult
+        || runnerResult.status !== 'passed'
+        || runnerResult.checks.some(isVerificationCapabilityUnavailable)),
     );
     if (runnerSkipped) {
       verificationChecks.push({

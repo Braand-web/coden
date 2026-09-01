@@ -37,6 +37,23 @@ export type RunnerResult = {
   checks: RunnerCheck[];
 };
 
+/**
+ * A skipped check means one of two very different things: the runner could not
+ * exercise a verification capability at all, or an advisory quality heuristic
+ * was simply inconclusive. Only the first may block a release — treating every
+ * skip as a blocker made a missing meta description or a missing lint script
+ * enough to make a working app permanently unpublishable.
+ *
+ * Script execution is deliberately not listed here: the publish and preview
+ * paths run a real Vite build themselves, so the runner skipping npm scripts
+ * does not mean the project went unbuilt.
+ */
+export function isVerificationCapabilityUnavailable(check: Pick<RunnerCheck, 'check_type' | 'message'>): boolean {
+  return /browser_runner_disabled|browser_runner_unavailable/i.test(
+    `${check.check_type || ''} ${check.message || ''}`,
+  );
+}
+
 export interface RunnerAdapter {
   run(input: {
     runId: string;
@@ -178,10 +195,16 @@ export class HybridProjectRunner implements RunnerAdapter {
       checks.push(fail('preview_non_empty', 'high', 'Preview HTML is empty.'));
     } else {
       checks.push(pass('preview_non_empty', 'Preview HTML is non-empty.'));
-      if (!/<title[\s>][\s\S]*<\/title>/i.test(html)) checks.push(warn('seo_title', 'medium', 'Preview is missing a title tag.'));
-      if (!/<h1[\s>]/i.test(html)) checks.push(warn('a11y_h1', 'medium', 'Preview is missing a clear H1.'));
-      if (!/<meta\s+name=["']description["']/i.test(html)) checks.push(warn('seo_description', 'low', 'Preview is missing a meta description.'));
-      if (/<img\b(?![^>]*\balt=)/i.test(html)) checks.push(warn('a11y_img_alt', 'low', 'At least one image is missing alt text.'));
+      // In a Vite/React project index.html is only the mount shell, so the H1,
+      // title and meta description live in the rendered preview instead. Judge
+      // these on whichever source actually carries the markup, or a normal
+      // generated app is reported as missing content it clearly renders.
+      const renderedSources = [previewHtml, indexHtml].filter(source => source.trim());
+      const rendersMarkup = (pattern: RegExp) => renderedSources.some(source => pattern.test(source));
+      if (!rendersMarkup(/<title[\s>][\s\S]*<\/title>/i)) checks.push(warn('seo_title', 'medium', 'Preview is missing a title tag.'));
+      if (!rendersMarkup(/<h1[\s>]/i)) checks.push(warn('a11y_h1', 'medium', 'Preview is missing a clear H1.'));
+      if (!rendersMarkup(/<meta\s+name=["']description["']/i)) checks.push(warn('seo_description', 'low', 'Preview is missing a meta description.'));
+      if (rendersMarkup(/<img\b(?![^>]*\balt=)/i)) checks.push(warn('a11y_img_alt', 'low', 'At least one image is missing alt text.'));
     }
 
     return checks;

@@ -1,12 +1,22 @@
 [variables]
 NODE_ENV = "production"
 NPM_CONFIG_PRODUCTION = "false"
+# Pin the browser download location so the build-time install and the running
+# server agree on it. Without this Playwright caches under the build user's
+# home and the deployed process cannot find the browser it just downloaded.
+PLAYWRIGHT_BROWSERS_PATH = "/app/.cache/ms-playwright"
 
 [phases.setup]
 nixPkgs = ["nodejs_22", "npm-10_x"]
 
 [phases.install]
-cmds = ["npm install --include=dev --no-audit --no-fund"]
+cmds = [
+  "npm install --include=dev --no-audit --no-fund",
+  # The browser audit is what proves a generated app renders and reacts, and a
+  # verified preview is what unlocks publishing. Without a real browser the
+  # preview can never be verified and the publish button stays disabled.
+  "npx playwright install --with-deps chromium",
+]
 
 [phases.build]
 cmds = ["npm run build"]

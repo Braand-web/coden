@@ -48,7 +48,7 @@ export async function runBrowserInteractionAudit(input: BrowserInteractionAuditI
 export async function runBrowserInteractionAuditDetailed(input: BrowserInteractionAuditInput): Promise<BrowserTestResult> {
   const startedAt = Date.now();
   const env = input.env || process.env;
-  if (env.AGENT_BROWSER_RUNNER_ENABLED !== '1') {
+  if (!isBrowserRunnerEnabled(env)) {
     return result('skipped', startedAt, [finding('browser_runner_disabled', 'low', 'Browser interaction runner is disabled; static visual and functional checks were used.')]);
   }
 
@@ -69,9 +69,13 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
   let browser: any = null;
 
   try {
+    // Nix-based images ship their own Chromium rather than the build Playwright
+    // pins, so allow the deployment to point at it instead of failing to launch.
+    const executablePath = String(env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '').trim();
     browser = await playwright.chromium.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage'],
+      ...(executablePath ? { executablePath } : {}),
     });
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.on('pageerror', (error: Error) => runtimeErrors.push(redactError(error.message)));
@@ -236,6 +240,17 @@ function result(status: BrowserTestResult['status'], startedAt: number, findings
       file: item.selector,
     })),
   };
+}
+
+/**
+ * The browser audit is the only check that proves a generated app actually
+ * renders and reacts, and a verified preview is what unlocks publishing. It is
+ * therefore on by default and must be switched off explicitly.
+ */
+export function isBrowserRunnerEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = env.AGENT_BROWSER_RUNNER_ENABLED;
+  if (raw === undefined || raw === '') return true;
+  return !['0', 'false', 'off', 'disabled', 'no'].includes(raw.trim().toLowerCase());
 }
 
 async function loadPlaywright(): Promise<PlaywrightModule | null> {

@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { HybridProjectRunner, runnerChecksToVerificationChecks } from './src/services/project-runner.ts';
+import {
+  HybridProjectRunner,
+  isVerificationCapabilityUnavailable,
+  runnerChecksToVerificationChecks,
+} from './src/services/project-runner.ts';
 
 const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="description" content="Demo app"></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script><main><h1>Demo</h1><button>Save</button></main></body></html>';
 
@@ -166,6 +170,55 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
   assert.ok(result.checks.some(check => check.check_type === 'technical_build_score' && check.status === 'failed'));
   const verification = runnerChecksToVerificationChecks(result.checks);
   assert.ok(verification.some(check => check.key === 'runner_safe_path' && check.status === 'fail'));
+}
+
+// Only a missing verification capability may block a release. Advisory checks
+// that merely came back inconclusive must not, or a working app is
+// unpublishable for lacking a meta description or a lint script.
+{
+  // The capability is named by check_type, not by the prose message.
+  assert.equal(
+    isVerificationCapabilityUnavailable({
+      check_type: 'browser_runner_disabled',
+      message: 'Browser interaction runner is disabled; static visual and functional checks were used.',
+    }),
+    true,
+  );
+  assert.equal(
+    isVerificationCapabilityUnavailable({
+      check_type: 'browser_runner_unavailable',
+      message: 'Browser runner is enabled but Playwright is not installed in this environment.',
+    }),
+    true,
+  );
+  for (const advisory of [
+    { check_type: 'script_lint', message: 'No lint script present.' },
+    { check_type: 'script_build_exec', message: 'build execution skipped by runner policy.' },
+    { check_type: 'seo_description', message: 'Preview is missing a meta description.' },
+    { check_type: 'list_tools', message: 'List-oriented apps should include search, filters, sorting, or status controls.' },
+    { check_type: 'package_scripts', message: 'Script checks skipped for this legacy static snapshot.' },
+    { check_type: 'a11y_h1', message: 'Preview is missing a clear H1.' },
+  ]) {
+    assert.equal(isVerificationCapabilityUnavailable(advisory), false, advisory.check_type);
+  }
+}
+
+// A Vite shell carries no rendered copy, so content checks must read the
+// rendered preview rather than reporting an H1 the app clearly renders.
+{
+  const runner = new HybridProjectRunner({ executeScripts: false });
+  const result = await runner.run({
+    runId: 'run_shell',
+    projectId: 'project_shell',
+    previewHtml: '<!doctype html><html><head><title>Demo</title><meta name="description" content="Demo app"></head><body><main><h1>Demo</h1><button>Save</button></main></body></html>',
+    files: [
+      { path: 'index.html', content: '<!doctype html><html><head><title>Demo</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>' },
+      { path: 'src/main.tsx', content: "import { createRoot } from 'react-dom/client';\nimport App from './App';\ncreateRoot(document.getElementById('root')!).render(<App />);\n" },
+      { path: 'src/App.tsx', content: 'export default function App(){ return <main><h1>Demo</h1><button onClick={() => {}}>Save</button></main>; }' },
+    ],
+  });
+  assert.ok(!result.checks.some(check => check.check_type === 'a11y_h1'), 'rendered H1 must not be reported missing');
+  assert.ok(!result.checks.some(check => check.check_type === 'seo_description'), 'rendered meta description must not be reported missing');
 }
 
 console.log('test-project-runner passed');
