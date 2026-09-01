@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import type { InlineUserDecision as InlineUserDecisionModel } from '../../services/agent-run-contract';
 

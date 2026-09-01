@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { workersDevUrl } from './cloudflare-hosting-policy.ts';
+import { codenHostForSlug, workersDevUrl } from './cloudflare-hosting-policy.ts';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
@@ -199,7 +199,7 @@ export async function publishFullstackProjectToCloudflareWorkers(input: {
 }): Promise<CloudflareWorkerPublishResult> {
   const workerName = safeWorkerName(input.slug);
   const output = await runWranglerDeploy(input.projectDir, workerName);
-  const host = `${String(input.slug).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.coden.fun`;
+  const host = codenHostForSlug(input.slug);
   await cfJson(`/accounts/${accountId()}/workers/domains`, {
     method: 'PUT',
     body: JSON.stringify({ hostname: host, service: workerName }),
@@ -271,7 +271,7 @@ export async function publishProjectToCloudflareWorkers(input: {
     body: form,
   });
 
-  const host = `${String(input.slug).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')}.coden.fun`;
+  const host = codenHostForSlug(input.slug);
   await cfJson(`/accounts/${accountId()}/workers/domains`, {
     method: 'PUT',
     body: JSON.stringify({ hostname: host, service: workerName }),

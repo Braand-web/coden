@@ -1,5 +1,3 @@
-'use client';
-
 import { Response } from '../ui/response';
 
 export function AgentResponse({ content, streaming = false }: { content: string; streaming?: boolean }) {

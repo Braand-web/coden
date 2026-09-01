@@ -1,5 +1,3 @@
-'use client';
-
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ShimmeringText } from '../ui/shimmering-text';
 import type { AgentPublicPhase } from '../../services/agent-run-contract';

@@ -35,3 +35,38 @@ export function workersDevUrl(workerName: string, accountSubdomain = process.env
   const subdomain = String(accountSubdomain || '').trim().replace(/^\.+|\.+$/g, '');
   return subdomain ? `https://${workerName}.${subdomain}.workers.dev` : '';
 }
+
+export const DEFAULT_CODEN_ROOT_DOMAIN = 'coden.fun';
+
+/**
+ * The apex domain every published project is served from by default.  It is a
+ * deployment-level setting, so a self-hosted Coden must be able to move every
+ * generated app onto its own domain by setting CODEN_ROOT_DOMAIN alone.
+ */
+export function codenRootDomain(rootDomain = process.env.CODEN_ROOT_DOMAIN): string {
+  const normalized = String(rootDomain || '')
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/+$/, '')
+    .replace(/^\.+|\.+$/g, '')
+    .toLowerCase();
+  return normalized || DEFAULT_CODEN_ROOT_DOMAIN;
+}
+
+export function codenSubdomainForSlug(slug: string): string {
+  return String(slug || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'app';
+}
+
+/**
+ * The single place that decides where a published project lives.  Every caller
+ * — the Workers deploy, the Pages deploy, the persisted publication row and the
+ * URL shown to the user — must derive the host from here, otherwise Cloudflare
+ * serves one hostname while Coden advertises another.
+ */
+export function codenHostForSlug(slug: string, rootDomain = process.env.CODEN_ROOT_DOMAIN): string {
+  return `${codenSubdomainForSlug(slug)}.${codenRootDomain(rootDomain)}`;
+}

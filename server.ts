@@ -2840,13 +2840,9 @@ function getPublishedProjectPath(project: Pick<GeneratedProject, 'id' | 'slug'>)
 }
 
 function getDefaultPublishedUrl(project: Pick<GeneratedProject, 'id' | 'slug'>): string {
-  const slug = String(project.slug || project.id || 'app')
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'app';
-  const rootDomain = String(process.env.CODEN_ROOT_DOMAIN || 'coden.fun').replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  return `https://${slug}.${rootDomain}`;
+  // Must resolve through the same helper the Cloudflare deploy uses, otherwise
+  // Coden advertises a hostname that Cloudflare never serves.
+  return `https://${codenHostForSlug(String(project.slug || project.id || 'app'))}`;
 }
 
 function isFreePlanKey(plan: string | null | undefined): boolean {
@@ -14353,10 +14349,10 @@ import {
   getCustomDomainStatus,
   removePublication,
   projectSlugToCfName,
-  CODEN_ROOT_DOMAIN,
   verifyCloudflareDeployment,
 } from './src/services/publish-cloudflare.ts';
 import { buildStaticSource } from './src/services/build-runner.ts';
+import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
@@ -14764,7 +14760,7 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
         slug,
         cf_pages_project: result.cfName,
         default_url: result.defaultUrl,
-        coden_subdomain: `${slug}.${CODEN_ROOT_DOMAIN}`,
+        coden_subdomain: codenHostForSlug(slug),
         last_deployment_id: result.deploymentId,
         published_at: createdAt,
         status: 'ready',

@@ -4,7 +4,7 @@
  * Uses the Cloudflare REST API to:
  *   1. Create (idempotent) a Pages project per Coden app.
  *   2. Direct-upload a built `dist/` folder as a new deployment.
- *   3. Attach a `<slug>.coden.fun` custom domain to the Pages project.
+ *   3. Attach a `<slug>.<CODEN_ROOT_DOMAIN>` custom domain to the Pages project.
  *   4. Create a CNAME record pointing that subdomain to `<project>.pages.dev`.
  *
  * All secrets read from Railway env vars — nothing Lovable-side.
@@ -22,6 +22,9 @@ import {
 } from './publish-cloudflare-workers';
 import type { GeneratedAppRuntime } from './generated-app-runtime.ts';
 import {
+  codenHostForSlug,
+  codenRootDomain,
+  codenSubdomainForSlug,
   hostingProviderForTarget,
   resolveCloudflareHostingTarget,
   type CloudflareHostingProvider,
@@ -39,7 +42,7 @@ function accountId() { return env('CLOUDFLARE_ACCOUNT_ID'); }
 function apiToken() { return env('CLOUDFLARE_API_TOKEN'); }
 function codenZoneId() { return env('CLOUDFLARE_ZONE_ID_CODEN_FUN'); }
 
-export const CODEN_ROOT_DOMAIN = process.env.CODEN_ROOT_DOMAIN || 'coden.fun';
+export const CODEN_ROOT_DOMAIN = codenRootDomain();
 
 async function cf<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${CF_API}${path}`, {
@@ -201,7 +204,7 @@ export interface PublishResult {
   cfName: string;
   subdomain: string;             // pages.dev subdomain
   defaultUrl: string;            // https://<project>.pages.dev
-  codenUrl: string;              // https://<slug>.coden.fun
+  codenUrl: string;              // https://<slug>.<CODEN_ROOT_DOMAIN>
   deploymentId: string;
   deploymentUrl: string;
 }
@@ -280,8 +283,8 @@ export async function publishProjectToCloudflare(params: {
   const cfName = projectSlugToCfName(params.slug);
   const { subdomain } = await ensurePagesProject(cfName);
   const dep = await deployDirectory(cfName, params.distDir);
-  const codenSub = params.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  const codenHost = `${codenSub}.${CODEN_ROOT_DOMAIN}`;
+  const codenSub = codenSubdomainForSlug(params.slug);
+  const codenHost = codenHostForSlug(params.slug);
   await attachCustomDomain(cfName, codenHost);
   await upsertCnameOnCodenFun(codenSub, `${cfName}.pages.dev`);
   return {

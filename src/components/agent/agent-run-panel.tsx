@@ -1,5 +1,3 @@
-'use client';
-
 import { RotateCcw, Square } from 'lucide-react';
 import { AgentActivityShimmer } from './agent-activity-shimmer';
 import { AgentResponse } from './agent-response';
