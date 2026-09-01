@@ -127,9 +127,18 @@ function contains(files: GeneratedRuntimeFile[], pattern: RegExp) {
   return files.some(file => pattern.test(String(file.content || '')));
 }
 
+/**
+ * Selecting this profile commits the app to the Cloudflare Workers runtime and
+ * makes Router, Query and a Wrangler config mandatory, so the evidence has to be
+ * a real dependency or a real import. A bare mention of `createServerFn` — in a
+ * comment, a string or leftover scaffolding prose — used to be enough, which
+ * classified ordinary React apps as TanStack Start and then failed the whole
+ * generation for missing pieces they were never meant to have.
+ */
 function hasTanStackStart(files: GeneratedRuntimeFile[]) {
   const pkg = packageJson(files);
-  return packageHas(pkg, '@tanstack/react-start') || contains(files, /@tanstack\/react-start|createServerFn|@tanstack\/react-start\/server-entry/i);
+  return packageHas(pkg, '@tanstack/react-start')
+    || contains(files, /(?:from|require\(|import\()\s*['"]@tanstack\/react-start/i);
 }
 
 function hasTanStackRouter(files: GeneratedRuntimeFile[]) {

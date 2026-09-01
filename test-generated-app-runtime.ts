@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   createGeneratedAppManifest,
+  manifestFile,
   resolveGeneratedAppProfile,
   validateGeneratedAppManifest,
 } from './src/services/generated-app-runtime.ts';
@@ -113,5 +114,34 @@ for (const [label, markup] of [
 // The invariant in the other direction: an app with no backend must not be made
 // to carry backend configuration it never uses.
 assert.equal(staticManifest.requiredPublicEnv.length, 0);
+
+// The tanstack-fullstack profile commits the app to the Workers runtime and
+// makes Router, Query and Wrangler mandatory. A stray mention of createServerFn
+// in a comment used to select it and then fail the whole generation, so the
+// evidence must be a real dependency or a real import.
+const incidentalServerFnFiles = [
+  { path: 'package.json', content: JSON.stringify({ dependencies: { react: '^19.0.0' } }) },
+  { path: 'index.html', content: '<div id="root"></div>' },
+  { path: 'src/App.tsx', content: '// createServerFn could be used later\nexport default function App(){ return <h1>Hi</h1>; }' },
+];
+assert.equal(resolveGeneratedAppProfile({ files: incidentalServerFnFiles }), 'vite-static');
+assert.doesNotThrow(() => manifestFile({ files: incidentalServerFnFiles }));
+
+// A real TanStack Start app must still be recognised, whether the evidence is
+// the declared dependency or the import. Misclassifying it would strip its
+// server runtime on publish, which cloudflare-hosting-policy forbids.
+assert.equal(resolveGeneratedAppProfile({ files: tanstackFiles }), 'tanstack-fullstack');
+const tanstackByImportOnly = [
+  {
+    path: 'package.json',
+    content: JSON.stringify({ dependencies: { '@tanstack/react-router': '^1.0.0-rc' } }),
+  },
+  { path: 'src/routes/__root.tsx', content: 'export const Route = createRootRoute()' },
+  {
+    path: 'src/server.ts',
+    content: "import { createServerFn } from '@tanstack/react-start';\nexport const load = createServerFn();",
+  },
+];
+assert.equal(resolveGeneratedAppProfile({ files: tanstackByImportOnly }), 'tanstack-fullstack');
 
 console.log('test-generated-app-runtime passed');
