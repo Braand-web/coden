@@ -2830,6 +2830,18 @@ let webContainerUrl = '';
 let webContainerTeardown: (() => void) | null = null;
 let webContainerBootInFlight = false;
 
+function requiresLiveRuntimePreview(files: GeneratedFile[]) {
+  try {
+    const pkg = JSON.parse(files.find(file => file.path.replace(/^\.\//, '') === 'package.json')?.content || '{}');
+    const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    const hasNodeServer = Boolean(dependencies.express || dependencies.fastify || dependencies.hono || dependencies.koa);
+    const hasServerEntry = files.some(file => /^(?:server\/(?:index|server|app)|api\/index|server)\.(?:ts|js|mts|mjs)$/i.test(file.path.replace(/^\.\//, '').replace(/\\/g, '/')));
+    return hasNodeServer && hasServerEntry;
+  } catch {
+    return false;
+  }
+}
+
 async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: GeneratedFile[]) {
   if (webContainerBootInFlight) return false;
   try {
@@ -2886,7 +2898,17 @@ function setPreview(html: string, status = 'unknown') {
     // iframe shows the live Vite dev server (preview == production). On any
     // failure or when the flag is off, we fall back to the Babel preview html.
     void tryBootWebContainerPreview(frame, currentFiles).then(booted => {
-      if (!booted) frame.srcdoc = html;
+      if (booted) return;
+      if (requiresLiveRuntimePreview(currentFiles)) {
+        currentPreviewHtml = '';
+        currentPreviewStatus = 'needs_fix';
+        setEmptyPreviewState('idle', 'Full-stack preview could not start');
+        syncProjectReadinessClass();
+        syncPreviewToolbarControls();
+        showTransientNotice('The full-stack runtime did not start. Static fallback was blocked.');
+        return;
+      }
+      frame.srcdoc = html;
     });
     requestAnimationFrame(() => {
       frame.style.opacity = '1';

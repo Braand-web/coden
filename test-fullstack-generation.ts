@@ -36,6 +36,27 @@ const baseFiles = [
 
 assert.equal(shouldApplyCodenFullstackKit({ prompt, files: baseFiles, requirement }), true);
 
+const localExpressPrompt = 'Create a full-stack app with an Express TypeScript API, in-memory preview persistence, and no external service.';
+const localExpressFiles = [
+  {
+    path: 'package.json',
+    content: JSON.stringify({
+      dependencies: { react: '^18.3.1', express: '^4.21.2' },
+      devDependencies: { vite: '^7.3.6', tsx: '^4.19.2' },
+    }),
+  },
+  { path: 'server/index.ts', content: "import express from 'express'; import { store } from './store.js'; const app = express(); app.get('/api/tasks', (_req, res) => res.json(store));" },
+  { path: 'server/store.ts', content: 'export const store = [];', language: 'ts' },
+  { path: 'src/App.tsx', content: 'export default function App(){ return <main>Tasks</main> }', language: 'tsx' },
+];
+const localExpressRequirement = detectCodenCloudRequirements(localExpressPrompt);
+assert.equal(localExpressRequirement.needs_database, false);
+assert.equal(
+  shouldApplyCodenFullstackKit({ prompt: localExpressPrompt, files: localExpressFiles, requirement: localExpressRequirement }),
+  false,
+  'A real local Node backend must not be replaced by the Supabase/TanStack/Cloudflare kit.',
+);
+
 // Deterministic, blueprint-driven detection: any prompt the production blueprint
 // engine classifies as data-backed must trigger the fullstack kit, even with no
 // generated files yet and without relying on the brittle keyword list.

@@ -18,6 +18,9 @@ export function resolveCloudflareHostingTarget(
   runtime: GeneratedAppRuntime,
   legacyStaticProvider = process.env.CODEN_STATIC_HOSTING_PROVIDER,
 ): CloudflareHostingTarget {
+  if (runtime === 'node-server') {
+    throw new Error('Standalone Node applications require the Railway deployment adapter and cannot be published as static Cloudflare assets.');
+  }
   if (runtime === 'cloudflare-workers') return 'workers-fullstack';
   return String(legacyStaticProvider || '').toLowerCase() === 'cloudflare-pages'
     ? 'pages-legacy'

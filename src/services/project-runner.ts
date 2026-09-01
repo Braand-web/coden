@@ -50,8 +50,20 @@ export interface RunnerAdapter {
 }
 
 const DANGEROUS_SCRIPT_RE = /\b(rm\s+-rf|del\s+\/|format\b|curl\b|wget\b|powershell\b|pwsh\b|bash\b|sh\b|chmod\b|sudo\b|scp\b|ssh\b|node\s+-e|python\b|python3\b|eval\b)\b/i;
-const SAFE_SCRIPT_RE = /^(vite\s+build|tsc(?:\s|$)|eslint(?:\s|$)|biome\s+check(?:\s|$)|node\s+--experimental-strip-types\s+[\w./-]+|npm\s+run\s+(?:build|test|lint)(?:\s|$))/i;
 const SCRIPT_NAMES = ['lint', 'test', 'build'];
+
+const SAFE_SCRIPT_SEGMENT_RE = /^(?:vite\s+build(?:\s+[\w./:=@-]+)*|tsc(?:\s+[\w./:=@-]+)*|eslint(?:\s+[\w./*{},=:@-]+)*|biome\s+check(?:\s+[\w./*{},=:@-]+)*|node\s+(?:--experimental-strip-types|--test)\s+[\w./*{}-]+|tsx\s+--test\s+[\w./*{}-]+|vitest(?:\s+run)?(?:\s+[\w./*{},=:@-]+)*|npm\s+run\s+(?:build|test|lint|typecheck)(?:\s+--[\w-]+)*)$/i;
+
+function isSafePackageScript(value: string) {
+  const script = String(value || '').trim();
+  if (!script || DANGEROUS_SCRIPT_RE.test(script)) return false;
+  // Only a simple AND chain is supported. This prevents a safe first command
+  // from smuggling an arbitrary shell command through pipes, substitutions,
+  // semicolons or fallback operators.
+  if (/\|\||[;|`\n\r]|\$\(/.test(script)) return false;
+  const segments = script.split(/\s*&&\s*/).filter(Boolean);
+  return segments.length > 0 && segments.every(segment => SAFE_SCRIPT_SEGMENT_RE.test(segment.trim()));
+}
 
 export class HybridProjectRunner implements RunnerAdapter {
   private executeScripts: boolean;
@@ -311,7 +323,8 @@ export class HybridProjectRunner implements RunnerAdapter {
     const hasModernReact = hasPackageJson && paths.has('index.html') && Array.from(paths).some(file => /^src\/main\.(tsx|ts|jsx|js)$/.test(file)) && Array.from(paths).some(file => /^src\/app\.(tsx|jsx)$/.test(file));
     const hasCss = Array.from(paths).some(file => /\.(css|scss)$/.test(file));
     const hasResponsiveCss = /@media|clamp\(|minmax\(|grid-template|flex-wrap|container-type|max-width|\b(?:sm|md|lg|xl|2xl):/i.test(source);
-    const explicitBackendIntent = /\b(auth|login|sign in|signup|database|supabase|postgres|backend|api|server|rls|roles?|team|admin|private|secure|paiement|payment|stripe|subscription|invoice|facture|storage|upload|multi-user|multi user|account|workspace|organization|organisation|realtime|real-time)\b/i.test(prompt);
+    const explicitServerIntent = /\b(backend|api|server|fullstack|full stack)\b/i.test(prompt);
+    const privateDataIntent = /\b(auth|login|sign in|signup|supabase|postgres|database|rls|roles?|team|admin|private|secure|paiement|payment|stripe|subscription|invoice|facture|storage|upload|multi-user|multi user|account|workspace|organization|organisation|realtime|real-time)\b/i.test(prompt);
     const hasLocalStorage = /\blocalStorage\b/i.test(source);
     const hasSupabaseSchema = paths.has('supabase/schema.sql');
     const schemaFile = files.find(file => normalizePath(file.path).toLowerCase() === 'supabase/schema.sql');
@@ -319,12 +332,46 @@ export class HybridProjectRunner implements RunnerAdapter {
     const hasRls = /enable row level security/i.test(schema);
     const hasPolicies = /create policy/i.test(schema);
     const hasOwnerScope = /owner_id|organization_id|org_id/i.test(schema);
-    const hasValidation = paths.has('src/lib/validation.ts') && /zod|z\.object/i.test(source);
+    let pkg: any = {};
+    try {
+      pkg = JSON.parse(files.find(file => normalizePath(file.path).toLowerCase() === 'package.json')?.content || '{}');
+    } catch {
+      pkg = {};
+    }
+    const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    const scripts = pkg.scripts || {};
+    const hasNodeBackend = Boolean(dependencies.express || dependencies.fastify || dependencies.hono || dependencies.koa)
+      && Array.from(paths).some(file => /^(?:server\/(?:index|server|app)|api\/index|server)\.(?:ts|js|mts|mjs)$/.test(file));
+    const hasNodeApiRoutes = hasNodeBackend && /\.(?:get|post|put|patch|delete)\(\s*['"]\/api\//i.test(source);
+    const hasValidationLayer = paths.has('src/lib/validation.ts') && /zod|z\.object/i.test(source);
+    const hasServerValidation = hasValidationLayer || Boolean(
+      hasNodeBackend &&
+      /\b(?:req|request)\.body\b/i.test(source) &&
+      /\b(trim|required|length|validate|safeParse|parse)\b/i.test(source)
+    );
     const hasRateLimit = /assertRateLimit|rate limit|RATE_LIMITED/i.test(source);
     const hasWebhookSignature = /assertWebhookSignature|stripe-signature|webhook signature/i.test(source);
     const hasStripe = /\b(stripe|subscription|payment|invoice|paiement|facture)\b/i.test(source);
     const hasExplicitFullstackSurface = hasSupabaseSchema || /@supabase\/supabase-js|Coden Cloud|codenCloud|supabase\s*\.|getCodenCloudClient|from\(['"`]app_/i.test(source);
-    const hasDataIntent = explicitBackendIntent || hasStripe || hasExplicitFullstackSurface;
+    const hasDataIntent = explicitServerIntent || privateDataIntent || hasStripe || hasExplicitFullstackSurface || hasNodeBackend;
+    const requiresDatabaseSecurity = hasSupabaseSchema || /\b(supabase|postgres|database|rls|private data|multi-user|multi user)\b/i.test(prompt);
+    const requiresAuthGuard = hasSupabaseSchema || /\b(auth|login|sign in|signup|roles?|team|admin|private|secure|multi-user|multi user|account|workspace|organization|organisation)\b/i.test(prompt);
+    const hasBackendContract = hasSupabaseSchema || (hasNodeBackend && hasNodeApiRoutes);
+    const serverSource = files.filter(file => /^(?:server\/|api\/|server\.)/i.test(normalizePath(file.path))).map(file => file.content).join('\n');
+    const clientSource = files.filter(file => /^(?:src\/|app\/)/i.test(normalizePath(file.path)) && !/\/server\./i.test(normalizePath(file.path))).map(file => file.content).join('\n');
+    const viteConfig = files.filter(file => /^vite\.config\.(?:ts|js|mts|mjs)$/i.test(normalizePath(file.path))).map(file => file.content).join('\n');
+    const startScript = String(scripts.start || '');
+    const buildScript = String(scripts.build || '');
+    const devScript = String(scripts.dev || '');
+    const hasBackendDevScript = Object.entries(scripts).some(([name, body]) => /^dev:(?:server|backend|api)$/i.test(name) && /server|api|tsx|node/i.test(String(body)));
+    const devStartsBoth = /concurrently|npm-run-all|run-p\b/i.test(devScript) && /server|backend|dev:server/i.test(devScript);
+    const startRunsSource = /\b(?:tsx|ts-node|node\s+--experimental-strip-types)\b/i.test(startScript) && /server|api/i.test(startScript);
+    const startRunsBuild = /\bnode\b/i.test(startScript) && /dist|build/i.test(startScript) && /\b(?:tsc|tsup|esbuild|rollup)\b/i.test(buildScript);
+    const hasRunnableNodeStart = Boolean(startScript && (startRunsSource || startRunsBuild));
+    const hasBackendHealth = /\.(?:get|all)\(\s*['"]\/api\/(?:health|status|ready)/i.test(serverSource);
+    const clientUsesApi = /(?:fetch|axios\.(?:get|post|put|patch|delete))\(\s*['"`]\/api\//i.test(clientSource);
+    const hasViteApiProxy = !clientUsesApi || /proxy\s*:\s*\{/i.test(viteConfig);
+    const hasRunnableFullstackPreview = hasBackendDevScript || devStartsBoth || startRunsSource;
     const hasRouteGuard = /getCodenCloudClient|auth\.getUser|onAuthStateChange|ProtectedRoute|requireAuth|session/i.test(source);
     const hasDeployScript = /"build"\s*:|"preview"\s*:|vite build|next build/i.test(source);
     const noSecrets = !containsSecret(source) && !/service[_-]?role|SUPABASE_SERVICE_ROLE|sbp_[a-z0-9]|secret eyJ/i.test(source);
@@ -336,20 +383,32 @@ export class HybridProjectRunner implements RunnerAdapter {
       ? readinessPass('production_responsive', 88, 'Responsive/mobile-first CSS patterns are present.')
       : fail('production_responsive', 'medium', 'Responsive/mobile-first CSS patterns are missing.'));
     if (hasDataIntent) {
-      checks.push(hasSupabaseSchema
-        ? readinessPass('production_backend_contract', 86, 'Data app includes a backend schema contract.')
-        : fail('production_backend_contract', 'high', 'Data/auth/payment apps must include a real backend schema contract, not only frontend state.'));
-      checks.push(hasRls && hasPolicies && hasOwnerScope
-        ? readinessPass('production_database_security', 90, 'Database schema includes RLS, policies, and owner/org scoping.')
-        : fail('production_database_security', 'high', 'Private data tables need RLS, policies, and owner/org scoping.'));
-      checks.push(hasValidation
-        ? readinessPass('production_validation', 84, 'Validation layer is present.')
-        : fail('production_validation', 'high', 'Sensitive data apps need Zod/server validation.'));
-      checks.push(hasRouteGuard
-        ? readinessPass('production_auth_guard', 84, 'Auth/session guard path is present.')
-        : fail('production_auth_guard', 'high', 'Private routes or data actions need auth/session guards.'));
+      checks.push(hasBackendContract
+        ? readinessPass('production_backend_contract', 86, hasSupabaseSchema ? 'Data app includes a managed backend schema contract.' : 'Data app includes a real Node API contract.')
+        : fail('production_backend_contract', 'high', 'Data apps must include a real backend API or managed schema contract, not only frontend state.'));
+      if (requiresDatabaseSecurity) {
+        checks.push(hasRls && hasPolicies && hasOwnerScope
+          ? readinessPass('production_database_security', 90, 'Database schema includes RLS, policies, and owner/org scoping.')
+          : fail('production_database_security', 'high', 'Private persistent data tables need RLS, policies, and owner/org scoping.'));
+      }
+      checks.push(hasServerValidation
+        ? readinessPass('production_validation', 84, hasValidationLayer ? 'Shared validation layer is present.' : 'Server input validation is present.')
+        : fail('production_validation', 'high', 'Backend write operations need server-side input validation.'));
+      if (requiresAuthGuard) {
+        checks.push(hasRouteGuard
+          ? readinessPass('production_auth_guard', 84, 'Auth/session guard path is present.')
+          : fail('production_auth_guard', 'high', 'Private routes or data actions need auth/session guards.'));
+      }
     }
-    if (hasLocalStorage && hasDataIntent && !/isPreviewRuntime/i.test(source)) {
+    if (hasNodeBackend) {
+      checks.push(hasRunnableNodeStart && hasBackendHealth
+        ? readinessPass('production_node_runtime', 90, 'Node backend has a runnable production start contract and a health endpoint.')
+        : fail('production_node_runtime', 'high', 'Node fullstack apps need a runnable start script, compiled server output or source runner, and /api/health.'));
+      checks.push(hasRunnableFullstackPreview && hasViteApiProxy
+        ? readinessPass('production_fullstack_preview', 90, 'Frontend and Node API can start together in preview and /api is proxied.')
+        : fail('production_fullstack_preview', 'high', 'Fullstack preview needs a backend development command (or combined dev script) and a Vite /api proxy.'));
+    }
+    if (hasLocalStorage && privateDataIntent && !/isPreviewRuntime/i.test(source)) {
       checks.push(fail('production_no_fake_localstorage', 'high', 'localStorage cannot be production persistence for real private data.'));
     } else if (hasLocalStorage) {
       checks.push(readinessPass('production_demo_data_honesty', 78, 'Local demo storage is limited or appears preview-only.'));
@@ -357,7 +416,7 @@ export class HybridProjectRunner implements RunnerAdapter {
     checks.push(noSecrets
       ? readinessPass('production_secret_safety', 96, 'No frontend secrets or service role keys detected.')
       : fail('production_secret_safety', 'high', 'Secrets or service role keys must never appear in generated frontend files.'));
-    if (hasDataIntent || hasStripe) {
+    if (requiresAuthGuard || hasStripe) {
       checks.push(hasRateLimit
         ? readinessPass('production_rate_limit', 78, 'Rate limit helper or guard is present.')
         : warn('production_rate_limit', 'medium', 'Sensitive actions should include rate limiting.'));
@@ -373,11 +432,11 @@ export class HybridProjectRunner implements RunnerAdapter {
 
     const categoryScores = {
       frontend: scoreFromBooleans([hasModernReact, hasCss, hasResponsiveCss]),
-      backend: hasDataIntent ? scoreFromBooleans([hasSupabaseSchema, hasValidation, hasRouteGuard]) : 100,
-      database: hasDataIntent ? scoreFromBooleans([hasSupabaseSchema, hasRls, hasPolicies, hasOwnerScope]) : 100,
-      security: scoreFromBooleans([noSecrets, !hasStripe || hasWebhookSignature, !hasDataIntent || hasValidation, !hasDataIntent || hasRouteGuard]),
+      backend: hasDataIntent ? scoreFromBooleans([hasBackendContract, hasServerValidation, !requiresAuthGuard || hasRouteGuard]) : 100,
+      database: requiresDatabaseSecurity ? scoreFromBooleans([hasSupabaseSchema, hasRls, hasPolicies, hasOwnerScope]) : 100,
+      security: scoreFromBooleans([noSecrets, !hasStripe || hasWebhookSignature, !hasDataIntent || hasServerValidation, !requiresAuthGuard || hasRouteGuard]),
       responsive: scoreFromBooleans([hasCss, hasResponsiveCss]),
-      deploy: scoreFromBooleans([hasDeployScript, hasPackageJson]),
+      deploy: scoreFromBooleans([hasDeployScript, hasPackageJson, !hasNodeBackend || hasRunnableNodeStart]),
     };
     const minScore = Math.min(...Object.values(categoryScores));
     checks.push({
@@ -436,7 +495,7 @@ export class HybridProjectRunner implements RunnerAdapter {
         checks.push({ check_type: `script_${scriptName}`, status: 'skipped', severity: 'info', message: `No ${scriptName} script present.` });
         continue;
       }
-      if (DANGEROUS_SCRIPT_RE.test(scriptBody) || !SAFE_SCRIPT_RE.test(scriptBody)) {
+      if (!isSafePackageScript(scriptBody)) {
         checks.push(fail(`script_${scriptName}_safe`, 'high', `Blocked unsafe or unsupported ${scriptName} script.`, 'package.json'));
         continue;
       }
@@ -533,8 +592,17 @@ function isSafeProjectPath(value: string) {
 }
 
 function hasLocalModule(filePaths: Set<string>, resolved: string) {
+  // TypeScript source commonly imports `./module.js` so the emitted ESM keeps
+  // a valid runtime extension. Static resolution must map that specifier back
+  // to module.ts/module.tsx instead of reporting a false missing import.
+  const sourceStem = resolved.replace(/\.(?:mjs|cjs|js|jsx)$/i, '');
   const candidates = [
     resolved,
+    sourceStem,
+    `${sourceStem}.ts`,
+    `${sourceStem}.tsx`,
+    `${sourceStem}.mts`,
+    `${sourceStem}.cts`,
     `${resolved}.ts`,
     `${resolved}.tsx`,
     `${resolved}.js`,

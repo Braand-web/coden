@@ -87,6 +87,20 @@ function hasSupabaseUsage(files: FullstackGeneratedFile[]) {
   return files.some(file => /supabase|@supabase\/supabase-js|Coden Cloud|codenCloud|auth\.|\.from\(/i.test(file.content || ''));
 }
 
+function hasStandaloneNodeBackend(files: FullstackGeneratedFile[]) {
+  const packageFile = fileByPath(files, 'package.json');
+  let pkg: any = {};
+  try { pkg = JSON.parse(packageFile?.content || '{}'); } catch { pkg = {}; }
+  const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const hasServerFramework = Boolean(dependencies.express || dependencies.fastify || dependencies.hono || dependencies.koa);
+  const hasServerEntry = files.some(file => /^(server\/(?:index|server|app)|api\/index|server)\.(?:ts|js|mts|mjs)$/i.test(normalizePath(file.path)));
+  return hasServerFramework && hasServerEntry;
+}
+
+function explicitlyRequestsManagedCodenBackend(prompt: string) {
+  return /\b(supabase|coden cloud|cloudflare(?: workers?)?|tanstack start|serverless|managed backend|backend manag[ée])\b/i.test(prompt || '');
+}
+
 function blueprintRequiresBackend(prompt: string) {
   const blueprint = inferProductionBlueprint(prompt);
   const backend = blueprint.backend;
@@ -103,6 +117,19 @@ export function shouldApplyCodenFullstackKit(input: {
   files: FullstackGeneratedFile[];
   requirement: CodenCloudRequirement;
 }) {
+  // A generated Express/Fastify/Hono server is already a real backend. Do not
+  // replace it with the Coden Cloud/TanStack/Supabase template unless the user
+  // explicitly requested that managed runtime. Mixing both runtimes creates
+  // duplicate dependencies, incompatible scripts and a preview that can never
+  // start honestly.
+  if (
+    hasStandaloneNodeBackend(input.files) &&
+    !hasSupabaseUsage(input.files) &&
+    !explicitlyRequestsManagedCodenBackend(input.prompt)
+  ) {
+    return false;
+  }
+
   return Boolean(
     hasCodenCloudRequirement(input.requirement) ||
     hasSupabaseUsage(input.files) ||

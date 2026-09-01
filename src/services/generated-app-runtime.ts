@@ -1,6 +1,6 @@
-export type GeneratedAppProfile = 'tanstack-fullstack' | 'vite-static' | 'legacy-vite-fullstack';
+export type GeneratedAppProfile = 'tanstack-fullstack' | 'node-fullstack' | 'vite-static' | 'legacy-vite-fullstack';
 export type GeneratedAppFramework = 'tanstack-start' | 'vite-react';
-export type GeneratedAppRuntime = 'cloudflare-workers' | 'static-assets';
+export type GeneratedAppRuntime = 'cloudflare-workers' | 'node-server' | 'static-assets';
 
 export type GeneratedAppCapability = {
   ssr: boolean;
@@ -29,7 +29,7 @@ export type GeneratedAppManifest = {
   profile: GeneratedAppProfile;
   framework: GeneratedAppFramework;
   runtime: GeneratedAppRuntime;
-  backend: 'coden-cloud-supabase' | 'none';
+  backend: 'coden-cloud-supabase' | 'node-api' | 'none';
   buildCommand: string;
   devCommand: string;
   outputDirectory: string;
@@ -43,10 +43,10 @@ export type GeneratedAppManifest = {
 
 const generatedAppManifestSchema = z.object({
   schemaVersion: z.literal(1),
-  profile: z.enum(['tanstack-fullstack', 'vite-static', 'legacy-vite-fullstack']),
+  profile: z.enum(['tanstack-fullstack', 'node-fullstack', 'vite-static', 'legacy-vite-fullstack']),
   framework: z.enum(['tanstack-start', 'vite-react']),
-  runtime: z.enum(['cloudflare-workers', 'static-assets']),
-  backend: z.enum(['coden-cloud-supabase', 'none']),
+  runtime: z.enum(['cloudflare-workers', 'node-server', 'static-assets']),
+  backend: z.enum(['coden-cloud-supabase', 'node-api', 'none']),
   buildCommand: z.string().trim().min(1),
   devCommand: z.string().trim().min(1),
   outputDirectory: z.string().trim().min(1).refine(isProjectRelativePath, 'Output directory must stay inside the project.'),
@@ -146,6 +146,13 @@ function hasServerEntry(files: GeneratedRuntimeFile[]) {
   return Boolean(fileContent(files, 'src/server.ts') || fileContent(files, 'server.ts') || contains(files, /createServerEntry|server-only|createServerFn/i));
 }
 
+function hasStandaloneNodeBackend(files: GeneratedRuntimeFile[]) {
+  const pkg = packageJson(files);
+  const hasServerDependency = ['express', 'fastify', 'hono', 'koa'].some(name => packageHas(pkg, name));
+  const hasServerFile = files.some(file => /^(?:server\/(?:index|server|app)|api\/index|server)\.(?:ts|js|mts|mjs)$/i.test(normalizePath(file.path)));
+  return hasServerDependency && hasServerFile;
+}
+
 function inferRoutes(files: GeneratedRuntimeFile[]): GeneratedAppRoute[] {
   const routes: GeneratedAppRoute[] = [];
   for (const file of files) {
@@ -181,6 +188,7 @@ export function resolveGeneratedAppProfile(input: {
   );
 
   if (hasTanStackStart(input.files)) return 'tanstack-fullstack';
+  if (hasStandaloneNodeBackend(input.files)) return 'node-fullstack';
   if (hasBackend) return 'legacy-vite-fullstack';
   return 'vite-static';
 }
@@ -199,28 +207,28 @@ export function createGeneratedAppManifest(input: {
   const hasStorage = Boolean(input.requirement?.needs_storage || contains(input.files, /storage\.from|upload|bucket|storage\.objects/i));
   const hasRealtime = Boolean(input.requirement?.needs_realtime || contains(input.files, /channel\(|realtime|postgres_changes/i));
   const hasPayments = contains(input.files, /stripe|checkout|payment|subscription|invoice/i);
-  const hasServerFunctions = Boolean(input.requirement?.needs_edge_functions || input.requirement?.needs_secrets || hasServerEntry(input.files) || contains(input.files, /supabase\/functions|server function|createServerFn/i));
-  const fullstack = profile === 'tanstack-fullstack';
+  const nodeFullstack = profile === 'node-fullstack';
+  const hasServerFunctions = Boolean(nodeFullstack || input.requirement?.needs_edge_functions || input.requirement?.needs_secrets || hasServerEntry(input.files) || contains(input.files, /supabase\/functions|server function|createServerFn/i));
+  const cloudflareFullstack = profile === 'tanstack-fullstack';
+  const managedBackend = !nodeFullstack && (hasDatabase || hasAuth || hasStorage || hasRealtime || hasServerFunctions || hasPayments);
 
   return {
     schemaVersion: 1,
     profile,
     framework: tanstack ? 'tanstack-start' : 'vite-react',
-    runtime: fullstack ? 'cloudflare-workers' : 'static-assets',
-    backend: hasDatabase || hasAuth || hasStorage || hasRealtime || hasServerFunctions || hasPayments
-      ? 'coden-cloud-supabase'
-      : 'none',
-    buildCommand: fullstack && tanstack ? 'npm run build' : 'npm run build',
+    runtime: cloudflareFullstack ? 'cloudflare-workers' : nodeFullstack ? 'node-server' : 'static-assets',
+    backend: nodeFullstack ? 'node-api' : managedBackend ? 'coden-cloud-supabase' : 'none',
+    buildCommand: 'npm run build',
     devCommand: 'npm run dev',
     outputDirectory: 'dist',
     routes: inferRoutes(input.files),
-    requiredPublicEnv: (hasDatabase || hasAuth)
+    requiredPublicEnv: managedBackend && (hasDatabase || hasAuth)
       ? [
           { name: 'VITE_CODEN_CLOUD_SUPABASE_URL', scope: 'public', required: true, description: 'URL publique du backend Coden Cloud.' },
           { name: 'VITE_CODEN_CLOUD_SUPABASE_ANON_KEY', scope: 'public', required: true, description: 'Clé publishable du backend Coden Cloud.' },
         ]
       : [],
-    requiredServerEnv: input.requirement?.needs_secrets || hasServerFunctions
+    requiredServerEnv: !nodeFullstack && (input.requirement?.needs_secrets || hasServerFunctions)
       ? [{ name: 'CODEN_SERVER_RUNTIME', scope: 'server', required: true, description: 'Configuration serveur injectée par le runtime Coden/Cloudflare.' }]
       : [],
     capabilities: {
@@ -238,6 +246,7 @@ export function createGeneratedAppManifest(input: {
       'Aucun secret serveur ne se trouve dans le bundle client.',
       ...(hasDatabase || hasAuth ? ['Les accès privés utilisent une session et des policies RLS vérifiables.'] : []),
       ...(tanstack ? ['Le rendu SSR/hydration ne produit aucune erreur de mismatch.'] : []),
+      ...(nodeFullstack ? ['Le serveur Node démarre, son healthcheck répond et les appels /api du frontend atteignent le backend.'] : []),
     ],
     generatedAt: input.now || new Date().toISOString(),
   };
@@ -255,7 +264,10 @@ export function validateGeneratedAppManifest(manifest: GeneratedAppManifest): st
   if (manifest.profile === 'tanstack-fullstack' && manifest.runtime !== 'cloudflare-workers') {
     errors.push('TanStack fullstack apps must target the Cloudflare Workers runtime.');
   }
-  if (manifest.backend !== 'none' && !manifest.requiredPublicEnv.some(env => env.name.includes('SUPABASE'))) {
+  if (manifest.profile === 'node-fullstack' && (manifest.runtime !== 'node-server' || manifest.backend !== 'node-api')) {
+    errors.push('Node fullstack apps must target the Node server runtime and declare a Node API backend.');
+  }
+  if (manifest.backend === 'coden-cloud-supabase' && !manifest.requiredPublicEnv.some(env => env.name.includes('SUPABASE'))) {
     errors.push('Backend applications must declare public runtime configuration.');
   }
   return errors;

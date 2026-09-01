@@ -77,7 +77,9 @@ const DEDICATED_BACKEND_PATTERNS = [
 // into a needlessly heavy full-stack project.
 const LOCAL_ONLY_RUNTIME_PATTERNS = [
   /\b(no backend|without (?:a )?backend|backendless|frontend[- ]only|client[- ]side only|localstorage|browser storage|offline[- ]only)\b/i,
+  /\b(no|without) external (?:service|provider|database|api)s?\b/i,
   /\b(sans (?:backend|base de donn[ée]es?|api|service externe)|uniquement (?:c[ôo]t[ée] client|en local)|stockage local)\b/i,
+  /\b(aucun|sans) services? externes?\b/i,
 ];
 
 function explicitlyRequestsLocalOnlyRuntime(text: string) {

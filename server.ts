@@ -352,13 +352,16 @@ const COUNTRY_NAMES: Record<string, string> = {
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
 
-// WebContainer preview requires cross-origin isolation. Gated by env so the
-// default behavior (and third-party embeds / OAuth popups) is unchanged until
-// the WebContainer preview is rolled out.
-if (process.env.CODEN_WEBCONTAINER_PREVIEW === '1') {
-  app.use((_req: any, res: any, next: any) => {
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+// The Builder is a code-execution surface and needs cross-origin isolation for
+// its WebContainer sandbox. Keep the policy scoped to the Builder document so
+// landing/auth pages and OAuth popups retain their normal browser behavior.
+// Set CODEN_WEBCONTAINER_PREVIEW=0 only as an emergency rollback.
+if (process.env.CODEN_WEBCONTAINER_PREVIEW !== '0') {
+  app.use((req: any, res: any, next: any) => {
+    if (/^\/builder\.html\/?$/i.test(String(req.path || ''))) {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    }
     next();
   });
 }
@@ -12328,6 +12331,94 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     previewHtml = finalGate.previewHtml;
     runnerResult = finalGate.runnerResult;
     if (finalGate.autoFixPatch) autoFix = finalGate.autoFixPatch;
+
+    // Deterministic AutoFix handles known mechanical failures. When verified
+    // blockers remain, use one bounded model-backed repair pass in the same
+    // run, project and credit reservation. This is the safe checkpoint where
+    // steering instructions received during generation are also consumed.
+    // Without this pass the assistant could say "I will fix it" while the DAG
+    // had already terminated as needs_fix.
+    if (
+      finalGate.reliabilitySummary.status === 'failed' &&
+      skillBudget.maxRetries > 0 &&
+      !generationAbortController.signal.aborted
+    ) {
+      emitActivity('fixing', 'Coden corrige les blocages vérifiés…', 'Coden is repairing the verified blockers…');
+      const repairBlockers = finalGate.reliabilitySummary.blocking.slice(0, 12).map(item => ({
+        key: item.key,
+        file: item.file || null,
+        severity: item.severity,
+        message: item.message,
+      }));
+      const repairDecision: IntentDecision = {
+        ...decision,
+        intent: 'debug_fix',
+        requiresFileChanges: true,
+        requiresPreviewRebuild: true,
+        nextAction: 'debug_fix',
+      };
+      try {
+        const repairGeneration = await generateFilesWithAi({
+          projectName: generationProjectName,
+          prompt: [
+            promptWithPendingAgentInstructions(basePrompt, agentRunId),
+            '',
+            'Repair the existing project in place. Change only what is needed to resolve every verified blocker below, preserve valid files, keep the requested runtime, and do not introduce an external service the user excluded.',
+            `Verified blockers: ${JSON.stringify(repairBlockers)}`,
+            'Return the project-file JSON contract. Do not promise a later repair: implement it now.',
+          ].join('\n'),
+          project: projectForRun,
+          decision: repairDecision,
+          modelId: effectiveModelSelection,
+          userCredits: walletForRouting,
+          existingFiles: finalFiles,
+          seniorAgentContext,
+          deepReasoningContract,
+          visionInputs,
+          skill,
+          skillBudget,
+          signal: generationAbortController.signal,
+          allowModelFallback: requestedModelSelection === 'auto',
+          recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
+        });
+        generation.cost_usd += repairGeneration.cost_usd;
+        const repairedByPath = new Map<string, GeneratedFile>();
+        finalFiles.forEach(file => repairedByPath.set(file.path, file));
+        repairGeneration.files.forEach(file => repairedByPath.set(file.path, file));
+        finalFiles = ensureModernFrontendProject(
+          Array.from(repairedByPath.values()).sort((a, b) => a.path.localeCompare(b.path)),
+          generationProjectName,
+          promptWithPendingAgentInstructions(prompt, agentRunId),
+          project.id,
+        );
+        pipeline = runPreviewPipeline(projectForRun, finalFiles);
+        finalGate = await finalReliabilityAutoFix({
+          project: projectForRun,
+          userId,
+          agentRunId,
+          requestId,
+          files: finalFiles,
+          pipeline,
+          runnerResult: null,
+          uiPolicy,
+          hasExistingFiles: existingFiles.length > 0,
+          shouldRunRunner: Boolean((AGENT_V3_ENABLED || AGENT_RUNTIME_V2_ENABLED) && (reliability.requires_runner || strictRunnerRequired)),
+          maxAttempts: skillBudget.maxRetries,
+          signal: generationAbortController.signal,
+        });
+        finalFiles = finalGate.files;
+        pipeline = finalGate.pipeline;
+        previewHtml = finalGate.previewHtml;
+        runnerResult = finalGate.runnerResult;
+        if (finalGate.autoFixPatch) autoFix = finalGate.autoFixPatch;
+      } catch (repairError: any) {
+        console.warn('[coden:model_backed_reliability_repair_failed]', {
+          project_id: project.id,
+          run_id: agentRunId || requestId,
+          message: redactSecrets(repairError?.message || String(repairError), '[redacted]'),
+        });
+      }
+    }
     const verificationChecks = finalGate.verificationChecks;
     const verificationSummary = finalGate.verificationSummary;
     let reliabilitySummary = finalGate.reliabilitySummary;
@@ -12446,7 +12537,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const finalizerDecision = { ...decision, intent: 'conversation', requiresFileChanges: false, requiresPreviewRebuild: false, requiresCredits: false } as IntentDecision;
       const finalizer = await createAgentTextResponse({
         project: recoverableProject,
-        prompt: `${promptWithPendingAgentInstructions(agentPromptForText, agentRunId)}\n\nWrite the final user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. Facts: ${JSON.stringify(factLedger.facts)}`,
+        prompt: `${promptWithPendingAgentInstructions(agentPromptForText, agentRunId)}\n\nWrite the terminal user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. This run ends after the response: do not say that you are about to inspect, fix, retest, or continue. State the remaining blocker, explain that the recoverable draft was saved, and offer an explicit retry. Facts: ${JSON.stringify(factLedger.facts)}`,
         files: finalFiles,
         decision: finalizerDecision,
         modelId: effectiveModelSelection,
@@ -14600,6 +14691,16 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     const contract = await readGeneratedRuntimeContract(project);
     if (contract.validation.length) {
       return res.status(422).json({ success: false, error: 'Generated app manifest is invalid.', validation: contract.validation, manifest: contract.manifest, request_id: requestId });
+    }
+    if (contract.manifest.runtime === 'node-server' || contract.universalManifest.deployment?.target === 'railway') {
+      return res.status(409).json({
+        success: false,
+        error: 'This standalone Node application requires the Railway deployment adapter; static Cloudflare publication is blocked to preserve its backend.',
+        message: 'This standalone Node application requires the Railway deployment adapter; static Cloudflare publication is blocked to preserve its backend.',
+        diagnostic_code: 'RAILWAY_DEPLOYMENT_ADAPTER_REQUIRED',
+        request_id: requestId,
+        suggested_action: 'configure_railway_deployment',
+      });
     }
     const artifactHash = immutableArtifactHash({
       files: contract.files.map(file => ({ path: file.path, content: file.content })),

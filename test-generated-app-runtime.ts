@@ -30,6 +30,24 @@ assert.equal(legacyManifest.backend, 'coden-cloud-supabase');
 assert.equal(legacyManifest.capabilities.database, true);
 assert.ok(legacyManifest.requiredPublicEnv.length > 0);
 
+const nodeFullstackFiles = [
+  {
+    path: 'package.json',
+    content: JSON.stringify({
+      scripts: { dev: 'vite', 'dev:server': 'tsx server/index.ts', build: 'vite build && tsc -p tsconfig.server.json', start: 'node dist-server/index.js' },
+      dependencies: { react: '^19.0.0', vite: '^7.0.0', express: '^5.0.0' },
+    }),
+  },
+  { path: 'server/index.ts', content: 'app.get("/api/health", handler)' },
+  { path: 'vite.config.ts', content: 'export default { server: { proxy: { "/api": "http://localhost:3001" } } }' },
+];
+const nodeManifest = createGeneratedAppManifest({ files: nodeFullstackFiles });
+assert.equal(nodeManifest.profile, 'node-fullstack');
+assert.equal(nodeManifest.runtime, 'node-server');
+assert.equal(nodeManifest.backend, 'node-api');
+assert.equal(nodeManifest.requiredPublicEnv.length, 0);
+assert.deepEqual(validateGeneratedAppManifest(nodeManifest), []);
+
 const tanstackFiles = [
   {
     path: 'package.json',

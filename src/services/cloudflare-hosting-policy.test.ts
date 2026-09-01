@@ -10,6 +10,10 @@ describe('Cloudflare hosting policy', () => {
     expect(resolveCloudflareHostingTarget('cloudflare-workers', 'cloudflare-pages')).toBe('workers-fullstack');
   });
 
+  it('never downgrades a Node server to static hosting', () => {
+    expect(() => resolveCloudflareHostingTarget('node-server', 'cloudflare-pages')).toThrow(/Railway deployment adapter/i);
+  });
+
   it('uses Workers Static Assets by default for static apps', () => {
     expect(resolveCloudflareHostingTarget('static-assets', '')).toBe('workers-static-assets');
     expect(hostingProviderForTarget('workers-static-assets')).toBe('cloudflare-workers');

@@ -67,6 +67,7 @@ export function webContainersSupported(): boolean {
 export function webContainerPreviewEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   if ((window as any).__CODEN_FLAGS__?.webcontainerPreview) return true;
+  if ((globalThis as any).crossOriginIsolated === true) return true;
   try {
     const meta = document.querySelector('meta[name="coden-webcontainer-preview"]') as HTMLMetaElement | null;
     if (meta && meta.content === '1') return true;
@@ -87,6 +88,71 @@ export type BootOptions = {
   onStatus?: (status: 'booting' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error') => void;
 };
 
+export type WebContainerLaunchPlan = {
+  frontend: [string, string[]];
+  backend?: [string, string[], Record<string, string>];
+  frontendPort: number;
+  backendPort?: number;
+  fullstack: boolean;
+};
+
+function readPackage(files: RunnerFile[]) {
+  try {
+    return JSON.parse(files.find(file => file.path.replace(/^\.\//, '') === 'package.json')?.content || '{}') as {
+      scripts?: Record<string, string>;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readDeclaredPreviewPort(files: RunnerFile[]) {
+  try {
+    const raw = files.find(file => file.path.replace(/^\.\//, '') === 'coden.project.json')?.content;
+    const port = raw ? Number(JSON.parse(raw)?.preview?.port) : NaN;
+    return Number.isInteger(port) && port > 0 && port < 65536 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Pure launch-plan inference, kept separate so the real browser boot is testable. */
+export function inferWebContainerLaunchPlan(files: RunnerFile[]): WebContainerLaunchPlan {
+  const pkg = readPackage(files);
+  const scripts = pkg.scripts || {};
+  const dependencies = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+  const paths = new Set(files.map(file => file.path.replace(/^\.\//, '').replace(/\\/g, '/')));
+  const serverEntry = ['server/index.ts', 'server/server.ts', 'server/app.ts', 'server.ts', 'api/index.ts', 'server/index.js', 'server.js']
+    .find(path => paths.has(path));
+  const fullstack = Boolean(serverEntry && (dependencies.express || dependencies.fastify || dependencies.hono || dependencies.koa));
+  const frontendPort = readDeclaredPreviewPort(files) || (dependencies.next ? 3000 : 5173);
+  const backendPort = fullstack ? 3001 : undefined;
+  const devScript = String(scripts.dev || '');
+  const devStartsBoth = fullstack && /concurrently|npm-run-all|run-p\b/i.test(devScript) && /server|backend|dev:server/i.test(devScript);
+  const frontend: [string, string[]] = devStartsBoth
+    ? ['npm', ['run', 'dev']]
+    : ['npm', ['run', 'dev', '--', '--host', '0.0.0.0', '--port', String(frontendPort), '--strictPort']];
+
+  let backend: WebContainerLaunchPlan['backend'];
+  if (fullstack && !devStartsBoth && backendPort) {
+    const backendEnv = { PORT: String(backendPort), HOST: '0.0.0.0', NODE_ENV: 'development' };
+    const devServerName = Object.keys(scripts).find(name => /^dev:(?:server|backend|api)$/i.test(name));
+    if (devServerName) {
+      backend = ['npm', ['run', devServerName], backendEnv];
+    } else if (/\b(?:tsx|ts-node|node\s+--experimental-strip-types)\b/i.test(String(scripts.start || '')) && /server|api/i.test(String(scripts.start || ''))) {
+      backend = ['npm', ['run', 'start'], backendEnv];
+    } else if (serverEntry?.endsWith('.ts')) {
+      backend = ['npx', ['tsx', serverEntry], backendEnv];
+    } else if (serverEntry) {
+      backend = ['node', [serverEntry], backendEnv];
+    }
+  }
+
+  return { frontend, backend, frontendPort, backendPort, fullstack };
+}
+
 let bootedContainer: any = null;
 
 /**
@@ -99,14 +165,15 @@ export async function bootCodenWebContainer(options: BootOptions): Promise<BootR
     return { ok: false, reason: 'WebContainers require a cross-origin-isolated context (COOP/COEP headers).' };
   }
   const installCmd = options.installCmd || ['npm', ['install', '--no-audit', '--no-fund']];
-  const devCmd = options.devCmd || ['npm', ['run', 'dev', '--', '--host']];
+  const launchPlan = inferWebContainerLaunchPlan(options.files);
+  const devCmd = options.devCmd || launchPlan.frontend;
   const log = options.onLog || (() => {});
   const status = options.onStatus || (() => {});
 
   try {
     status('booting');
     // Dynamic import so the heavy dependency only loads when the flag is on.
-    const mod: any = await import(/* @vite-ignore */ '@webcontainer/api');
+    const mod: any = await import('@webcontainer/api');
     const WebContainer = mod.WebContainer;
     if (bootedContainer) { try { await bootedContainer.teardown(); } catch { /* ignore */ } bootedContainer = null; }
     const container = await WebContainer.boot();
@@ -125,20 +192,40 @@ export async function bootCodenWebContainer(options: BootOptions): Promise<BootR
     }
 
     status('starting');
-    const dev = await container.spawn(devCmd[0], devCmd[1]);
-    dev.output.pipeTo(new WritableStream({ write: chunk => log(String(chunk)) }));
-
-    const url: string = await new Promise((resolve, reject) => {
+    const expectedPorts = new Set<number>([launchPlan.frontendPort]);
+    if (launchPlan.backendPort) expectedPorts.add(launchPlan.backendPort);
+    const readyUrls = new Map<number, string>();
+    const ready = new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Dev server did not become ready in time.')), 90_000);
-      container.on('server-ready', (_port: number, readyUrl: string) => {
-        clearTimeout(timer);
-        resolve(readyUrl);
+      container.on('server-ready', (port: number, readyUrl: string) => {
+        readyUrls.set(port, readyUrl);
+        if ([...expectedPorts].every(expectedPort => readyUrls.has(expectedPort))) {
+          clearTimeout(timer);
+          resolve(readyUrls.get(launchPlan.frontendPort) || readyUrl);
+        }
       });
       container.on('error', (err: any) => {
         clearTimeout(timer);
         reject(new Error(String(err?.message || err)));
       });
     });
+
+    const earlyExits: Promise<never>[] = [];
+    const rejectOnEarlyExit = (process: any, label: string) => {
+      earlyExits.push(process.exit.then((code: number) => {
+        throw new Error(`${label} exited before preview readiness (exit ${code}).`);
+      }));
+    };
+    if (launchPlan.backend) {
+      const [backendCommand, backendArgs, backendEnv] = launchPlan.backend;
+      const backend = await container.spawn(backendCommand, backendArgs, { env: backendEnv });
+      backend.output.pipeTo(new WritableStream({ write: chunk => log(String(chunk)) }));
+      rejectOnEarlyExit(backend, 'Backend server');
+    }
+    const dev = await container.spawn(devCmd[0], devCmd[1]);
+    dev.output.pipeTo(new WritableStream({ write: chunk => log(String(chunk)) }));
+    rejectOnEarlyExit(dev, 'Frontend server');
+    const url = await Promise.race([ready, ...earlyExits]);
 
     status('ready');
     return {

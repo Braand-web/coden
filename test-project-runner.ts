@@ -39,6 +39,51 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
 {
   const runner = new HybridProjectRunner({ executeScripts: false });
   const result = await runner.run({
+    runId: 'run_local_express_fullstack',
+    projectId: 'project_local_express_fullstack',
+    previewHtml: goodHtml,
+    prompt: 'Create a full-stack Vite React app with an Express API and in-memory preview persistence, without external services.',
+    files: [
+      { path: 'index.html', content: goodHtml },
+      {
+        path: 'package.json',
+        content: JSON.stringify({
+          scripts: {
+            dev: 'vite',
+            'dev:server': 'tsx server/index.ts',
+            build: 'vite build && tsc -p tsconfig.server.json',
+            start: 'node dist-server/index.js',
+            test: 'tsx --test server/**/*.test.ts && node --experimental-strip-types src/app.test.ts',
+            lint: 'tsc --noEmit',
+          },
+          dependencies: { react: '^18.3.1', express: '^4.21.2' },
+          devDependencies: { vite: '^7.3.6', tsx: '^4.19.2' },
+        }),
+      },
+      { path: 'src/main.tsx', content: 'import App from "./App"; import "./index.css"; console.log(App);' },
+      { path: 'src/App.tsx', content: 'export default function App(){ return <main><h1>Tasks</h1><form><input required /><button onClick={() => fetch("/api/tasks")}>Add</button></form><p>loading empty success error filter</p></main> }' },
+      { path: 'src/app.test.ts', content: 'console.log("pass")' },
+      { path: 'src/index.css', content: '@media(max-width:700px){main{display:block}} button:focus-visible{outline:2px solid}' },
+      { path: 'vite.config.ts', content: 'export default { server: { proxy: { "/api": "http://localhost:3001" } } };' },
+      { path: 'server/index.ts', content: 'import express from "express"; import { createTaskStore } from "./taskStore.js"; const app=express(); app.use(express.json()); app.get("/api/health",(_req,res)=>res.json({status:"ok"})); app.get("/api/tasks",(_req,res)=>res.json(createTaskStore().getAll())); app.post("/api/tasks",(request,response)=>{ const title=String(request.body?.title || "").trim(); if(title.length < 3) return response.status(400).json({error:"required"}); return response.status(201).json({title}); });' },
+      { path: 'server/taskStore.ts', content: 'export function createTaskStore(){ return { getAll: () => [] }; }' },
+      { path: 'server/taskStore.test.ts', content: 'import { test } from "node:test"; test("store", () => undefined);' },
+      { path: 'tsconfig.server.json', content: JSON.stringify({ compilerOptions: { outDir: 'dist-server' }, include: ['server'] }) },
+    ],
+  });
+
+  assert.ok(!result.checks.some(check => check.check_type === 'local_imports_resolve' && check.status === 'failed'));
+  assert.ok(result.checks.some(check => check.check_type === 'script_test_safe' && check.status === 'passed'));
+  assert.ok(result.checks.some(check => check.check_type === 'production_backend_contract' && check.status === 'passed'));
+  assert.ok(result.checks.some(check => check.check_type === 'production_node_runtime' && check.status === 'passed'));
+  assert.ok(result.checks.some(check => check.check_type === 'production_fullstack_preview' && check.status === 'passed'));
+  assert.ok(!result.checks.some(check => check.check_type === 'production_database_security' && check.status === 'failed'));
+  assert.ok(!result.checks.some(check => check.check_type === 'production_auth_guard' && check.status === 'failed'));
+}
+
+{
+  const runner = new HybridProjectRunner({ executeScripts: false });
+  const result = await runner.run({
     runId: 'run_tailwind_responsive',
     projectId: 'project_tailwind_responsive',
     previewHtml: goodHtml,
