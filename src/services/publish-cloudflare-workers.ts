@@ -309,6 +309,22 @@ export async function getWorkerDomainStatus(workerName: string, domain: string) 
   };
 }
 
+/**
+ * Detach a custom hostname from a Worker.
+ *
+ * The attach side existed without this, so a domain removed in Coden stayed
+ * bound at Cloudflare and kept serving. Deleting by id needs the binding, so it
+ * is looked up first; a hostname Cloudflare no longer knows about is already in
+ * the desired state and is not an error.
+ */
+export async function detachWorkerCustomDomain(workerName: string, domain: string): Promise<void> {
+  const query = new URLSearchParams({ hostname: domain, service: workerName });
+  const domains = await cfJson<any[]>(`/accounts/${accountId()}/workers/domains?${query.toString()}`);
+  const match = domains.find(item => item.hostname === domain && item.service === workerName);
+  if (!match?.id) return;
+  await cfJson(`/accounts/${accountId()}/workers/domains/${match.id}`, { method: 'DELETE' });
+}
+
 export async function removeCloudflareWorker(workerName: string) {
   await cfJson(`/accounts/${accountId()}/workers/scripts/${workerName}`, { method: 'DELETE' });
 }

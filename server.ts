@@ -119,7 +119,7 @@ import {
   type ModelProvider,
 } from './src/config/ai-models.ts';
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
-import { DomainService, VercelDomainService } from './src/services/domain-service.ts';
+import { DomainService, createCloudflareDomainProvider } from './src/services/domain-service.ts';
 import {
   StripeService,
   SAAS_PLANS,
@@ -802,7 +802,6 @@ app.get('/api/health', (_req, res) => {
       supabase_url: Boolean(process.env.SUPABASE_URL),
       supabase_service_role: supabaseDiagnostics.service_role_project_api_key,
       openrouter: Boolean(getOpenRouterApiKey()),
-      vercel: Boolean(getVercelToken()),
       cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN),
       generated_app_hosting: process.env.CODEN_STATIC_HOSTING_PROVIDER === 'cloudflare-pages'
         ? 'cloudflare-pages-legacy'
@@ -1150,7 +1149,7 @@ function diagnosePublishError(error: any) {
   if (/payload|too large|413/i.test(message)) {
     return {
       message: 'The generated app is too large for this publish request. Remove heavy inline assets or export large media to Storage, then retry.',
-      diagnostic_code: 'VERCEL_PAYLOAD_TOO_LARGE',
+      diagnostic_code: 'PUBLISH_PAYLOAD_TOO_LARGE',
       suggested_action: 'reduce_assets',
       status: 413,
     };
@@ -2870,15 +2869,6 @@ function normalizeDeploymentStatusForPersistence(status: unknown): 'ready' | 'fa
   return 'failed';
 }
 
-function getVercelProjectName(project: Pick<GeneratedProject, 'id' | 'slug'>) {
-  const slug = String(project.slug || project.id || 'app')
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    || 'app';
-  return `coden-${slug}`.slice(0, 52).replace(/-+$/g, '') || 'coden-app';
-}
 
 function toHttpsUrl(hostOrUrl: unknown) {
   const raw = String(hostOrUrl || '').trim();
@@ -2886,83 +2876,14 @@ function toHttpsUrl(hostOrUrl: unknown) {
   return `https://${raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '')}`;
 }
 
-function getPublicVercelDeploymentUrl(project: GeneratedProject, payload: any) {
-  const aliases = [
-    ...(Array.isArray(payload?.alias) ? payload.alias : []),
-    ...(Array.isArray(payload?.aliases) ? payload.aliases : []),
-  ]
-    .map(toHttpsUrl)
-    .filter(Boolean)
-    .filter(url => /\.vercel\.app$/i.test(new URL(url).hostname))
-    .filter(url => !/-projects\.vercel\.app$/i.test(new URL(url).hostname));
-  return aliases[0] || `https://${getVercelProjectName(project)}.vercel.app`;
-}
 
 function wait(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
 
-function getVercelDeploymentState(payload: any): string {
-  return String(payload?.readyState || payload?.state || payload?.status || '').trim().toLowerCase();
-}
 
-function isVercelDeploymentReady(payload: any): boolean {
-  return ['ready', 'published', 'success', 'completed'].includes(getVercelDeploymentState(payload));
-}
 
-function isVercelDeploymentFailed(payload: any): boolean {
-  return ['error', 'failed', 'failure', 'canceled', 'cancelled'].includes(getVercelDeploymentState(payload));
-}
 
-async function waitForVercelDeploymentReady(initialPayload: any, token: string, params: URLSearchParams): Promise<any> {
-  let payload = initialPayload || {};
-  if (isVercelDeploymentReady(payload)) return payload;
-  if (isVercelDeploymentFailed(payload)) {
-    throw createPublicError(
-      'Vercel rejected this deployment. Coden kept the previous live app unchanged.',
-      502,
-      'VERCEL_DEPLOYMENT_FAILED',
-      'rebuild_then_publish',
-    );
-  }
-
-  const deploymentId = String(payload.id || payload.uid || '').trim();
-  if (!deploymentId) {
-    throw createPublicError(
-      'Vercel accepted the publish request but did not return a deployment id. Coden kept the previous live app unchanged.',
-      502,
-      'VERCEL_DEPLOYMENT_UNVERIFIED',
-      'retry',
-    );
-  }
-
-  const pollPath = `https://api.vercel.com/v13/deployments/${encodeURIComponent(deploymentId)}${params.toString() ? `?${params.toString()}` : ''}`;
-  const delays = [900, 1200, 1600, 2200, 3000, 4200];
-  for (const delay of delays) {
-    await wait(delay);
-    const response = await fetch(pollPath, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    payload = await response.json().catch(() => payload);
-    if (!response.ok) continue;
-    if (isVercelDeploymentReady(payload)) return payload;
-    if (isVercelDeploymentFailed(payload)) {
-      throw createPublicError(
-        'Vercel finished the deployment with an error. Coden kept the previous live app unchanged.',
-        502,
-        'VERCEL_DEPLOYMENT_FAILED',
-        'rebuild_then_publish',
-      );
-    }
-  }
-
-  throw createPublicError(
-    'Vercel is still preparing this deployment. The previous live app was kept unchanged; retry Publish in a moment.',
-    409,
-    'VERCEL_DEPLOYMENT_NOT_READY',
-    'retry_later',
-  );
-}
 
 function injectCodenPublishedBadge(html: string, project: GeneratedProject, publicOrigin = getCodenPublicOrigin()) {
   if (!html || html.includes('data-coden-published-badge="true"')) return html;
@@ -8983,127 +8904,8 @@ async function saveProjectSecret(project: GeneratedProject, service: string, var
   return { ...row, encrypted_value: undefined };
 }
 
-function getVercelToken(): string {
-  return process.env.VERCEL_TOKEN || process.env.VERCEL_API_TOKEN || '';
-}
 
-function createVercelDomainProxy() {
-  const token = getVercelToken();
-  if (!token) {
-    throw new Error('Vercel domain operations are not configured. Add VERCEL_TOKEN on Railway.');
-  }
-  return new VercelDomainService(token, process.env.VERCEL_TEAM_ID || undefined);
-}
 
-async function deployFilesToVercel(
-  project: GeneratedProject,
-  files: GeneratedFile[],
-  options: { includeCodenBadge?: boolean; publicOrigin?: string } = {},
-) {
-  const token = getVercelToken();
-  if (!token) {
-    throw createPublicError(
-      'Vercel deployment is not configured. Add VERCEL_TOKEN on Railway to publish generated apps.',
-      503,
-      'VERCEL_NOT_CONFIGURED',
-      'configure_vercel_token',
-    );
-  }
-
-  const prepareHtml = (html: string) => {
-    const enhanced = injectAnalyticsSnippet(
-      enhanceHtmlSeo(html, project.name, project.prompt || project.name, project.slug || project.id, 'production'),
-      project.id,
-      'production',
-    );
-    return options.includeCodenBadge
-      ? injectCodenPublishedBadge(enhanced, project, options.publicOrigin || getCodenPublicOrigin())
-      : enhanced;
-  };
-
-  const productionPreviewHtml = isModernFrontendProject(files)
-    ? renderPreviewHtml(files, project.name, project.id, 'production', project.prompt || project.name, project.slug || project.id)
-    : '';
-  const deploymentFiles = normalizeGeneratedFiles(files).map(file => ({
-    file: file.path,
-    data: file.path === 'index.html' && productionPreviewHtml
-      ? (options.includeCodenBadge ? injectCodenPublishedBadge(productionPreviewHtml, project, options.publicOrigin || getCodenPublicOrigin()) : productionPreviewHtml)
-      : file.path.endsWith('.html')
-      ? prepareHtml(file.content)
-      : file.content,
-  }));
-
-  if (!deploymentFiles.some(file => file.file === 'index.html')) {
-    let html = renderPreviewHtml(files, project.name, project.id, 'production', project.prompt || project.name, project.slug || project.id);
-    if (options.includeCodenBadge) html = injectCodenPublishedBadge(html, project, options.publicOrigin || getCodenPublicOrigin());
-    deploymentFiles.unshift({ file: 'index.html', data: html });
-  }
-
-  const params = new URLSearchParams();
-  if (process.env.VERCEL_TEAM_ID) params.set('teamId', process.env.VERCEL_TEAM_ID);
-
-  const endpoint = `https://api.vercel.com/v13/deployments${params.toString() ? `?${params.toString()}` : ''}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: getVercelProjectName(project),
-      target: 'production',
-      files: deploymentFiles,
-      projectSettings: {
-        framework: null,
-        buildCommand: null,
-        installCommand: null,
-        outputDirectory: null,
-      },
-      meta: {
-        codenProjectId: project.id,
-      },
-    }),
-  });
-
-  const payload: any = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const providerMessage = payload?.error?.message || payload?.message || `Vercel API returned ${response.status}`;
-    const error = createPublicError(
-      `${providerMessage}${payload?.error?.code ? ` (${payload.error.code})` : ''}`,
-      response.status,
-      response.status === 401 || response.status === 403
-        ? 'VERCEL_TOKEN_INVALID'
-        : response.status === 429
-          ? 'VERCEL_RATE_LIMITED'
-          : response.status === 413
-            ? 'VERCEL_PAYLOAD_TOO_LARGE'
-            : response.status >= 500
-              ? 'VERCEL_UNAVAILABLE'
-              : 'VERCEL_BAD_REQUEST',
-      response.status === 401 || response.status === 403
-        ? 'update_vercel_token'
-        : response.status === 429
-          ? 'retry_later'
-          : response.status === 413
-            ? 'reduce_assets'
-            : response.status >= 500
-              ? 'retry'
-              : 'rebuild_then_publish',
-    );
-    throw error;
-  }
-
-  const readyPayload = await waitForVercelDeploymentReady(payload, token, params);
-  const url = getPublicVercelDeploymentUrl(project, readyPayload) || (readyPayload.url ? `https://${String(readyPayload.url).replace(/^https?:\/\//, '')}` : '');
-  return {
-    provider_deployment_id: readyPayload.id || readyPayload.uid || null,
-    deployment_url: url,
-    status: getVercelDeploymentState(readyPayload) || 'ready',
-    raw: readyPayload,
-  };
-}
-
-// Wrapper to safely access live Supabase-backed billing state.
 const CREDIT_BALANCE_COLUMNS = [
   'balance',
   'credits_balance',
@@ -10365,7 +10167,7 @@ function sanitizeAdminDeployment(row: any) {
     status: row?.status || row?.deployment_status || 'unknown',
     url: row?.url || row?.deployment_url || row?.live_url || row?.published_url || null,
     domain: row?.domain || row?.custom_domain || null,
-    provider: row?.provider || 'vercel',
+    provider: row?.provider || 'cloudflare',
     created_at: row?.created_at || null,
     updated_at: row?.updated_at || null,
   };
@@ -10387,7 +10189,6 @@ function buildAdminHealth() {
   return [
     { id: 'supabase', label: 'Supabase', status: supabaseDiagnostics.project_refs_match ? 'ok' : 'warning', detail: supabaseDiagnostics.project_refs_match ? 'Frontend/backend refs match' : 'Check Supabase env refs' },
     { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'API key configured' : 'Missing provider key' },
-    { id: 'vercel', label: 'Vercel', status: getVercelToken() ? 'ok' : 'warning', detail: getVercelToken() ? 'Publish token configured' : 'Publish token missing' },
     { id: 'stripe', label: 'Stripe', status: process.env.STRIPE_SECRET_KEY ? 'ok' : 'warning', detail: process.env.STRIPE_SECRET_KEY ? 'Billing key configured' : 'Billing key missing' },
     { id: 'admin', label: 'Admin guard', status: 'ok', detail: `${getPlatformAdminEmails().size} admin email${getPlatformAdminEmails().size > 1 ? 's' : ''} configured` },
   ];
@@ -10591,7 +10392,6 @@ app.get('/api/admin/feature-flags', async (req: any, res) => {
       { key: 'coden_design', label: 'Coden Design', enabled: true, rollout: 'beta', risk: 'medium' },
       { key: 'coden_decks', label: 'Coden Decks', enabled: true, rollout: 'beta', risk: 'medium' },
       { key: 'rich_message_parts_stream', label: 'Rich message parts stream', enabled: true, rollout: 'all', risk: 'low' },
-      { key: 'publish_vercel', label: 'Vercel publish', enabled: Boolean(getVercelToken()), rollout: getVercelToken() ? 'all' : 'blocked', risk: 'high' },
       { key: 'browser_testing', label: 'Browser testing runtime', enabled: true, rollout: 'all', risk: 'medium' },
       { key: 'auto_model_router', label: 'Auto model router', enabled: true, rollout: 'all', risk: 'medium' },
     ],
@@ -13916,6 +13716,19 @@ app.get('/api/projects/:id/domains', async (req: any, res) => {
   });
 });
 
+/**
+ * The Cloudflare host for one project's domains.
+ *
+ * The five `/domains` routes used to build a Vercel proxy, which threw
+ * "not configured" on every request because VERCEL_TOKEN was never set. They
+ * now use the same target the project is actually published to.
+ */
+async function createProjectDomainProvider(project: GeneratedProject) {
+  const contract = await readGeneratedRuntimeContract(project);
+  const cfName = projectSlugToCfName(String(project.slug || project.id));
+  return createCloudflareDomainProvider(cfName, contract.manifest.runtime);
+}
+
 // POST /projects/:id/domains
 app.post('/api/projects/:id/domains', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
@@ -13927,8 +13740,7 @@ app.post('/api/projects/:id/domains', async (req: any, res: any) => {
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
     const plan = await getOrganizationPlan(project.organization_id);
-    const vercelProxy = createVercelDomainProxy();
-    const domainService = new DomainService(requireSupabase('Domain creation'), vercelProxy);
+    const domainService = new DomainService(requireSupabase('Domain creation'), () => createProjectDomainProvider(project));
     const records = await domainService.registerDomain(project.organization_id, projectId, domain, type || 'custom', plan as any);
     return res.json({ success: true, domain: records });
   } catch (err: any) {
@@ -13950,8 +13762,7 @@ app.post('/api/projects/:id/domains/:domainId/verify', async (req: any, res) => 
     const project = await loadProject(projectId, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const vercelProxy = createVercelDomainProxy();
-    const domainService = new DomainService(requireSupabase('Domain verification'), vercelProxy);
+    const domainService = new DomainService(requireSupabase('Domain verification'), () => createProjectDomainProvider(project));
     const result = await domainService.verifyDnsRecords(projectId, domainId);
     res.json({ success: true, ...result });
   } catch (err: any) {
@@ -13969,8 +13780,7 @@ app.delete('/api/projects/:id/domains/:domainId', async (req: any, res) => {
     const project = await loadProject(projectId, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const vercelProxy = createVercelDomainProxy();
-    const domainService = new DomainService(requireSupabase('Domain deletion'), vercelProxy);
+    const domainService = new DomainService(requireSupabase('Domain deletion'), () => createProjectDomainProvider(project));
     await domainService.removeDomain(projectId, domainId);
     res.json({ success: true, message: 'Domain deleted successfully.' });
   } catch (err: any) {
@@ -13988,8 +13798,7 @@ app.patch('/api/projects/:id/domains/:domainId/primary', async (req: any, res) =
     const project = await loadProject(projectId, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const vercelProxy = createVercelDomainProxy();
-    const domainService = new DomainService(requireSupabase('Primary domain update'), vercelProxy);
+    const domainService = new DomainService(requireSupabase('Primary domain update'), () => createProjectDomainProvider(project));
     await domainService.setPrimaryDomain(projectId, domainId);
     res.json({ success: true, message: 'Primary domain updated.' });
   } catch (err: any) {
@@ -14016,130 +13825,6 @@ function getPublishPublicUrl(project: GeneratedProject, customDomain: string | n
   return customDomain ? normalizeDomainUrl(customDomain) : getDefaultPublishedUrl(project);
 }
 
-async function publishProjectSnapshot(req: any, res: any) {
-  const requestId = `pub_${randomUUID()}`;
-  const projectId = req.params.id;
-  const userId = getUserOrgId(req);
-  const { commitHash, branch = 'main', userCredits = 100 } = req.body || {};
-  try {
-    if (!enforceRateLimit(`publish:${userId}`, 6, 60_000)) {
-      return res.status(429).json({
-        success: false,
-        error: 'Too many publish requests. Please wait a moment.',
-        message: 'Too many publish requests. Please wait a moment.',
-        diagnostic_code: 'PUBLISH_RATE_LIMITED',
-        request_id: requestId,
-        suggested_action: 'retry_later',
-      });
-    }
-
-    if (userCredits < 2) {
-      return res.status(200).json({ ...publicCreditGateResponse(), request_id: requestId });
-    }
-
-    const project = await loadProject(projectId, userId);
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        error: 'Project not found.',
-        message: 'Project not found.',
-        diagnostic_code: 'PROJECT_NOT_FOUND',
-        request_id: requestId,
-        suggested_action: 'open_project',
-      });
-    }
-    if (!requireProjectCapability(req, res, 'deploy', project)) return;
-
-    const context = await createPublishContext(project);
-    const publishStatus = buildPublishStatus(context);
-    if (!publishStatus.can_publish) {
-      const failedCheck = publishStatus.checks.find((check: any) => check.status === 'fail');
-      const diagnosticCode = failedCheck?.key === 'security' ? 'PUBLISH_SECURITY_CHECK_FAILED' : 'PREVIEW_NOT_READY';
-      return res.status(409).json({
-        success: false,
-        error: failedCheck?.detail || 'Build a ready preview before publishing.',
-        message: failedCheck?.detail || 'Build a ready preview before publishing.',
-        diagnostic_code: diagnosticCode,
-        request_id: requestId,
-        suggested_action: failedCheck?.key === 'security' ? 'fix_security_then_publish' : 'build_first',
-        publish: publishStatus,
-      });
-    }
-
-    const publicOrigin = getCodenPublicOrigin();
-    const badgeRequired = publishStatus.badge_required;
-    const result = await deployFilesToVercel(project, context.files, {
-      includeCodenBadge: badgeRequired,
-      publicOrigin,
-    });
-    const createdAt = new Date().toISOString();
-    const deploy = {
-      id: randomUUID(),
-      organization_id: project.organization_id,
-      project_id: projectId,
-      provider: 'vercel',
-      provider_deployment_id: result.provider_deployment_id,
-      deployment_url: result.deployment_url,
-      public_url: publishStatus.public_url,
-      custom_domain: publishStatus.custom_domain,
-      badge_required: badgeRequired,
-      status: normalizeDeploymentStatusForPersistence(result.status),
-      commit_hash: commitHash || null,
-      branch,
-      created_at: createdAt,
-    };
-
-    await saveDeploymentRecord(deploy);
-
-    // Apply the generated backend migration on publish (closes the gap where
-    // supabase/schema.sql was generated but never run). Safe by default: skips
-    // cleanly without a migration/project ref/management token, and only
-    // executes for real when CODEN_APPLY_MIGRATIONS=1.
-    try {
-      const { provisionOnPublish } = await import('./src/services/supabase-provisioning.ts');
-      const cloud = await loadProjectCodenCloud(projectId).catch(() => null);
-      const provision = await provisionOnPublish({
-        files: context.files,
-        cloudConfig: (cloud?.project?.public_runtime_config as Record<string, unknown>) || null,
-        dryRun: process.env.CODEN_APPLY_MIGRATIONS !== '1',
-      });
-      if (provision.applied) {
-        console.log('[coden:publish_migration_applied]', { project_id: projectId });
-      } else if (!provision.skipped && provision.error) {
-        console.warn('[coden:publish_migration_skipped]', { project_id: projectId, error: provision.error });
-      }
-    } catch (provisionErr: any) {
-      console.warn('[coden:publish_migration_error]', { project_id: projectId, message: provisionErr?.message || String(provisionErr) });
-    }
-
-    const latestContext = { ...context, latestDeployment: deploy };
-    const nextStatus = buildPublishStatus(latestContext);
-    res.json({
-      success: true,
-      deployment: sanitizeDeploymentForUser(deploy, nextStatus.public_url, nextStatus.custom_domain),
-      publish: nextStatus,
-    });
-  } catch (error: any) {
-    const diagnostic = diagnosePublishError(error);
-    console.error('[coden:publish_failed]', {
-      request_id: requestId,
-      project_id: projectId,
-      user_id: userId,
-      diagnostic_code: diagnostic.diagnostic_code,
-      message: error?.message || String(error),
-    });
-    res.status(diagnostic.status).json({
-      success: false,
-      error: diagnostic.message,
-      message: diagnostic.message,
-      diagnostic_code: diagnostic.diagnostic_code,
-      request_id: requestId,
-      suggested_action: diagnostic.suggested_action,
-    });
-  }
-}
-
-// GET /projects/:id/publish/status
 app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -14155,10 +13840,6 @@ app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
     ),
   });
 });
-
-// The public publish/deploy routes are registered once with the Cloudflare
-// implementation below. Keeping the legacy Vercel handler unregistered avoids
-// Express selecting it before the canonical hosting pipeline.
 
 // GET /projects/:id/deployments
 app.get('/api/projects/:id/deployments', async (req: any, res) => {
@@ -14243,7 +13924,9 @@ function rewritePublishedHtmlForProxy(html: string, project: GeneratedProject, d
 
 function buildPublishedProxyTargets(project: GeneratedProject, deploymentUrl: string, requestPath: string) {
   const safePath = requestPath && requestPath.startsWith('/') ? requestPath : `/${requestPath || ''}`;
-  const candidates = [deploymentUrl, `https://${getVercelProjectName(project)}.vercel.app`].filter(Boolean);
+  // The fallback used to be a .vercel.app hostname, which nothing has served
+  // since publishing moved to Cloudflare — a proxy retry that could only 404.
+  const candidates = [deploymentUrl, getDefaultPublishedUrl(project)].filter(Boolean);
   const unique = Array.from(new Set(candidates));
   return unique.map(candidate => {
     const url = new URL(candidate);

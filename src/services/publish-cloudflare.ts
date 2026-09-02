@@ -15,11 +15,12 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {
   attachWorkerCustomDomain,
+  detachWorkerCustomDomain,
   getWorkerDomainStatus,
   publishFullstackProjectToCloudflareWorkers,
   publishProjectToCloudflareWorkers,
   removeCloudflareWorker,
-} from './publish-cloudflare-workers';
+} from './publish-cloudflare-workers.ts';
 import type { GeneratedAppRuntime } from './generated-app-runtime.ts';
 import {
   codenHostForSlug,
@@ -320,6 +321,26 @@ export async function attachUserCustomDomain(
       { type: 'CNAME', name: domain, value: `${cfName}.pages.dev` },
     ],
   };
+}
+
+/**
+ * Detach a custom domain from a published project, on whichever target serves it.
+ *
+ * Attaching had no counterpart, so a domain the user removed stayed bound at
+ * Cloudflare and kept answering for an app they thought they had unpublished.
+ */
+export async function removeCustomDomain(
+  cfName: string,
+  domain: string,
+  runtime: GeneratedAppRuntime = 'static-assets',
+): Promise<void> {
+  if (resolveCloudflareHostingTarget(runtime) !== 'pages-legacy') {
+    await detachWorkerCustomDomain(cfName, domain);
+    return;
+  }
+  await cf(`/accounts/${accountId()}/pages/projects/${cfName}/domains/${encodeURIComponent(domain)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getCustomDomainStatus(

@@ -1,9 +1,26 @@
+/**
+ * Custom domains for published projects.
+ *
+ * This used to talk to Vercel. Coden publishes to Cloudflare, `VERCEL_TOKEN`
+ * has never been set on the deployment, and the `domains` table is empty — so
+ * every one of the five `/api/projects/:id/domains` routes answered
+ * "Vercel domain operations are not configured" to any user who tried to add
+ * a domain, while the working Cloudflare functions sat on different routes.
+ *
+ * The provider is now a port with one Cloudflare implementation. What is kept
+ * is everything that was never provider-specific and is worth keeping: reserved
+ * subdomains, per-plan limits, cross-tenant uniqueness, and the Supabase record
+ * of what was asked for.
+ */
+
 import { UserPlan } from '../config/ai-models.ts';
+import type { GeneratedAppRuntime } from './generated-app-runtime.ts';
+import { attachUserCustomDomain, getCustomDomainStatus, removeCustomDomain } from './publish-cloudflare.ts';
 
 export const RESERVED_SUBDOMAINS = new Set([
-  'admin', 'api', 'www', 'app', 'billing', 'support', 'assets', 'jobs', 'portal', 
+  'admin', 'api', 'www', 'app', 'billing', 'support', 'assets', 'jobs', 'portal',
   'cdn', 'static', 'auth', 'oauth', 'dev', 'prod', 'staging', 'test', 'status',
-  'account', 'help', 'legal', 'privacy', 'terms', 'signup', 'login'
+  'account', 'help', 'legal', 'privacy', 'terms', 'signup', 'login',
 ]);
 
 export interface DNSRecordInstruction {
@@ -13,26 +30,69 @@ export interface DNSRecordInstruction {
   status: 'pending' | 'verified' | 'failed';
 }
 
-export interface VercelVerificationChallenge {
-  type?: string;
-  domain?: string;
-  name?: string;
-  value?: string;
-  reason?: string;
+/**
+ * What the user is told, in the order a domain moves through it.
+ *
+ * The stored `status` stays `pending | active | removed`, which is what the
+ * rest of the server reads. This is the finer state the interface shows.
+ */
+export type DomainState =
+  | 'configuration_required'
+  | 'dns_verification'
+  | 'dns_propagation'
+  | 'active'
+  | 'error';
+
+export const DOMAIN_STATE_LABELS: Record<DomainState, { fr: string; en: string }> = {
+  configuration_required: { fr: 'Configuration requise', en: 'Configuration required' },
+  dns_verification: { fr: 'Vérification DNS', en: 'DNS verification' },
+  dns_propagation: { fr: 'Propagation DNS', en: 'DNS propagation' },
+  active: { fr: 'Actif', en: 'Active' },
+  error: { fr: 'Erreur', en: 'Error' },
+};
+
+export function domainStateLabel(state: DomainState, language: 'fr' | 'en' = 'fr'): string {
+  return DOMAIN_STATE_LABELS[state][language];
 }
 
-export interface VercelDomainAssociation {
-  vercel_domain_id: string;
-  verification_token: string;
-  verified: boolean;
-  verification: VercelVerificationChallenge[];
-  raw?: any;
+/** The host that actually serves the domain. One implementation: Cloudflare. */
+export interface DomainHostProvider {
+  attach(domain: string): Promise<{ instructions: DNSRecordInstruction[] }>;
+  status(domain: string): Promise<{ active: boolean; detail: string | null; certificate: string | null }>;
+  detach(domain: string): Promise<void>;
 }
 
-export interface VercelDeploymentAlias {
-  alias: string;
-  deployment_id: string;
-  raw?: any;
+/** Cloudflare, for one published project. */
+export function createCloudflareDomainProvider(
+  cfName: string,
+  runtime: GeneratedAppRuntime = 'static-assets',
+): DomainHostProvider {
+  if (!cfName) throw new Error('This project has no published deployment yet, so a domain cannot be attached to it.');
+  return {
+    async attach(domain: string) {
+      const result = await attachUserCustomDomain(cfName, domain, runtime);
+      return {
+        instructions: (result.instructions || []).map(record => ({
+          type: (record.type as DNSRecordInstruction['type']) || 'CNAME',
+          name: record.name,
+          value: record.value,
+          status: 'pending' as const,
+        })),
+      };
+    },
+    async status(domain: string) {
+      const result: any = await getCustomDomainStatus(cfName, domain, runtime);
+      const raw = String(result?.status || '').toLowerCase();
+      return {
+        active: raw === 'active' || raw === 'verified' || raw === 'succeeded',
+        detail: raw || null,
+        certificate: result?.certificate_status ?? null,
+      };
+    },
+    async detach(domain: string) {
+      await removeCustomDomain(cfName, domain, runtime);
+    },
+  };
 }
 
 export class domainPlanLimits {
@@ -51,240 +111,83 @@ export class domainPlanLimits {
   }
 }
 
-export class VercelDomainService {
-  private apiToken: string;
-  private teamId?: string;
-
-  constructor(apiToken: string, teamId?: string) {
-    this.apiToken = apiToken;
-    this.teamId = teamId;
-  }
-
-  private buildTeamQuery() {
-    const params = new URLSearchParams();
-    if (this.teamId) params.set('teamId', this.teamId);
-    return params.toString() ? `?${params.toString()}` : '';
-  }
-
-  private async vercelRequest<T = any>(path: string, options: RequestInit = {}): Promise<T> {
-    const response = await fetch(`https://api.vercel.com${path}`, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${this.apiToken}`,
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
-    });
-
-    const text = await response.text().catch(() => '');
-    let payload: any = {};
-    if (text) {
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        payload = { message: text };
-      }
-    }
-
-    if (!response.ok) {
-      const message =
-        payload?.error?.message ||
-        payload?.message ||
-        `Vercel API returned ${response.status}`;
-      const error = new Error(message) as Error & { statusCode?: number; payload?: any };
-      error.statusCode = response.status;
-      error.payload = payload;
-      throw error;
-    }
-
-    return payload as T;
-  }
-
-  async addDomainToVercel(projectId: string, domain: string): Promise<VercelDomainAssociation> {
-    const payload = await this.vercelRequest<any>(
-      `/v10/projects/${encodeURIComponent(projectId)}/domains${this.buildTeamQuery()}`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ name: domain }),
-      },
-    );
-
-    const verification = Array.isArray(payload.verification) ? payload.verification : [];
-    const txtChallenge =
-      verification.find((item: any) => String(item?.type || '').toUpperCase() === 'TXT') ||
-      verification.find((item: any) => item?.value) ||
-      null;
-
-    return {
-      vercel_domain_id: String(payload.id || payload.name || domain),
-      verification_token: String(txtChallenge?.value || ''),
-      verified: Boolean(payload.verified),
-      verification,
-      raw: payload,
-    };
-  }
-
-  async ensureDomainOnProject(projectId: string, domain: string): Promise<VercelDomainAssociation> {
-    try {
-      return await this.addDomainToVercel(projectId, domain);
-    } catch (error: any) {
-      const message = String(error?.message || '');
-      const sameProjectAlreadyConfigured =
-        /already|exists|configured|added/i.test(message) &&
-        !/another|different|other project|other team/i.test(message);
-
-      if (!sameProjectAlreadyConfigured) throw error;
-
-      return {
-        vercel_domain_id: domain,
-        verification_token: '',
-        verified: true,
-        verification: [],
-        raw: error?.payload || { reused: true, message },
-      };
-    }
-  }
-
-  async assignDeploymentAlias(deploymentId: string, domain: string): Promise<VercelDeploymentAlias> {
-    const payload = await this.vercelRequest<any>(
-      `/v2/deployments/${encodeURIComponent(deploymentId)}/aliases${this.buildTeamQuery()}`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ alias: domain }),
-      },
-    );
-
-    return {
-      alias: String(payload?.alias || payload?.url || payload?.name || domain),
-      deployment_id: String(payload?.deploymentId || payload?.deployment?.id || deploymentId),
-      raw: payload,
-    };
-  }
-
-  async verifyVercelDomain(projectId: string, domain: string): Promise<{ verified: boolean; error?: string; raw?: any; verification?: VercelVerificationChallenge[] }> {
-    try {
-      const payload = await this.vercelRequest<any>(
-        `/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(domain)}/verify${this.buildTeamQuery()}`,
-        { method: 'POST' },
-      );
-
-      return {
-        verified: Boolean(payload.verified),
-        raw: payload,
-        verification: Array.isArray(payload.verification) ? payload.verification : [],
-      };
-    } catch (error: any) {
-      return {
-        verified: false,
-        error: error?.message || 'Vercel domain verification failed.',
-        raw: error?.payload,
-      };
-    }
-  }
-
-  async removeDomainFromVercel(projectId: string, domain: string): Promise<boolean> {
-    await this.vercelRequest(
-      `/v9/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(domain)}${this.buildTeamQuery()}`,
-      { method: 'DELETE' },
-    );
-    return true;
-  }
-}
-
-function sanitizeDomainInput(domain: string) {
-  const sanitized = String(domain || '')
+export function sanitizeDomainInput(domain: string): string {
+  return String(domain || '')
     .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, '')
     .replace(/\/.*$/, '')
     .replace(/\.$/, '');
-
-  if (!sanitized || sanitized.length > 253 || sanitized.includes('..') || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(sanitized)) {
-    throw new Error('Enter a valid domain name without protocol or path.');
-  }
-
-  return sanitized;
 }
 
-function normalizeRecordType(value: unknown): DNSRecordInstruction['type'] {
-  const type = String(value || 'TXT').toUpperCase();
-  return type === 'A' || type === 'CNAME' || type === 'TXT' ? type : 'TXT';
-}
-
-function buildRoutingRecord(domain: string): Omit<DNSRecordInstruction, 'status'> {
-  const parts = domain.split('.').filter(Boolean);
-  const isSubdomain = parts.length > 2;
-  if (isSubdomain) {
-    return {
-      type: 'CNAME',
-      name: domain.startsWith('www.') ? 'www' : parts[0],
-      value: 'cname.vercel-dns.com',
-    };
-  }
-  return {
-    type: 'A',
-    name: '@',
-    value: '76.76.21.21',
-  };
-}
-
-export function buildDnsRecordInstructionsFromVercel(
-  domain: string,
-  verification: VercelVerificationChallenge[] = [],
-  status: DNSRecordInstruction['status'] = 'pending',
-): DNSRecordInstruction[] {
-  const records = verification
-    .map((item: any) => ({
-      type: normalizeRecordType(item?.type),
-      name: String(item?.domain || item?.name || domain).trim() || domain,
-      value: String(item?.value || '').trim(),
-      status,
-    }))
-    .filter(record => record.value);
-
-  const routing = { ...buildRoutingRecord(domain), status };
-  const seen = new Set<string>();
-  return [...records, routing].filter(record => {
-    const key = `${record.type}:${record.name}:${record.value}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+/**
+ * The user-facing state of a stored domain.
+ *
+ * A domain the host has accepted and certified is active. One the host knows
+ * about but has not validated is still waiting on DNS — split between "we have
+ * not seen your records yet" and "we have, they are spreading" so the user can
+ * tell a mistake from a wait. Anything the host reports as failed is an error,
+ * and a domain with no DNS instructions yet still needs configuring.
+ */
+export function resolveDomainState(input: {
+  status?: string | null;
+  hostDetail?: string | null;
+  hasInstructions?: boolean;
+  errorMessage?: string | null;
+}): DomainState {
+  const status = String(input.status || '').toLowerCase();
+  const detail = String(input.hostDetail || '').toLowerCase();
+  if (status === 'active' || status === 'verified') return 'active';
+  if (/fail|error|invalid|blocked|moved/.test(detail)) return 'error';
+  if (!input.hasInstructions) return 'configuration_required';
+  if (/pending|initializing|provision|deploy/.test(detail)) return 'dns_propagation';
+  return 'dns_verification';
 }
 
 export class DomainService {
   private supabase: any;
-  private vercel: VercelDomainService;
-
-  constructor(supabaseClient: any, vercelService: VercelDomainService) {
-    this.supabase = supabaseClient;
-    this.vercel = vercelService;
-  }
+  private hostSource: DomainHostProvider | (() => Promise<DomainHostProvider>);
+  private resolvedHost: DomainHostProvider | null = null;
 
   /**
-   * Main entry endpoint to register a domain (subdomain or custom)
+   * The host may be given as a factory. Resolving it costs a runtime-contract
+   * read and fails for a project with no deployment yet, so an operation that
+   * only touches our own records — reordering domains, say — must not pay for
+   * it or be blocked by it.
    */
+  constructor(supabaseClient: any, host: DomainHostProvider | (() => Promise<DomainHostProvider>)) {
+    this.supabase = supabaseClient;
+    this.hostSource = host;
+  }
+
+  private async host(): Promise<DomainHostProvider> {
+    if (this.resolvedHost) return this.resolvedHost;
+    this.resolvedHost = typeof this.hostSource === 'function' ? await this.hostSource() : this.hostSource;
+    return this.resolvedHost;
+  }
+
+  /** Register a subdomain or a custom domain for a project. */
   async registerDomain(
     organizationId: string,
     projectId: string,
     domain: string,
     type: 'subdomain' | 'custom',
-    userPlan: UserPlan | 'pro' | 'scale' | 'enterprise'
+    userPlan: UserPlan | 'pro' | 'scale' | 'enterprise',
   ) {
     if (!this.supabase) throw new Error('Supabase integration missing');
 
     const sanitized = sanitizeDomainInput(domain);
+    if (!sanitized || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(sanitized)) {
+      throw new Error(`"${domain}" is not a valid domain name.`);
+    }
 
-    // 1. Reserved subdomain protection
     if (type === 'subdomain') {
-      const parts = sanitized.split('.');
-      const sub = parts[0];
+      const sub = sanitized.split('.')[0];
       if (RESERVED_SUBDOMAINS.has(sub)) {
         throw new Error(`The subdomain prefix '${sub}' is reserved for platform workflows and cannot be registered.`);
       }
     }
 
-    // 2. Plan Limit Checks
     if (type === 'custom') {
       const limit = domainPlanLimits.getCustomDomainLimit(userPlan as any);
       const { count } = await this.supabase
@@ -299,7 +202,6 @@ export class DomainService {
       }
     }
 
-    // 3. Uniqueness Check
     const { data: existing } = await this.supabase
       .from('domains')
       .select('id')
@@ -311,16 +213,8 @@ export class DomainService {
       throw new Error(`The domain/subdomain ${sanitized} has already been registered in another tenant.`);
     }
 
-    // 4. Register
-    const vercelProjectId = process.env.VERCEL_PROJECT_ID || '';
-    if (!vercelProjectId) {
-      throw new Error('Vercel domain operations are not configured. Add VERCEL_PROJECT_ID on Railway.');
-    }
-    const vercelResp = await this.vercel.addDomainToVercel(vercelProjectId, sanitized);
-    const dnsStatus: DNSRecordInstruction['status'] = vercelResp.verified ? 'verified' : 'pending';
-    const dnsRecords = type === 'custom'
-      ? buildDnsRecordInstructionsFromVercel(sanitized, vercelResp.verification, dnsStatus)
-      : [];
+    const attached = await (await this.host()).attach(sanitized);
+    const dnsRecords = type === 'custom' ? attached.instructions : [];
 
     const { data, error } = await this.supabase
       .from('domains')
@@ -329,105 +223,97 @@ export class DomainService {
         project_id: projectId,
         domain: sanitized,
         type,
-        status: type === 'subdomain' || vercelResp.verified ? 'active' : 'pending',
-        vercel_project_id: vercelProjectId,
-        vercel_domain_id: vercelResp.vercel_domain_id,
-        verification_token: vercelResp.verification_token || null,
-        last_checked_at: new Date().toISOString()
+        status: type === 'subdomain' ? 'active' : 'pending',
+        last_checked_at: new Date().toISOString(),
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    if (type === 'custom') {
-      for (const rec of dnsRecords) {
-        await this.supabase
-          .from('dns_verifications')
-          .insert([{
-            domain_id: data.id,
-            record_type: rec.type,
-            record_name: rec.name,
-            record_value: rec.value,
-            status: rec.status
-          }]);
-      }
+    for (const record of dnsRecords) {
+      await this.supabase.from('dns_verifications').insert([{
+        domain_id: data.id,
+        record_type: record.type,
+        record_name: record.name,
+        record_value: record.value,
+        status: record.status,
+      }]);
     }
 
-    return { ...data, dns_records: dnsRecords };
+    return {
+      ...data,
+      dns_records: dnsRecords,
+      state: resolveDomainState({ status: data.status, hasInstructions: dnsRecords.length > 0 }),
+    };
   }
 
+  /** Ask the host whether the domain is live yet, and record the answer. */
   async verifyDnsRecords(projectId: string, domainId: string): Promise<any> {
     if (!this.supabase) throw new Error('Database unconfigured');
 
-    const { data: domain, error: dErr } = await this.supabase
+    const { data: domain, error: loadError } = await this.supabase
       .from('domains')
       .select('*')
       .eq('id', domainId)
       .eq('project_id', projectId)
       .single();
 
-    if (dErr || !domain) {
-      throw new Error(`Domain not found or unauthorized: ${domainId}`);
-    }
-
-    const { verified, error: vErr, verification } = await this.vercel.verifyVercelDomain(domain.vercel_project_id, domain.domain);
+    if (loadError || !domain) throw new Error(`Domain not found or unauthorized: ${domainId}`);
 
     const now = new Date().toISOString();
-    let status = verified ? 'active' : 'pending';
-    let errorMessage = null;
-    const dnsRecords = buildDnsRecordInstructionsFromVercel(
-      domain.domain,
-      verification || [],
-      verified ? 'verified' : 'pending',
-    );
+    let hostStatus: { active: boolean; detail: string | null; certificate: string | null };
+    try {
+      hostStatus = await (await this.host()).status(domain.domain);
+    } catch (error: any) {
+      const message = error?.message || 'The hosting provider could not be reached to check this domain.';
+      await this.supabase.from('domains')
+        .update({ last_checked_at: now, error_message: message })
+        .eq('id', domainId);
+      return { domain_id: domainId, status: domain.status, state: 'error' as DomainState, error: message, dns_records: [] };
+    }
 
-    if (verified) {
-      await this.supabase
-        .from('domains')
+    const { data: records } = await this.supabase
+      .from('dns_verifications')
+      .select('record_type,record_name,record_value,status')
+      .eq('domain_id', domainId);
+
+    const dnsRecords: DNSRecordInstruction[] = (records || []).map((record: any) => ({
+      type: record.record_type,
+      name: record.record_name,
+      value: record.record_value,
+      status: hostStatus.active ? 'verified' : record.status,
+    }));
+
+    if (hostStatus.active) {
+      await this.supabase.from('domains')
         .update({ status: 'active', verified_at: now, last_checked_at: now, error_message: null })
         .eq('id', domainId);
-
-      await this.supabase
-        .from('dns_verifications')
+      await this.supabase.from('dns_verifications')
         .update({ status: 'verified', checked_at: now })
         .eq('domain_id', domainId);
-    } else {
-      errorMessage = vErr || 'DNS validation checked, but records have not propagated yet. Please re-try in a few minutes.';
-      await this.supabase
-        .from('domains')
-        .update({ status: 'pending', last_checked_at: now, error_message: errorMessage })
-        .eq('id', domainId);
-
-      if (dnsRecords.length) {
-        await this.supabase
-          .from('dns_verifications')
-          .delete()
-          .eq('domain_id', domainId);
-
-        for (const rec of dnsRecords) {
-          await this.supabase
-            .from('dns_verifications')
-            .insert([{
-              domain_id: domainId,
-              record_type: rec.type,
-              record_name: rec.name,
-              record_value: rec.value,
-              status: rec.status,
-              checked_at: now,
-            }]);
-        }
-      }
+      return { domain_id: domainId, status: 'active', state: 'active' as DomainState, error: null, dns_records: dnsRecords };
     }
+
+    const message = 'The DNS records are not visible yet. They can take a few minutes to spread.';
+    await this.supabase.from('domains')
+      .update({ status: 'pending', last_checked_at: now, error_message: message })
+      .eq('id', domainId);
 
     return {
       domain_id: domainId,
-      status,
-      error: errorMessage,
+      status: 'pending',
+      state: resolveDomainState({
+        status: 'pending',
+        hostDetail: hostStatus.detail,
+        hasInstructions: dnsRecords.length > 0,
+      }),
+      error: message,
       dns_records: dnsRecords,
     };
   }
 
+  /** Detach at the host, then mark it removed. */
   async removeDomain(projectId: string, domainId: string): Promise<void> {
     if (!this.supabase) return;
 
@@ -438,17 +324,12 @@ export class DomainService {
       .eq('project_id', projectId)
       .single();
 
-    if (error || !domain) {
-      throw new Error('Authorized domain target not found');
-    }
+    if (error || !domain) throw new Error('Authorized domain target not found');
 
-    if (!domain.vercel_project_id) {
-      throw new Error('Vercel project id is missing for this domain.');
-    }
+    // A host that has already forgotten the domain must not block the user from
+    // removing it on our side — the record is what their interface shows.
+    await this.host().then(host => host.detach(domain.domain)).catch(() => null);
 
-    await this.vercel.removeDomainFromVercel(domain.vercel_project_id, domain.domain);
-
-    // Hard / Soft delete depending on compliance state
     await this.supabase
       .from('domains')
       .update({ status: 'removed', updated_at: new Date().toISOString() })
@@ -458,13 +339,8 @@ export class DomainService {
   async setPrimaryDomain(projectId: string, domainId: string): Promise<void> {
     if (!this.supabase) return;
 
-    // Reset all domains of project to primary = false
-    await this.supabase
-      .from('domains')
-      .update({ is_primary: false })
-      .eq('project_id', projectId);
+    await this.supabase.from('domains').update({ is_primary: false }).eq('project_id', projectId);
 
-    // Set target to primary
     const { error } = await this.supabase
       .from('domains')
       .update({ is_primary: true })
