@@ -363,7 +363,13 @@ if (process.env.CODEN_WEBCONTAINER_PREVIEW !== '0') {
   app.use((req: any, res: any, next: any) => {
     if (/^\/builder\.html\/?$/i.test(String(req.path || ''))) {
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-      res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+      // `credentialless` rather than `require-corp`: both establish the
+      // cross-origin isolation WebContainers needs, but require-corp blocks
+      // every cross-origin subresource that does not send CORP — the Tailwind,
+      // esm.sh and unpkg assets the builder and its preview load. Under
+      // credentialless those still load, without credentials, so isolation can
+      // actually be reached instead of silently costing the page its assets.
+      res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
     }
     next();
   });
