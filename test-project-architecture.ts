@@ -78,9 +78,23 @@ const quickcalc = [
   assert.deepEqual(architecture.routes, ['/', '/about']);
 }
 
-// Malformed input must not take down a generation.
-for (const input of [[], null, undefined, [{ path: 'package.json', content: '{ not json' }]] as any[]) {
-  assert.doesNotThrow(() => renderProjectArchitecture(input));
+// Malformed input must not take down a generation. A row whose content is null
+// is what a partial database row looks like, and every detector here reads
+// content with matchAll — so this threw before the model was even called, on
+// the critical path, and the first version of this test never checked it.
+for (const input of [
+  [],
+  null,
+  undefined,
+  [{ path: 'package.json', content: '{ not json' }],
+  [{ path: 'src/App.tsx', content: null }],
+  [{ path: 'src/App.tsx' }],
+  [{ path: 'src/App.tsx', content: 42 }],
+  [{ path: 'schema.sql' }],
+  [null, undefined, { path: 'src/App.tsx', content: 'ok' }],
+] as any[]) {
+  assert.doesNotThrow(() => renderProjectArchitecture(input), `must not throw on ${JSON.stringify(input)}`);
+  assert.doesNotThrow(() => describeProjectArchitecture(input));
 }
 assert.equal(renderProjectArchitecture([]), '', 'an empty project has no map');
 

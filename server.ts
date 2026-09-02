@@ -4527,19 +4527,6 @@ async function resolveAgentDecision(input: AgentDecisionInput) {
   if (!hasLiveAiProvider()) {
     return safeFallback('live intent classifier unavailable');
   }
-  // The model router is an escalation, not a toll. Every message used to pay a
-  // 54,000-character prompt to classify an intent the heuristic had already
-  // recognised — and a routing outage then decided whether a build request
-  // became a chat reply. When the heuristic is in the band it was measured
-  // correct on, it decides; everything ambiguous still goes to the model.
-  const shortcut = canRouteWithoutModel(fallback.intentUnderstanding, input.requestedMode);
-  if (shortcut.skipModel) {
-    return finalize({
-      ...fallback,
-      routingSource: 'heuristic',
-      reason: `Heuristic routing (${shortcut.reason})`.slice(0, 240),
-    });
-  }
   try {
     const modelDecision = await classifyIntentWithAi(input, fallback);
     if (!modelDecision) throw new Error('The selected AI model returned no valid intent decision.');
@@ -14299,7 +14286,6 @@ import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { GenerationPhaseTracker } from './src/services/generation-phases.ts';
 import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
-import { canRouteWithoutModel } from './src/services/router-shortcut.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 

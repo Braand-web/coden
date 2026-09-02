@@ -116,7 +116,12 @@ function detectRecent(files: ArchitectureFile[], limit = 5): string[] {
 }
 
 export function describeProjectArchitecture(files: ArchitectureFile[]): ProjectArchitecture {
-  const list = Array.isArray(files) ? files.filter(file => file && typeof file.path === 'string') : [];
+  // Content is read with matchAll all over this module, so a row whose content
+  // is null — which a partial database row is — threw before the model was even
+  // called. Normalise once, here, rather than guard at eight call sites.
+  const list = (Array.isArray(files) ? files : [])
+    .filter(file => file && typeof file.path === 'string')
+    .map(file => ({ ...file, content: typeof file.content === 'string' ? file.content : '' }));
   const pkg = readJson(list, 'package.json');
   const deps = Object.keys(pkg?.dependencies || {}).sort();
   return {
@@ -139,7 +144,14 @@ export function describeProjectArchitecture(files: ArchitectureFile[]): ProjectA
  * is really a fact about our detection.
  */
 export function renderProjectArchitecture(files: ArchitectureFile[]): string {
-  const architecture = describeProjectArchitecture(files);
+  let architecture: ProjectArchitecture;
+  try {
+    architecture = describeProjectArchitecture(files);
+  } catch {
+    // A map of the project is a convenience. It must never be the reason a
+    // generation fails, so an unreadable project simply gets no map.
+    return '';
+  }
   if (!architecture.fileCount) return '';
 
   const lines: string[] = [`Project map (${architecture.fileCount} files):`];
