@@ -11941,11 +11941,27 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     res.flushHeaders?.();
   }
 
+  const frenchActivity = isLikelyFrenchPrompt(prompt);
+  // The run's own steps, each with a real state. Before this the user saw four
+  // fixed labels for a run lasting minutes, so a build and a stall looked the
+  // same. The tracker owns the transitions; the route only says where it is.
+  const phases = new GenerationPhaseTracker(
+    (phase, state, label) => {
+      if (isStream && streamV2 && !streamAborted) streamV2.emit('phase', { phase, state, label });
+    },
+    frenchActivity ? 'fr' : 'en',
+  );
+
   // Stream-aware terminal response. In SSE mode every final/early return MUST be
   // delivered as a `done` event: a raw res.json() after the event-stream headers
   // leaves the client SSE parser without any `data:` line, which surfaces as
   // "Generation failed or empty response".
   const respondJson = async (status: number, payload: any) => {
+    // Every early return in this route goes through here, so this is the one
+    // place that can guarantee no step is left spinning when the run stops —
+    // a credit gate, a permission refusal or a provider outage all close the
+    // machine honestly instead of leaving the last step mid-flight.
+    phases.finish(status < 400 && payload?.success !== false ? 'done' : 'failed');
     if (isStream) {
       if (!res.writableEnded) {
         // Exactly one typed v2 terminal event for this request.
@@ -11957,7 +11973,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     return res.status(status).json(payload);
   };
-  const frenchActivity = isLikelyFrenchPrompt(prompt);
   const emitActivity = (phase: CodenAgentPublicPhase, fr: string, en: string, active = true) => {
     if (isStream && streamV2 && !streamAborted) {
       streamV2.emit('activity_changed', { phase, message: frenchActivity ? fr : en, active });
@@ -11996,12 +12011,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     'Coden is analyzing your request…',
   );
 
+  phases.start('understand');
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
   const recentHistory = await getRecentDecisionHistory(project.id, 6);
   let initialDecision: IntentDecision;
+  phases.start('decide');
   try {
     initialDecision = await resolveAgentDecision({
       prompt: agentPrompt,
@@ -12012,6 +12029,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
+    phases.fail('decide');
     if (isStream) {
       streamV2?.emit('error', {
         message: diagnostic.message,
@@ -12302,6 +12320,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
+    phases.start('build');
     emitActivity('building', 'Coden construit l’application…', 'Coden is building the application…');
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
@@ -12366,6 +12385,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       'I am now starting the preview and runtime checks.',
     );
 
+    phases.start('verify');
     emitActivity('checking_preview', 'Coden prépare et vérifie la preview…', 'Coden is preparing and checking the preview…');
     let pipeline = runPreviewPipeline(projectForRun, files);
     let finalFiles = files;
@@ -12379,6 +12399,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         'Je corrige les causes observées puis je relance exactement le même pipeline.',
         'I am fixing the observed causes and will rerun the exact same pipeline.',
       );
+      phases.fail('verify');
+      phases.start('fix');
       emitActivity('fixing', repairNarration(pipeline.errors, 'fr'), repairNarration(pipeline.errors, 'en'));
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
@@ -12451,6 +12473,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         platformType: uiPolicy.appType,
       }).filter(isBlockingVerificationFailure);
     }
+    phases.start('verify');
     emitActivity('testing', 'Coden lance les vérifications finales…', 'Coden is running the final checks…');
     emitProgress(
       'testing',
@@ -12494,6 +12517,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skillBudget.maxRetries > 0 &&
       !generationAbortController.signal.aborted
     ) {
+      phases.fail('verify');
+      phases.start('fix');
       emitActivity(
         'fixing',
         repairNarration(finalGate.reliabilitySummary.blocking, 'fr'),
@@ -12606,6 +12631,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const strictRuntimeVerified = pipeline.status === 'ready'
       && reliabilitySummary.status === 'passed'
       && !runnerSkipped;
+    // The verification outcome is now known. Close the repair step only if the
+    // run actually entered one, then report the final verification result — a
+    // reopen, because after a repair the gate really did run again.
+    if (phases.has('fix')) phases.done('fix');
+    phases.start('verify');
+    if (strictRuntimeVerified) phases.done('verify');
+    else phases.fail('verify');
+    phases.start('recap');
     const factLedger = createFactLedger(agentRunId || requestId);
     if (finalFiles.length) {
       finalFiles.forEach(file => appendVerifiedFact(factLedger, {
@@ -12803,6 +12836,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         },
         fact_ledger: factLedger,
       };
+      phases.finish('done');
       if (isStream) {
         streamV2?.emit('assistant_delta', { text: summary });
         streamV2?.emit('assistant_message_completed', {});
@@ -12941,6 +12975,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       },
       fact_ledger: factLedger,
     };
+    // The last step closes on the run's real outcome: a project that still
+    // needs fixes is not "ready", and saying so is the point of the machine.
+    phases.finish(verificationPassed ? 'done' : 'failed');
     if (isStream) {
       streamV2?.emit('assistant_delta', { text: finalSummary });
       streamV2?.emit('assistant_message_completed', {});
@@ -12950,6 +12987,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       return res.json(finalPayload);
     }
   } catch (error: any) {
+    // Whatever step the run died on stops spinning and reports its failure,
+    // instead of the stream simply going quiet.
+    phases.finish('failed');
     await helpers.addLedger(userId, 'refund', cost.finalCredits, await helpers.getWallet(userId), `Generation failed: ${error.message}`, refId);
     await helpers.addAudit({
       user_id: userId,
@@ -14536,6 +14576,7 @@ import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
+import { GenerationPhaseTracker } from './src/services/generation-phases.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 

@@ -232,6 +232,16 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
       addActivity(state, { id: 'plan', label: 'Plan prêt', status: 'done' });
       break;
     }
+    // The run's own steps. Without this the eight phases only moved the single
+    // current-activity indicator, so the user could see what Coden was doing
+    // right now but never what it had already done or where it had failed.
+    case 'phase':
+      addActivity(state, {
+        id: `phase:${event.phase}`,
+        label: event.label || publicMessageForPhase(phaseForLegacyEvent(event) || 'building', state.language),
+        status: event.state === 'failed' ? 'failed' : event.state === 'active' ? 'active' : 'done',
+      });
+      break;
     case 'plan_step':
       if (state.plan) {
         const step = state.plan.steps.find((item) => item.id === event.stepId);
