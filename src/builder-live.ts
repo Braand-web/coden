@@ -502,7 +502,7 @@ function planRank(plan: PlanKey) {
 function syncBuilderPlanBadges(planInput: unknown) {
   const plan = normalizePlanKey(planInput);
   currentPlanKey = plan;
-  document.querySelectorAll<HTMLElement>('#builder-plan-badge, #project-menu-plan-badge').forEach(badge => {
+  document.querySelectorAll<HTMLElement>('#builder-plan-badge').forEach(badge => {
     badge.textContent = planLabel(plan);
     badge.classList.remove('free', 'pro', 'scale', 'enterprise');
     badge.classList.add(plan);
@@ -1603,20 +1603,13 @@ function displayProjectName(value?: string) {
   return clean || 'Projet sans titre';
 }
 
-function projectInitial(value?: string) {
-  const clean = displayProjectName(value).replace(/[^a-zA-Z0-9]/g, '');
-  return (clean[0] || 'H').toUpperCase();
-}
-
 function setProjectNameDisplay(value?: string) {
   currentProjectName = displayProjectName(value);
   const name = document.getElementById('project-name');
   const menuTitle = document.getElementById('project-menu-title');
-  const avatar = document.getElementById('project-menu-avatar');
   const input = document.getElementById('project-name-input') as HTMLInputElement | null;
   if (name) name.textContent = currentProjectName;
   if (menuTitle) menuTitle.textContent = currentProjectName;
-  if (avatar) avatar.textContent = projectInitial(currentProjectName);
   if (input && document.activeElement !== input) input.value = currentProjectName;
 }
 
@@ -2685,25 +2678,6 @@ function closeProjectMenu() {
   trigger?.setAttribute('aria-expanded', 'false');
 }
 
-async function loadProjectMenuCredits() {
-  const status = document.getElementById('project-menu-credit-status');
-  const fill = document.getElementById('project-menu-credit-fill') as HTMLElement | null;
-  try {
-    const wallet = await apiFetch<BillingWalletResponse>('/api/billing/wallet');
-    const balance = Number(wallet.balance ?? 0);
-    lastWalletBalance = Number.isFinite(balance) ? balance : null;
-    const monthly = Number(wallet.buckets?.monthly_credits ?? 0);
-    const percent = monthly > 0 ? Math.max(0, Math.min(100, Math.round((balance / monthly) * 100))) : 100;
-    syncBuilderPlanBadges(wallet.plan || 'free');
-    if (status) status.textContent = `${Number.isFinite(balance) ? balance : 0} credits · ${planLabel(currentPlanKey)} plan`;
-    if (fill) fill.style.width = `${percent}%`;
-  } catch {
-    syncBuilderPlanBadges('free');
-    if (status) status.textContent = 'View credit usage in Settings.';
-    if (fill) fill.style.width = '100%';
-  }
-}
-
 function openProjectMenu() {
   const panel = document.getElementById('project-menu-panel');
   const trigger = document.getElementById('project-combo-trigger');
@@ -2714,51 +2688,75 @@ function openProjectMenu() {
     return;
   }
   setProjectNameDisplay(currentProjectName);
+  setProjectNameEditor(false);
   positionProjectMenu();
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
   trigger.setAttribute('aria-expanded', 'true');
-  void loadProjectMenuCredits();
 }
 
 function validateProjectName(value: string) {
   const clean = value.replace(/[\u0000-\u001f\u007f]/g, '').trim();
-  if (clean.length < 2) return { ok: false, value: clean, error: 'Use at least 2 characters.' };
-  if (clean.length > 80) return { ok: false, value: clean.slice(0, 80), error: 'Use 80 characters or fewer.' };
+  if (clean.length < 2) return { ok: false, value: clean, error: 'Utilisez au moins 2 caractères.' };
+  if (clean.length > 80) return { ok: false, value: clean.slice(0, 80), error: 'Utilisez 80 caractères maximum.' };
   return { ok: true, value: clean, error: '' };
+}
+
+function setProjectNameStatus(message = '') {
+  const status = document.getElementById('project-name-status');
+  if (!status) return;
+  status.textContent = message;
+  status.hidden = !message;
+}
+
+function setProjectNameEditor(editing: boolean) {
+  const summary = document.getElementById('project-menu-summary');
+  const editor = document.getElementById('project-name-editor');
+  const input = document.getElementById('project-name-input') as HTMLInputElement | null;
+  if (summary) summary.hidden = editing;
+  if (editor) editor.hidden = !editing;
+  setProjectNameStatus();
+  if (editing && input) {
+    input.value = currentProjectName;
+    requestAnimationFrame(() => {
+      input.focus();
+      input.select();
+    });
+  }
 }
 
 async function saveProjectNameFromMenu() {
   const input = document.getElementById('project-name-input') as HTMLInputElement | null;
-  const status = document.getElementById('project-name-status');
   const button = document.getElementById('project-name-save') as HTMLButtonElement | null;
   const validation = validateProjectName(input?.value || '');
   if (!validation.ok) {
-    if (status) status.textContent = validation.error;
+    setProjectNameStatus(validation.error);
     return;
   }
   if (!currentProjectId) {
     setProjectNameDisplay(validation.value);
-    if (status) status.textContent = 'Name saved for the next project.';
+    setProjectNameEditor(false);
+    setProjectNameStatus('Nom mis à jour.');
     return;
   }
   try {
     if (button) {
       button.disabled = true;
-      button.textContent = 'Saving';
+      button.setAttribute('aria-busy', 'true');
     }
     const response = await apiFetch<{ success: boolean; project: { name: string; slug?: string } }>(`/api/projects/${encodeURIComponent(currentProjectId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ name: validation.value }),
     });
     setProjectNameDisplay(response.project?.name || validation.value);
-    if (status) status.textContent = 'Project name saved.';
+    setProjectNameEditor(false);
+    setProjectNameStatus('Nom mis à jour.');
   } catch (error) {
-    if (status) status.textContent = error instanceof Error ? error.message : 'Unable to save project name.';
+    setProjectNameStatus(error instanceof Error ? error.message : 'Impossible de renommer le projet.');
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = 'Save';
+      button.removeAttribute('aria-busy');
     }
   }
 }
@@ -2774,24 +2772,16 @@ function bindProjectMenu() {
   document.getElementById('project-menu-dashboard')?.addEventListener('click', () => {
     window.location.href = '/dashboard.html';
   });
-  document.getElementById('project-menu-upgrade')?.addEventListener('click', () => {
-    closeProjectMenu();
-    (document.getElementById('btn-upgrade') as HTMLButtonElement | null)?.click();
-  });
-  document.getElementById('project-menu-free-credits')?.addEventListener('click', () => {
-    showMiniModal('Get free credits', '<p>Free credit campaigns are not configured yet. Upgrade or buy credits to continue building without interruption.</p>', () => {});
-  });
-  document.getElementById('project-menu-settings')?.addEventListener('click', () => {
-    closeProjectMenu();
-    void openBuilderSettings('ai-usage');
-  });
-  document.getElementById('project-menu-history')?.addEventListener('click', () => {
-    closeProjectMenu();
-    void openHistoryPanel();
-  });
+  document.getElementById('project-name-edit')?.addEventListener('click', () => setProjectNameEditor(true));
   document.getElementById('project-name-save')?.addEventListener('click', () => void saveProjectNameFromMenu());
   document.getElementById('project-name-input')?.addEventListener('keydown', event => {
-    if ((event as KeyboardEvent).key === 'Enter') void saveProjectNameFromMenu();
+    const key = (event as KeyboardEvent).key;
+    if (key === 'Enter') void saveProjectNameFromMenu();
+    if (key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setProjectNameEditor(false);
+    }
   });
   document.addEventListener('click', event => {
     const panel = document.getElementById('project-menu-panel');
@@ -4287,15 +4277,8 @@ function activateBuilderView(view: 'preview' | 'code' | 'database' | 'analysis')
     node.style.display = name === view ? (view === 'code' ? 'grid' : 'flex') : 'none';
     node.setAttribute('aria-hidden', name === view ? 'false' : 'true');
   });
-  document.querySelectorAll('.sub-nav-tab, .builder-more-item').forEach(tab => tab.classList.remove('active'));
+  document.querySelectorAll('.sub-nav-tab').forEach(tab => tab.classList.remove('active'));
   document.getElementById(`tab-btn-${view}`)?.classList.add('active');
-  const moreTrigger = document.getElementById('tab-btn-more');
-  const moreWrapper = document.getElementById('builder-more-wrapper');
-  if (moreTrigger) {
-    moreTrigger.classList.toggle('active', view === 'analysis' || view === 'database');
-    moreTrigger.setAttribute('aria-expanded', 'false');
-  }
-  moreWrapper?.classList.remove('open');
   if (view === 'database') void loadDatabase();
   if (view === 'analysis') {
     void loadAnalysis();
@@ -6891,7 +6874,6 @@ function isAnyBuilderOverlayOpen() {
   if (document.getElementById('coden-publish-panel')) return true;
   if (document.getElementById('preview-device-toggle')?.classList.contains('open')) return true;
   if (document.getElementById('pane-studio-wrapper')?.classList.contains('open')) return true;
-  if (document.getElementById('builder-more-wrapper')?.classList.contains('open')) return true;
   if (document.getElementById('coden-design-popover')) return true;
   if (document.getElementById('coden-media-popover')) return true;
   return false;
@@ -6941,7 +6923,6 @@ initCodenNavigationTransitions();
   bindProjectMenu();
   bindConnectorsButton();
   syncBuilderPlanBadges(currentPlanKey);
-  void loadProjectMenuCredits();
   bindPreviewDeviceToggle();
   bindPreviewThemeSync();
   bindMobileBuilderShell();
