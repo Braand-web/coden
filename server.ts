@@ -12339,14 +12339,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       signal: generationAbortController.signal,
       allowModelFallback: requestedModelSelection === 'auto',
       onEvent: event => {
-        if (event.type === 'model_fallback') {
-          emitActivity(
-            'building',
-            'Coden bascule vers un modèle de secours compatible…',
-            'Coden is switching to a compatible fallback model…',
-          );
-          return;
-        }
+        // A provider fallback is internal routing. The core contract forbids
+        // exposing it, and the user cannot act on it — it stays in the
+        // technical event log, not in the shimmer.
+        if (event.type === 'model_fallback') return;
         // Surface each generated file as the model writes it, so the longest
         // step of the run stops looking like a single frozen label.
         if (!isStream || !streamV2 || streamAborted) return;
@@ -12357,7 +12353,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           streamV2.emit('file_start', { path: event.path, index: event.index });
           // Report the file the model is actually writing rather than repeating
           // one fixed sentence for the whole of the longest step.
-          emitActivity('building', `Coden écrit ${event.path}…`, `Coden is writing ${event.path}…`);
+          emitActivity('building', writingFileNarration(event.path, 'fr'), writingFileNarration(event.path, 'en'));
         } else if (event.type === 'file_done') {
           streamV2.emit('file_done', { path: event.path, bytes: event.bytes });
         }
@@ -12403,12 +12399,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         'Je corrige les causes observées puis je relance exactement le même pipeline.',
         'I am fixing the observed causes and will rerun the exact same pipeline.',
       );
-      const firstPreviewIssue = String(pipeline.errors[0]?.message || '').trim();
-      emitActivity(
-        'fixing',
-        firstPreviewIssue ? `Coden corrige : ${firstPreviewIssue}` : 'Coden corrige les problèmes détectés…',
-        firstPreviewIssue ? `Coden is fixing: ${firstPreviewIssue}` : 'Coden is fixing the detected issues…',
-      );
+      emitActivity('fixing', repairNarration(pipeline.errors, 'fr'), repairNarration(pipeline.errors, 'en'));
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
         const fix = applyAutoFix(projectForRun, finalFiles, pipeline.errors);
@@ -12523,11 +12514,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skillBudget.maxRetries > 0 &&
       !generationAbortController.signal.aborted
     ) {
-      const firstVerifiedBlocker = String(finalGate.reliabilitySummary.blocking[0]?.message || '').trim();
       emitActivity(
         'fixing',
-        firstVerifiedBlocker ? `Coden corrige : ${firstVerifiedBlocker}` : 'Coden corrige les blocages vérifiés…',
-        firstVerifiedBlocker ? `Coden is repairing: ${firstVerifiedBlocker}` : 'Coden is repairing the verified blockers…',
+        repairNarration(finalGate.reliabilitySummary.blocking, 'fr'),
+        repairNarration(finalGate.reliabilitySummary.blocking, 'en'),
       );
       const repairBlockers = finalGate.reliabilitySummary.blocking.slice(0, 12).map(item => ({
         key: item.key,
@@ -14566,6 +14556,7 @@ import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
+import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
