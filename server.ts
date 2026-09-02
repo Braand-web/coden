@@ -2536,10 +2536,7 @@ function safeJsonLd(value: Record<string, any>): string {
 }
 
 function insertIntoHead(html: string, block: string): string {
-  if (/<\/head>/i.test(html)) {
-    return html.replace(/<\/head>/i, `${block}\n</head>`);
-  }
-  return `${block}\n${html}`;
+  return insertBeforeHeadEnd(html, block);
 }
 
 function enhanceHtmlSeo(
@@ -2835,8 +2832,7 @@ function injectAnalyticsSnippet(html: string, projectId?: string, environment: '
   });
 })();
 </script>`;
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${snippet}\n</body>`);
-  return `${html}\n${snippet}`;
+  return insertBeforeBodyEnd(html, snippet);
 }
 
 function getCodenPublicOrigin(): string {
@@ -3029,8 +3025,7 @@ function injectCodenPublishedBadge(html: string, project: GeneratedProject, publ
   <span>Coden</span>
   <span aria-hidden="true" style="font-size:14px;line-height:1;opacity:.92;">&rarr;</span>
 </a>`;
-  if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${badge}\n</body>`);
-  return `${html}\n${badge}`;
+  return insertBeforeBodyEnd(html, badge);
 }
 
 async function getOrganizationPlan(organizationId: string): Promise<string> {
@@ -14560,7 +14555,7 @@ import {
 import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
-import { scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
+import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 

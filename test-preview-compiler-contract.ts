@@ -45,4 +45,20 @@ assert.ok(
   'the preview must report a missing compiler explicitly',
 );
 
+// 4. Nothing may be spliced into the document by first-match replace. The
+//    generated modules are embedded as a JSON literal earlier in the same
+//    document, so a generated file containing `</body>` — a TanStack
+//    `__root.tsx` renders one — made that the first match, and the injected
+//    `</script>` ended the bootstrap in the middle of a string.
+for (const pattern of [/replace\(\/<\\\/body>\/i/, /replace\(\/<\\\/head>\/i/]) {
+  assert.ok(
+    !pattern.test(server),
+    `document injection must go through the preview-embedding helpers, not ${pattern}`,
+  );
+}
+assert.ok(
+  server.includes('insertBeforeBodyEnd(') && server.includes('insertBeforeHeadEnd('),
+  'the preview must inject through the helpers that target the document\'s own tags',
+);
+
 console.log('preview compiler contract tests passed');

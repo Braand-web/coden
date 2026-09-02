@@ -20,11 +20,64 @@ export function styleSafeCss(css: string): string {
 }
 
 /**
- * Neutralize any sequence that would end an inline `<script>` element.
+ * Neutralize every sequence that would derail the inline `<script>` element.
  *
- * Applied to a JSON literal, where `\/` is a valid escape for `/`, so the
- * embedded value parses identically.
+ * Three sequences matter, and all three appear in ordinary generated code.
+ * `</script` ends the element. `<!--` puts the tokenizer in the escaped state
+ * and `<script` then puts it in the double-escaped state, where `</script>`
+ * stops closing the element at all — so a file carrying an HTML comment and the
+ * word `<script` swallows our own closing tag and breaks the document.
+ *
+ * Applied to a JSON literal, where `\/` escapes `/` and `\u002d` is `-`, so the
+ * embedded value parses back byte for byte.
  */
 export function scriptSafeJson(json: string): string {
-  return String(json || '').replace(/<\/(script)/gi, '<\\/$1');
+  return String(json || '')
+    .replace(/<\/(script)/gi, '<\\/$1')
+    .replace(/<(s)(cript)/gi, (_match, first: string, rest: string) =>
+      `<\\u00${first.charCodeAt(0).toString(16)}${rest}`)
+    .replace(/<!--/g, '<!\\u002d\\u002d');
+}
+
+/**
+ * Splice a block in before the document's own closing `</body>`.
+ *
+ * The preview embeds every generated module as a JSON literal inside an inline
+ * script, so the generated source is part of the document text. Injecting with
+ * `html.replace(/<\/body>/i, …)` targets the *first* `</body>`, and any app
+ * whose source contains that text — a TanStack `__root.tsx` rendering the
+ * document shell, a component holding an HTML string — puts one inside that
+ * payload. The injected `</script>` then ended the bootstrap in the middle of a
+ * JSON string, so the browser reported `SyntaxError: Invalid or unexpected
+ * token`, the rest of the bootstrap was reparsed as page text, and the run went
+ * to needs_fix with no repair able to clear it.
+ *
+ * The document's own `</body>` is the last one by construction: everything the
+ * preview embeds is written before it. Splicing by index also keeps the block
+ * literal — `String.replace` would interpret `$&` and `$'` inside it.
+ */
+export function insertBeforeBodyEnd(html: string, block: string): string {
+  const source = String(html || '');
+  const at = source.toLowerCase().lastIndexOf('</body>');
+  if (at < 0) return `${source}\n${block}`;
+  return `${source.slice(0, at)}${block}\n${source.slice(at)}`;
+}
+
+/**
+ * Splice a block in before the document's own closing `</head>`.
+ *
+ * Same hazard, opposite end: here the document's tag is the first one that
+ * closes before the body opens, since anything after `<body` is content.
+ */
+export function insertBeforeHeadEnd(html: string, block: string): string {
+  const source = String(html || '');
+  const lower = source.toLowerCase();
+  const bodyAt = lower.search(/<body[\s>]/);
+  let at = lower.indexOf('</head>');
+  if (at < 0) return `${block}\n${source}`;
+  if (bodyAt >= 0 && at > bodyAt) {
+    const before = lower.slice(0, bodyAt).lastIndexOf('</head>');
+    at = before >= 0 ? before : at;
+  }
+  return `${source.slice(0, at)}${block}\n${source.slice(at)}`;
 }
