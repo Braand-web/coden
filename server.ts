@@ -3220,10 +3220,12 @@ function buildReactVitePreviewHtml(
   const appFile = fileByPath(files, 'src/App.tsx') || fileByPath(files, 'src/App.jsx');
   if (!appFile) return null;
 
-  const css = [
+  // Generated CSS is untrusted: a stray `</style>` closes the element early and
+  // the rest of the document, bootstrap script included, stops parsing.
+  const css = styleSafeCss([
     fileByPath(files, 'src/index.css')?.content,
     fileByPath(files, 'src/App.css')?.content,
-  ].filter(Boolean).join('\n\n');
+  ].filter(Boolean).join('\n\n'));
 
   const title = projectName || 'Coden app';
   const description = summarizeForMeta(promptOrDescription || title, 'React application preview.');
@@ -3239,7 +3241,7 @@ function buildReactVitePreviewHtml(
       modulesObject[file.path] = { code: file.content };
     }
   }
-  const escapedModulesValue = JSON.stringify(modulesObject).replace(/<\/script>/gi, '<\\/script>');
+  const escapedModulesValue = scriptSafeJson(JSON.stringify(modulesObject));
 
   const html = [
     '<!doctype html>',
@@ -14489,6 +14491,7 @@ import {
 import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
+import { scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
