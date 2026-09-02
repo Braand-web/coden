@@ -5636,7 +5636,7 @@ function runPreviewPipeline(project: GeneratedProject, files: GeneratedFile[]): 
     if (/process\.env\.[A-Z0-9_]*SECRET/i.test(file.content) || containsSecret(file.content)) {
       errors.push({ file: file.path, message: 'Potential secret exposure detected in generated code.', severity: 'high' });
     }
-    if (/from\s+['"][^'"]+['"]/.test(file.content) && /__missing_import__|missing-module/i.test(file.content)) {
+    if (hasBlockingGeneratedImport(file.content)) {
       errors.push({ file: file.path, message: 'Missing import detected.', severity: 'medium' });
     }
     if (/__CODEN_FORCE_ERROR__/i.test(file.content)) {
@@ -5708,12 +5708,7 @@ function cleanGeneratedBlockingMarkers(files: GeneratedFile[], summaries: string
   let changed = false;
   const cleaned = files.map(file => {
     const source = String(file.content || '');
-    let content = source
-      .replace(/^\s*throw\s+new\s+Error\(\s*['"`]__CODEN_FORCE_ERROR__['"`]\s*\);\s*$/gim, '')
-      .replace(/throw\s+new\s+Error\(\s*['"`]__CODEN_FORCE_ERROR__['"`]\s*\);?/gi, '')
-      .replace(/__CODEN_FORCE_ERROR__/gi, '')
-      .replace(/import\s+[^;\n]+from\s+['"]__missing_import__['"];?\s*/gi, '')
-      .replace(/from\s+['"]__missing_import__['"];?/gi, '');
+    const content = strippedOfBlockingMarkers(source);
     if (content === source) return file;
     changed = true;
     summaries.push(`Removed generated runtime blocker from ${generatedPath(file.path)}.`);
@@ -6172,17 +6167,17 @@ function applyAutoFix(project: GeneratedProject, files: GeneratedFile[], errors:
       };
     }
   }
-  const targetPath = primary.file || 'index.html';
-  const patched = files.map(file => {
-    if (file.path !== targetPath) return file;
-    let content = file.content
-      .replace(/__CODEN_FORCE_ERROR__/gi, '')
-      .replace(/from\s+['"]__missing_import__['"];?/g, '')
-      .replace(/sk_live_[A-Za-z0-9_]+|sk_test_[A-Za-z0-9_]+/g, 'SECRET_CONFIGURED_SERVER_SIDE');
-
-    return { ...file, content, updated_at: new Date().toISOString() };
-  });
-  const changed = patched.some((file, index) => file.content !== files[index]?.content);
+  // The preview scans every file, so repairing only the first error's file left
+  // the same marker standing elsewhere and the project stuck in needs_fix.
+  const markerSummaries: string[] = [];
+  const patched = cleanGeneratedBlockingMarkers(files.map(file => ({ ...file })), markerSummaries).files
+    .map(file => {
+      const content = file.content.replace(/sk_live_[A-Za-z0-9_]+|sk_test_[A-Za-z0-9_]+/g, 'SECRET_CONFIGURED_SERVER_SIDE');
+      return content === file.content ? file : { ...file, content, updated_at: new Date().toISOString() };
+    });
+  const originalContentByPath = new Map(files.map(file => [file.path, file.content]));
+  const changedPaths = patched.filter(file => originalContentByPath.get(file.path) !== file.content).map(file => file.path);
+  const changed = changedPaths.length > 0;
 
   if (!changed) {
     return { files, fixed: false, patch: null as any };
@@ -6194,8 +6189,9 @@ function applyAutoFix(project: GeneratedProject, files: GeneratedFile[], errors:
     patch: {
       id: randomUUID(),
       project_id: project.id,
-      target_file: targetPath,
+      target_file: changedPaths[0] || primary.file || 'index.html',
       summary: `Applied targeted patch for ${primary.message}`,
+      details: markerSummaries,
       created_at: new Date().toISOString(),
     },
   };
@@ -8847,11 +8843,35 @@ async function listProjectVersions(projectId: string) {
   return (data || []).map(redactSecretPayload);
 }
 
+/**
+ * Persist one preview/build error.
+ *
+ * The incoming object is a diagnostic from the preview pipeline, not a table
+ * row: it carries whatever fields that diagnostic needed (`diagnostic_code`,
+ * for one). Spreading it into the insert made PostgREST reject the whole row
+ * for an unknown column, and this is only telemetry about a failure that was
+ * already reported — it must never abort the run that produced it.
+ */
 async function saveBuildError(project: GeneratedProject, error: any) {
-  const row = { id: randomUUID(), organization_id: project.organization_id, project_id: project.id, ...error, status: error.status || 'detected', created_at: new Date().toISOString() };
+  const diagnosticCode = String(error?.diagnostic_code || '').trim();
+  const message = String(error?.message || 'Unknown build error.');
+  const row = {
+    id: randomUUID(),
+    organization_id: project.organization_id,
+    project_id: project.id,
+    file: error?.file ? String(error.file) : null,
+    // The table has no diagnostic_code column, so keep the code in the message
+    // rather than losing the one field that identifies the failure.
+    message: diagnosticCode ? `[${diagnosticCode}] ${message}` : message,
+    severity: String(error?.severity || 'medium'),
+    status: String(error?.status || 'detected'),
+    created_at: new Date().toISOString(),
+  };
   const client = requireSupabase('Build error persistence');
   const { error: dbError } = await client.from('build_errors').insert([row]);
-  if (dbError) throw new Error(`Supabase build error persistence failed: ${dbError.message}`);
+  if (dbError) {
+    console.warn('[coden:build_error_persistence_skipped]', { message: redactSecrets(dbError.message, '[redacted]') });
+  }
   return row;
 }
 
@@ -14468,6 +14488,7 @@ import {
 } from './src/services/publish-cloudflare.ts';
 import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
+import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
