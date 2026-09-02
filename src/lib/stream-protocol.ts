@@ -73,6 +73,7 @@ export type CodenStreamEventType =
   | 'mode_requested'
   | 'mode_resolved'
   | 'activity_changed'
+  | 'assistant_progress'
   | 'assistant_message_completed'
   | 'decision_required'
   | 'preview_ready'
@@ -112,6 +113,7 @@ const EVENT_TYPES: readonly CodenStreamEventType[] = [
   'mode_requested',
   'mode_resolved',
   'activity_changed',
+  'assistant_progress',
   'assistant_message_completed',
   'decision_required',
   'preview_ready',
@@ -377,6 +379,19 @@ export interface CodenActivityChangedEvent extends CodenStreamEventBase {
   active: boolean;
 }
 
+/**
+ * A concise, evidence-grounded checkpoint that remains in the conversation.
+ * This is public progress, never private chain-of-thought.
+ */
+export interface CodenAssistantProgressEvent extends CodenStreamEventBase {
+  type: 'assistant_progress';
+  messageId: string;
+  phase: CodenAgentPublicPhase;
+  content: string;
+  evidence?: string[];
+  nextAction?: string;
+}
+
 export interface CodenAssistantMessageCompletedEvent extends CodenStreamEventBase {
   type: 'assistant_message_completed';
   messageId?: string;
@@ -455,6 +470,7 @@ export type CodenStreamEvent =
   | CodenModeRequestedEvent
   | CodenModeResolvedEvent
   | CodenActivityChangedEvent
+  | CodenAssistantProgressEvent
   | CodenAssistantMessageCompletedEvent
   | CodenDecisionRequiredEvent
   | CodenPreviewReadyEvent

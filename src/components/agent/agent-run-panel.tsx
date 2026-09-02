@@ -1,6 +1,7 @@
 import { RotateCcw, Square } from 'lucide-react';
 import { AgentActivityShimmer } from './agent-activity-shimmer';
 import { AgentResponse } from './agent-response';
+import { AgentProgressNote } from './agent-progress-note';
 import { InlineUserDecision } from './inline-user-decision';
 import type { AgentRunStatus } from '../../services/agent-run-contract';
 import type { AgentRunViewModel } from '../../services/agent-run-store';
@@ -62,6 +63,11 @@ export function AgentRunPanel({
 
   return (
     <section className="coden-agent-conversation-run" data-run-id={view.runId} data-run-status={view.status} aria-busy={active}>
+      {view.progressNotes.length ? (
+        <div className="coden-agent-progress-list" aria-label={locale === 'fr' ? 'Progression de Coden' : 'Coden progress'}>
+          {view.progressNotes.map((note) => <AgentProgressNote key={note.id} note={note} />)}
+        </div>
+      ) : null}
       {activity ? <AgentActivityShimmer runId={view.runId} phase={activity.phase} message={activity.message} active={showActivity} /> : null}
       <AgentResponse content={responseContent} streaming={streamingResponse} />
       {decision ? <InlineUserDecision decision={decision} onSubmit={onClarification} onConfirm={onBuildPlan} onCancel={onCancel} /> : null}

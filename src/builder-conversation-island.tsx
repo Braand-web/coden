@@ -246,6 +246,7 @@ function cloneMessages(messages: CodenConversationMessage[]) {
             files: [...message.liveRun.view.files],
             checks: message.liveRun.view.checks.map((item) => ({ ...item })),
             warnings: [...message.liveRun.view.warnings],
+            progressNotes: message.liveRun.view.progressNotes.map((note) => ({ ...note, evidence: [...note.evidence] })),
             objective: message.liveRun.view.objective ? { ...message.liveRun.view.objective } : undefined,
             plan: message.liveRun.view.plan ? { ...message.liveRun.view.plan, steps: message.liveRun.view.plan.steps.map((step) => ({ ...step })) } : undefined,
             verification: message.liveRun.view.verification ? { ...message.liveRun.view.verification, checks: message.liveRun.view.verification.checks.map((item) => ({ ...item })) } : undefined,
@@ -521,6 +522,10 @@ function createStore() {
           case "activity_changed":
             run.activeText = event.message;
             message.working = event.active;
+            break;
+          case "assistant_progress":
+            run.activeText = event.nextAction || event.content;
+            message.working = false;
             break;
           case "assistant_message_completed":
             message.working = false;

@@ -11915,6 +11915,29 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       streamV2.emit('activity_changed', { phase, message: frenchActivity ? fr : en, active });
     }
   };
+  let publicProgressSequence = 0;
+  let lastPublicProgress = '';
+  const emitProgress = (
+    phase: CodenAgentPublicPhase,
+    fr: string,
+    en: string,
+    evidence: string[] = [],
+    nextFr?: string,
+    nextEn?: string,
+  ) => {
+    if (!isStream || !streamV2 || streamAborted) return;
+    const content = frenchActivity ? fr : en;
+    if (!content.trim() || content === lastPublicProgress) return;
+    lastPublicProgress = content;
+    publicProgressSequence += 1;
+    streamV2.emit('assistant_progress', {
+      messageId: `${requestId}:progress:${publicProgressSequence}`,
+      phase,
+      content,
+      evidence: evidence.slice(0, 6),
+      nextAction: frenchActivity ? nextFr : nextEn,
+    });
+  };
 
   // The decision call can take noticeable time on a live provider. Emit the
   // first real activity before awaiting it so a connected Builder never looks
@@ -11982,6 +12005,23 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           : 'Coden is reproducing the issue…',
     );
   }
+  const publicGoal = String(decision.modelObjective?.goal || decision.userVisibleReason || '').trim().slice(0, 240);
+  emitProgress(
+    decisionPhase,
+    publicGoal
+      ? `J’ai compris l’objectif : ${publicGoal}`
+      : `J’ai analysé la demande et identifié le parcours à exécuter.`,
+    publicGoal
+      ? `I understood the objective: ${publicGoal}`
+      : `I analyzed the request and identified the workflow to execute.`,
+    ['decision:resolved', `project_files:${existingFiles.length}`],
+    existingFiles.length
+      ? `Je vérifie maintenant les ${existingFiles.length} fichiers existants avant toute modification.`
+      : `Je prépare maintenant la structure minimale nécessaire.`,
+    existingFiles.length
+      ? `I am now checking the ${existingFiles.length} existing files before making changes.`
+      : `I am now preparing the minimum required structure.`,
+  );
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
     intent: decision.intent,
@@ -12197,6 +12237,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           nextAction: 'plan_only',
         };
         executionPlan = (await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' })).text;
+        emitProgress(
+          'planning',
+          'Le plan d’exécution est prêt et tient compte du projet existant.',
+          'The execution plan is ready and accounts for the existing project.',
+          [`existing_files:${existingFiles.length}`, 'plan:generated'],
+          'Je passe à l’implémentation, puis je vérifierai la preview réelle.',
+          'I am moving to implementation, then I will verify the real preview.',
+        );
       } catch (error) {
         throw error;
       }
@@ -12250,11 +12298,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     files = ensureModernFrontendProject(files, generationProjectName, prompt, project.id);
     const projectForRun: GeneratedProject = { ...project, name: generationProjectName, prompt };
 
+    emitProgress(
+      'building',
+      `${generation.files.length} fichier${generation.files.length > 1 ? 's ont' : ' a'} été généré${generation.files.length > 1 ? 's' : ''} ou mis à jour dans le snapshot de travail.`,
+      `${generation.files.length} file${generation.files.length === 1 ? ' has' : 's have'} been generated or updated in the working snapshot.`,
+      [`generated_files:${generation.files.length}`, `snapshot_files:${files.length}`],
+      'Je démarre maintenant la preview et les contrôles de runtime.',
+      'I am now starting the preview and runtime checks.',
+    );
+
     emitActivity('checking_preview', 'Coden prépare et vérifie la preview…', 'Coden is preparing and checking the preview…');
     let pipeline = runPreviewPipeline(projectForRun, files);
     let finalFiles = files;
     let autoFix = null as any;
     if (pipeline.status === 'failed') {
+      emitProgress(
+        'fixing',
+        `La première preview a révélé ${pipeline.errors.length} problème${pipeline.errors.length > 1 ? 's' : ''} bloquant${pipeline.errors.length > 1 ? 's' : ''}. Aucun résultat prêt ne sera annoncé avant correction.`,
+        `The first preview revealed ${pipeline.errors.length} blocking issue${pipeline.errors.length === 1 ? '' : 's'}. No ready result will be announced before repair.`,
+        pipeline.errors.slice(0, 4).map((error, index) => `preview_error:${index + 1}:${error.file || 'runtime'}`),
+        'Je corrige les causes observées puis je relance exactement le même pipeline.',
+        'I am fixing the observed causes and will rerun the exact same pipeline.',
+      );
       emitActivity('fixing', 'Coden corrige les problèmes détectés…', 'Coden is fixing the detected issues…');
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
@@ -12328,6 +12393,16 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }).filter(isBlockingVerificationFailure);
     }
     emitActivity('testing', 'Coden lance les vérifications finales…', 'Coden is running the final checks…');
+    emitProgress(
+      'testing',
+      pipeline.status === 'ready'
+        ? 'La preview démarre correctement. Je vérifie maintenant le build, les interactions principales et les erreurs bloquantes.'
+        : 'La preview reste incomplète. Je lance les vérifications finales pour identifier précisément les blocages restants.',
+      pipeline.status === 'ready'
+        ? 'The preview starts correctly. I am now checking the build, primary interactions, and blocking errors.'
+        : 'The preview is still incomplete. I am running the final checks to identify the remaining blockers precisely.',
+      [`preview_pipeline:${pipeline.status}`],
+    );
     if (isStream && streamV2 && !streamAborted) streamV2.emit('verification_started', {});
     let finalGate = await finalReliabilityAutoFix({
       project: projectForRun,
@@ -12522,6 +12597,22 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       status: reliabilitySummary.status === 'passed' ? 'pass' : reliabilitySummary.status === 'failed' ? 'fail' : 'incomplete',
       checks: verificationChecks.length,
     });
+    emitProgress(
+      'checking_preview',
+      reliabilitySummary.status === 'passed'
+        ? `Les ${verificationChecks.length} contrôles sont terminés et aucun blocage critique ne subsiste.`
+        : `Les contrôles sont terminés, mais ${reliabilitySummary.blocking?.length || 1} blocage${(reliabilitySummary.blocking?.length || 1) > 1 ? 's restent' : ' reste'} à résoudre.`,
+      reliabilitySummary.status === 'passed'
+        ? `All ${verificationChecks.length} checks are complete and no critical blocker remains.`
+        : `The checks are complete, but ${reliabilitySummary.blocking?.length || 1} blocker${(reliabilitySummary.blocking?.length || 1) === 1 ? ' remains' : 's remain'}.`,
+      [`verification:${reliabilitySummary.status}`, `checks:${verificationChecks.length}`],
+      reliabilitySummary.status === 'passed'
+        ? 'Je prépare le récapitulatif final à partir des preuves vérifiées.'
+        : 'Je sauvegarde un état récupérable et j’explique précisément la prochaine action.',
+      reliabilitySummary.status === 'passed'
+        ? 'I am preparing the final summary from verified evidence.'
+        : 'I am saving a recoverable state and will explain the exact next action.',
+    );
     if (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary)) {
       const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
         ? sanitizeSuggestedProjectName(generation.appName, prompt)

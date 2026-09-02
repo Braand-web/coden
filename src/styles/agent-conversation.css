@@ -12,6 +12,43 @@
   line-height: 1.55;
 }
 
+.coden-agent-progress-list {
+  display: grid;
+  gap: 12px;
+  margin: 2px 0 12px;
+}
+
+.coden-agent-progress-note {
+  position: relative;
+  padding-left: 14px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.coden-agent-progress-note::before {
+  position: absolute;
+  top: .66em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #60a5fa) 64%, var(--text-muted, #94a3b8));
+  content: "";
+}
+
+.coden-agent-progress-copy {
+  color: var(--text-muted, #94a3b8);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.coden-agent-progress-copy p { margin-bottom: 4px; }
+.coden-agent-progress-next {
+  margin: 2px 0 0;
+  color: color-mix(in srgb, var(--text-muted, #94a3b8) 82%, var(--text, #eef2f7));
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
 .coden-shimmering-text {
   display: inline-block;
   color: var(--text-muted, #94a3b8);

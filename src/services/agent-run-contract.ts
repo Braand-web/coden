@@ -195,6 +195,7 @@ export function statusFromStreamEvent(event: CodenStreamEvent, current: AgentRun
       if (event.phase === 'testing' || event.phase === 'checking_preview') return 'verifying';
       if (event.phase === 'understanding' || event.phase === 'inspecting' || event.phase === 'researching') return 'understanding';
       return 'executing';
+    case 'assistant_progress': return current === 'submitting' ? 'understanding' : current;
     case 'clarification': return 'clarifying';
     case 'plan': return 'planning';
     case 'verification_started': return 'verifying';

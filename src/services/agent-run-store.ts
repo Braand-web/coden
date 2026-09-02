@@ -20,6 +20,15 @@ export type AgentActivityItem = {
   evidence?: string;
 };
 
+export type AgentProgressNote = {
+  id: string;
+  phase: AgentPublicPhase;
+  content: string;
+  evidence: string[];
+  nextAction?: string;
+  sequence: number;
+};
+
 export type AgentRunViewModel = AgentRunContract & {
   activities: AgentActivityItem[];
   clarification?: { question: string; options?: string[] };
@@ -27,6 +36,7 @@ export type AgentRunViewModel = AgentRunContract & {
   checks: VerificationCheck[];
   error?: string;
   warnings: string[];
+  progressNotes: AgentProgressNote[];
   publicActivity?: { phase: AgentPublicPhase; message: string; active: boolean; sequence: number };
   lastAssistantSequence: number;
   decision?: InlineUserDecision;
@@ -59,6 +69,7 @@ export function createAgentRunViewModel(input: Partial<AgentRunContract> & { run
     files: [],
     checks: input.verification?.checks || [],
     warnings: [],
+    progressNotes: [],
     lastAssistantSequence: 0,
   };
 }
@@ -167,6 +178,7 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
     files: [...previous.files],
     checks: previous.checks.map((check) => ({ ...check })),
     warnings: [...previous.warnings],
+    progressNotes: previous.progressNotes.map((note) => ({ ...note, evidence: [...note.evidence] })),
   };
 
   applyStatus(state, statusFromStreamEvent(event, state.status));
@@ -237,6 +249,22 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
     case 'activity_changed':
       state.publicActivity = { phase: event.phase, message: event.message, active: event.active, sequence: event.sequence || event.id };
       break;
+    case 'assistant_progress': {
+      const sequence = event.sequence || event.id;
+      if (!state.progressNotes.some((note) => note.id === event.messageId || note.sequence === sequence)) {
+        state.progressNotes.push({
+          id: event.messageId,
+          phase: event.phase,
+          content: event.content,
+          evidence: event.evidence || [],
+          nextAction: event.nextAction,
+          sequence,
+        });
+        if (state.progressNotes.length > 8) state.progressNotes = state.progressNotes.slice(-8);
+      }
+      state.publicActivity = state.publicActivity ? { ...state.publicActivity, active: false } : undefined;
+      break;
+    }
     case 'decision_required':
       state.decision = event.decision;
       break;
