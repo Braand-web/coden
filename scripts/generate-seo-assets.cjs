@@ -18,7 +18,7 @@ const existingPages = [
 
 const noindexPages = [
   { file: 'auth.html', path: '/auth.html', title: 'Coden — Continue building your web app', description: 'Sign in to Coden to continue turning your idea into a working web app, preview changes and publish verified projects.' },
-  { file: 'dashboard.html', path: '/dashboard.html', title: 'Coden — Workspace Dashboard', description: 'Your private Coden workspace.' },
+  { file: 'dashboard.html', path: '/dashboard.html', title: 'Coden — Mes projets', description: 'Votre espace de travail privé Coden.' },
   { file: 'builder.html', path: '/builder.html', title: 'Coden — Builder Workspace', description: 'Your private Coden builder workspace.' },
   { file: 'checkout.html', path: '/checkout.html', title: 'Coden — Secure Checkout', description: 'Review your Coden plan before secure payment.' },
   { file: 'admin.html', path: '/admin.html', title: 'Coden — Admin Console', description: 'Private Coden administration console.' },

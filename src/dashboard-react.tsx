@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   createRootRoute,
@@ -9,24 +9,33 @@ import {
 } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import {
-  ArrowUp,
-  Boxes,
+  ArrowRight,
   ChevronLeft,
   ChevronRight,
-  LoaderCircle,
+  FileCode2,
   Menu,
-  Paperclip,
   Plus,
   Search,
   X,
-  type LucideIcon,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { isLocalPreviewEnabled } from './local-preview';
-import { startCreateProjectFlow, type CreateProjectFlowMode } from './services/create-project-flow';
 import './styles/dashboard-react.css';
 
 type ProfileResponse = { user?: { email?: string; name?: string; full_name?: string } };
+
+type DashboardProject = {
+  id: string;
+  name: string;
+  status?: string;
+  preview_status?: string;
+  publish_status?: string;
+  live_url?: string;
+  updated_at?: string;
+  created_at?: string;
+};
+
+type ProjectsResponse = { projects?: DashboardProject[] };
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,11 +53,7 @@ function RootLayout() {
   );
 }
 
-function DashboardNotFound() {
-  return <DashboardHome />;
-}
-
-const rootRoute = createRootRoute({ component: RootLayout, notFoundComponent: DashboardNotFound });
+const rootRoute = createRootRoute({ component: RootLayout, notFoundComponent: DashboardHome });
 const dashboardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: DashboardHome });
 const routeTree = rootRoute.addChildren([dashboardRoute]);
 const router = createRouter({ routeTree, basepath: '/dashboard.html', defaultPreload: 'intent' });
@@ -60,70 +65,114 @@ declare module '@tanstack/react-router' {
 }
 
 async function fetchProfile() {
-  if (isLocal) return null;
+  if (isLocal) return { user: { name: 'Aperçu local' } } as ProfileResponse;
   return apiFetch<ProfileResponse>('/api/auth/me');
 }
 
-function CodenMark({ size = 38 }: { size?: number }) {
-  return <img className="coden-orygin-mark" src="/favicon.svg" width={size} height={size} alt="" aria-hidden="true" />;
+async function fetchProjects() {
+  if (isLocal) {
+    return {
+      projects: [
+        { id: 'local-preview-project-001', name: 'Pulseboard', status: 'ready', updated_at: new Date().toISOString() },
+        { id: 'local-preview-project-002', name: 'TaskFlow', status: 'draft', updated_at: new Date(Date.now() - 86_400_000).toISOString() },
+      ],
+    } as ProjectsResponse;
+  }
+  return apiFetch<ProjectsResponse>('/api/projects');
 }
 
-function SidebarItem({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick?: () => void }) {
-  return (
-    <button className="coden-orygin-sidebar-item" type="button" onClick={onClick}>
-      <Icon className="coden-orygin-sidebar-icon" size={18} strokeWidth={1.7} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
-  );
+function appUrl(path: string) {
+  if (!isLocal) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}localPreview=1`;
 }
 
-function Sidebar({ open, collapsed, onClose, onToggleCollapsed, onFocusComposer }: { open: boolean; collapsed: boolean; onClose: () => void; onToggleCollapsed: () => void; onFocusComposer: () => void }) {
-  const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile, enabled: !isLocal });
-  const displayName = profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0];
-  const firstNavItemRef = useRef<HTMLButtonElement>(null);
+function builderUrl(projectId?: string) {
+  return appUrl(projectId
+    ? `/builder.html?project=${encodeURIComponent(projectId)}&source=dashboard`
+    : '/builder.html?new=1&source=dashboard');
+}
 
-  useEffect(() => {
-    if (open && window.matchMedia('(max-width: 767px)').matches) firstNavItemRef.current?.focus();
-  }, [open]);
+function CodenMark({ size = 28 }: { size?: number }) {
+  return <img className="coden-dashboard-mark" src="/favicon.svg" width={size} height={size} alt="" aria-hidden="true" />;
+}
 
-  const goStudio = () => window.location.assign('/builder.html?new=1');
+function relativeTime(value?: string) {
+  if (!value) return 'récemment';
+  const delta = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(delta) || delta < 60_000) return 'à l’instant';
+  const minutes = Math.floor(delta / 60_000);
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `il y a ${days} j`;
+}
+
+function projectState(project: DashboardProject) {
+  const state = `${project.status || ''} ${project.preview_status || ''} ${project.publish_status || ''}`.toLowerCase();
+  if (project.live_url || /publish|deploy|live/.test(state)) return { key: 'published', label: 'En ligne' };
+  if (/building|generating|running/.test(state)) return { key: 'building', label: 'En cours' };
+  if (/fix|error|failed|blocked/.test(state)) return { key: 'issue', label: 'À vérifier' };
+  if (/ready|verified|complete/.test(state)) return { key: 'ready', label: 'Prêt' };
+  return { key: 'draft', label: 'Brouillon' };
+}
+
+function Sidebar({
+  open,
+  collapsed,
+  projects,
+  profile,
+  onClose,
+  onToggleCollapsed,
+}: {
+  open: boolean;
+  collapsed: boolean;
+  projects: DashboardProject[];
+  profile?: ProfileResponse | null;
+  onClose: () => void;
+  onToggleCollapsed: () => void;
+}) {
+  const displayName = profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0] || 'Compte';
 
   return (
     <>
-      {open && <button className="coden-orygin-backdrop" type="button" aria-label="Fermer le menu" onClick={onClose} />}
-      <aside id="coden-orygin-sidebar" className={`coden-orygin-sidebar${open ? ' is-open' : ''}${collapsed ? ' is-collapsed' : ''}`} aria-label="Navigation Coden">
-        <div className="coden-orygin-brand-row">
-          <a href="/dashboard.html" className="coden-orygin-brand" aria-label="Coden, accueil">
-            <CodenMark size={34} />
-            <span>CODEN</span>
+      {open && <button className="coden-dashboard-backdrop" type="button" aria-label="Fermer le menu" onClick={onClose} />}
+      <aside className={`coden-dashboard-sidebar${open ? ' is-open' : ''}${collapsed ? ' is-collapsed' : ''}`} aria-label="Navigation Coden">
+        <div className="coden-dashboard-brand-row">
+          <a className="coden-dashboard-brand" href="/dashboard.html" aria-label="Coden, projets">
+            <CodenMark />
+            <span>Coden</span>
           </a>
-          <button className="coden-orygin-icon-button coden-orygin-collapse" type="button" aria-label={collapsed ? 'Étendre la barre latérale' : 'Rétracter la barre latérale'} aria-pressed={collapsed} onClick={onToggleCollapsed}>
-            {collapsed ? <ChevronRight size={18} aria-hidden="true" /> : <ChevronLeft size={18} aria-hidden="true" />}
+          <button className="coden-dashboard-icon-button coden-dashboard-collapse" type="button" aria-label={collapsed ? 'Étendre la barre latérale' : 'Rétracter la barre latérale'} onClick={onToggleCollapsed}>
+            {collapsed ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronLeft size={17} aria-hidden="true" />}
           </button>
-          <button className="coden-orygin-icon-button coden-orygin-close" type="button" aria-label="Fermer le menu" onClick={onClose}>
-            <X size={18} aria-hidden="true" />
+          <button className="coden-dashboard-icon-button coden-dashboard-close" type="button" aria-label="Fermer le menu" onClick={onClose}>
+            <X size={17} aria-hidden="true" />
           </button>
         </div>
 
-        <button className="coden-orygin-new-chat" type="button" onClick={() => { onClose(); onFocusComposer(); }}>
-          <Plus size={18} strokeWidth={2} aria-hidden="true" />
-          <span>Nouveau chat</span>
-        </button>
+        <a className="coden-dashboard-new-project" href={builderUrl()} aria-label="Nouveau projet" onClick={onClose}>
+          <Plus size={17} aria-hidden="true" />
+          <span>Nouveau projet</span>
+        </a>
 
-        <nav className="coden-orygin-nav" aria-label="Navigation principale">
-          <button ref={firstNavItemRef} className="coden-orygin-sidebar-item" type="button" onClick={() => { onClose(); onFocusComposer(); }}>
-            <Search className="coden-orygin-sidebar-icon" size={18} strokeWidth={1.7} aria-hidden="true" />
-            <span>Recherche</span>
-          </button>
-          <SidebarItem icon={Boxes} label="Coden Studio" onClick={() => { onClose(); goStudio(); }} />
+        <nav className="coden-dashboard-project-nav" aria-label="Projets récents">
+          <span className="coden-dashboard-nav-label">Projets</span>
+          <div className="coden-dashboard-project-links">
+            {projects.slice(0, 7).map((project) => (
+              <a key={project.id} className="coden-dashboard-project-link" href={builderUrl(project.id)} title={project.name} onClick={onClose}>
+                <FileCode2 size={16} aria-hidden="true" />
+                <span>{project.name}</span>
+              </a>
+            ))}
+            {!projects.length && <span className="coden-dashboard-no-project">Aucun projet</span>}
+          </div>
         </nav>
 
-        <div className="coden-orygin-sidebar-bottom">
-          <SidebarItem icon={Search} label="Modèles" onClick={() => setDashboardStatus('Les modèles sont disponibles depuis un projet actif.')} />
-          <div className="coden-orygin-divider" />
-          <a className="coden-orygin-account" href="/auth.html?redirect=%2Fdashboard.html">
-            <span className="coden-orygin-avatar">{displayName ? displayName.slice(0, 1).toUpperCase() : 'C'}</span>
-            <span>{displayName || 'Se connecter'}</span>
+        <div className="coden-dashboard-sidebar-bottom">
+          <a className="coden-dashboard-account" href="/auth.html?redirect=%2Fdashboard.html" aria-label={`Compte : ${displayName}`}>
+            <span className="coden-dashboard-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
+            <span>{displayName}</span>
           </a>
         </div>
       </aside>
@@ -131,98 +180,43 @@ function Sidebar({ open, collapsed, onClose, onToggleCollapsed, onFocusComposer 
   );
 }
 
-function Composer({ onStatus }: { onStatus: (value: string) => void }) {
-  const [value, setValue] = useState('');
-  const [mode] = useState<CreateProjectFlowMode>('auto');
-  const [busy, setBusy] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const focus = () => textareaRef.current?.focus();
-    window.addEventListener('coden:focus-dashboard-composer', focus);
-    return () => window.removeEventListener('coden:focus-dashboard-composer', focus);
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        textareaRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  const submit = async () => {
-    const prompt = value.trim();
-    if (!prompt || busy) return;
-    if (isLocal) {
-      onStatus('La génération est désactivée dans l’aperçu local.');
-      return;
-    }
-    setBusy(true);
-    onStatus('Préparation…');
-    try {
-      await startCreateProjectFlow({ prompt, mode, model: 'auto', source: 'dashboard' }, {
-        createProject: true,
-        onStatus: (status) => onStatus(status === 'creating_project' ? 'Création du projet…' : status === 'opening_builder' ? 'Ouverture du Builder…' : 'Préparation…'),
-      });
-    } catch (error) {
-      onStatus(error instanceof Error ? error.message : 'Le projet n’a pas pu être créé.');
-      setBusy(false);
-    }
-  };
-
+function ProjectRow({ project }: { project: DashboardProject }) {
+  const state = projectState(project);
   return (
-    <form className={`coden-orygin-composer${busy ? ' is-busy' : ''}`} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        rows={2}
-        aria-label="Décrire l’application à construire"
-        placeholder="Demander à Coden…"
-        disabled={busy}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submit(); }
-        }}
-      />
-      <div className="coden-orygin-composer-actions">
-        <button className="coden-orygin-attach" type="button" aria-label="Ajouter une pièce jointe" disabled={busy} onClick={() => onStatus('Les pièces jointes sont disponibles dans le Builder.') }>
-          <Paperclip size={18} strokeWidth={1.7} aria-hidden="true" />
-        </button>
-        <span className="coden-orygin-composer-name">Coden</span>
-        <button className="coden-orygin-send" type="submit" aria-label="Envoyer" disabled={isLocal || busy || !value.trim()}>
-          {busy ? <LoaderCircle size={18} className="coden-orygin-spin" aria-hidden="true" /> : <ArrowUp size={18} strokeWidth={2.4} aria-hidden="true" />}
-        </button>
-      </div>
-    </form>
+    <article className="coden-dashboard-project-row">
+      <a className="coden-dashboard-project-main" href={builderUrl(project.id)}>
+        <span className="coden-dashboard-project-icon" aria-hidden="true"><FileCode2 size={18} /></span>
+        <span className="coden-dashboard-project-copy">
+          <strong>{project.name}</strong>
+          <span>Modifié {relativeTime(project.updated_at || project.created_at)}</span>
+        </span>
+        <span className={`coden-dashboard-project-status is-${state.key}`}>{state.label}</span>
+        <ArrowRight className="coden-dashboard-project-arrow" size={17} aria-hidden="true" />
+      </a>
+    </article>
   );
 }
-
-let latestStatusSetter: ((message: string) => void) | null = null;
-function setDashboardStatus(message: string) { latestStatusSetter?.(message); }
 
 function DashboardHome() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return window.localStorage.getItem('coden-dashboard-sidebar-collapsed') === 'true'; } catch { return false; }
   });
-  const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
-  const wasSidebarOpen = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
+  const wasSidebarOpen = useRef(false);
+  const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
+  const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
+  const projects = projectsQuery.data?.projects || [];
+  const filteredProjects = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('fr');
+    if (!query) return projects;
+    return projects.filter((project) => project.name.toLocaleLowerCase('fr').includes(query));
+  }, [projects, search]);
 
   useEffect(() => {
-    latestStatusSetter = setStatus;
-    document.body.dataset.codenReactDashboard = 'true';
-    return () => { latestStatusSetter = null; delete document.body.dataset.codenReactDashboard; };
-  }, []);
-
-  useEffect(() => {
-    try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage may be unavailable */ }
+    try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage can be unavailable */ }
   }, [sidebarCollapsed]);
 
   useEffect(() => {
@@ -239,23 +233,58 @@ function DashboardHome() {
   }, [sidebarOpen]);
 
   return (
-    <div className="coden-orygin-dashboard">
-      <Sidebar open={sidebarOpen} collapsed={sidebarCollapsed} onClose={() => setSidebarOpen(false)} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} onFocusComposer={() => window.dispatchEvent(new Event('coden:focus-dashboard-composer'))} />
-      <main ref={mainRef} id="coden-dashboard-main" className="coden-orygin-main">
-        <header className="coden-orygin-topbar">
-          <button ref={menuTriggerRef} className="coden-orygin-icon-button coden-orygin-menu-trigger" type="button" aria-label="Ouvrir le menu" aria-expanded={sidebarOpen} aria-controls="coden-orygin-sidebar" onClick={() => setSidebarOpen(true)}><Menu size={20} aria-hidden="true" /></button>
-          <span className="coden-orygin-topbar-title">Nouvelle conversation</span>
+    <div className="coden-dashboard-shell">
+      <Sidebar
+        open={sidebarOpen}
+        collapsed={sidebarCollapsed}
+        projects={projects}
+        profile={profile}
+        onClose={() => setSidebarOpen(false)}
+        onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+      />
+
+      <main ref={mainRef} id="coden-dashboard-main" className="coden-dashboard-main">
+        <header className="coden-dashboard-topbar">
+          <button ref={menuTriggerRef} className="coden-dashboard-icon-button coden-dashboard-menu-trigger" type="button" aria-label="Ouvrir le menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>
+            <Menu size={19} aria-hidden="true" />
+          </button>
+          <span className="coden-dashboard-mobile-brand"><CodenMark size={24} /> Coden</span>
+          <a className="coden-dashboard-mobile-new" href={builderUrl()}><Plus size={16} aria-hidden="true" /> Nouveau projet</a>
         </header>
-        <div className="coden-orygin-content">
-          <div className="coden-orygin-main-column">
-            <div className="coden-orygin-hero">
-              <CodenMark size={58} />
-              <h1>Que veux-tu accomplir&nbsp;?</h1>
+
+        <div className="coden-dashboard-content">
+          <section className="coden-dashboard-heading">
+            <div>
+              <p>Espace de travail</p>
+              <h1>Mes projets</h1>
             </div>
-            <Composer onStatus={setStatus} />
-            <p className="coden-orygin-login-note">La connexion sera demandée au moment d’envoyer.</p>
-            {status && <p className="coden-orygin-status" role="status">{status}</p>}
-          </div>
+            <span>{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
+          </section>
+
+          <label className="coden-dashboard-search">
+            <Search size={17} aria-hidden="true" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher un projet" aria-label="Rechercher un projet" />
+          </label>
+
+          <section className="coden-dashboard-project-list" aria-label="Liste des projets" aria-live="polite">
+            {projectsQuery.isLoading && (
+              <div className="coden-dashboard-loading" role="status">Chargement des projets…</div>
+            )}
+            {projectsQuery.isError && (
+              <div className="coden-dashboard-empty" role="alert">
+                <strong>Projets indisponibles</strong>
+                <span>Actualisez la page pour réessayer.</span>
+              </div>
+            )}
+            {!projectsQuery.isLoading && !projectsQuery.isError && filteredProjects.map((project) => <ProjectRow key={project.id} project={project} />)}
+            {!projectsQuery.isLoading && !projectsQuery.isError && !filteredProjects.length && (
+              <div className="coden-dashboard-empty">
+                <strong>{search ? 'Aucun résultat' : 'Aucun projet'}</strong>
+                <span>{search ? 'Essayez une autre recherche.' : 'Créez votre premier projet avec Coden.'}</span>
+                {!search && <a href={builderUrl()}>Nouveau projet</a>}
+              </div>
+            )}
+          </section>
         </div>
       </main>
     </div>

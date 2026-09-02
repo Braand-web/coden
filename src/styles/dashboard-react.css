@@ -1,150 +1,628 @@
 :root {
-  --coden-bg: #101114;
-  --coden-sidebar: #18191e;
-  --coden-composer: #202126;
-  --coden-secondary: #212228;
-  --coden-text: #f4f5f7;
-  --coden-muted: #aeb4c3;
-  --coden-subtle: #8f96a6;
-  --coden-border: rgba(255, 255, 255, .13);
-  --coden-brand: #526cf5;
-  --coden-ring: #91a7ff;
+  --dashboard-bg: #0e1116;
+  --dashboard-sidebar: #10151c;
+  --dashboard-surface: #141a23;
+  --dashboard-raised: #19212c;
+  --dashboard-text: #f5f7fa;
+  --dashboard-muted: #97a2b2;
+  --dashboard-border: #273241;
+  --dashboard-border-soft: rgba(151, 162, 178, .14);
+  --dashboard-accent: #4f8cff;
+  --dashboard-focus: #82adff;
+  --dashboard-sidebar-width: 228px;
 }
 
 html[data-theme="light"] {
-  --coden-bg: #f8f9fb;
-  --coden-sidebar: #ffffff;
-  --coden-composer: #ffffff;
-  --coden-secondary: #eef1f6;
-  --coden-text: #17191f;
-  --coden-muted: #5c6474;
-  --coden-subtle: #687083;
-  --coden-border: rgba(20, 26, 40, .14);
-  --coden-ring: #4565e8;
+  --dashboard-bg: #f7f8fa;
+  --dashboard-sidebar: #ffffff;
+  --dashboard-surface: #ffffff;
+  --dashboard-raised: #f0f3f7;
+  --dashboard-text: #171b22;
+  --dashboard-muted: #687385;
+  --dashboard-border: #d9dfe8;
+  --dashboard-border-soft: rgba(38, 48, 64, .11);
+  --dashboard-focus: #326ee8;
 }
 
 #coden-dashboard-react-root,
 #coden-dashboard-react-root *,
 #coden-dashboard-react-root *::before,
-#coden-dashboard-react-root *::after { box-sizing: border-box; }
+#coden-dashboard-react-root *::after {
+  box-sizing: border-box;
+}
 
 html:has(#coden-dashboard-react-root),
-body:has(#coden-dashboard-react-root) { min-height: 100%; margin: 0; }
+body:has(#coden-dashboard-react-root) {
+  min-height: 100%;
+  margin: 0;
+}
 
 body:has(#coden-dashboard-react-root) {
   overflow: hidden;
-  background: var(--coden-bg);
-  color: var(--coden-text);
+  background: var(--dashboard-bg);
+  color: var(--dashboard-text);
   font-family: "Instrument Sans", Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-#coden-dashboard-react-root { min-height: 100dvh; background: var(--coden-bg); }
+#coden-dashboard-react-root {
+  min-height: 100dvh;
+  background: var(--dashboard-bg);
+}
 
 .coden-dashboard-skip-link {
-  position: fixed; left: 12px; top: 12px; z-index: 20;
-  padding: 10px 14px; border-radius: 9px;
-  color: var(--coden-text); background: var(--coden-secondary);
-  transform: translateY(-150%); transition: transform 160ms ease;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  padding: 9px 12px;
+  color: var(--dashboard-text);
+  font-size: 12px;
+  text-decoration: none;
+  background: var(--dashboard-raised);
+  border: 1px solid var(--dashboard-border);
+  border-radius: 8px;
+  transform: translateY(-160%);
 }
-.coden-dashboard-skip-link:focus { transform: translateY(0); }
 
-.coden-orygin-dashboard { min-height: 100dvh; display: flex; color: var(--coden-text); background: var(--coden-bg); }
-
-.coden-orygin-sidebar {
-  width: 248px; min-width: 248px; min-height: 100dvh;
-  display: flex; flex-direction: column; padding: 0 15px 24px;
-  background: var(--coden-sidebar); border-right: 1px solid var(--coden-border); z-index: 5;
-  transition: width 240ms cubic-bezier(.32,.72,0,1), min-width 240ms cubic-bezier(.32,.72,0,1), padding 240ms cubic-bezier(.32,.72,0,1);
+.coden-dashboard-skip-link:focus {
+  transform: translateY(0);
 }
-.coden-orygin-brand-row { height: 86px; flex: 0 0 86px; display: flex; align-items: center; justify-content: space-between; padding: 0 11px; border-bottom: 1px solid var(--coden-border); }
-.coden-orygin-brand { display: inline-flex; align-items: center; gap: 12px; color: var(--coden-text); text-decoration: none; }
-.coden-orygin-brand span { font-size: 15px; font-weight: 700; letter-spacing: .22em; }
-.coden-orygin-mark { display: block; flex: 0 0 auto; object-fit: contain; }
-.coden-orygin-icon-button { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--coden-muted); background: transparent; border: 1px solid var(--coden-border); border-radius: 10px; cursor: pointer; transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 160ms ease; }
-.coden-orygin-icon-button:hover, .coden-orygin-icon-button:focus-visible { color: var(--coden-text); background: var(--coden-secondary); border-color: rgba(145, 167, 255, .4); outline: none; }
-.coden-orygin-icon-button:focus-visible, .coden-orygin-new-chat:focus-visible, .coden-orygin-sidebar-item:focus-visible, .coden-orygin-account:focus-visible, .coden-orygin-attach:focus-visible, .coden-orygin-send:focus-visible { outline: 2px solid var(--coden-ring); outline-offset: 2px; }
-.coden-orygin-collapse { display: inline-flex; }
-.coden-orygin-close { display: none; }
-.coden-orygin-sidebar.is-collapsed { width: 72px; min-width: 72px; padding-inline: 10px; }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-brand-row { padding-inline: 4px; justify-content: center; }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-brand { gap: 0; }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-brand span,
-.coden-orygin-sidebar.is-collapsed .coden-orygin-new-chat span,
-.coden-orygin-sidebar.is-collapsed .coden-orygin-sidebar-item span,
-.coden-orygin-sidebar.is-collapsed .coden-orygin-account > span:last-child { display: none; }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-collapse { transform: rotate(180deg); }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-new-chat,
-.coden-orygin-sidebar.is-collapsed .coden-orygin-sidebar-item { justify-content: center; padding-inline: 0; }
-.coden-orygin-sidebar.is-collapsed .coden-orygin-account { justify-content: center; padding-inline: 0; }
 
-.coden-orygin-new-chat { height: 52px; margin-top: 16px; display: flex; align-items: center; gap: 16px; padding: 0 18px; color: var(--coden-text); background: var(--coden-secondary); border: 1px solid var(--coden-border); border-radius: 9px; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease; }
-.coden-orygin-new-chat:hover { background: color-mix(in srgb, var(--coden-secondary) 78%, var(--coden-text)); border-color: rgba(255,255,255,.25); transform: translateY(-1px); }
-.coden-orygin-nav { display: flex; flex-direction: column; gap: 3px; margin-top: 18px; }
-.coden-orygin-sidebar-item { min-height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 18px; color: var(--coden-text); background: transparent; border: 0; border-radius: 9px; font: inherit; font-size: 16px; text-align: left; cursor: pointer; transition: color 160ms ease, background-color 160ms ease; }
-.coden-orygin-sidebar-item:hover, .coden-orygin-sidebar-item:focus-visible { background: color-mix(in srgb, var(--coden-text) 7%, transparent); outline: none; }
-.coden-orygin-sidebar-icon { opacity: .82; }
-.coden-orygin-sidebar-bottom { margin-top: auto; display: flex; flex-direction: column; gap: 3px; }
-.coden-orygin-divider { height: 1px; margin: 16px 0 8px; background: var(--coden-border); }
-.coden-orygin-account { min-height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 2px; color: var(--coden-text); text-decoration: none; font-size: 16px; border-radius: 9px; }
-.coden-orygin-account:hover { background: color-mix(in srgb, var(--coden-text) 7%, transparent); }
-.coden-orygin-avatar { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: var(--coden-brand); font-size: 11px; font-weight: 700; }
+.coden-dashboard-shell {
+  display: flex;
+  min-height: 100dvh;
+  background: var(--dashboard-bg);
+}
 
-.coden-orygin-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
-.coden-orygin-topbar { height: 86px; flex: 0 0 86px; display: flex; align-items: center; justify-content: flex-start; padding: 0 24px; }
-.coden-orygin-topbar-title { color: var(--coden-muted); font-size: 17px; }
-.coden-orygin-menu-trigger { display: none; }
+.coden-dashboard-sidebar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex: 0 0 var(--dashboard-sidebar-width);
+  width: var(--dashboard-sidebar-width);
+  min-height: 100dvh;
+  flex-direction: column;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--dashboard-sidebar);
+  border-right: 1px solid var(--dashboard-border-soft);
+  transition: flex-basis 180ms ease, width 180ms ease;
+}
 
-.coden-orygin-content { min-height: calc(100dvh - 86px); overflow: auto; display: flex; align-items: center; justify-content: center; padding: 0 24px 96px; }
-.coden-orygin-main-column { width: min(100%, 720px); }
-.coden-orygin-hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.coden-orygin-hero h1 { margin: 28px 0 0; color: var(--coden-text); font-size: clamp(36px, 4vw, 44px); font-weight: 800; letter-spacing: -.04em; line-height: 1.12; }
-.coden-orygin-composer { position: relative; min-height: 148px; margin-top: 32px; display: flex; flex-direction: column; padding: 18px 20px 12px; background: var(--coden-composer); border: 1px solid var(--coden-border); border-radius: 18px; box-shadow: 0 16px 38px rgba(0,0,0,.18); transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease; }
-.coden-orygin-composer:focus-within { border-color: rgba(132,154,255,.58); box-shadow: 0 0 0 3px rgba(91,123,255,.16), 0 16px 38px rgba(0,0,0,.2); }
-.coden-orygin-composer textarea { width: 100%; min-height: 66px; flex: 1; resize: none; padding: 0; color: var(--coden-text); background: transparent; border: 0; outline: none; font: inherit; font-size: 17px; line-height: 1.5; }
-.coden-orygin-composer textarea::placeholder { color: var(--coden-muted); opacity: 1; }
-.coden-orygin-composer textarea:disabled { cursor: wait; }
-.coden-orygin-composer-actions { height: 44px; min-height: 44px; display: flex; align-items: center; gap: 12px; }
-.coden-orygin-attach { width: 28px; height: 40px; display: inline-flex; align-items: center; justify-content: center; color: var(--coden-muted); background: transparent; border: 0; cursor: pointer; }
-.coden-orygin-attach:hover { color: var(--coden-text); }
-.coden-orygin-composer-name { color: var(--coden-muted); font-size: 15px; }
-.coden-orygin-send { width: 40px; height: 40px; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; color: #fff; background: var(--coden-brand); border: 0; border-radius: 10px; cursor: pointer; transition: background-color 160ms ease, transform 160ms ease, opacity 160ms ease; }
-.coden-orygin-send:hover:not(:disabled) { background: #637cff; transform: translateY(-1px); }
-.coden-orygin-send:disabled, .coden-orygin-attach:disabled { opacity: .45; cursor: not-allowed; }
-.coden-orygin-login-note, .coden-orygin-status { margin: 16px 0 0; color: var(--coden-muted); font-size: 14px; line-height: 1.4; text-align: center; }
-.coden-orygin-status { color: var(--coden-text); }
-.coden-orygin-spin { animation: coden-orygin-spin .8s linear infinite; }
+.coden-dashboard-sidebar.is-collapsed {
+  flex-basis: 64px;
+  width: 64px;
+}
 
-@keyframes coden-orygin-spin { to { transform: rotate(360deg); } }
+.coden-dashboard-brand-row {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 6px;
+}
 
-@media (max-width: 1023px) {
-  .coden-orygin-content { padding-top: 72px; }
+.coden-dashboard-brand {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  color: var(--dashboard-text);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.coden-dashboard-brand span,
+.coden-dashboard-new-project span,
+.coden-dashboard-project-link span,
+.coden-dashboard-account > span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coden-dashboard-mark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.coden-dashboard-icon-button {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--dashboard-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.coden-dashboard-icon-button:hover {
+  color: var(--dashboard-text);
+  background: var(--dashboard-raised);
+}
+
+.coden-dashboard-icon-button:focus-visible,
+.coden-dashboard-brand:focus-visible,
+.coden-dashboard-new-project:focus-visible,
+.coden-dashboard-project-link:focus-visible,
+.coden-dashboard-account:focus-visible,
+.coden-dashboard-mobile-new:focus-visible,
+.coden-dashboard-search:focus-within,
+.coden-dashboard-project-main:focus-visible {
+  outline: 2px solid var(--dashboard-focus);
+  outline-offset: 2px;
+}
+
+.coden-dashboard-close {
+  display: none;
+}
+
+.coden-dashboard-new-project {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 0 11px;
+  color: var(--dashboard-text);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  background: var(--dashboard-surface);
+  border: 1px solid var(--dashboard-border);
+  border-radius: 9px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.coden-dashboard-new-project:hover {
+  background: var(--dashboard-raised);
+  border-color: #3a485c;
+}
+
+.coden-dashboard-project-nav {
+  min-height: 0;
+  margin-top: 24px;
+}
+
+.coden-dashboard-nav-label {
+  display: block;
+  padding: 0 9px 8px;
+  color: var(--dashboard-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.coden-dashboard-project-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.coden-dashboard-project-link {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 9px;
+  color: var(--dashboard-muted);
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.coden-dashboard-project-link:hover {
+  color: var(--dashboard-text);
+  background: var(--dashboard-raised);
+}
+
+.coden-dashboard-no-project {
+  padding: 8px 9px;
+  color: var(--dashboard-muted);
+  font-size: 12px;
+}
+
+.coden-dashboard-sidebar-bottom {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--dashboard-border-soft);
+}
+
+.coden-dashboard-account {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 7px;
+  color: var(--dashboard-muted);
+  font-size: 13px;
+  text-decoration: none;
+  border-radius: 8px;
+}
+
+.coden-dashboard-account:hover {
+  color: var(--dashboard-text);
+  background: var(--dashboard-raised);
+}
+
+.coden-dashboard-avatar {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--dashboard-accent);
+  border-radius: 50%;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand span,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-new-project span,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-nav-label,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-project-link span,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-no-project,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-account > span:last-child {
+  display: none;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand-row {
+  justify-content: center;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand {
+  flex: 0;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-collapse {
+  position: absolute;
+  top: 58px;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-new-project {
+  justify-content: center;
+  margin-top: 56px;
+  padding: 0;
+}
+
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-project-link,
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-account {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.coden-dashboard-main {
+  min-width: 0;
+  flex: 1;
+  min-height: 100dvh;
+  overflow: auto;
+}
+
+.coden-dashboard-topbar {
+  display: none;
+}
+
+.coden-dashboard-content {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 64px 40px 80px;
+}
+
+.coden-dashboard-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.coden-dashboard-heading p {
+  margin: 0 0 7px;
+  color: var(--dashboard-muted);
+  font-size: 12px;
+}
+
+.coden-dashboard-heading h1 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 32px);
+  line-height: 1.1;
+  letter-spacing: -.035em;
+}
+
+.coden-dashboard-heading > span {
+  padding-bottom: 4px;
+  color: var(--dashboard-muted);
+  font-size: 12px;
+}
+
+.coden-dashboard-search {
+  display: flex;
+  width: min(100%, 420px);
+  height: 42px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 34px;
+  padding: 0 13px;
+  color: var(--dashboard-muted);
+  background: var(--dashboard-surface);
+  border: 1px solid var(--dashboard-border);
+  border-radius: 9px;
+}
+
+.coden-dashboard-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--dashboard-text);
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.coden-dashboard-search input::placeholder {
+  color: var(--dashboard-muted);
+  opacity: 1;
+}
+
+.coden-dashboard-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.coden-dashboard-project-row {
+  margin: 0;
+}
+
+.coden-dashboard-project-main {
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: 36px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--dashboard-text);
+  text-decoration: none;
+  background: var(--dashboard-surface);
+  border: 1px solid var(--dashboard-border-soft);
+  border-radius: 10px;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.coden-dashboard-project-main:hover {
+  background: var(--dashboard-raised);
+  border-color: var(--dashboard-border);
+  transform: translateY(-1px);
+}
+
+.coden-dashboard-project-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  color: #b8c6dc;
+  background: rgba(79, 140, 255, .09);
+  border: 1px solid rgba(79, 140, 255, .16);
+  border-radius: 9px;
+}
+
+.coden-dashboard-project-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.coden-dashboard-project-copy strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.coden-dashboard-project-copy > span {
+  color: var(--dashboard-muted);
+  font-size: 12px;
+}
+
+.coden-dashboard-project-status {
+  color: var(--dashboard-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.coden-dashboard-project-status.is-published {
+  color: #73d69b;
+}
+
+.coden-dashboard-project-status.is-issue {
+  color: #ff9292;
+}
+
+.coden-dashboard-project-status.is-building {
+  color: #87b0ff;
+}
+
+.coden-dashboard-project-arrow {
+  color: var(--dashboard-muted);
+}
+
+.coden-dashboard-loading,
+.coden-dashboard-empty {
+  display: flex;
+  min-height: 160px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--dashboard-muted);
+  font-size: 13px;
+  text-align: center;
+  border: 1px dashed var(--dashboard-border);
+  border-radius: 10px;
+}
+
+.coden-dashboard-empty strong {
+  color: var(--dashboard-text);
+  font-size: 14px;
+}
+
+.coden-dashboard-empty a {
+  margin-top: 5px;
+  color: #8ab2ff;
+}
+
+.coden-dashboard-backdrop {
+  display: none;
+}
+
+.coden-dashboard-mobile-new,
+.coden-dashboard-mobile-brand,
+.coden-dashboard-menu-trigger {
+  display: none;
 }
 
 @media (max-width: 767px) {
-  .coden-orygin-sidebar, .coden-orygin-sidebar.is-collapsed { position: fixed; inset: 0 auto 0 0; width: min(86vw, 280px); min-width: 0; padding-inline: 15px; transform: translateX(-100%); transition: transform 240ms cubic-bezier(.32,.72,0,1); }
-  .coden-orygin-sidebar.is-open { transform: translateX(0); }
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-brand-row { padding-inline: 11px; justify-content: space-between; }
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-brand span,
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-new-chat span,
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-sidebar-item span,
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-account > span:last-child { display: inline; }
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-new-chat,
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-sidebar-item,
-  .coden-orygin-sidebar.is-collapsed .coden-orygin-account { justify-content: flex-start; padding-inline: 18px; }
-  .coden-orygin-collapse { display: none; }
-  .coden-orygin-close, .coden-orygin-menu-trigger { display: inline-flex; }
-  .coden-orygin-backdrop { position: fixed; inset: 0; z-index: 4; padding: 0; background: rgba(0,0,0,.58); border: 0; cursor: pointer; }
-  .coden-orygin-topbar { height: 64px; flex-basis: 64px; padding: 0 16px; }
-  .coden-orygin-topbar-title { font-size: 15px; }
-  .coden-orygin-menu-trigger { margin-right: 12px; }
-  .coden-orygin-content { min-height: calc(100dvh - 64px); padding: 40px 16px calc(48px + env(safe-area-inset-bottom)); }
-  .coden-orygin-hero h1 { margin-top: 24px; font-size: clamp(30px, 8vw, 38px); }
-  .coden-orygin-composer { min-height: 144px; margin-top: 28px; padding: 16px; border-radius: 16px; }
-  .coden-orygin-composer textarea { min-height: 68px; font-size: 16px; }
+  .coden-dashboard-sidebar,
+  .coden-dashboard-sidebar.is-collapsed {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(84vw, 260px);
+    max-width: 260px;
+    flex-basis: auto;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+  }
+
+  .coden-dashboard-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand span,
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-nav-label,
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-project-link span,
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-account > span:last-child {
+    display: block;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand-row {
+    justify-content: flex-start;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand {
+    flex: 1;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-collapse,
+  .coden-dashboard-collapse,
+  .coden-dashboard-new-project {
+    display: none;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-project-link,
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-account {
+    justify-content: flex-start;
+    padding-inline: 9px;
+  }
+
+  .coden-dashboard-close {
+    display: inline-flex;
+  }
+
+  .coden-dashboard-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    display: block;
+    padding: 0;
+    background: rgba(0, 0, 0, .58);
+    border: 0;
+  }
+
+  .coden-dashboard-topbar {
+    display: flex;
+    height: 56px;
+    align-items: center;
+    gap: 9px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--dashboard-border-soft);
+  }
+
+  .coden-dashboard-menu-trigger {
+    display: inline-flex;
+  }
+
+  .coden-dashboard-mobile-brand {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .coden-dashboard-mobile-new {
+    display: inline-flex;
+    height: 34px;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 0 10px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 650;
+    text-decoration: none;
+    background: var(--dashboard-accent);
+    border-radius: 8px;
+  }
+
+  .coden-dashboard-content {
+    padding: 30px 16px 56px;
+  }
+
+  .coden-dashboard-heading {
+    align-items: flex-start;
+  }
+
+  .coden-dashboard-heading > span {
+    padding-top: 22px;
+  }
+
+  .coden-dashboard-search {
+    margin-top: 26px;
+  }
+
+  .coden-dashboard-project-main {
+    grid-template-columns: 36px minmax(0, 1fr) 16px;
+  }
+
+  .coden-dashboard-project-status {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .coden-dashboard-skip-link, .coden-orygin-new-chat, .coden-orygin-send, .coden-orygin-composer, .coden-orygin-sidebar, .coden-orygin-icon-button { transition: none; }
-  .coden-orygin-spin { animation: none; }
+  .coden-dashboard-sidebar,
+  .coden-dashboard-project-main,
+  .coden-dashboard-new-project,
+  .coden-dashboard-icon-button,
+  .coden-dashboard-project-link {
+    transition: none;
+  }
 }

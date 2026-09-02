@@ -9,7 +9,7 @@ const css = readFileSync(resolve(root, 'src/styles/dashboard-react.css'), 'utf8'
 const server = readFileSync(resolve(root, 'server.ts'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
 
-describe('Coden Dashboard Orygin surface contract', () => {
+describe('Coden projects dashboard surface contract', () => {
   it('mounts one React Dashboard and removes the legacy document UI', () => {
     expect((reactDashboard.match(/<h1\b/g) || []).length).toBe(1);
     expect(html).toContain('id="coden-dashboard-react-root"');
@@ -21,43 +21,41 @@ describe('Coden Dashboard Orygin surface contract', () => {
     expect(html).not.toContain('Start from an idea');
   });
 
-  it('keeps the Coden brand, Orygin composition and accessible controls', () => {
+  it('keeps one consistent Coden brand and accessible project controls', () => {
     expect(html).toContain('href="/favicon.svg"');
     expect(reactDashboard).toContain('src="/favicon.svg"');
-    expect(reactDashboard).toContain('Nouvelle conversation');
-    expect(reactDashboard).toContain('Que veux-tu accomplir');
-    expect(reactDashboard).toContain('Demander à Coden');
-    expect(reactDashboard).toContain('Nouveau chat');
-    expect(reactDashboard).toContain('Coden Studio');
-    expect(reactDashboard).not.toContain('label="Plugins"');
-    expect(reactDashboard).not.toContain('className="coden-orygin-login"');
-    expect(reactDashboard).toContain('aria-controls="coden-orygin-sidebar"');
+    expect(reactDashboard).toContain('Mes projets');
+    expect(reactDashboard).toContain('Nouveau projet');
+    expect(reactDashboard).toContain('Rechercher un projet');
+    expect(reactDashboard).not.toContain('Que veux-tu accomplir');
+    expect(reactDashboard).not.toContain('Demander à Coden');
+    expect(reactDashboard).not.toContain('Crédits');
+    expect(reactDashboard).not.toContain('Modèles');
     expect(reactDashboard).toContain('aria-label="Fermer le menu"');
     expect(reactDashboard).toContain('Rétracter la barre latérale');
     expect(reactDashboard).toContain('is-collapsed');
-    expect(css).toContain('.coden-orygin-sidebar');
-    expect(css).toContain('.coden-orygin-composer');
-    expect(css).toContain('width: 248px');
-    expect(css).toContain('width: 72px');
+    expect(css).toContain('.coden-dashboard-sidebar');
+    expect(css).toContain('.coden-dashboard-project-list');
+    expect(css).toContain('--dashboard-sidebar-width: 228px');
+    expect(css).toContain('width: 64px');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
-  it('uses TanStack Router and React Query without replacing real project creation', () => {
+  it('uses TanStack Router and React Query with the real project endpoints', () => {
     expect(reactDashboard).toContain('@tanstack/react-router');
     expect(reactDashboard).toContain('@tanstack/react-query');
     expect(reactDashboard).toContain('QueryClientProvider');
     expect(reactDashboard).toContain('RouterProvider');
     expect(reactDashboard).toContain("basepath: '/dashboard.html'");
-    expect(reactDashboard).toContain('startCreateProjectFlow');
+    expect(reactDashboard).toContain("apiFetch<ProjectsResponse>('/api/projects')");
     expect(reactDashboard).toContain("queryKey: ['coden-profile']");
+    expect(reactDashboard).toContain("queryKey: ['coden-projects']");
   });
 
-  it('keeps the prompt flow safe and prevents duplicate submissions', () => {
-    expect(reactDashboard).toContain('if (!prompt || busy) return;');
-    expect(reactDashboard).toContain("event.nativeEvent.isComposing");
-    expect(reactDashboard).toContain("event.key === 'Enter' && !event.shiftKey");
-    expect(reactDashboard).toContain("source: 'dashboard'");
-    expect(reactDashboard).toContain('La génération est désactivée dans l’aperçu local.');
+  it('keeps creation and opening as explicit Builder handoffs', () => {
+    expect(reactDashboard).toContain("'/builder.html?new=1&source=dashboard'");
+    expect(reactDashboard).toContain('project=\${encodeURIComponent(projectId)}&source=dashboard');
+    expect(reactDashboard).toContain("localStorage.setItem('coden-dashboard-sidebar-collapsed'");
   });
 
   it('keeps the real Builder handoff and the private page policy', () => {
