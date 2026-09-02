@@ -220,6 +220,12 @@ export class ProviderGateway {
     onFallback?: (event: { from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
     validateResult?: (result: ChatCompletionResult) => void;
     signal?: AbortSignal;
+    /**
+     * Observes the answer as it arrives, for progress reporting only. It never
+     * influences the result, and a throw inside it is swallowed so a display
+     * concern can never fail a generation.
+     */
+    onChunk?: (accumulated: string) => void;
   } = {}): Promise<ChatCompletionResult> {
     const primary = this.requireProviderModel(modelId);
     const candidates = this.candidatesFor(primary, options.allowFallback === true);
@@ -247,7 +253,12 @@ export class ProviderGateway {
         options.signal,
       )) {
         model = event.model || model;
-        if (event.type === 'token') text += event.text;
+        if (event.type === 'token') {
+          text += event.text;
+          if (options.onChunk) {
+            try { options.onChunk(text); } catch { /* progress reporting must never break a run */ }
+          }
+        }
         if (event.type === 'usage') {
           usage = event.usage;
           costUsd = event.cost_usd;

@@ -6283,7 +6283,11 @@ async function generateFilesWithAi(input: {
   skillBudget?: CodenSkillBudget;
   signal?: AbortSignal;
   allowModelFallback?: boolean;
-  onEvent?: (event: { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
+  onEvent?: (
+    event:
+      | { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }
+      | GenerationProgressEvent,
+  ) => void;
 }): Promise<{ files: GeneratedFile[]; summary: string; appName: string; model: string; cost_usd: number }> {
   const hasLiveKey = hasLiveAiProvider();
   if (!hasLiveKey) {
@@ -6551,6 +6555,7 @@ async function generateFilesWithAi(input: {
       // Generated source remains atomic, but the provider response is consumed
       // as a private stream so large artifacts cannot time out while waiting
       // for one monolithic JSON response. Nothing is applied until validation.
+      const progressScanner = new GenerationProgressScanner();
       result = await providerGateway.streamingCompletion(selectedModel, [
         {
           role: 'system',
@@ -6599,7 +6604,17 @@ async function generateFilesWithAi(input: {
           }
           : undefined,
         signal: input.signal,
+        // Generation is the longest blocking step of a run. The model already
+        // streams, so report file progress as it arrives instead of leaving a
+        // single "building" label up for the whole of it. Display only: the
+        // applied files still come from the validated parse below.
+        onChunk: input.onEvent
+          ? accumulated => {
+            for (const event of progressScanner.push(accumulated)) input.onEvent?.(event);
+          }
+          : undefined,
       });
+      for (const event of progressScanner.finish()) input.onEvent?.(event);
       totalCostUsd += result.cost_usd;
     } catch (streamErr: any) {
       // A failed request is terminal for this run. Starting a second model
@@ -12310,7 +12325,16 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             'Coden bascule vers un modèle de secours compatible…',
             'Coden is switching to a compatible fallback model…',
           );
+          return;
         }
+        // Surface each generated file as the model writes it, so the longest
+        // step of the run stops looking like a single frozen label.
+        if (!isStream || !streamV2 || streamAborted) return;
+        // Only start/done are rendered by the run store; file_delta has no
+        // reducer case, so emitting it would add SSE and event-log traffic for
+        // nothing visible.
+        if (event.type === 'file_start') streamV2.emit('file_start', { path: event.path, index: event.index });
+        else if (event.type === 'file_done') streamV2.emit('file_done', { path: event.path, bytes: event.bytes });
       },
       // ✅ Pass recent history for conflict detection
       recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
@@ -14505,6 +14529,7 @@ import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
+import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
