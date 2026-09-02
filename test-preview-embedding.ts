@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
+import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 
 // Generated CSS that closes its own <style> element ended the element early,
 // the document was reparsed as content, and the preview bootstrap stopped
@@ -84,5 +84,47 @@ const headDoc = '<html><head><title>t</title></head><body><script>var s = "</hea
 const withMeta = insertBeforeHeadEnd(headDoc, '<meta name="robots" content="noindex">');
 assert.ok(withMeta.indexOf('<meta name="robots"') < withMeta.indexOf('<body>'), 'head block must stay in the head');
 assert.equal(insertBeforeHeadEnd('<div>x</div>', '<meta>'), '<meta>\n<div>x</div>');
+
+// The preview loads the Tailwind Play CDN with stock defaults, so an app that
+// names its own tokens — QuickCalc uses bg-surface, text-primary, rounded-panel
+// — renders unstyled unless the project's theme goes with it.
+const realConfig = [
+  "import type { Config } from 'tailwindcss';",
+  '',
+  'export default {',
+  "  content: ['./index.html', './src/**/*.{ts,tsx}'],",
+  '  theme: {',
+  '    extend: {',
+  '      colors: { codenCream: "#fcfbf8", codenInk: "#1c1c1c", codenBlue: "#2f6df6" },',
+  "      borderRadius: { coden: '1.5rem' },",
+  '    },',
+  '  },',
+  '  plugins: [],',
+  '} satisfies Config;',
+].join('\n');
+const theme = tailwindThemeLiteral(realConfig);
+assert.ok(theme, 'a plain theme must be extracted');
+assert.ok(theme!.startsWith('{') && theme!.endsWith('}'), 'the extracted theme must be balanced');
+assert.ok(theme!.includes('codenBlue') && theme!.includes("coden: '1.5rem'"), 'the whole theme must come through');
+assert.ok(!theme!.includes('plugins'), 'nothing past the theme may be captured');
+
+// The config is model-written code. Anything that computes is refused rather
+// than embedded into the preview document.
+for (const unsafe of [
+  'export default { theme: { extend: require("./tokens") } };',
+  'export default { theme: { colors: getColors() } };',
+  'export default { theme: { spacing: (n) => n * 4 } };',
+  'export default { theme: { content: `${base}/x` } };',
+  'export default { content: [] };',
+  '',
+]) {
+  assert.equal(tailwindThemeLiteral(unsafe), null, `must refuse: ${unsafe.slice(0, 40)}`);
+}
+
+// A brace inside a string must not end the theme early.
+const quoted = tailwindThemeLiteral('export default { theme: { content: { raw: "a } b" }, x: 1 }, plugins: [] };');
+assert.ok(quoted && quoted.includes('x: 1'), 'a brace inside a string must not close the literal');
+assert.ok(quoted && !quoted.includes('plugins'), 'the literal must still stop at the theme');
+assert.equal(tailwindThemeLiteral(null), null);
 
 console.log('preview embedding tests passed');

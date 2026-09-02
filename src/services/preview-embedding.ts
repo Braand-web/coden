@@ -81,3 +81,48 @@ export function insertBeforeHeadEnd(html: string, block: string): string {
   }
   return `${source.slice(0, at)}${block}\n${source.slice(at)}`;
 }
+
+/**
+ * The generated project's Tailwind theme, as a literal safe to embed.
+ *
+ * The preview loads the Tailwind Play CDN with no configuration, so every token
+ * the app defines for itself — `bg-surface`, `text-primary`, `rounded-panel`,
+ * `font-display` — resolves to nothing and the preview renders unstyled even
+ * when the code is correct. The project's own `tailwind.config` holds the
+ * answer, so the preview should use it.
+ *
+ * The config is model-written code, so only a plain object literal is accepted:
+ * anything with a call, a template literal, an arrow, a require or an import is
+ * refused rather than embedded. Returns null when there is no usable theme.
+ */
+export function tailwindThemeLiteral(configSource: string | null | undefined): string | null {
+  const source = String(configSource || '');
+  const key = source.search(/(^|[\s,{])theme\s*:/);
+  if (key < 0) return null;
+  const open = source.indexOf('{', source.indexOf('theme', key));
+  if (open < 0) return null;
+
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === '"' || char === "'" || char === '`') {
+      const quote = char;
+      i += 1;
+      while (i < source.length && source[i] !== quote) i += source[i] === '\\' ? 2 : 1;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) { end = i + 1; break; }
+    }
+  }
+  if (end < 0) return null;
+
+  const literal = source.slice(open, end);
+  // A theme that computes something is not a literal we can trust to embed.
+  if (/[`()]|=>|\brequire\b|\bimport\b|\bfunction\b|\bnew\b/.test(literal)) return null;
+  if (!/[a-z]/i.test(literal)) return null;
+  return literal;
+}

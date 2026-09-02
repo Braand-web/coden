@@ -3256,6 +3256,15 @@ function buildReactVitePreviewHtml(
   }
   const escapedModulesValue = scriptSafeJson(JSON.stringify(modulesObject));
 
+  // The Play CDN starts with stock Tailwind, so every token the app defines for
+  // itself renders as nothing. Give it the project's own theme.
+  const themeLiteral = tailwindThemeLiteral(
+    fileByPath(files, 'tailwind.config.ts')?.content
+    || fileByPath(files, 'tailwind.config.js')?.content
+    || fileByPath(files, 'tailwind.config.cjs')?.content
+    || fileByPath(files, 'tailwind.config.mjs')?.content,
+  );
+
   const html = [
     '<!doctype html>',
     '<html lang="en">',
@@ -3271,6 +3280,7 @@ function buildReactVitePreviewHtml(
     '  <meta property="og:type" content="website" />',
     '  <meta name="twitter:card" content="summary_large_image" />',
     '  <script src="https://cdn.tailwindcss.com"></script>',
+    ...(themeLiteral ? [`  <script>tailwind.config = { theme: ${themeLiteral} };</script>`] : []),
     '  <script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react/jsx-dev-runtime":"https://esm.sh/react@18.3.1/jsx-dev-runtime","react-dom":"https://esm.sh/react-dom@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client"}}</script>',
     // Pinned. This URL used to float on latest, so when Babel 8 removed the
     // preset options below, every preview in production broke at once with no
@@ -14555,7 +14565,7 @@ import {
 import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
-import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss } from './src/services/preview-embedding.ts';
+import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 
