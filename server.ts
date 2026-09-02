@@ -3210,6 +3210,17 @@ function stripReactImportsForPreview(source: string): string {
   return output;
 }
 
+/**
+ * The Babel build the preview compiles generated TypeScript/JSX with.
+ *
+ * Pinned deliberately: this was floating on unpkg's latest, so Babel 8 removing
+ * the preset-typescript `isTSX`/`allExtensions` options broke every preview in
+ * production simultaneously, with no deploy on our side and no way to tell from
+ * the symptom. Bump this only together with a preview run that proves the
+ * generated app still compiles.
+ */
+const CODEN_PREVIEW_BABEL_VERSION = '8.0.4';
+
 function buildReactVitePreviewHtml(
   files: GeneratedFile[],
   projectName = 'Coden app',
@@ -3260,7 +3271,11 @@ function buildReactVitePreviewHtml(
     '  <meta name="twitter:card" content="summary_large_image" />',
     '  <script src="https://cdn.tailwindcss.com"></script>',
     '  <script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react/jsx-dev-runtime":"https://esm.sh/react@18.3.1/jsx-dev-runtime","react-dom":"https://esm.sh/react-dom@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client"}}</script>',
-    '  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>',
+    // Pinned. This URL used to float on latest, so when Babel 8 removed the
+    // preset options below, every preview in production broke at once with no
+    // change on our side. The preview compiler is a runtime dependency and must
+    // be versioned like one.
+    `  <script src="https://unpkg.com/@babel/standalone@${CODEN_PREVIEW_BABEL_VERSION}/babel.min.js"></script>`,
     '  <script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>',
     '  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>',
     '  <style>',
@@ -3495,10 +3510,15 @@ function buildReactVitePreviewHtml(
     '      let code = mod.code;',
     '      code = code.replace(/import\\.meta\\.env/g, "window.importMetaEnv");',
     '      code = code.replace(/import\\.meta/g, "({ env: window.importMetaEnv, url: \'\' })");',
+    '      if (typeof Babel === "undefined" || !Babel || typeof Babel.transform !== "function") {',
+    '        throw new Error("The preview compiler did not load. Check the network access to the Babel CDN.");',
+    '      }',
     '      const compiled = Babel.transform(code, {',
+    // isTSX/allExtensions were removed in Babel 8. The filename already carries
+    // the extension, which is what drives TSX detection in both 7 and 8.
     '        filename: resolved,',
     '        presets: [',
-    '          ["typescript", { isTSX: true, allExtensions: true }],',
+    '          ["typescript", { onlyRemoveTypeImports: true }],',
     '          "react"',
     '        ],',
     '        plugins: ["transform-modules-commonjs"]',
@@ -12333,8 +12353,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         // Only start/done are rendered by the run store; file_delta has no
         // reducer case, so emitting it would add SSE and event-log traffic for
         // nothing visible.
-        if (event.type === 'file_start') streamV2.emit('file_start', { path: event.path, index: event.index });
-        else if (event.type === 'file_done') streamV2.emit('file_done', { path: event.path, bytes: event.bytes });
+        if (event.type === 'file_start') {
+          streamV2.emit('file_start', { path: event.path, index: event.index });
+          // Report the file the model is actually writing rather than repeating
+          // one fixed sentence for the whole of the longest step.
+          emitActivity('building', `Coden écrit ${event.path}…`, `Coden is writing ${event.path}…`);
+        } else if (event.type === 'file_done') {
+          streamV2.emit('file_done', { path: event.path, bytes: event.bytes });
+        }
       },
       // ✅ Pass recent history for conflict detection
       recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
@@ -12377,7 +12403,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         'Je corrige les causes observées puis je relance exactement le même pipeline.',
         'I am fixing the observed causes and will rerun the exact same pipeline.',
       );
-      emitActivity('fixing', 'Coden corrige les problèmes détectés…', 'Coden is fixing the detected issues…');
+      const firstPreviewIssue = String(pipeline.errors[0]?.message || '').trim();
+      emitActivity(
+        'fixing',
+        firstPreviewIssue ? `Coden corrige : ${firstPreviewIssue}` : 'Coden corrige les problèmes détectés…',
+        firstPreviewIssue ? `Coden is fixing: ${firstPreviewIssue}` : 'Coden is fixing the detected issues…',
+      );
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
         const fix = applyAutoFix(projectForRun, finalFiles, pipeline.errors);
@@ -12492,7 +12523,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skillBudget.maxRetries > 0 &&
       !generationAbortController.signal.aborted
     ) {
-      emitActivity('fixing', 'Coden corrige les blocages vérifiés…', 'Coden is repairing the verified blockers…');
+      const firstVerifiedBlocker = String(finalGate.reliabilitySummary.blocking[0]?.message || '').trim();
+      emitActivity(
+        'fixing',
+        firstVerifiedBlocker ? `Coden corrige : ${firstVerifiedBlocker}` : 'Coden corrige les blocages vérifiés…',
+        firstVerifiedBlocker ? `Coden is repairing: ${firstVerifiedBlocker}` : 'Coden is repairing the verified blockers…',
+      );
       const repairBlockers = finalGate.reliabilitySummary.blocking.slice(0, 12).map(item => ({
         key: item.key,
         file: item.file || null,
