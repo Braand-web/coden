@@ -11,7 +11,7 @@ const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
 
 describe('Coden projects dashboard surface contract', () => {
   it('mounts one React Dashboard and removes the legacy document UI', () => {
-    expect((reactDashboard.match(/<h1\b/g) || []).length).toBe(1);
+    expect((reactDashboard.match(/^\s*<h1\b/gm) || []).length).toBe(1);
     expect(html).toContain('id="coden-dashboard-react-root"');
     expect(html).toContain('src="/src/dashboard-react.tsx"');
     expect(html).not.toContain('coden-dashboard-legacy-runtime');
@@ -29,6 +29,10 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain('Rechercher un projet');
     expect(reactDashboard).toContain('Que voulez-vous créer');
     expect(reactDashboard).toContain('Décrire le projet à créer');
+    expect(reactDashboard).toContain('Récemment vus');
+    expect(reactDashboard).toContain('Tout parcourir');
+    expect(reactDashboard).toContain('preview_html');
+    expect(reactDashboard).toContain('sandbox="allow-scripts"');
     expect(reactDashboard).not.toContain('Que veux-tu accomplir');
     expect(reactDashboard).not.toContain('Demander à Coden');
     expect(reactDashboard).not.toContain('Crédits');
@@ -38,6 +42,8 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain('is-collapsed');
     expect(css).toContain('.coden-dashboard-sidebar');
     expect(css).toContain('.coden-dashboard-project-list');
+    expect(css).toContain('.coden-dashboard-project-card');
+    expect(css).toContain('grid-template-columns: repeat(3');
     expect(css).toContain('--dashboard-sidebar-width: 228px');
     expect(css).toContain('width: 64px');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');

@@ -46,6 +46,9 @@ type DashboardProject = {
   preview_status?: string;
   publish_status?: string;
   live_url?: string;
+  preview_html?: string;
+  prompt?: string;
+  template?: string;
   updated_at?: string;
   created_at?: string;
 };
@@ -88,7 +91,14 @@ async function fetchProjects() {
   if (isLocal) {
     return {
       projects: [
-        { id: 'local-preview-project-001', name: 'Pulseboard', status: 'ready', updated_at: new Date().toISOString() },
+        {
+          id: 'local-preview-project-001',
+          name: 'Pulseboard',
+          status: 'ready',
+          preview_status: 'verified',
+          preview_html: '<!doctype html><html><body style="margin:0;font-family:system-ui;background:#f7f8fc;color:#182033"><main style="padding:28px"><nav style="display:flex;justify-content:space-between"><b>Pulseboard</b><span>Dashboard</span></nav><h1 style="margin-top:42px;font-size:34px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:28px"><div style="padding:18px;background:white;border-radius:12px">Projets<br><b style="font-size:24px">12</b></div><div style="padding:18px;background:white;border-radius:12px">Tâches<br><b style="font-size:24px">38</b></div><div style="padding:18px;background:white;border-radius:12px">Équipe<br><b style="font-size:24px">7</b></div></div></main></body></html>',
+          updated_at: new Date().toISOString(),
+        },
         { id: 'local-preview-project-002', name: 'TaskFlow', status: 'draft', updated_at: new Date(Date.now() - 86_400_000).toISOString() },
       ],
     } as ProjectsResponse;
@@ -241,18 +251,38 @@ function Sidebar({
   );
 }
 
-function ProjectRow({ project }: { project: DashboardProject }) {
+function ProjectCard({ project }: { project: DashboardProject }) {
   const state = projectState(project);
+  const previewHtml = project.preview_html?.trim();
   return (
-    <article className="coden-dashboard-project-row">
-      <a className="coden-dashboard-project-main" href={builderUrl(project.id)}>
-        <span className="coden-dashboard-project-icon" aria-hidden="true"><FileCode2 size={18} /></span>
-        <span className="coden-dashboard-project-copy">
-          <strong>{project.name}</strong>
-          <span>Modifié {relativeTime(project.updated_at || project.created_at)}</span>
+    <article className="coden-dashboard-project-card">
+      <a className="coden-dashboard-project-card-link" href={builderUrl(project.id)} aria-label={`Ouvrir le projet ${project.name}`}>
+        <span className="coden-dashboard-project-preview">
+          {previewHtml ? (
+            <iframe
+              title={`Aperçu de ${project.name}`}
+              srcDoc={previewHtml}
+              loading="lazy"
+              sandbox="allow-scripts"
+              tabIndex={-1}
+            />
+          ) : (
+            <span className="coden-dashboard-project-fallback" aria-hidden="true">
+              <span><FileCode2 size={25} /></span>
+              <strong>{project.name}</strong>
+              <small>Aucun aperçu vérifié</small>
+            </span>
+          )}
+          <span className={`coden-dashboard-project-badge is-${state.key}`}>{state.label}</span>
         </span>
-        <span className={`coden-dashboard-project-status is-${state.key}`}>{state.label}</span>
-        <ArrowRight className="coden-dashboard-project-arrow" size={17} aria-hidden="true" />
+        <span className="coden-dashboard-project-card-meta">
+          <span className="coden-dashboard-project-card-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
+          <span className="coden-dashboard-project-card-copy">
+            <strong>{project.name}</strong>
+            <small>Modifié {relativeTime(project.updated_at || project.created_at)}</small>
+          </span>
+          <ArrowRight size={17} aria-hidden="true" />
+        </span>
       </a>
     </article>
   );
@@ -267,6 +297,8 @@ function DashboardHome() {
   const [prompt, setPrompt] = useState('');
   const [creating, setCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState('');
+  const [projectView, setProjectView] = useState<'all' | 'recent'>('all');
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const wasSidebarOpen = useRef(false);
@@ -275,9 +307,17 @@ function DashboardHome() {
   const projects = projectsQuery.data?.projects || [];
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fr');
-    if (!query) return projects;
-    return projects.filter((project) => project.name.toLocaleLowerCase('fr').includes(query));
-  }, [projects, search]);
+    return projects.filter((project) => {
+      const matchesQuery = !query || project.name.toLocaleLowerCase('fr').includes(query);
+      if (!matchesQuery) return false;
+      if (projectView === 'recent') {
+        const updated = new Date(project.updated_at || project.created_at || 0).getTime();
+        return Number.isFinite(updated) && Date.now() - updated < 1000 * 60 * 60 * 24 * 7;
+      }
+      return true;
+    });
+  }, [projects, projectView, search]);
+  const visibleProjects = showAllProjects ? filteredProjects : filteredProjects.slice(0, 6);
 
   const createFromPrompt = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -387,10 +427,22 @@ function DashboardHome() {
             <span>{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
           </section>
 
-          <label className="coden-dashboard-search">
-            <Search size={17} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher un projet" aria-label="Rechercher un projet" />
-          </label>
+          <div className="coden-dashboard-project-toolbar">
+            <label className="coden-dashboard-search">
+              <Search size={17} aria-hidden="true" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher" aria-label="Rechercher un projet" />
+            </label>
+            <div className="coden-dashboard-project-filters" role="group" aria-label="Filtrer les projets">
+              <button className={projectView === 'all' ? 'is-active' : ''} type="button" onClick={() => setProjectView('all')}>Mes projets</button>
+              <button className={projectView === 'recent' ? 'is-active' : ''} type="button" onClick={() => setProjectView('recent')}>Récemment vus</button>
+            </div>
+            {filteredProjects.length > 6 && (
+              <button className="coden-dashboard-browse-all" type="button" onClick={() => setShowAllProjects((value) => !value)}>
+                {showAllProjects ? 'Réduire' : 'Tout parcourir'}
+                <ArrowRight size={15} aria-hidden="true" />
+              </button>
+            )}
+          </div>
 
           <section className="coden-dashboard-project-list" aria-label="Liste des projets" aria-live="polite">
             {projectsQuery.isLoading && (
@@ -402,7 +454,7 @@ function DashboardHome() {
                 <span>Actualisez la page pour réessayer.</span>
               </div>
             )}
-            {!projectsQuery.isLoading && !projectsQuery.isError && filteredProjects.map((project) => <ProjectRow key={project.id} project={project} />)}
+            {!projectsQuery.isLoading && !projectsQuery.isError && visibleProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
             {!projectsQuery.isLoading && !projectsQuery.isError && !filteredProjects.length && (
               <div className="coden-dashboard-empty">
                 <strong>{search ? 'Aucun résultat' : 'Aucun projet'}</strong>
