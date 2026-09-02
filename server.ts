@@ -4562,6 +4562,11 @@ function summarizeProjectFilesForAgent(files: GeneratedFile[]) {
 
 function buildExistingFilesContextForGeneration(files: GeneratedFile[], prompt?: string, modelId?: AllowedModelId) {
   if (!files.length) return 'No existing files yet.';
+  // Selection decides which file *contents* fit the budget, so the model's view
+  // of the project changed shape from one message to the next — ask about the
+  // header and the schema falls out. The map is what must never fall out.
+  const architecture = renderProjectArchitecture(files);
+  const withMap = (body: string) => (architecture ? `${architecture}\n\n${body}` : body);
   const modelContextTokens = modelId ? getAIModelCapabilityProfile(modelId).limits.contextTokens : 128_000;
   const contextTokenBudget = Math.max(24_000, Math.min(180_000, Math.floor(modelContextTokens * 0.42)));
   const contextFileBudget = modelContextTokens >= 500_000 ? 55 : modelContextTokens >= 200_000 ? 38 : 25;
@@ -4572,7 +4577,7 @@ function buildExistingFilesContextForGeneration(files: GeneratedFile[], prompt?:
       tokenBudget: contextTokenBudget,
       maxFiles: contextFileBudget,
     });
-    return result.contextText;
+    return withMap(result.contextText);
   }
 
   // Small project fallback — include everything
@@ -4590,7 +4595,7 @@ function buildExistingFilesContextForGeneration(files: GeneratedFile[], prompt?:
     chunks.push(`${header}\n${slice}${content.length > slice.length ? '\n...[truncated]' : ''}`);
     budget -= slice.length + header.length;
   }
-  return chunks.join('\n\n') || summarizeProjectFilesForAgent(files);
+  return withMap(chunks.join('\n\n') || summarizeProjectFilesForAgent(files));
 }
 
 type AgentTaskComplexity = NonNullable<RoutingContext['taskComplexity']>;
@@ -14278,6 +14283,7 @@ import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss,
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { GenerationPhaseTracker } from './src/services/generation-phases.ts';
 import { buildTargetedRepair } from './src/services/targeted-repair.ts';
+import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 
