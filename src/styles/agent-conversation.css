@@ -279,3 +279,93 @@
   }
   .coden-response-cursor { animation: none; }
 }
+
+/* ── run steps ──────────────────────────────────────────────
+   The pipeline the server emits: understand → decide → plan →
+   reason → build → verify → fix → recap, each carrying its own
+   state. The shimmer says what is happening now; this says what
+   has already happened and where it failed. */
+
+.coden-agent-steps {
+  list-style: none;
+  margin: 2px 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.coden-agent-step {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted, #94a3b8);
+}
+
+.coden-agent-step__marker {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+
+.coden-agent-step__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.coden-agent-step__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coden-agent-step__detail {
+  font-size: 11.5px;
+  opacity: .75;
+  white-space: nowrap;
+}
+
+/* A finished step steps back so the eye lands on the one running. */
+.coden-agent-step[data-status="done"] {
+  color: var(--success, #22c55e);
+}
+
+.coden-agent-step[data-status="done"] .coden-agent-step__label {
+  color: var(--text-muted, #94a3b8);
+}
+
+.coden-agent-step[data-status="failed"] {
+  color: var(--error, #f87171);
+}
+
+.coden-agent-step[data-status="failed"] .coden-agent-step__label {
+  color: var(--error, #f87171);
+}
+
+.coden-agent-step[data-status="active"] {
+  color: var(--text, #f8fafc);
+  font-weight: 600;
+}
+
+.coden-agent-step[data-status="active"] .coden-agent-step__dot {
+  animation: coden-agent-step-pulse 1.3s cubic-bezier(.22, 1, .36, 1) infinite;
+}
+
+@keyframes coden-agent-step-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.55); opacity: .55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-agent-step[data-status="active"] .coden-agent-step__dot {
+    animation: none;
+  }
+}

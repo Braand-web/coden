@@ -1,5 +1,6 @@
 import { RotateCcw, Square } from 'lucide-react';
 import { AgentActivityShimmer } from './agent-activity-shimmer';
+import { AgentSteps } from './agent-steps';
 import { AgentResponse } from './agent-response';
 import { AgentProgressNote } from './agent-progress-note';
 import { InlineUserDecision } from './inline-user-decision';
@@ -68,6 +69,7 @@ export function AgentRunPanel({
           {view.progressNotes.map((note) => <AgentProgressNote key={note.id} note={note} />)}
         </div>
       ) : null}
+      <AgentSteps activities={view.activities} locale={locale} />
       {activity ? <AgentActivityShimmer runId={view.runId} phase={activity.phase} message={activity.message} active={showActivity} /> : null}
       <AgentResponse content={responseContent} streaming={streamingResponse} />
       {decision ? <InlineUserDecision decision={decision} onSubmit={onClarification} onConfirm={onBuildPlan} onCancel={onCancel} /> : null}
