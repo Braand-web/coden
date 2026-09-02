@@ -65,30 +65,46 @@
   to { background-position: -120% 0; }
 }
 
+/*
+ * Conversation typography.
+ *
+ * The body was 13px with headings at 15px and 14px, so h3 and h4 sat one pixel
+ * apart from the prose and the reply read as one flat block. Long answers are
+ * the normal case here, so the scale is sized for reading: a 15px body, real
+ * steps between levels, and vertical rhythm that lets sections separate on
+ * their own without the user hunting for structure.
+ */
 .coden-response {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text, #eef2f7);
-  font-size: 13px;
-  line-height: 1.68;
+  font-size: 15px;
+  line-height: 1.72;
 }
 
 .coden-response > *:first-child { margin-top: 0 !important; }
 .coden-response > *:last-child { margin-bottom: 0 !important; }
-.coden-response p { margin: 0 0 10px; white-space: pre-wrap; }
+.coden-response p { margin: 0 0 14px; white-space: pre-wrap; }
 .coden-response h1,
 .coden-response h2,
 .coden-response h3,
 .coden-response h4 {
-  margin: 16px 0 8px;
+  margin: 26px 0 10px;
   color: var(--text, #eef2f7);
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: -0.015em;
+  line-height: 1.28;
+  font-weight: 680;
 }
-.coden-response h1 { font-size: 21px; }
-.coden-response h2 { font-size: 18px; }
-.coden-response h3 { font-size: 15px; }
-.coden-response h4 { font-size: 14px; }
+/* Each level is a visible step, not a rounding difference. */
+.coden-response h1 { font-size: 24px; font-weight: 720; letter-spacing: -0.022em; }
+.coden-response h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.019em; }
+.coden-response h3 { font-size: 17px; }
+.coden-response h4 { font-size: 15px; color: var(--text-muted, #94a3b8); text-transform: none; }
+/* A heading opening the reply must not push it away from the avatar. */
+.coden-response > h1:first-child,
+.coden-response > h2:first-child,
+.coden-response > h3:first-child,
+.coden-response > h4:first-child { margin-top: 0; }
 .coden-response strong { font-weight: 750; }
 .coden-response em { color: var(--text-muted, #94a3b8); }
 .coden-response a {
@@ -144,14 +160,16 @@
   line-height: 1.6;
 }
 .coden-response blockquote {
-  margin: 10px 0;
+  margin: 16px 0;
   border-left: 3px solid var(--accent, #60a5fa);
-  padding: 8px 0 8px 12px;
+  padding: 4px 0 4px 16px;
   color: var(--text-muted, #94a3b8);
 }
 .coden-response ul,
-.coden-response ol { display: grid; gap: 5px; margin: 8px 0 12px; padding-left: 22px; }
-.coden-response hr { height: 1px; margin: 14px 0; border: 0; background: var(--border, #293548); }
+.coden-response ol { display: grid; gap: 8px; margin: 12px 0 16px; padding-left: 24px; }
+.coden-response li { padding-left: 2px; }
+.coden-response li::marker { color: var(--text-sub, var(--text-muted, #94a3b8)); }
+.coden-response hr { height: 1px; margin: 24px 0; border: 0; background: var(--border, #293548); }
 .coden-response-table-wrap {
   max-width: 100%;
   margin: 10px 0 14px;
@@ -159,7 +177,7 @@
   border: 1px solid var(--border, #293548);
   border-radius: 12px;
 }
-.coden-response table { width: 100%; min-width: 360px; border-collapse: collapse; font-size: 12px; }
+.coden-response table { width: 100%; min-width: 360px; border-collapse: collapse; font-size: 14px; }
 .coden-response th,
 .coden-response td { padding: 8px 10px; border-bottom: 1px solid var(--border, #293548); text-align: left; vertical-align: top; }
 .coden-response th { background: color-mix(in srgb, var(--bg-input, #121a26) 82%, transparent); font-weight: 700; }
