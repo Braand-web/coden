@@ -124,16 +124,16 @@ const tabAliases: Record<SettingsTab, string> = {
 };
 
 const settingsTabMeta: Record<string, { title: string; description: string }> = {
-  profil: { title: 'General', description: 'Profile, language and personal context.' },
-  compte: { title: 'Account', description: 'Identity, plan and active session.' },
-  confidentialite: { title: 'Privacy', description: 'Memory, data and security controls.' },
-  facturation: { title: 'Billing', description: 'Plan, credits and Coden Cloud.' },
+  profil: { title: 'Profil', description: 'Nom, langue et préférences personnelles.' },
+  compte: { title: 'Compte et sécurité', description: 'Identité, forfait et session active.' },
+  confidentialite: { title: 'Confidentialité', description: 'Mémoire, données et protections.' },
+  facturation: { title: 'Facturation', description: 'Forfait, crédits et Coden Cloud.' },
   ia: { title: 'Usage', description: 'AI credits, cloud allowance and recent activity.' },
   capacites: { title: 'Capabilities', description: 'Workshops and agent capabilities.' },
   automatisations: { title: 'Agent autonomy', description: 'Budgets, approvals and workflow safety.' },
-  connecteurs: { title: 'Connecteurs', description: 'Services et outils disponibles pour le workspace.' },
+  connecteurs: { title: 'Intégrations', description: 'Services réellement connectés à votre espace.' },
   api: { title: 'API', description: 'Webhooks and safe connector controls.' },
-  apparence: { title: 'Appearance', description: 'Theme, density, motion and accent.' },
+  apparence: { title: 'Apparence', description: 'Thème, densité et animations.' },
   danger: { title: 'Danger', description: 'Reversible resets and sign-out.' },
 };
 
@@ -853,9 +853,9 @@ function installSettingsStyle() {
       right: auto;
       bottom: auto;
       left: 50%;
-      width: min(1060px, calc(100vw - 40px));
+      width: min(920px, calc(100vw - 40px));
       max-width: none;
-      height: min(720px, calc(100dvh - 40px));
+      height: min(660px, calc(100dvh - 40px));
       max-height: calc(100dvh - 40px);
       display: block;
       overflow: hidden;
@@ -883,7 +883,7 @@ function installSettingsStyle() {
       min-height: 0;
       height: 100%;
       display: grid;
-      grid-template-columns: minmax(210px, 250px) minmax(0, 1fr);
+      grid-template-columns: 210px minmax(0, 1fr);
     }
 
     .settings-sidebar {
@@ -1200,7 +1200,32 @@ function installSettingsStyle() {
     }
 
     [data-theme="dark"] .settings-panel {
+      --bg: #0e1116;
+      --bg-surface: #11161e;
+      --bg-elevated: #171e28;
+      --bg-input: #171e28;
+      --text: #f5f7fa;
+      --text-muted: #aab3c1;
+      --text-sub: #8d98a8;
+      --border: #273241;
+      --border-light: rgba(151, 162, 178, .14);
+      --border-mid: #273241;
+      --border-focus: #4f8cff;
+      --accent-dim: rgba(79, 140, 255, .1);
+      --accent-blue-soft: rgba(79, 140, 255, .12);
+      --accent-blue: #9ebeff;
+      background: #11161e;
+      color: #f5f7fa;
       box-shadow: 0 30px 96px rgba(0,0,0,.58);
+    }
+
+    [data-theme="dark"] .settings-sidebar {
+      background: #0f141b;
+    }
+
+    [data-theme="dark"] .settings-main,
+    [data-theme="dark"] .settings-footer {
+      background: #11161e;
     }
 
     @media (max-width: 900px) {
@@ -1322,61 +1347,51 @@ function settingsMarkup() {
   return `
     <div class="settings-shell">
       <aside class="settings-sidebar">
-        <label class="settings-search">
-          ${settingsIcon('search')}
-          <input type="search" data-settings-search placeholder="Search settings" autocomplete="off" aria-label="Search settings">
-        </label>
-        <div class="settings-nav-label">Settings</div>
-        <div class="settings-tabs" role="tablist" aria-label="Settings">
-          <button class="settings-tab active" type="button" data-tab="profil" data-search="general profile name language timezone instructions">${settingsIcon('general')}<span>General</span></button>
-          <button class="settings-tab" type="button" data-tab="compte" data-search="account email session plan identity">${settingsIcon('account')}<span>Account</span></button>
-          <button class="settings-tab" type="button" data-tab="confidentialite" data-search="privacy memory data security confidentiality">${settingsIcon('privacy')}<span>Privacy</span></button>
-          <button class="settings-tab" type="button" data-tab="facturation" data-search="billing plan credits invoices cloud balance">${settingsIcon('billing')}<span>Billing</span></button>
-          <button class="settings-tab" type="button" data-tab="ia" data-search="usage ai credits cloud history models">${settingsIcon('usage')}<span>Usage</span></button>
-          <button class="settings-tab" type="button" data-tab="capacites" data-search="capabilities models build design media decks">${settingsIcon('capabilities')}<span>Capabilities</span></button>
-          <button class="settings-tab" type="button" data-tab="automatisations" data-search="skills automations workflows budgets approvals autonomy schedules">${settingsIcon('capabilities')}<span>Agent autonomy</span></button>
-          <button class="settings-tab" type="button" data-tab="connecteurs" data-search="connecteurs connectors github supabase vercel stripe">${settingsIcon('connectors')}<span>Connecteurs</span></button>
-          <button class="settings-tab" type="button" data-tab="api" data-search="api webhook secrets endpoints">${settingsIcon('api')}<span>API</span></button>
-          <button class="settings-tab" type="button" data-tab="apparence" data-search="appearance theme dark light density motion accent">${settingsIcon('appearance')}<span>Appearance</span></button>
-          <button class="settings-tab" type="button" data-tab="danger" data-search="danger reset clear drafts sign out">${settingsIcon('danger')}<span>Danger</span></button>
-          <div class="settings-search-empty">No setting matches this search.</div>
+        <div class="settings-nav-label">Paramètres</div>
+        <div class="settings-tabs" role="tablist" aria-label="Paramètres">
+          <button class="settings-tab active" type="button" data-tab="profil">${settingsIcon('general')}<span>Profil</span></button>
+          <button class="settings-tab" type="button" data-tab="compte">${settingsIcon('account')}<span>Compte et sécurité</span></button>
+          <button class="settings-tab" type="button" data-tab="apparence">${settingsIcon('appearance')}<span>Apparence</span></button>
+          <button class="settings-tab" type="button" data-tab="facturation">${settingsIcon('billing')}<span>Facturation</span></button>
+          <button class="settings-tab" type="button" data-tab="connecteurs">${settingsIcon('connectors')}<span>Intégrations</span></button>
+          <button class="settings-tab" type="button" data-tab="confidentialite">${settingsIcon('privacy')}<span>Confidentialité</span></button>
         </div>
         <div class="settings-sidebar-footer">
-          <strong>Coden preferences</strong>
-          <span>Shared across dashboard and builder. Sensitive provider secrets stay server-side.</span>
+          <strong>Préférences Coden</strong>
+          <span>Partagées entre le dashboard et le Builder.</span>
         </div>
       </aside>
       <section class="settings-main">
         <div class="settings-header">
           <div class="settings-title-stack">
-            <h2 id="settings-active-title" data-settings-active-title>General</h2>
-            <small data-settings-active-description>Profile, language and personal context.</small>
+            <h2 id="settings-active-title" data-settings-active-title>Profil</h2>
+            <small data-settings-active-description>Nom, langue et préférences personnelles.</small>
           </div>
           <div class="settings-header-actions">
-            <span class="settings-status" data-settings-status data-tone="idle">Saved</span>
-            <button class="settings-close" type="button" data-settings-close aria-label="Close settings">${settingsIcon('close')}</button>
+            <span class="settings-status" data-settings-status data-tone="idle">Enregistré</span>
+            <button class="settings-close" type="button" data-settings-close aria-label="Fermer les paramètres">${settingsIcon('close')}</button>
           </div>
         </div>
         <div class="settings-content">
-      <div class="tab-panel" id="tab-profil" data-settings-heading="Profile">
+      <div class="tab-panel" id="tab-profil" data-settings-heading="Profil">
         <div class="settings-card settings-hero-card">
           <div class="settings-avatar" data-settings-avatar>H</div>
           <div>
-            <h3 data-settings-profile-name>Workspace profile</h3>
-            <p data-settings-profile-email>Loading your account...</p>
+            <h3 data-settings-profile-name>Profil du workspace</h3>
+            <p data-settings-profile-email>Chargement du compte…</p>
           </div>
           <span class="settings-plan-badge" data-settings-plan-badge>Free</span>
         </div>
         <div class="settings-card">
-          <h3>Personal context</h3>
-          <p>These preferences help Coden answer in the right language, tone and timezone.</p>
+          <h3>Préférences personnelles</h3>
+          <p>Elles aident Coden à répondre avec la bonne langue et le bon contexte.</p>
           <div class="settings-field-grid">
             <div class="settings-field">
-              <label for="settings-display-name">Display name</label>
-              <input id="settings-display-name" data-settings-field="displayName" type="text" autocomplete="name" placeholder="Your name">
+              <label for="settings-display-name">Nom affiché</label>
+              <input id="settings-display-name" data-settings-field="displayName" type="text" autocomplete="name" placeholder="Votre nom">
             </div>
             <div class="settings-field">
-              <label for="settings-role">Role</label>
+              <label for="settings-role">Rôle</label>
               <select id="settings-role" data-settings-field="role">
                 <option value="founder">Founder</option>
                 <option value="freelancer">Freelancer</option>
@@ -1386,11 +1401,11 @@ function settingsMarkup() {
               </select>
             </div>
             <div class="settings-field">
-              <label for="settings-language">Coden language</label>
+              <label for="settings-language">Langue de Coden</label>
               <select id="settings-language" data-settings-field="language">
-                <option value="auto">Auto-detect</option>
-                <option value="fr">French</option>
-                <option value="en">English</option>
+                <option value="auto">Détection automatique</option>
+                <option value="fr">Français</option>
+                <option value="en">Anglais</option>
               </select>
             </div>
             <div class="settings-field">
@@ -1398,8 +1413,8 @@ function settingsMarkup() {
               <input id="settings-timezone" data-settings-field="timezone" type="text" placeholder="Africa/Douala">
             </div>
             <div class="settings-field full">
-              <label for="settings-instructions">Instructions for Coden</label>
-              <textarea id="settings-instructions" data-settings-field="instructions" placeholder="Example: Keep explanations concise, answer in French, and preserve the current design system."></textarea>
+              <label for="settings-instructions">Instructions pour Coden</label>
+              <textarea id="settings-instructions" data-settings-field="instructions" placeholder="Exemple : répondre en français et préserver le design actuel."></textarea>
             </div>
           </div>
         </div>
@@ -1409,7 +1424,7 @@ function settingsMarkup() {
           <h3>Account</h3>
           <p>Your identity, plan and current browser session.</p>
           <div class="settings-row">
-            <div><strong>Email</strong><span data-settings-account-email>Loading...</span></div>
+            <div><strong>E-mail</strong><span data-settings-account-email>Chargement…</span></div>
             <span class="settings-mini-badge" data-settings-account-plan>Free</span>
           </div>
           <div class="settings-row">
@@ -1599,8 +1614,8 @@ function settingsMarkup() {
       </div>
         </div>
         <div class="settings-footer">
-          <button type="button" data-settings-close>Cancel</button>
-          <button type="button" class="primary" data-settings-save>Save changes</button>
+          <button type="button" data-settings-close>Annuler</button>
+          <button type="button" class="primary" data-settings-save>Enregistrer</button>
         </div>
       </section>
     </div>
@@ -1683,7 +1698,7 @@ function updateSettingsForm(prefs = loadSettingsPreferences()) {
 }
 
 function renderAuthSummary(auth: AuthMeResponse | null, prefs = loadSettingsPreferences()) {
-  const email = auth?.user?.email || 'Signed in';
+  const email = auth?.user?.email || 'Session active';
   const userId = auth?.user?.id || '--';
   const displayName = prefs.profile.displayName || email.split('@')[0] || 'Coden user';
   const planLabel = auth?.plan?.label || auth?.plan?.key || 'Free';
@@ -1711,7 +1726,7 @@ async function hydrateSettingsPanel() {
   const prefs = loadSettingsPreferences();
   updateSettingsForm(prefs);
   renderAuthSummary(currentAuthSummary, prefs);
-  setSettingsStatus('Loading account...', 'saving');
+  setSettingsStatus('Chargement…', 'saving');
   try {
     const [auth, state] = await Promise.all([
       apiFetch<AuthMeResponse>('/api/auth/me'),
@@ -1727,7 +1742,7 @@ async function hydrateSettingsPanel() {
     updateSettingsForm(merged);
     currentAuthSummary = auth;
     renderAuthSummary(currentAuthSummary, merged);
-    setSettingsStatus('Saved', 'success');
+    setSettingsStatus('Enregistré', 'success');
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
   } catch (error) {
     renderAuthSummary(currentAuthSummary, prefs);
@@ -1739,7 +1754,7 @@ async function saveSettingsFromPanel() {
   const prefs = readSettingsForm();
   saveSettingsPreferences(prefs);
   applyAppearancePreferences(prefs);
-  setSettingsStatus('Saving...', 'saving');
+  setSettingsStatus('Enregistrement…', 'saving');
   try {
     const theme = resolveThemePreference(prefs.appearance.theme);
     await apiFetch('/api/users/me/workspace-state', {
@@ -1748,7 +1763,7 @@ async function saveSettingsFromPanel() {
     }).catch(() => null);
     renderAuthSummary(currentAuthSummary, prefs);
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
-    setSettingsStatus('Saved', 'success');
+    setSettingsStatus('Enregistré', 'success');
   } catch (error) {
     setSettingsStatus(error instanceof Error ? error.message : 'Could not save settings', 'error');
   }

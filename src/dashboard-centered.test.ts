@@ -27,6 +27,8 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain('Mes projets');
     expect(reactDashboard).toContain('Nouveau projet');
     expect(reactDashboard).toContain('Rechercher un projet');
+    expect(reactDashboard).toContain('Que voulez-vous créer');
+    expect(reactDashboard).toContain('Décrire le projet à créer');
     expect(reactDashboard).not.toContain('Que veux-tu accomplir');
     expect(reactDashboard).not.toContain('Demander à Coden');
     expect(reactDashboard).not.toContain('Crédits');
@@ -55,6 +57,10 @@ describe('Coden projects dashboard surface contract', () => {
   it('keeps creation and opening as explicit Builder handoffs', () => {
     expect(reactDashboard).toContain("'/builder.html?new=1&source=dashboard'");
     expect(reactDashboard).toContain('project=\${encodeURIComponent(projectId)}&source=dashboard');
+    expect(reactDashboard).toContain('startCreateProjectFlow');
+    expect(reactDashboard).toContain("{ prompt: request, mode: 'auto', source: 'dashboard' }");
+    expect(reactDashboard).toContain("openSettings('profile')");
+    expect(reactDashboard).toContain('data-auth-logout');
     expect(reactDashboard).toContain("localStorage.setItem('coden-dashboard-sidebar-collapsed'");
   });
 

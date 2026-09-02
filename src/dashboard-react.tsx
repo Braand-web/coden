@@ -10,19 +10,34 @@ import {
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileCode2,
+  LogOut,
   Menu,
   Plus,
   Search,
+  Send,
+  Settings,
+  Sparkles,
+  WandSparkles,
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { isLocalPreviewEnabled } from './local-preview';
+import { ensureSettingsPanel, openSettings } from './settings-panel';
+import {
+  formatCreateProjectFlowStatus,
+  startCreateProjectFlow,
+  type CreateProjectFlowStatus,
+} from './services/create-project-flow';
 import './styles/dashboard-react.css';
 
-type ProfileResponse = { user?: { email?: string; name?: string; full_name?: string } };
+type ProfileResponse = {
+  user?: { email?: string; name?: string; full_name?: string };
+  plan?: { key?: string; label?: string };
+};
 
 type DashboardProject = {
   id: string;
@@ -132,7 +147,24 @@ function Sidebar({
   onClose: () => void;
   onToggleCollapsed: () => void;
 }) {
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   const displayName = profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0] || 'Compte';
+  const email = profile?.user?.email || 'Compte Coden';
+
+  useEffect(() => {
+    const closeMenu = (event: MouseEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    };
+    document.addEventListener('mousedown', closeMenu);
+    return () => document.removeEventListener('mousedown', closeMenu);
+  }, []);
+
+  const showSettings = () => {
+    setAccountOpen(false);
+    ensureSettingsPanel();
+    openSettings('profile');
+  };
 
   return (
     <>
@@ -170,10 +202,39 @@ function Sidebar({
         </nav>
 
         <div className="coden-dashboard-sidebar-bottom">
-          <a className="coden-dashboard-account" href="/auth.html?redirect=%2Fdashboard.html" aria-label={`Compte : ${displayName}`}>
-            <span className="coden-dashboard-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
-            <span>{displayName}</span>
+          <a className="coden-dashboard-upgrade" href="/pricing.html?source=dashboard">
+            <Sparkles size={15} aria-hidden="true" />
+            <span>Upgrade</span>
           </a>
+          <div className="coden-dashboard-account-wrap" ref={accountMenuRef}>
+            {accountOpen && (
+              <div className="coden-dashboard-account-menu" role="menu">
+                <button type="button" role="menuitem" onClick={showSettings}>
+                  <Settings size={16} aria-hidden="true" />
+                  Paramètres
+                </button>
+                <button type="button" role="menuitem" data-auth-logout>
+                  <LogOut size={16} aria-hidden="true" />
+                  Se déconnecter
+                </button>
+              </div>
+            )}
+            <button
+              className="coden-dashboard-account"
+              type="button"
+              aria-label={`Compte : ${displayName}`}
+              aria-haspopup="menu"
+              aria-expanded={accountOpen}
+              onClick={() => setAccountOpen((value) => !value)}
+            >
+              <span className="coden-dashboard-avatar">{displayName.slice(0, 1).toUpperCase()}</span>
+              <span className="coden-dashboard-account-copy">
+                <strong>{displayName}</strong>
+                <small>{email}</small>
+              </span>
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </aside>
     </>
@@ -203,6 +264,9 @@ function DashboardHome() {
     try { return window.localStorage.getItem('coden-dashboard-sidebar-collapsed') === 'true'; } catch { return false; }
   });
   const [search, setSearch] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [creationStatus, setCreationStatus] = useState('');
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const wasSidebarOpen = useRef(false);
@@ -214,6 +278,34 @@ function DashboardHome() {
     if (!query) return projects;
     return projects.filter((project) => project.name.toLocaleLowerCase('fr').includes(query));
   }, [projects, search]);
+
+  const createFromPrompt = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const request = prompt.trim();
+    if (!request || creating) return;
+    setCreating(true);
+    setCreationStatus(formatCreateProjectFlowStatus('preparing', 'fr'));
+    if (isLocal) {
+      window.setTimeout(() => {
+        setCreationStatus('Le parcours est prêt. La création réelle reste désactivée dans cet aperçu local.');
+        setCreating(false);
+      }, 450);
+      return;
+    }
+    try {
+      await startCreateProjectFlow(
+        { prompt: request, mode: 'auto', source: 'dashboard' },
+        {
+          onStatus: (status: CreateProjectFlowStatus) => {
+            setCreationStatus(formatCreateProjectFlowStatus(status, 'fr'));
+          },
+        },
+      );
+    } catch (error) {
+      setCreationStatus(error instanceof Error ? error.message : 'Le projet n’a pas pu être créé.');
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage can be unavailable */ }
@@ -253,10 +345,44 @@ function DashboardHome() {
         </header>
 
         <div className="coden-dashboard-content">
+          <section className="coden-dashboard-create" aria-labelledby="dashboard-create-title">
+            <span className="coden-dashboard-create-mark" aria-hidden="true">
+              <WandSparkles size={20} />
+            </span>
+            <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
+            <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
+            <form className="coden-dashboard-composer" onSubmit={createFromPrompt}>
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                rows={3}
+                placeholder="Créez un CRM moderne, une boutique, un portfolio…"
+                aria-label="Décrire le projet à créer"
+                disabled={creating}
+              />
+              <div className="coden-dashboard-composer-footer">
+                <span><WandSparkles size={14} aria-hidden="true" /> Auto</span>
+                <button type="submit" disabled={!prompt.trim() || creating} aria-label="Créer le projet">
+                  <Send size={16} aria-hidden="true" />
+                </button>
+              </div>
+            </form>
+            <div className="coden-dashboard-create-status" role="status" aria-live="polite">
+              {creationStatus}
+            </div>
+          </section>
+
           <section className="coden-dashboard-heading">
             <div>
               <p>Espace de travail</p>
-              <h1>Mes projets</h1>
+              <h2>Mes projets</h2>
             </div>
             <span>{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
           </section>

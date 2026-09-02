@@ -12,9 +12,9 @@ import { readPricingSelection } from './public-pricing-flow';
 import { trackFunnelEvent } from './conversion-events';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
-import './styles/auth-premium.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
+import './styles/auth-premium.css';
 
 type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 type StatusTone = 'info' | 'error' | 'success';
@@ -148,21 +148,21 @@ function setMode(nextMode: AuthMode) {
 
   if (modeTitle) {
     modeTitle.textContent = mode === 'signup'
-      ? 'Créez votre compte Coden'
+      ? 'Créer votre compte'
       : mode === 'forgot-password'
-        ? 'Réinitialisez votre mot de passe'
+        ? 'Mot de passe oublié'
         : mode === 'reset-password'
-          ? 'Choisissez un nouveau mot de passe'
-          : 'Bon retour';
+          ? 'Nouveau mot de passe'
+          : 'Bienvenue';
   }
   if (modeSubtitle) {
     modeSubtitle.textContent = mode === 'signup'
-      ? 'Commencez à construire, gardez vos projets et publiez quand vous êtes prêt.'
+      ? 'Un espace simple pour construire et publier vos projets.'
       : mode === 'forgot-password'
         ? 'Saisissez votre adresse e-mail pour recevoir un lien sécurisé.'
         : mode === 'reset-password'
-          ? 'Utilisez un mot de passe robuste pour sécuriser votre espace Coden.'
-          : 'Retrouvez vos projets, prévisualisez vos changements et publiez votre application quand elle est vérifiée.';
+          ? 'Choisissez un mot de passe sécurisé.'
+          : 'Retrouvez vos projets, prévisualisez vos changements et publiez sereinement.';
   }
   if (footerText) {
     footerText.innerHTML = mode === 'signup'
