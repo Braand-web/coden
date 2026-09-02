@@ -5,7 +5,6 @@ import path from 'node:path';
 const root = process.cwd();
 const clientEntryFiles = [
   'src/builder-live.ts',
-  'src/dashboard-live.ts',
   'src/auth.ts',
   'src/settings-panel.ts',
   'src/builder-conversation-island.tsx',

@@ -116,10 +116,7 @@ export default defineConfig(() => {
             ) {
               return 'vendor-ai-ui';
             }
-            if (
-              normalized.includes('/src/builder-conversation-island') ||
-              normalized.includes('/src/components/ai-elements/')
-            ) {
+            if (normalized.includes('/src/builder-conversation-island')) {
               return 'builder-chat-ui';
             }
             if (normalized.includes('/src/settings-panel')) return 'settings-panel';

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const builderLive = readFileSync('src/builder-live.ts', 'utf8');
-const dashboardLive = readFileSync('src/dashboard-live.ts', 'utf8');
 const conversation = readFileSync('src/builder-conversation-island.tsx', 'utf8');
 const streamClient = readFileSync('src/lib/stream-client.ts', 'utf8');
 const streamProtocol = readFileSync('src/lib/stream-protocol.ts', 'utf8');
@@ -34,7 +33,7 @@ assert.ok(!builderLive.includes('function journalEventText'), 'production builde
 assert.ok(!builderLive.includes('function cleanPublicJournalText'), 'production builder must not contain a local public journal translator');
 assert.ok(builderLive.includes('function sanitizeProviderStreamText'), 'provider stream sanitation must remain explicit and neutral');
 
-for (const source of [builderLive, dashboardLive, conversation]) {
+for (const source of [builderLive, conversation]) {
   assert.ok(!source.includes('createSmoothTextRenderer'), 'frontend UI must not use smooth token rendering');
   assert.ok(!source.includes('AgentActivityStream'), 'old agent activity UI must be removed');
   assert.ok(!source.includes('Coden Mission Control'), 'mission control UI must be removed');
