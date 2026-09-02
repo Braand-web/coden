@@ -425,6 +425,7 @@ const CODEN_GENERATED_APP_DESIGN_SYSTEM_POLICY = [
   'Before writing UI code, internally create a compact design brief: app type, target user, product mood, visual direction, layout system, component set, interaction states, accessibility risks, and anti-generic-design risks.',
   'Every generated app must include design tokens in the implementation: semantic color roles, neutral surfaces, typography scale, spacing scale, radius scale, shadow/elevation, focus ring, motion duration, and responsive breakpoints.',
   'Use CSS custom properties or Tailwind theme-consistent values when practical. Do not scatter random colors, one-off spacing, mismatched radii, or unrelated shadow styles across the app.',
+  'Semantic state roles are part of the token set: success, warning, error, and info must exist as named colors in the Tailwind theme extension or as CSS custom properties, and the UI must use those roles rather than ad-hoc greens and reds.',
   'Choose a deliberate aesthetic direction that fits the product: calm operational, editorial, refined luxury, playful, technical, local-business warm, fintech sober, creator/media expressive, or another context-true direction.',
   'Avoid generic AI patterns: purple-blue gradient hero, three identical feature cards, oversized vague headlines, fake SaaS dashboards, meaningless glassmorphism, bland placeholder copy, inert CTAs, and UI that could belong to any product.',
   'Typography should feel chosen, not defaulted. If external fonts are not available, use a thoughtful CSS font stack and hierarchy; do not rely on Arial/Roboto/Inter-like generic defaults as the whole visual personality.',
@@ -452,12 +453,14 @@ const CODEN_RESPONSIVE_ACCESSIBILITY_POLICY = [
   'Use semantic HTML, accessible labels, aria only where it helps, alt text for meaningful images, and aria-live for dynamic status messages that users need to know.',
   'Modals, popovers, dropdowns, and command menus must open/close reliably, not trap users accidentally, and expose clear cancel/close controls.',
   'Responsive elements need stable dimensions with min/max constraints, grid tracks, aspect ratios, or container-aware sizing so dynamic content does not break layout.',
+  'Express responsiveness in the stack you are actually generating. With Tailwind that means real breakpoint variants (sm:, md:, lg:) on the layout, grid, spacing, and typography classes that change between mobile and desktop; with plain CSS that means media queries, clamp(), or grid minmax(). A layout that carries no breakpoint variant and no media query is not responsive and fails verification.',
 ].join('\n');
 
 const CODEN_MOTION_POLISH_POLICY = [
   'Motion and polish policy:',
   'Use motion to explain state changes, not to decorate randomly. Prefer transform and opacity animations, keep most UI transitions between 150ms and 300ms, and avoid layout-thrashing properties.',
   'Respect prefers-reduced-motion with reduced or disabled animations. Never rely on motion alone to communicate state.',
+  'Write motion in the stack you are generating: with Tailwind use transition, duration, ease, and animate utilities, and express the reduced-motion fallback as motion-reduce: variants; with plain CSS use transition/animation plus a prefers-reduced-motion media query.',
   'Use subtle page/component reveal, button feedback, list item insertion/removal, modal transitions, skeleton/loading states, and success/error feedback when they make the experience clearer.',
   'Do not create heavy animated backgrounds, orb decorations, distracting bokeh blobs, or effects that compete with the main workflow.',
   'Before final JSON output, silently run a design QA pass: visual hierarchy, spacing consistency, contrast, responsive behavior, keyboard/focus, states, copy specificity, and anti-generic-design quality.',

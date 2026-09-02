@@ -21,6 +21,18 @@ type SourceBundle = {
   css: string;
   tsx: string;
   html: string;
+  /**
+   * Everywhere styling can legitimately live.
+   *
+   * The design checks read this rather than `css`. A Tailwind project — which
+   * is what the generator produces — has an index.css holding only the three
+   * @tailwind directives and expresses responsiveness, tokens, spacing and
+   * motion as utility classes in the components and as theme entries in the
+   * Tailwind config. Auditing only .css files therefore failed every Tailwind
+   * app regardless of its real quality, and design_responsive is a `high`
+   * severity check, so the preview was blocked on every run.
+   */
+  styling: string;
   prompt: string;
   filePaths: string[];
 };
@@ -30,14 +42,14 @@ const GENERIC_COPY_RE = /\b(feature\s*1|feature\s*2|feature\s*3|lorem ipsum|card
 const INTERACTION_RE = /\b(onClick|onSubmit|onChange|addEventListener|useState|useReducer|href=|button[^>]+type=["']submit|form|aria-expanded)\b/i;
 const FORM_VALIDATION_RE = /\b(required|minLength|maxLength|pattern|aria-invalid|setError|error|invalid|validation|validate)\b/i;
 const STATE_RE = /\b(loading|empty|error|success|failed|disabled|skeleton|placeholder|toast|alert|pending|saving|saved)\b/i;
-const RESPONSIVE_RE = /@media|clamp\(|minmax\(|grid-template-columns|container-type|auto-fit|auto-fill|max-width|min-width/i;
-const MOTION_RE = /transition|animation|@keyframes|transform|opacity/i;
-const REDUCED_MOTION_RE = /prefers-reduced-motion/i;
+const RESPONSIVE_RE = /@media|clamp\(|minmax\(|grid-template-columns|container-type|auto-fit|auto-fill|max-width|min-width|\b(?:sm|md|lg|xl|2xl):[a-z[]/i;
+const MOTION_RE = /transition|animation|@keyframes|transform|opacity|\b(?:animate|duration|ease)-[a-z0-9]/i;
+const REDUCED_MOTION_RE = /prefers-reduced-motion|\bmotion-(?:reduce|safe):/i;
 const FOCUS_RE = /:focus-visible|outline|focus:ring|aria-label/i;
-const CSS_TOKEN_RE = /:root[\s\S]*--[a-z0-9-]+|--(?:color|bg|text|space|radius|shadow|motion|ease|font)/i;
-const SEMANTIC_TOKEN_RE = /--(?:success|warning|error|info|color-success|color-warning|color-error|color-info)\b/i;
-const SPACING_TOKEN_RE = /--(?:space|spacing)-|--space-\d|gap:\s*(?:var\(--space|[.0-9]+rem)|padding:\s*(?:var\(--space|[.0-9]+rem)/i;
-const TOUCH_TARGET_RE = /(?:min-)?height:\s*(?:44px|2\.75rem|var\(--touch|var\(--control|var\(--button)|(?:min-)?width:\s*(?:44px|2\.75rem|var\(--touch|var\(--control|var\(--button)/i;
+const CSS_TOKEN_RE = /:root[\s\S]*--[a-z0-9-]+|--(?:color|bg|text|space|radius|shadow|motion|ease|font)|theme\s*:\s*\{[\s\S]{0,400}extend|colors\s*:\s*\{/i;
+const SEMANTIC_TOKEN_RE = /--(?:success|warning|error|info|color-success|color-warning|color-error|color-info)\b|\b(?:success|warning|danger|error|info)\s*:\s*['"{]|\b(?:bg|text|border)-(?:green|red|amber|yellow|emerald|rose)-\d/i;
+const SPACING_TOKEN_RE = /--(?:space|spacing)-|--space-\d|gap:\s*(?:var\(--space|[.0-9]+rem)|padding:\s*(?:var\(--space|[.0-9]+rem)|\b(?:gap|p|px|py|m|mx|my|space-[xy])-\d/i;
+const TOUCH_TARGET_RE = /(?:min-)?height:\s*(?:44px|2\.75rem|var\(--touch|var\(--control|var\(--button)|(?:min-)?width:\s*(?:44px|2\.75rem|var\(--touch|var\(--control|var\(--button)|\b(?:h|min-h|w|min-w)-(?:11|12|14|16)\b/i;
 const LABEL_RE = /<label|aria-label|aria-labelledby|htmlFor=/i;
 const PREVENT_DEFAULT_RE = /preventDefault\(|type=["']submit|formAction|action=/i;
 const SEARCH_FILTER_RE = /\b(search|filter|filtre|recherche|sort|tri)\b/i;
@@ -80,7 +92,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_tokens',
-    CSS_TOKEN_RE.test(bundle.css),
+    CSS_TOKEN_RE.test(bundle.styling),
     'medium',
     'Design system tokens are present.',
     'Generated CSS should define reusable design tokens instead of one-off styling.',
@@ -88,7 +100,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_semantic_tokens',
-    SEMANTIC_TOKEN_RE.test(bundle.css),
+    SEMANTIC_TOKEN_RE.test(bundle.styling),
     'medium',
     'Semantic state tokens are present.',
     'Generated CSS should define semantic success, warning, error, and info tokens.',
@@ -96,7 +108,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_spacing_system',
-    SPACING_TOKEN_RE.test(bundle.css),
+    SPACING_TOKEN_RE.test(bundle.styling),
     'low',
     'Spacing system is visible in CSS.',
     'Generated UI should use a clear spacing scale instead of scattered one-off values.',
@@ -104,7 +116,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_touch_targets',
-    TOUCH_TARGET_RE.test(bundle.css),
+    TOUCH_TARGET_RE.test(bundle.styling),
     'low',
     'Primary controls include accessible touch target sizing.',
     'Buttons and primary controls should target roughly 44px touch areas.',
@@ -112,7 +124,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_responsive',
-    RESPONSIVE_RE.test(bundle.css),
+    RESPONSIVE_RE.test(bundle.styling),
     'high',
     'Responsive layout rules are present.',
     'Generated UI needs real responsive rules for mobile and desktop.',
@@ -120,7 +132,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_motion',
-    MOTION_RE.test(bundle.css),
+    MOTION_RE.test(bundle.styling),
     'low',
     'Purposeful motion styles are present.',
     'Generated UI should include useful hover/focus/entry motion, not feel static.',
@@ -128,7 +140,7 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
 
   checks.push(result(
     'design_reduced_motion',
-    REDUCED_MOTION_RE.test(bundle.css),
+    REDUCED_MOTION_RE.test(bundle.styling),
     'medium',
     'Reduced-motion fallback is present.',
     'Animations must respect prefers-reduced-motion.',
@@ -311,6 +323,8 @@ function buildBundle(input: GeneratedQualityAuditInput): SourceBundle {
   ].filter(Boolean).join('\n\n');
   const css = sourceFor(path => path.endsWith('.css') || path.endsWith('.scss'));
   const tsx = sourceFor(path => /\.(tsx|jsx|ts|js)$/i.test(path));
+  const styleConfig = sourceFor(path => /(?:^|\/)(?:tailwind|uno|panda)\.config\.[a-z]+$/i.test(path));
+  const styling = [css, tsx, html, styleConfig].filter(Boolean).join('\n\n');
   const prompt = String(input.prompt || '');
   const all = [html, css, tsx, sourceFor(path => path.endsWith('.json') || path.endsWith('.md'))]
     .filter(Boolean)
@@ -322,6 +336,7 @@ function buildBundle(input: GeneratedQualityAuditInput): SourceBundle {
     all,
     css,
     tsx,
+    styling,
     html,
     prompt,
     filePaths: files.map(file => normalizePath(file.path).toLowerCase()),

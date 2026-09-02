@@ -332,4 +332,97 @@ const staleProjectPomodoroFunctionality = auditGeneratedFunctionality({
 assert.equal(staleProjectPomodoroFunctionality.find(check => check.key === 'functionality_todo_core_loop'), undefined);
 assert.equal(staleProjectPomodoroFunctionality.find(check => check.key === 'functionality_commerce_core_loop'), undefined);
 
+
+// A Tailwind project is what the generator actually produces: index.css holds
+// only the three @tailwind directives, and every styling decision lives in
+// utility classes and the Tailwind theme. Auditing .css files alone therefore
+// failed all seven design checks on any correct Tailwind app — and
+// design_responsive is `high` severity, so the preview was blocked on a
+// structural false negative that no auto-fix could ever repair.
+const tailwindCss = {
+  path: 'src/index.css',
+  language: 'css',
+  content: '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n',
+};
+
+const tailwindConfig = {
+  path: 'tailwind.config.ts',
+  language: 'ts',
+  content: [
+    "import type { Config } from 'tailwindcss';",
+    'export default {',
+    "  content: ['./index.html', './src/**/*.{ts,tsx}'],",
+    '  theme: { extend: { colors: {',
+    "    success: '#16794f', warning: '#a15c00', error: '#b42318', info: '#2457d6',",
+    '  } } },',
+    '} satisfies Config;',
+  ].join('\n'),
+};
+
+const tailwindApp = (className: string) => ({
+  path: 'src/App.tsx',
+  language: 'tsx',
+  content: [
+    'import { useState } from "react";',
+    'export default function App() {',
+    '  const [total, setTotal] = useState(0);',
+    '  return (',
+    `    <main className="${className}">`,
+    '      <h1>Budget</h1>',
+    '      <button type="button" aria-label="Add" onClick={() => setTotal(total + 1)}>Add</button>',
+    '      <p>{total === 0 ? "No entry yet" : total}</p>',
+    '    </main>',
+    '  );',
+    '}',
+  ].join('\n'),
+});
+
+const tailwindShell = [
+  goodFiles.find(file => file.path === 'package.json')!,
+  goodFiles.find(file => file.path === 'index.html')!,
+  goodFiles.find(file => file.path === 'src/main.tsx')!,
+  tailwindCss,
+  tailwindConfig,
+];
+
+const responsiveClasses = 'grid grid-cols-1 md:grid-cols-2 gap-4 p-6 md:p-10 text-base '
+  + 'transition duration-200 ease-out motion-reduce:transition-none h-12 min-h-12';
+const tailwindDesign = auditGeneratedDesign({
+  files: [...tailwindShell, tailwindApp(responsiveClasses)],
+  previewHtml: goodFiles.find(file => file.path === 'index.html')!.content,
+  platformType: 'generic_web_app',
+  hasExistingFiles: false,
+  prompt: 'budget tracker',
+});
+for (const key of [
+  'design_tokens',
+  'design_semantic_tokens',
+  'design_spacing_system',
+  'design_touch_targets',
+  'design_responsive',
+  'design_motion',
+  'design_reduced_motion',
+]) {
+  const check = tailwindDesign.find(item => item.key === key);
+  assert.equal(check?.status, 'pass', `${key} must pass on a correct Tailwind app, got ${check?.status}`);
+}
+
+// The scope fix must not blind the check: an app with no breakpoint variant at
+// all is genuinely not responsive, and design_responsive must still block it.
+const flatDesign = auditGeneratedDesign({
+  files: [...tailwindShell, tailwindApp('flex flex-col gap-4 p-6')],
+  previewHtml: goodFiles.find(file => file.path === 'index.html')!.content,
+  platformType: 'generic_web_app',
+  hasExistingFiles: false,
+  prompt: 'budget tracker',
+});
+const flatResponsive = flatDesign.find(item => item.key === 'design_responsive');
+assert.equal(flatResponsive?.status, 'fail', 'a layout with no breakpoint variant is not responsive');
+assert.equal(flatResponsive?.severity, 'high');
+assert.equal(
+  flatDesign.find(item => item.key === 'design_reduced_motion')?.status,
+  'fail',
+  'a Tailwind app with no motion-reduce variant still misses its reduced-motion fallback',
+);
+
 console.log('test-design-quality-auditor passed');
