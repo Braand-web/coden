@@ -887,6 +887,49 @@ export function buildIntentRouterSystemPrompt() {
   ]);
 }
 
+/**
+ * Prompt for the closing recap written after a run has already finished.
+ *
+ * The finaliser reports verified facts back to the user. It routes nothing,
+ * writes no file, provisions nothing and researches nothing — the decision and
+ * the work are already done — so carrying the full conversation stack cost
+ * ~16k input tokens to produce a few sentences, on the last blocking call of
+ * every generation.
+ *
+ * Everything governing what it may say is kept verbatim: the root contract, the
+ * safety and honesty policies, the voice, formatting and narration rules, the
+ * final delivery policy and the completion rules that forbid claiming an app is
+ * ready before the checks confirm it.
+ */
+export function buildFinalizerSystemPrompt(input: {
+  modeInstruction: string;
+  languageInstruction: string;
+  executionContext?: string;
+}) {
+  return joinSections([
+    CODEN_CORE_SYSTEM_CONTRACT,
+    CODEN_CHAT_RUNTIME_CONTRACT,
+    CODEN_IDENTITY,
+    CODEN_USER_EMPATHY,
+    input.modeInstruction,
+    input.languageInstruction,
+    input.executionContext || 'Use only the verified project facts supplied in the user context. Generate the user-visible answer yourself; never expose hidden reasoning, internal event names, or raw structured payloads.',
+    CODEN_COMMUNICATION_EXCELLENCE_POLICY,
+    CODEN_SENIOR_AGENT_VOICE_POLICY,
+    CODEN_FORMATTING_POLICY,
+    CODEN_INTERLEAVED_COMMUNICATION_PROTOCOL,
+    CODEN_COMMUNICATION_VALIDATION_RULES,
+    CODEN_STRUCTURED_MESSAGE_STREAMING_CONTRACT,
+    CODEN_MESSAGE_PART_RENDERING_RULES,
+    CODEN_BUSINESS_PRODUCT_POLICY,
+    CODEN_UNIT_ECONOMICS_POLICY,
+    CODEN_UNIVERSAL_BUILDER_COMPLETION_RULES,
+    CODEN_FINAL_DELIVERY_POLICY,
+    CODEN_SAFETY_POLICY,
+    'For this message, report what the run actually produced, grounded only in the verified facts supplied. Never claim a file, preview, check, publication, or payment changed unless the verified result says so.',
+  ]);
+}
+
 export function buildAgentTextSystemPrompt(input: {
   intent: CodenPromptIntent | string;
   modeInstruction: string;

@@ -23,6 +23,20 @@ const msgs = [
 ];
 // Non-anthropic → unchanged.
 assert.equal(applyPromptCaching(msgs, 'openai'), msgs);
+// Caching follows the model, not the transport. Claude routed through
+// OpenRouter still bills a cached prefix at ~10%, so keying off the adapter
+// alone disabled caching on the default path and re-sent the whole static
+// prompt at full price on every call.
+for (const claudeModel of ['anthropic/claude-sonnet-5', 'anthropic/claude-opus-5', 'claude-fable-5']) {
+  const viaOpenRouter = applyPromptCaching(msgs, 'openrouter', claudeModel);
+  assert.notEqual(viaOpenRouter, msgs, `${claudeModel} must be cached through OpenRouter`);
+  assert.ok((viaOpenRouter[0].content as unknown as any[])[0].cache_control, `${claudeModel} system block must carry a breakpoint`);
+}
+// Models that cache automatically (or not at all) must not receive a breakpoint
+// they would reject or ignore.
+for (const other of ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'x-ai/grok-4.6', '']) {
+  assert.equal(applyPromptCaching(msgs, 'openrouter', other), msgs, `${other || '(no model)'} must stay unchanged`);
+}
 // Anthropic → system wrapped with cache_control.
 const cached = applyPromptCaching(msgs, 'anthropic');
 assert.notEqual(cached, msgs);

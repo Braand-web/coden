@@ -371,7 +371,7 @@ export class OpenRouterService {
     // streaming. Keep the provider payload OpenAI-compatible and simple.
     // Anthropic prompt caching: mark the large stable blocks so Claude reuses
     // them at ~10% input price. No-op for other adapters.
-    const cachedMessages = applyPromptCaching(messages as unknown as CacheableMessage[], runtimeConfig?.adapter || 'openrouter');
+    const cachedMessages = applyPromptCaching(messages as unknown as CacheableMessage[], runtimeConfig?.adapter || 'openrouter', modelId);
     return {
       model: modelId,
       messages: cachedMessages,

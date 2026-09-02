@@ -35,13 +35,33 @@ function markPart(text: string): CacheableContentPart {
 }
 
 /**
+ * True when the request targets a Claude model, whichever adapter carries it.
+ *
+ * Caching has to follow the model, not the transport. Claude reached through
+ * OpenRouter still understands cache_control and still bills the cached prefix
+ * at ~10%, but the adapter there is 'openrouter', so keying off the adapter
+ * alone silently disabled caching on exactly the path this module was written
+ * for — the whole static prompt was re-sent at full price on every call.
+ */
+export function targetsAnthropicModel(adapter: CachingAdapter, modelId?: string): boolean {
+  if (adapter === 'anthropic') return true;
+  const id = String(modelId || '');
+  return /^anthropic\//i.test(id) || /(^|\/)claude[-.]/i.test(id);
+}
+
+/**
  * Returns a new message array with cache_control breakpoints added on the large
  * stable blocks (system prompt, and the first big user context block). At most
- * 4 breakpoints are used (Anthropic's limit). Non-Anthropic adapters are
- * returned unchanged.
+ * 4 breakpoints are used (Anthropic's limit). Requests that do not target a
+ * Claude model are returned unchanged — OpenAI and Gemini cache automatically
+ * and reject or ignore an explicit breakpoint.
  */
-export function applyPromptCaching<T extends CacheableMessage>(messages: T[], adapter: CachingAdapter): T[] {
-  if (adapter !== 'anthropic') return messages;
+export function applyPromptCaching<T extends CacheableMessage>(
+  messages: T[],
+  adapter: CachingAdapter,
+  modelId?: string,
+): T[] {
+  if (!targetsAnthropicModel(adapter, modelId)) return messages;
   if (!Array.isArray(messages) || messages.length === 0) return messages;
 
   let breakpoints = 0;

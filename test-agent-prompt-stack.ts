@@ -3,6 +3,7 @@ import {
   CODEN_AGENT_PROMPT_VERSION,
   MODE_SELECTION_PROMPT,
   buildAgentTextSystemPrompt,
+  buildFinalizerSystemPrompt,
   buildGenerationSystemPrompt,
   buildIntentRouterSystemPrompt,
 } from './src/services/agent-prompt-stack.ts';
@@ -145,5 +146,30 @@ assert.ok(generationPrompt.includes('prefers-reduced-motion'), 'generation promp
 assert.ok(generationPrompt.includes('Motion and polish policy'), 'generation prompt must include motion polish guidance');
 assert.ok(generationPrompt.includes('Generated-application security contract'), 'generation prompt must include generated-app security boundaries');
 assert.ok(generationPrompt.includes('Every generated application has an immutable project id'), 'generation prompt must include infrastructure isolation');
+
+// The closing recap reports a finished run, so it drops routing, build,
+// infrastructure and research policy — but every rule governing what it may
+// say to the user has to survive, or a cheaper prompt buys a dishonest one.
+const finalizerPrompt = buildFinalizerSystemPrompt({
+  modeInstruction: 'Report the run.',
+  languageInstruction: 'Answer in natural French.',
+});
+for (const required of [
+  'This contract has priority over every lower-level Coden prompt policy',
+  'Never invent file contents, tool results, API behavior, tests, preview status, deployment status, or success',
+  'Never promise unlimited usage',
+  'Do not expose internal jargon: AST, RAG',
+  'Interleaved narration and actions',
+  'Do not claim an app is ready until preview/build/browser checks',
+]) {
+  assert.ok(finalizerPrompt.includes(required), `finalizer prompt must keep: ${required}`);
+}
+// It must stay materially cheaper than the conversation prompt it replaces.
+assert.ok(
+  finalizerPrompt.length < textPrompt.length / 2,
+  `finalizer prompt must stay under half the conversation prompt, got ${finalizerPrompt.length} vs ${textPrompt.length}`,
+);
+// The conversation prompt itself is untouched.
+assert.ok(textPrompt.length > 60_000, 'conversation prompt must be unchanged by the finalizer split');
 
 console.log('agent prompt stack ok');

@@ -140,6 +140,7 @@ import {
 } from './src/services/design-quality-auditor.ts';
 import {
   buildAgentTextSystemPrompt,
+  buildFinalizerSystemPrompt,
   buildGenerationSystemPrompt,
   buildIntentRouterSystemPrompt,
 } from './src/services/agent-prompt-stack.ts';
@@ -4885,6 +4886,7 @@ function buildAgentTextMessages(input: {
   researchContext?: string;
   executionContract?: ExecutionContract;
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
+  finalizer?: boolean;
 }): ChatMessage[] {
   const { project, prompt, files, decision, researchContext, executionContract, visionInputs } = input;
   const languageInstruction = isLikelyFrenchPrompt(prompt)
@@ -4899,23 +4901,28 @@ function buildAgentTextMessages(input: {
         ? 'Answer directly in 2 to 5 short sentences for simple questions. Match the user language. Do not mention intents, modes, models, credits, internal routing, files, preview, or checks unless the user explicitly asks. If the user asks technical advice, be precise. If the user asks vague product help, give 2-3 concrete examples Coden can do.'
         : 'Answer naturally and helpfully. If implementation is needed, explain the next action in plain language without forcing the user to choose Build or Plan.';
 
-  return [
-    {
-      role: 'system',
-      content: buildAgentTextSystemPrompt({
+  const executionContext = executionContract
+    ? [
+        'This is the execution contract for the current run. Follow it exactly:',
+        JSON.stringify(executionContract),
+        'Generate concise user-visible text from the supplied facts. Ask at most one clarification question when required. Never claim a file, preview, check, publication, or payment changed unless the verified result says so.',
+      ].join('\n')
+    : undefined;
+
+  // The closing recap reports a finished run, so it does not carry the routing,
+  // build, infrastructure or research policy the conversation prompt needs.
+  const systemPrompt = input.finalizer
+    ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext })
+    : buildAgentTextSystemPrompt({
         intent: decision.intent,
         modeInstruction,
         languageInstruction,
         hasResearchContext: Boolean(researchContext),
-        executionContext: executionContract
-          ? [
-              'This is the execution contract for the current run. Follow it exactly:',
-              JSON.stringify(executionContract),
-              'Generate concise user-visible text from the supplied facts. Ask at most one clarification question when required. Never claim a file, preview, check, publication, or payment changed unless the verified result says so.',
-            ].join('\n')
-          : undefined,
-      }),
-    },
+        executionContext,
+      });
+
+  return [
+    { role: 'system', content: systemPrompt },
     {
       role: 'user',
       content: visionInputs?.length ? buildVisionMessageContent(JSON.stringify({
@@ -4953,6 +4960,8 @@ async function createAgentTextResponse(input: {
   allowLocalFallback?: boolean;
   signal?: AbortSignal;
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
+  /** Closing recap for a finished run: routing and build policy no longer apply. */
+  finalizer?: boolean;
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -4984,7 +4993,7 @@ async function createAgentTextResponse(input: {
   try {
     const result = await providerGateway.chat(
       selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs }),
+      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
       {
         maxAttempts: decision.intent === 'conversation' ? 1 : 2,
         timeoutMs: runtimeOptions.runtime.timeoutMs,
@@ -5027,6 +5036,8 @@ async function streamAgentTextResponse(input: {
   signal?: AbortSignal;
   onToken?: (chunk: string, meta: { index: number; model: string }) => Promise<void> | void;
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
+  /** Closing recap for a finished run: routing and build policy no longer apply. */
+  finalizer?: boolean;
 }): Promise<{ text: string; model: string; cost_usd: number; streamed: boolean }> {
   const { project, prompt, files, decision, researchContext, onToken } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -5069,7 +5080,7 @@ async function streamAgentTextResponse(input: {
   try {
     for await (const event of providerGateway.streamChat(
       selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs }),
+      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
       {
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
@@ -12677,6 +12688,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         userCredits: walletForRouting,
         allowLocalFallback: false,
         signal: generationAbortController.signal,
+        finalizer: true,
       });
       const summary = finalizer.text.trim();
       if (!summary) throw new Error('The selected AI model returned no fact-grounded recovery response.');
@@ -12806,6 +12818,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       modelId: generation.model,
       userCredits: walletForRouting,
       allowLocalFallback: false,
+      finalizer: true,
       signal: generationAbortController.signal,
     });
     const finalSummary = finalizer.text.trim();
