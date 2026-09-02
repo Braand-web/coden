@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BookOpen, Bug, ChevronDown, Check, MessageCircle, ScanSearch, ShieldCheck, WandSparkles, ListChecks } from 'lucide-react';
+import { ChevronDown, Check, ShieldCheck, WandSparkles, ListChecks } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { EASE_OUT, SPRING_PRESS } from '../../lib/ease';
 import { cn } from '../../lib/utils';
@@ -17,22 +17,22 @@ type AgentModeComposerProps = {
 };
 
 const MODE_DETAILS = {
-  auto: { icon: WandSparkles, fr: 'Coden choisit la meilleure action selon votre demande.', en: 'Coden chooses the best action for your request.' },
-  build: { icon: ShieldCheck, fr: 'Coden modifie le projet et vérifie le résultat.', en: 'Coden edits the project and verifies the result.' },
-  plan: { icon: ListChecks, fr: 'Coden prépare un plan sans modifier les fichiers.', en: 'Coden prepares a plan without changing files.' },
-  ask: { icon: MessageCircle, fr: 'Répondre et expliquer sans modifier le projet.', en: 'Answer and explain without changing the project.' },
-  fix: { icon: Bug, fr: 'Reproduire le bug, corriger puis retester.', en: 'Reproduce the bug, fix it, then retest.' },
-  review: { icon: ScanSearch, fr: 'Auditer le code et la preview sans modification.', en: 'Audit code and preview without making changes.' },
-  research: { icon: BookOpen, fr: 'Rechercher avec des sources réelles, sans modification.', en: 'Research with real sources, without making changes.' },
+  auto: { icon: WandSparkles, fr: 'Coden choisit la meilleure action.', en: 'Coden chooses the best action.' },
+  build: { icon: ShieldCheck, fr: 'Créer ou modifier l’application.', en: 'Create or update the application.' },
+  plan: { icon: ListChecks, fr: 'Préparer le travail sans modifier le projet.', en: 'Prepare the work without changing the project.' },
 } as const;
 
-const PRIMARY_MODES: AgentMode[] = ['auto', 'build', 'plan'];
-const ADVANCED_MODES: AgentMode[] = ['ask', 'fix', 'review', 'research'];
-const MODE_OPTIONS: AgentMode[] = [...PRIMARY_MODES, ...ADVANCED_MODES];
+export const COMPOSER_AGENT_MODES = ['auto', 'build', 'plan'] as const satisfies readonly AgentMode[];
+const MODE_OPTIONS = COMPOSER_AGENT_MODES;
+type VisibleAgentMode = (typeof COMPOSER_AGENT_MODES)[number];
+
+function visibleMode(mode: AgentMode): VisibleAgentMode {
+  return COMPOSER_AGENT_MODES.includes(mode as VisibleAgentMode) ? mode as VisibleAgentMode : 'auto';
+}
 
 export function AgentModeComposer({ mode, onModeChange, disabled = false, locale = 'fr', className, triggerId }: AgentModeComposerProps) {
   const [open, setOpen] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<AgentMode>(normalizeAgentMode(mode));
+  const [selectedMode, setSelectedMode] = useState<VisibleAgentMode>(visibleMode(normalizeAgentMode(mode)));
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -40,11 +40,11 @@ export function AgentModeComposer({ mode, onModeChange, disabled = false, locale
   const normalized = selectedMode;
   const options = MODE_OPTIONS;
 
-  useEffect(() => setSelectedMode(normalizeAgentMode(mode)), [mode]);
+  useEffect(() => setSelectedMode(visibleMode(normalizeAgentMode(mode))), [mode]);
 
   useEffect(() => {
     const onSync = (event: Event) => {
-      const next = normalizeAgentMode((event as CustomEvent<{ mode?: string }>).detail?.mode);
+      const next = visibleMode(normalizeAgentMode((event as CustomEvent<{ mode?: string }>).detail?.mode));
       setSelectedMode(next);
     };
     window.addEventListener('coden-agent-mode-sync', onSync);
@@ -112,9 +112,8 @@ export function AgentModeComposer({ mode, onModeChange, disabled = false, locale
               const Icon = MODE_DETAILS[option].icon;
               const active = option === normalized;
               return (
-                <React.Fragment key={option}>
-                {option === 'ask' ? <div className="coden-agent-mode-section-label" role="presentation">{locale === 'fr' ? 'Avancé' : 'Advanced'}</div> : null}
                 <motion.button
+                  key={option}
                   type="button"
                   role="menuitemradio"
                   aria-checked={active}
@@ -135,7 +134,6 @@ export function AgentModeComposer({ mode, onModeChange, disabled = false, locale
                   </span>
                   {active ? <Check aria-hidden="true" size={15} /> : null}
                 </motion.button>
-                </React.Fragment>
               );
             })}
           </motion.div>

@@ -139,7 +139,7 @@ export function normalizeAgentMode(value: unknown): AgentMode {
 
 export function modeLabel(mode: AgentMode, locale: 'fr' | 'en' = 'fr') {
   const labels = locale === 'fr'
-    ? { auto: 'Auto', build: 'Build', plan: 'Plan', ask: 'Ask', fix: 'Fix', review: 'Review', research: 'Research' }
+    ? { auto: 'Auto', build: 'Construire', plan: 'Plan', ask: 'Demander', fix: 'Réparer', review: 'Revoir', research: 'Recherche' }
     : { auto: 'Auto', build: 'Build', plan: 'Plan', ask: 'Ask', fix: 'Fix', review: 'Review', research: 'Research' };
   return labels[mode];
 }

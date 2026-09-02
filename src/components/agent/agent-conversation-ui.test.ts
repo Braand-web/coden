@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Response } from '../ui/response';
 import { AgentActivityShimmer } from './agent-activity-shimmer';
 import { AgentProgressNote } from './agent-progress-note';
+import { COMPOSER_AGENT_MODES } from './agent-mode-composer';
 import { applyAgentStreamEvent, createAgentRunViewModel } from '../../services/agent-run-store';
 import { CODEN_STREAM_PROTOCOL_VERSION, type CodenStreamEvent } from '../../lib/stream-protocol';
 import { normalizeAgentMode } from '../../services/agent-run-contract';
@@ -41,6 +42,12 @@ describe('minimal real-time agent conversation UI', () => {
     const next = applyAgentStreamEvent(initial, event<'activity_changed'>({ type: 'activity_changed', runId: 'run_1', phase: 'building', message: 'Coden construit le CRM…', active: true }));
     expect(next.publicActivity).toMatchObject({ phase: 'building', message: 'Coden construit le CRM…', active: true });
     expect(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research'].map(normalizeAgentMode)).toEqual(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research']);
+  });
+
+  it('keeps the composer minimal while Auto routes advanced intents internally', () => {
+    expect(COMPOSER_AGENT_MODES).toEqual(['auto', 'build', 'plan']);
+    expect(normalizeAgentMode('fix')).toBe('fix');
+    expect(normalizeAgentMode('research')).toBe('research');
   });
 
   it('keeps grounded progress notes separate from the final streamed response', () => {

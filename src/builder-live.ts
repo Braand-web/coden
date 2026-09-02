@@ -352,7 +352,7 @@ const WORKSHOP_CONFIG: Record<StudioWorkshop, {
   chat: {
     label: 'Chat',
     shortLabel: 'Chat',
-    placeholder: 'Ask Coden to answer, plan, fix or build',
+    placeholder: 'Demandez à Coden…',
     icon: '<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>',
   },
   design: {
@@ -2776,7 +2776,7 @@ function bindProjectMenu() {
   });
   document.getElementById('project-menu-upgrade')?.addEventListener('click', () => {
     closeProjectMenu();
-    (document.querySelector('.btn-upgrade') as HTMLButtonElement | null)?.click();
+    (document.getElementById('btn-upgrade') as HTMLButtonElement | null)?.click();
   });
   document.getElementById('project-menu-free-credits')?.addEventListener('click', () => {
     showMiniModal('Get free credits', '<p>Free credit campaigns are not configured yet. Upgrade or buy credits to continue building without interruption.</p>', () => {});
@@ -2953,17 +2953,11 @@ function refreshPreviewFrame() {
 function renderFiles(files: GeneratedFile[]) {
   currentFiles = files;
   syncProjectReadinessClass();
+  const codeLayout = document.getElementById('screen-layout-code');
+  codeLayout?.classList.toggle('is-empty', files.length === 0);
   const tree = document.querySelector('.explorer-tree-scroll');
   if (tree) {
     tree.innerHTML = '';
-    if (!files.length) {
-      tree.innerHTML = `
-        <div class="code-empty-state" style="margin:8px;">
-          <h3>No files yet</h3>
-          <p>Ask Coden for an app, feature, or fix. Generated files from your backend will appear here.</p>
-        </div>
-      `;
-    }
     files.forEach((file, index) => {
       const item = document.createElement('div');
       item.className = `tree-file${index === 0 ? ' selected' : ''}`;
@@ -2978,17 +2972,25 @@ function renderFiles(files: GeneratedFile[]) {
     return;
   }
   const label = document.getElementById('open-file-tab-label');
-  if (label) label.textContent = 'No file selected';
+  if (label) label.textContent = 'Code';
   const code = document.getElementById('code-content-view-panel');
   if (code) {
-    code.innerHTML = '<div class="code-empty-state"><h3>No source file loaded</h3><p>Generated files will be loaded from the project once Coden receives them from the backend.</p></div>';
+    code.innerHTML = '<div class="code-empty-state"><h3>Aucun fichier généré</h3><p>Demandez à Coden de créer ou modifier l’application.</p><button class="code-empty-action" type="button" data-focus-composer>Écrire à Coden</button></div>';
+    code.querySelector<HTMLButtonElement>('[data-focus-composer]')?.addEventListener('click', () => {
+      if (document.querySelector('.workspace-body')?.classList.contains('sidebar-collapsed')) {
+        (document.querySelector('.collapse-sidebar-arrow') as HTMLButtonElement | null)?.click();
+      }
+      (document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null)?.focus();
+    });
   }
 }
 
 function syncProjectReadinessClass() {
   const hasFiles = currentFiles.length > 0;
   const hasPreview = Boolean(currentPreviewHtml.trim());
+  document.body.classList.toggle('coden-has-no-files', !hasFiles);
   document.body.classList.toggle('coden-new-project-mode', !hasFiles && !hasPreview && activeWorkshop === 'chat');
+  if (!hasFiles && currentBuilderView === 'code') activateBuilderView('preview');
 }
 
 function selectFile(filePath: string) {
@@ -4250,7 +4252,8 @@ function ensurePlanBuildControls() {
 }
 
 function setChatMode(mode: ChatMode) {
-  selectedChatMode = normalizeAgentMode(mode);
+  const normalizedMode = normalizeAgentMode(mode);
+  selectedChatMode = normalizedMode === 'build' || normalizedMode === 'plan' ? normalizedMode : 'auto';
   window.dispatchEvent(new CustomEvent('coden-agent-mode-sync', { detail: { mode: selectedChatMode } }));
   const label = document.getElementById('chat-mode-label');
   const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
