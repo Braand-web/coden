@@ -119,7 +119,7 @@ import {
   type ModelProvider,
 } from './src/config/ai-models.ts';
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
-import { DomainService, createCloudflareDomainProvider } from './src/services/domain-service.ts';
+import { DomainService, createCloudflareDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
 import {
   StripeService,
   SAAS_PLANS,
@@ -13709,10 +13709,16 @@ app.get('/api/projects/:id/domains', async (req: any, res) => {
   }
   res.json({
     success: true,
-    domains: domains.map((domain: any) => ({
-      ...domain,
-      dns_records: dnsByDomain.get(String(domain.id)) || [],
-    })),
+    domains: domains.map((domain: any) => {
+      const records = dnsByDomain.get(String(domain.id)) || [];
+      // The interface needs one state, not a status column it has to interpret.
+      const state = resolveDomainState({
+        status: domain.status,
+        hasInstructions: records.length > 0,
+        errorMessage: domain.error_message,
+      });
+      return { ...domain, dns_records: records, state, state_label: domainStateLabel(state, 'fr') };
+    }),
   });
 });
 

@@ -2,6 +2,7 @@ import './styles/coden-light-theme.css';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
+import './styles/publish-panel.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
@@ -3119,6 +3120,136 @@ function closePublishPanel() {
   document.getElementById('coden-publish-panel')?.remove();
 }
 
+type DomainRow = {
+  id: string;
+  domain: string;
+  type: 'subdomain' | 'custom';
+  status: string;
+  is_primary?: boolean;
+  state?: string;
+  state_label?: string;
+  error_message?: string | null;
+  dns_records?: Array<{ record_type?: string; record_name?: string; record_value?: string; type?: string; name?: string; value?: string }>;
+};
+
+const DOMAIN_STATE_TEXT: Record<string, string> = {
+  configuration_required: 'Configuration requise',
+  dns_verification: 'Vérification DNS',
+  dns_propagation: 'Propagation DNS',
+  active: 'Actif',
+  error: 'Erreur',
+};
+
+/** What the user should do next, per state — never a raw provider string. */
+const DOMAIN_STATE_HINT: Record<string, string> = {
+  configuration_required: 'Ajoutez l’enregistrement DNS ci-dessous chez votre registrar.',
+  dns_verification: 'Ajoutez cet enregistrement chez votre registrar, puis lancez la vérification.',
+  dns_propagation: 'L’enregistrement est visible. La propagation prend en général quelques minutes.',
+  active: 'Le domaine est en ligne, certificat SSL compris.',
+  error: 'La vérification a échoué. Contrôlez l’enregistrement puis réessayez.',
+};
+
+let domainRows: DomainRow[] = [];
+let domainBusy = '';
+let domainError = '';
+
+async function loadProjectDomains() {
+  if (!currentProjectId) return;
+  try {
+    const payload = await apiFetch<{ domains?: DomainRow[] }>(`/api/projects/${encodeURIComponent(currentProjectId)}/domains`);
+    domainRows = payload.domains || [];
+    domainError = '';
+  } catch (error) {
+    domainRows = [];
+    domainError = error instanceof Error ? error.message : 'Impossible de charger les domaines.';
+  }
+}
+
+/**
+ * Run one domain action, then re-read the list.
+ *
+ * The server owns the state, so nothing here guesses at the result — a verify
+ * that finds nothing must look different from one that succeeded, and only the
+ * reloaded row can say which happened.
+ */
+async function runDomainAction(
+  action: () => Promise<unknown>,
+  busyKey: string,
+  payload: PublishApiPayload | null,
+) {
+  domainBusy = busyKey;
+  domainError = '';
+  renderPublishPanel(payload);
+  try {
+    await action();
+  } catch (error) {
+    domainError = error instanceof Error ? error.message : 'Action impossible.';
+  }
+  domainBusy = '';
+  await loadProjectDomains();
+  renderPublishPanel(payload);
+}
+
+function domainRecordRows(domain: DomainRow) {
+  const records = (domain.dns_records || []).map(record => ({
+    type: String(record.record_type || record.type || 'CNAME'),
+    name: String(record.record_name || record.name || domain.domain),
+    value: String(record.record_value || record.value || ''),
+  })).filter(record => record.value);
+  if (!records.length) return '';
+  return `
+    <div class="cdn-dom__records">
+      ${records.map(record => `
+        <div class="cdn-dom__record">
+          <span class="cdn-dom__record-type">${escapeHtml(record.type)}</span>
+          <span class="cdn-dom__record-value">${escapeHtml(record.name)} → ${escapeHtml(record.value)}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderDomainSection() {
+  const rows = domainRows.map(domain => {
+    const state = String(domain.state || (domain.status === 'active' ? 'active' : 'dns_verification'));
+    const label = domain.state_label || DOMAIN_STATE_TEXT[state] || state;
+    const verifying = domainBusy === `verify:${domain.id}`;
+    const removing = domainBusy === `remove:${domain.id}`;
+    return `
+      <div class="cdn-dom__row">
+        <div class="cdn-dom__row-head">
+          <span class="cdn-dom__name" title="${escapeHtml(domain.domain)}">${escapeHtml(domain.domain)}</span>
+          <span class="cdn-dom__state" data-state="${escapeHtml(state)}">${escapeHtml(label)}</span>
+        </div>
+        ${state === 'active' ? '' : domainRecordRows(domain)}
+        <p class="cdn-dom__hint">${escapeHtml(DOMAIN_STATE_HINT[state] || '')}</p>
+        <div class="cdn-dom__actions">
+          ${state === 'active' ? '' : `<button type="button" class="cdn-pub__small" data-domain-action="verify" data-domain-id="${escapeHtml(domain.id)}" ${verifying ? 'disabled' : ''}>${verifying ? 'Vérification…' : 'Vérifier'}</button>`}
+          ${domain.is_primary || state !== 'active' ? '' : `<button type="button" class="cdn-pub__small" data-domain-action="primary" data-domain-id="${escapeHtml(domain.id)}">Définir principal</button>`}
+          <button type="button" class="cdn-pub__small cdn-dom__danger" data-domain-action="remove" data-domain-id="${escapeHtml(domain.id)}" ${removing ? 'disabled' : ''}>${removing ? 'Suppression…' : 'Retirer'}</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const adding = domainBusy === 'add';
+  return `
+    <div class="cdn-pub__section">
+      <div class="cdn-pub__section-head">
+        <strong>Domaine personnalisé</strong>
+        <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
+      </div>
+      ${domainError ? `<div class="cdn-pub__error">${escapeHtml(domainError)}</div>` : ''}
+      <form class="cdn-dom__form" data-domain-action="add">
+        <input class="cdn-dom__input" name="domain" type="text" inputmode="url" autocomplete="off"
+               placeholder="app.monentreprise.com" aria-label="Domaine à connecter" ${adding ? 'disabled' : ''} />
+        <button type="submit" class="cdn-pub__secondary" ${adding ? 'disabled' : ''}>${adding ? 'Ajout…' : 'Ajouter'}</button>
+      </form>
+      ${rows || '<div class="cdn-dom__empty">Aucun domaine connecté. Ajoutez le vôtre — Coden vous donne l’enregistrement DNS à créer, puis vérifie et active le certificat.</div>'}
+    </div>
+  `;
+}
+
 function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = false, error = '') {
   const root = ensurePublishPanel();
   const status = payload?.publish || null;
@@ -3131,95 +3262,103 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const publicUrlLabel = formatPublishUrl(publicUrl);
   const canOpen = Boolean(publicUrl && hasPublishedDeployment);
   const checks = status?.checks || [];
-  const visitorCount = Math.max(0, Number(status?.current_visitors || 0));
-  const visitorLabel = `${formatCompactNumber(visitorCount)} Visitor${visitorCount === 1 ? '' : 's'}`;
   const title = publishPanelTitle(status);
-  const primaryLabel = isPublishing ? 'Publishing...' : publishPrimaryLabel(status);
+  const primaryLabel = isPublishing ? 'Publication…' : publishPrimaryLabel(status);
   const checkCount = checks.length;
   const passCount = checks.filter(check => check.status === 'pass').length;
   const warnCount = checks.filter(check => check.status === 'warn').length;
   const failCount = checks.filter(check => check.status === 'fail').length;
-  const statusDetail = status?.state === 'changes_unpublished'
-    ? 'Live is stable. Update publishes the latest preview.'
-    : status?.state === 'published'
-      ? 'This URL serves the last published version.'
-      : status?.state === 'ready_to_publish'
-        ? 'Publish creates the live URL.'
-        : 'Build a ready preview first.';
+  const canPublish = Boolean(status?.can_publish && !isPublishing);
+
   const securityRows = checks.map(check => {
     const tone = check.status === 'pass' ? '#2fbf71' : check.status === 'warn' ? '#d97706' : '#dc2626';
     const iconName = check.status === 'pass' ? 'check' : check.status === 'warn' ? 'warning' : 'fail';
     return `
-      <div style="display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--bg-input);">
-        <span style="display:grid;place-items:center;width:26px;height:26px;border-radius:9px;color:${tone};background:color-mix(in srgb, ${tone} 10%, var(--bg-surface));">${publishIcon(iconName as 'check' | 'warning' | 'fail')}</span>
+      <div class="cdn-pub__check">
+        <span class="cdn-pub__check-icon" style="color:${tone};background:color-mix(in srgb, ${tone} 10%, var(--bg-surface));">${publishIcon(iconName as 'check' | 'warning' | 'fail')}</span>
         <span>
-          <strong style="display:block;color:var(--text);font-size:12px;line-height:1.2;">${escapeHtml(check.label)}</strong>
-          <small style="display:block;margin-top:4px;color:var(--text-muted);font-size:11px;line-height:1.4;">${escapeHtml(check.detail)}</small>
+          <strong>${escapeHtml(check.label)}</strong>
+          <small>${escapeHtml(check.detail)}</small>
         </span>
       </div>
     `;
   }).join('');
+
   const detailPanel = publishPanelMode === 'security'
     ? `
-      <div style="display:grid;gap:9px;padding:0 18px 14px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <strong style="color:var(--text);font-size:13px;">Security review</strong>
-          <button type="button" data-publish-action="main" style="border:1px solid var(--border);background:var(--bg-input);color:var(--text);height:28px;border-radius:9px;padding:0 10px;font-size:12px;font-weight:750;cursor:pointer;">Back</button>
+      <div class="cdn-pub__section">
+        <div class="cdn-pub__section-head">
+          <strong>Contrôles avant publication</strong>
+          <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
         </div>
-        ${securityRows || '<p style="margin:0;color:var(--text-muted);font-size:13px;">No publish checks are available yet.</p>'}
+        ${securityRows || '<p class="cdn-dom__hint">Aucun contrôle disponible pour l’instant.</p>'}
       </div>
     `
     : publishPanelMode === 'domain'
-      ? `
-        <div style="display:grid;gap:10px;padding:0 18px 14px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <strong style="color:var(--text);font-size:13px;">Custom domain</strong>
-            <button type="button" data-publish-action="main" style="border:1px solid var(--border);background:var(--bg-input);color:var(--text);height:28px;border-radius:9px;padding:0 10px;font-size:12px;font-weight:750;cursor:pointer;">Back</button>
-          </div>
-          <div style="border:1px solid var(--border);background:var(--bg-input);border-radius:13px;padding:12px;color:var(--text-muted);font-size:12px;line-height:1.5;">
-            ${status?.custom_domain
-              ? `This app is configured for <strong style="color:var(--text);">${escapeHtml(status.custom_domain)}</strong>. Click Update after DNS changes are verified.`
-              : 'Connect a custom domain from project settings and verify DNS. After a successful publish, Coden will serve this app under your Coden URL.'}
-          </div>
-          <button type="button" data-publish-action="settings" style="height:34px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text);border-radius:11px;font-size:12px;font-weight:850;cursor:pointer;">Open settings</button>
-        </div>
-      `
+      ? renderDomainSection()
       : '';
+
   root.innerHTML = `
-    <section role="dialog" aria-label="Publish" style="position:absolute;width:min(360px,calc(100vw - 24px));border:1px solid var(--border);background:var(--bg-surface);color:var(--text);border-radius:16px;box-shadow:var(--shadow-lg,0 18px 48px rgba(0,0,0,.45));overflow:hidden;font-family:var(--font-body,Inter,ui-sans-serif,system-ui);transform-origin:top right;animation:coden-pub-in 140ms cubic-bezier(.22,1,.36,1) both;">
-      <style>@keyframes coden-pub-in{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}</style>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px 11px;">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-          <span style="width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:${hasPublishedDeployment ? 'var(--success,#22c55e)' : 'var(--text-sub,#71717a)'};"></span>
-          <h3 style="margin:0;color:var(--text);font-size:15px;line-height:1.1;letter-spacing:-.02em;font-weight:800;">${escapeHtml(title)}</h3>
+    <section class="cdn-pub" role="dialog" aria-label="Publier">
+      <div class="cdn-pub__head">
+        <div class="cdn-pub__title">
+          <span class="cdn-pub__dot${hasPublishedDeployment ? ' cdn-pub__dot--live' : ''}"></span>
+          <h3>${escapeHtml(title)}</h3>
         </div>
-        <button type="button" data-publish-action="close" aria-label="Close" style="display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:8px;background:transparent;color:var(--text-muted);cursor:pointer;padding:0;">${publishIcon('fail')}</button>
+        <button type="button" class="cdn-pub__icon-btn" data-publish-action="close" aria-label="Fermer">${publishIcon('fail')}</button>
       </div>
-      <div style="display:grid;gap:11px;padding:0 16px 14px;">
-        ${error ? `<div style="border:1px solid var(--error-dim,rgba(248,113,113,.25));background:var(--error-dim,rgba(248,113,113,.10));color:var(--error,#f87171);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.4;">${escapeHtml(error)}</div>` : ''}
+      <div class="cdn-pub__body">
+        ${error ? `<div class="cdn-pub__error">${escapeHtml(error)}</div>` : ''}
         ${status ? `
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;border:1px solid var(--border);background:var(--bg-input);border-radius:11px;padding:9px 11px;">
-            <span style="color:var(--text-muted);display:grid;place-items:center;width:16px;height:16px;flex:0 0 auto;">${publishIcon('globe')}</span>
-            <span title="${escapeHtml(publicUrl || publicUrlLabel)}" style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${publicUrl ? 'var(--text)' : 'var(--text-muted)'};font-size:12.5px;font-weight:600;letter-spacing:-.01em;">${escapeHtml(publicUrlLabel)}</span>
-            <button type="button" data-publish-action="copy" ${publicUrl ? '' : 'disabled'} aria-label="Copy URL" style="display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:7px;background:transparent;color:${publicUrl ? 'var(--text-muted)' : 'color-mix(in srgb, var(--text-muted) 45%, transparent)'};cursor:${publicUrl ? 'pointer' : 'default'};padding:0;">${publishIcon('copy')}</button>
+          <div class="cdn-pub__url">
+            <span class="cdn-pub__glyph">${publishIcon('globe')}</span>
+            <span class="cdn-pub__url-text" data-empty="${publicUrl ? 'false' : 'true'}" title="${escapeHtml(publicUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
+            <button type="button" class="cdn-pub__icon-btn" data-publish-action="copy" ${publicUrl ? '' : 'disabled'} aria-label="Copier l’URL">${publishIcon('copy')}</button>
           </div>
-        ` : `
-          <div class="skeleton" style="height:40px;border-radius:11px;background:var(--bg-input);"></div>
-        `}
-        ${detailPanel ? `<div style="margin:0 -16px 0;">${detailPanel}</div>` : `
-        <button type="button" data-publish-action="publish" ${status?.can_publish && !isPublishing ? '' : 'disabled'} style="height:40px;border:0;background:var(--accent-blue,#6366f1);color:#fff;border-radius:11px;font-size:13.5px;font-weight:800;letter-spacing:-.01em;cursor:${status?.can_publish && !isPublishing ? 'pointer' : 'default'};opacity:${status?.can_publish && !isPublishing ? '1' : '.5'};transition:filter 120ms ease;">${escapeHtml(primaryLabel)}</button>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <button type="button" data-publish-action="security" ${status ? '' : 'disabled'} style="display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--text-muted);font-size:12px;font-weight:650;cursor:${status ? 'pointer' : 'default'};padding:4px 2px;opacity:${status ? '1' : '.5'};">
-            ${failCount ? 'Issues' : warnCount ? 'Review' : 'Checks'} <span style="display:inline-grid;place-items:center;min-width:17px;height:17px;border-radius:999px;background:${failCount ? 'var(--error,#f87171)' : warnCount ? 'var(--warning,#fbbf24)' : 'var(--accent-blue-soft)'};color:${failCount || warnCount ? '#fff' : 'var(--accent-blue-deep)'};font-size:10px;font-weight:800;">${checkCount || passCount}</span>
+        ` : '<div class="skeleton" style="height:40px;border-radius:11px;background:var(--bg-input);"></div>'}
+        ${detailPanel ? `<div style="margin:0 -16px;">${detailPanel}</div>` : `
+        <button type="button" class="cdn-pub__primary" data-publish-action="publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
+        <div class="cdn-pub__links">
+          <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
+            ${failCount ? 'Problèmes' : warnCount ? 'À revoir' : 'Contrôles'}
+            <span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${checkCount || passCount}</span>
           </button>
-          <button type="button" data-publish-action="domain" ${status ? '' : 'disabled'} style="border:0;background:transparent;color:var(--text-muted);font-size:12px;font-weight:650;cursor:${status ? 'pointer' : 'default'};padding:4px 2px;opacity:${status ? '1' : '.5'};">Custom domain</button>
-          <button type="button" data-publish-action="open" ${canOpen ? '' : 'disabled'} style="border:0;background:transparent;color:${canOpen ? 'var(--accent-blue-deep)' : 'var(--text-muted)'};font-size:12px;font-weight:700;cursor:${canOpen ? 'pointer' : 'default'};padding:4px 2px;opacity:${canOpen ? '1' : '.45'};">Open ↗</button>
+          <button type="button" class="cdn-pub__link" data-publish-action="domain" ${status ? '' : 'disabled'}>Domaine</button>
+          <button type="button" class="cdn-pub__link cdn-pub__link--go" data-publish-action="open" ${canOpen ? '' : 'disabled'}>Ouvrir ↗</button>
         </div>
         `}
       </div>
     </section>
   `;
   positionPublishDropdown();
+
+  const form = root.querySelector<HTMLFormElement>('form[data-domain-action="add"]');
+  form?.addEventListener('submit', event => {
+    event.preventDefault();
+    const input = form.querySelector<HTMLInputElement>('input[name="domain"]');
+    const value = (input?.value || '').trim();
+    if (!value || !currentProjectId) return;
+    void runDomainAction(
+      () => apiFetch(`/api/projects/${encodeURIComponent(currentProjectId!)}/domains`, {
+        method: 'POST',
+        body: JSON.stringify({ domain: value, type: 'custom' }),
+      }),
+      'add',
+      payload,
+    );
+  });
+
+  root.querySelectorAll<HTMLButtonElement>('button[data-domain-action]').forEach(button => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.domainAction;
+      const id = button.dataset.domainId;
+      if (!action || !id || !currentProjectId) return;
+      const base = `/api/projects/${encodeURIComponent(currentProjectId)}/domains/${encodeURIComponent(id)}`;
+      if (action === 'verify') void runDomainAction(() => apiFetch(`${base}/verify`, { method: 'POST' }), `verify:${id}`, payload);
+      if (action === 'remove') void runDomainAction(() => apiFetch(base, { method: 'DELETE' }), `remove:${id}`, payload);
+      if (action === 'primary') void runDomainAction(() => apiFetch(`${base}/primary`, { method: 'PATCH' }), `primary:${id}`, payload);
+    });
+  });
 
   root.querySelectorAll<HTMLButtonElement>('[data-publish-action]').forEach(button => {
     button.addEventListener('click', () => {
@@ -3234,16 +3373,14 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, isPublishing, error);
       }
       if (action === 'domain') {
-        publishPanelMode = publishPanelMode === 'domain' ? 'main' : 'domain';
+        const opening = publishPanelMode !== 'domain';
+        publishPanelMode = opening ? 'domain' : 'main';
         renderPublishPanel(payload, isPublishing, error);
-      }
-      if (action === 'settings') {
-        closePublishPanel();
-        void openBuilderSettings('account');
+        if (opening) void loadProjectDomains().then(() => renderPublishPanel(payload, isPublishing, error));
       }
       if (action === 'copy' && publicUrl) {
         void navigator.clipboard?.writeText(publicUrl);
-        showTransientNotice('Live app link copied.');
+        showTransientNotice('Lien de l’application copié.');
       }
       if (action === 'open' && publicUrl && canOpen) window.open(publicUrl, '_blank', 'noopener,noreferrer');
       if (action === 'publish') void publishCurrentProject(payload);
