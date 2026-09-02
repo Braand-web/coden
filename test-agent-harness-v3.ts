@@ -97,6 +97,25 @@ await harness.cancelTurn(cancelTurn.turn.id, 'user_1');
 assert.equal(signal.aborted, true);
 assert.equal((await store.getTurn(cancelTurn.turn.id))?.status, 'cancelled');
 
+// A cancelled run whose in-flight work rejects afterwards reports its failure
+// late. Throwing on that race lost the event entirely — production logged
+// "Invalid harness turn transition: cancelled -> failed" and nothing about the
+// actual failure. The recorded outcome stands and the late one is kept.
+const eventsBefore = (await store.listEvents(cancelThread.id)).length;
+const afterLateFailure = await harness.transitionTurn(cancelTurn.turn.id, 'failed', { message: 'provider timed out' });
+assert.equal(afterLateFailure.status, 'cancelled', 'the status that ended the turn must stand');
+assert.equal((await store.getTurn(cancelTurn.turn.id))?.status, 'cancelled');
+const eventsAfter = await store.listEvents(cancelThread.id);
+assert.equal(eventsAfter.length, eventsBefore + 1, 'the late failure must still reach the log');
+const late = eventsAfter[eventsAfter.length - 1];
+assert.equal((late.payload as any)?.late_status, 'failed');
+assert.equal((late.payload as any)?.recorded_status, 'cancelled');
+assert.equal((late.payload as any)?.message, 'provider timed out');
+assert.equal(late.visibility, 'technical', 'a late outcome is diagnostic, not user-facing');
+
+// A genuinely invalid transition is still a programming error.
+await assert.rejects(harness.transitionTurn(cancelTurn.turn.id, 'running'), /Invalid harness turn transition/);
+
 const migration = fs.readFileSync(new URL('./supabase/migrations/20260831090000_coden_agent_harness_v3.sql', import.meta.url), 'utf8');
 for (const table of ['agent_threads', 'agent_turns', 'agent_items', 'agent_harness_events', 'agent_instructions']) {
   assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security`, 'i'));

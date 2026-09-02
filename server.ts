@@ -2779,59 +2779,12 @@ function withProjectSeoSupport(
 
 function injectAnalyticsSnippet(html: string, projectId?: string, environment: 'preview' | 'production' = 'preview') {
   if (!projectId || html.includes('data-coden-analytics="true"')) return html;
-  const apiBase = (process.env.CODEN_PUBLIC_API_URL || '').replace(/\/$/, '');
-  const snippet = `
-<script data-coden-analytics="true">
-(() => {
-  const projectId = ${JSON.stringify(projectId)};
-  const environment = ${JSON.stringify(environment)};
-  const apiBase = ${JSON.stringify(apiBase)};
-  const endpoint = (apiBase || window.location.origin).replace(/\\/$/, '') + '/api/analytics/collect';
-  const safeId = () => (crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
-  const storageGet = (store, key) => { try { return store.getItem(key); } catch { return ''; } };
-  const storageSet = (store, key, value) => { try { store.setItem(key, value); } catch {} };
-  let visitorId = storageGet(localStorage, 'coden_visitor_id');
-  if (!visitorId) { visitorId = safeId(); storageSet(localStorage, 'coden_visitor_id', visitorId); }
-  let sessionId = storageGet(sessionStorage, 'coden_session_id');
-  if (!sessionId) { sessionId = safeId(); storageSet(sessionStorage, 'coden_session_id', sessionId); }
-  const startedAt = Date.now();
-  const source = (() => {
-    try {
-      if (!document.referrer) return 'Direct';
-      const referrer = new URL(document.referrer);
-      if (/builder\\.html|dashboard\\.html|auth\\.html/i.test(referrer.pathname)) return 'Direct';
-      return referrer.hostname || 'Direct';
-    } catch { return 'Direct'; }
-  })();
-  const send = (eventType) => {
-    const payload = {
-      project_id: projectId,
-      event_type: eventType,
-      page_path: window.location.pathname || '/',
-      session_id: sessionId,
-      visitor_id: visitorId,
-      source,
-      duration_seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
-      environment,
-    };
-    const body = JSON.stringify(payload);
-    if (navigator.sendBeacon) {
-      const ok = navigator.sendBeacon(endpoint, new Blob([body], { type: 'application/json' }));
-      if (ok) return;
-    }
-    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
-  };
-  send('pageview');
-  const heartbeat = setInterval(() => send('heartbeat'), 60000);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') send('duration');
+  const snippet = buildAnalyticsSnippet({
+    projectId,
+    environment,
+    apiBase: process.env.CODEN_PUBLIC_API_URL || '',
   });
-  window.addEventListener('beforeunload', () => {
-    clearInterval(heartbeat);
-    send('duration');
-  });
-})();
-</script>`;
+  if (!snippet) return html;
   return insertBeforeBodyEnd(html, snippet);
 }
 
@@ -4571,6 +4524,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     // router is degraded without changing a user-pinned generation model.
     allowFallback: true,
   });
+  let routerFailureCause = '';
   const rawDecision = await parseOrRepairStructuredObject(
     result.text,
     isIntentRouterStructuredOutput,
@@ -4590,9 +4544,22 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
       });
       return repaired.text;
     },
-  ).catch(() => null);
+  // Swallowing this hid why routing failed. Every outcome — a provider 401, a
+  // timeout, a malformed object — reached the log as the same
+  // "returned no valid intent decision", so a routing outage could not be told
+  // apart from a bad answer. The cause is kept and re-thrown with the failure.
+  ).catch((error: any) => {
+    routerFailureCause = normalizeProviderError(error) || String(error?.message || error || '');
+    return null;
+  });
   const aiDecision = buildDecisionFromAi(rawDecision, fallback);
-  return aiDecision ? guardAiDecisionWithUnderstanding(aiDecision, input, fallback) : null;
+  if (aiDecision) return guardAiDecisionWithUnderstanding(aiDecision, input, fallback);
+  if (!routerFailureCause) {
+    routerFailureCause = rawDecision
+      ? 'the router answered with an object that does not match the intent contract'
+      : 'the router answered with no readable object';
+  }
+  throw new Error(`The selected AI model returned no valid intent decision: ${routerFailureCause}`.slice(0, 400));
 }
 
 function applyTypedIntentLifecycle(input: AgentDecisionInput, decision: IntentDecision): IntentDecision {
@@ -4642,6 +4609,8 @@ async function resolveAgentDecision(input: AgentDecisionInput) {
   try {
     const modelDecision = await classifyIntentWithAi(input, fallback);
     if (!modelDecision) throw new Error('The selected AI model returned no valid intent decision.');
+    // classifyIntentWithAi now throws with the cause; a null here means a
+    // guarded decision was rejected, which is not a provider failure.
     return finalize(modelDecision);
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
@@ -14566,6 +14535,7 @@ import { buildStaticSource } from './src/services/build-runner.ts';
 import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
+import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 

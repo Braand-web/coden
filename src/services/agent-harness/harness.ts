@@ -61,6 +61,22 @@ export class CodenAgentHarness {
 
   async transitionTurn(turnId: string, status: HarnessTurnStatus, payload: Record<string, unknown> = {}) {
     const turn = await this.requiredTurn(turnId);
+    // A cancelled run whose in-flight work then rejects reports its failure
+    // after the outcome is already recorded. That is a race, not a programming
+    // error, and throwing on it lost the whole event — production saw
+    // "Invalid harness turn transition: cancelled -> failed" instead of the
+    // failure detail. The first terminal status stands, because it is the one
+    // that actually ended the turn; the late one is kept in the log.
+    if (isTerminalTurnStatus(turn.status) && isTerminalTurnStatus(status) && turn.status !== status) {
+      await this.store.appendEvent({
+        threadId: turn.threadId,
+        turnId,
+        type: turnEventTypeForStatus(status),
+        visibility: 'technical',
+        payload: { ...payload, late_status: status, recorded_status: turn.status },
+      });
+      return turn;
+    }
     if (!canTransitionTurn(turn.status, status)) {
       throw new Error(`Invalid harness turn transition: ${turn.status} -> ${status}`);
     }
