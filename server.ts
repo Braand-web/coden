@@ -45,6 +45,7 @@ import { parseOrRepairStructuredObject } from './src/services/structured-output.
 import {
   createCodenStreamEmitter,
   serializeCodenStreamEvent,
+  CODEN_STREAM_PROTOCOL_VERSION,
   CODEN_SSE_HEADERS,
   CODEN_SSE_HEARTBEAT,
   CODEN_SSE_HEARTBEAT_INTERVAL_MS,
@@ -14174,8 +14175,16 @@ app.use(async (req, res, next) => {
   }
 });
 
+/** True when this response is an open SSE stream rather than a pending JSON reply. */
+function isEventStreamResponse(res: any): boolean {
+  try {
+    return String(res?.getHeader?.('Content-Type') || '').includes('text/event-stream');
+  } catch {
+    return false;
+  }
+}
+
 app.use((error: any, req: any, res: any, next: any) => {
-  if (res.headersSent) return next(error);
   const requestId = `err_${randomUUID()}`;
   const rawMessage = redactSecrets(error?.message || String(error || 'Unexpected server error'));
   const status = Number(error?.status || error?.statusCode || 500);
@@ -14194,7 +14203,44 @@ app.use((error: any, req: any, res: any, next: any) => {
     path: req.path,
     diagnostic_code: diagnosticCode,
     message: rawMessage,
+    streaming: isEventStreamResponse(res),
   });
+
+  // A streaming response flushes its headers before doing any work, so for a
+  // failed generation `headersSent` is the normal case, not an edge one. This
+  // used to `return next(error)` immediately — before the log line above —
+  // which meant two things at once: Express destroyed the socket, so the client
+  // saw the stream open and die with no terminal event and no message, and the
+  // failure never reached the server log either. A generation that threw
+  // anywhere outside its own try was invisible from both ends.
+  if (res.headersSent) {
+    if (isEventStreamResponse(res) && !res.writableEnded) {
+      try {
+        res.write(serializeCodenStreamEvent({
+          v: CODEN_STREAM_PROTOCOL_VERSION,
+          runId: requestId,
+          id: Number.MAX_SAFE_INTEGER - 1,
+          sequence: Number.MAX_SAFE_INTEGER - 1,
+          ts: Date.now(),
+          type: 'error',
+          message: publicMessage,
+          recoverable: status >= 500 || status === 429,
+          diagnostic_code: diagnosticCode,
+        } as any));
+        res.write(serializeCodenStreamEvent({
+          v: CODEN_STREAM_PROTOCOL_VERSION,
+          runId: requestId,
+          id: Number.MAX_SAFE_INTEGER,
+          sequence: Number.MAX_SAFE_INTEGER,
+          ts: Date.now(),
+          type: 'done',
+          payload: { status_code: status >= 400 && status < 600 ? status : 500, success: false, diagnostic_code: diagnosticCode, request_id: requestId },
+        } as any));
+      } catch { /* the client is already gone; ending is still correct */ }
+      return res.end();
+    }
+    return next(error);
+  }
 
   if (req.path?.startsWith('/api')) {
     return res.status(status >= 400 && status < 600 ? status : 500).json({
