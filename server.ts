@@ -12318,11 +12318,20 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       !generationAbortController.signal.aborted
     ) {
       phases.fail('verify');
-      phases.start('fix');
+      // The runner captured the compiler output and nothing read it, so every
+      // repair was a second full generation. When the build named files, aim at
+      // them instead — that pass is what timed out at six minutes.
+      const targetedRepair = buildTargetedRepair(finalGate.runnerResult?.checks);
+      // A targeted repair knows the files, so the step says which ones rather
+      // than "Coden is fixing the detected issues".
+      const repairIssues = targetedRepair.targeted
+        ? targetedRepair.files.map(file => ({ file }))
+        : finalGate.reliabilitySummary.blocking;
+      phases.start('fix', repairNarration(repairIssues, frenchActivity ? 'fr' : 'en'));
       emitActivity(
         'fixing',
-        repairNarration(finalGate.reliabilitySummary.blocking, 'fr'),
-        repairNarration(finalGate.reliabilitySummary.blocking, 'en'),
+        repairNarration(repairIssues, 'fr'),
+        repairNarration(repairIssues, 'en'),
       );
       const repairBlockers = finalGate.reliabilitySummary.blocking.slice(0, 12).map(item => ({
         key: item.key,
@@ -12343,7 +12352,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           prompt: [
             promptWithPendingAgentInstructions(basePrompt, agentRunId),
             '',
-            'Repair the existing project in place. Change only what is needed to resolve every verified blocker below, preserve valid files, keep the requested runtime, and do not introduce an external service the user excluded.',
+            targetedRepair.targeted
+              ? targetedRepair.instruction
+              : 'Repair the existing project in place. Change only what is needed to resolve every verified blocker below, preserve valid files, keep the requested runtime, and do not introduce an external service the user excluded.',
             `Verified blockers: ${JSON.stringify(repairBlockers)}`,
             'Return the project-file JSON contract. Do not promise a later repair: implement it now.',
           ].join('\n'),
@@ -14266,6 +14277,7 @@ import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/ser
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { GenerationPhaseTracker } from './src/services/generation-phases.ts';
+import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 
