@@ -2507,6 +2507,33 @@
       min-height: 0;
     }
 
+    /* Says an on-screen preview is unverified. Shape as well as colour, so it
+       still reads for anyone who cannot separate the amber from the text. */
+    .preview-trust-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: 10px;
+      padding: 3px 9px;
+      border: 1px solid color-mix(in srgb, #d97706 46%, transparent);
+      border-radius: 6px;
+      background: color-mix(in srgb, #d97706 12%, transparent);
+      color: #d97706;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .01em;
+      white-space: nowrap;
+    }
+
+    .preview-trust-badge::before {
+      content: "";
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 7px solid currentColor;
+    }
+
     .preview-address-row {
       position: absolute;
       top: 8px;

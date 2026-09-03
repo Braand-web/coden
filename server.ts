@@ -12552,203 +12552,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         ? 'I am preparing the final summary from verified evidence.'
         : 'I am saving a recoverable state and will explain the exact next action.',
     );
-    if (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary)) {
-      const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
-        ? sanitizeSuggestedProjectName(generation.appName, prompt)
-        : project.name;
-      const recoverableProject: GeneratedProject = {
-        ...project,
-        name: generatedProjectName,
-        slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
-        prompt,
-        model_id: generation.model,
-        status: project.status || 'draft',
-        preview_status: 'needs_fix',
-        preview_html: previewHtml,
-        updated_at: new Date().toISOString(),
-      };
-      await saveProject(recoverableProject, finalFiles).catch(error => {
-        console.warn('[coden:needs_fix_draft_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      });
-      const diff = diffFiles(existingFiles, finalFiles);
-      await createProjectVersion(recoverableProject, finalFiles, prompt, {
-        ...diff,
-        verification: verificationSummary,
-        reliability: reliabilitySummary,
-        needs_fix: true,
-        agent_run_id: agentRunId || null,
-      }).catch(error => {
-        console.warn('[coden:needs_fix_version_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      });
-      if (autoFix) await saveProjectPatch(recoverableProject, autoFix).catch(error => {
-        console.warn('[coden:needs_fix_patch_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      });
-      const blockingCount = Number(reliabilitySummary.blocking?.length || (reliabilitySummary as any).failed?.length || 1);
-      const finalizerDecision = { ...decision, intent: 'conversation', requiresFileChanges: false, requiresPreviewRebuild: false, requiresCredits: false } as IntentDecision;
-      const finalizer = await createAgentTextResponse({
-        project: recoverableProject,
-        prompt: `${promptWithPendingAgentInstructions(agentPromptForText, agentRunId)}\n\nWrite the terminal user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. This run ends after the response: do not say that you are about to inspect, fix, retest, or continue. State the remaining blocker, explain that the recoverable draft was saved, and offer an explicit retry. Facts: ${JSON.stringify(factLedger.facts)}`,
-        files: finalFiles,
-        decision: finalizerDecision,
-        modelId: effectiveModelSelection,
-        userCredits: walletForRouting,
-        allowLocalFallback: false,
-        signal: generationAbortController.signal,
-        finalizer: true,
-      });
-      const summary = finalizer.text.trim();
-      if (!summary) throw new Error('The selected AI model returned no fact-grounded recovery response.');
-      const recoveryContradictions = responseContradictions(summary, factLedger);
-      if (recoveryContradictions.length) {
-        throw new Error(`The model response contradicted verified facts: ${recoveryContradictions.join(', ')}`);
-      }
-      const outputContract = validateExecutionOutputContract({
-        contract: (decision as any).executionContract as ExecutionContract | undefined,
-        hasFiles: finalFiles.length > 0,
-        previewReady: false,
-        runnerChecked: Boolean(runnerResult),
-        reliabilityStatus: reliabilitySummary.status,
-        draftSaved: true,
-        assistantText: summary,
-      });
-      const durableContinuation = decideDurableRunContinuation({
-        reliabilityStatus: reliabilitySummary.status,
-        previewStatus: 'needs_fix',
-        autoFixAttempts: DEFAULT_AGENT_V3_BUDGET.maxAutoFixAttempts,
-        maxAutoFixAttempts: DEFAULT_AGENT_V3_BUDGET.maxAutoFixAttempts,
-        hasCredits: true,
-      });
-      await saveProjectMessage({
-        organization_id: recoverableProject.organization_id,
-        project_id: recoverableProject.id,
-        user_id: userId,
-        role: 'assistant',
-        content: summary,
-        intent: decision.intent,
-        requested_mode: decision.requestedMode,
-      }).catch(error => {
-        console.warn('[coden:needs_fix_message_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      });
-      await recordAgentImprovementSignal(recoverableProject, userId, {
-        prompt,
-        decision,
-        outcome: 'failed',
-        previewChanged: true,
-        qualityStatus: 'needs_fix',
-        issueCount: blockingCount,
-      }).catch(() => null);
-      await updateAgentRunStatus(agentRunId, 'completed', {
-        public_payload: {
-          needs_fix: true,
-          verification: verificationSummary,
-          reliability: reliabilitySummary,
-          quality: qualitySummary,
-          output_contract: outputContract,
-          durable_run: buildDurableRunPayload({
-            contract: durableRunContract,
-            continuation: durableContinuation,
-          }).durable_run,
-          browser: finalGate.browserResult ? { status: finalGate.browserResult.status, finding_count: finalGate.browserResult.findings.length } : null,
-          fact_ledger: factLedger,
-        },
-      }).catch(() => null);
-      const finalPayload = {
-        success: false,
-        needs_fix: true,
-        intent: decision,
-        project: recoverableProject,
-        files: finalFiles,
-        summary,
-        model: generation.model,
-        diff,
-        auto_fix: autoFix,
-        errors: pipeline.errors,
-        verification: verificationSummary,
-        reliability,
-        reliability_summary: reliabilitySummary,
-        output_contract: outputContract,
-        durable_run: buildDurableRunPayload({
-          contract: durableRunContract,
-          continuation: durableContinuation,
-        }).durable_run,
-        durable_continuation: durableContinuation,
-        runner: runnerResult ? { status: runnerResult.status, checks: runnerResult.checks } : null,
-        preview: {
-          status: 'needs_fix',
-          html: previewHtml,
-        },
-        fact_ledger: factLedger,
-      };
-      phases.finish('done');
-      if (isStream) {
-        streamV2?.emit('assistant_delta', { text: summary });
-        streamV2?.emit('assistant_message_completed', {});
-        streamV2?.emit('done', { payload: finalPayload });
-        return res.end();
-      } else {
-        return res.json(finalPayload);
-      }
-    }
-    const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
-      ? sanitizeSuggestedProjectName(generation.appName, prompt)
-      : project.name;
-    const verificationPassed = strictRuntimeVerified;
-    const updatedProject: GeneratedProject = {
-      ...project,
-      name: generatedProjectName,
-      slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
-      prompt,
-      model_id: generation.model,
-      status: project.status || 'draft',
-      preview_status: verificationPassed ? 'verified' : 'needs_fix',
-      preview_html: verificationPassed ? previewHtml : buildPreviewErrorHtml({ projectName: generatedProjectName, error: 'The generated runtime has not passed strict verification.' }),
-      updated_at: new Date().toISOString(),
-    };
-
-    const finalizerDecision = {
-      ...decision,
-      intent: 'conversation',
-      requiresFileChanges: false,
-      requiresPreviewRebuild: false,
-      requiresCredits: false,
-    } as IntentDecision;
-    const finalizer = await createAgentTextResponse({
-      project: updatedProject,
-      prompt: [
-        'Write the final user-facing response using only the verified facts below.',
-        'Do not claim readiness, publication, connected backend, successful tests, or bug resolution unless an explicit verified fact supports it.',
-        'Mention unresolved verification issues clearly and propose only actions supported by the facts.',
-        JSON.stringify({ objective: decision.executionContract || decision.userVisibleReason, facts: factLedger.facts, ledger_status: factLedger.status }),
-      ].join('\n\n'),
-      files: finalFiles,
-      decision: finalizerDecision,
-      modelId: generation.model,
-      userCredits: walletForRouting,
-      allowLocalFallback: false,
-      finalizer: true,
-      signal: generationAbortController.signal,
-    });
-    const finalSummary = finalizer.text.trim();
-    if (!finalSummary) throw new Error('The selected AI model returned no fact-grounded final response.');
-    const finalContradictions = responseContradictions(finalSummary, factLedger);
-    if (finalContradictions.length) {
-      throw new Error(`The model response contradicted verified facts: ${finalContradictions.join(', ')}`);
-    }
-
-    await saveProject(updatedProject, finalFiles);
-
     /*
-     * Bring the application up.
+     * The application comes up before the verdict is written, not after.
      *
-     * Deliberately here, before the finalizer writes its summary: the preview
-     * is the answer to the prompt, and making the user wait for a paragraph of
-     * prose before they can see their own app is the wrong order. The stream
-     * carries each stage as it happens, so the interface shows a pipeline
-     * rather than a spinner.
+     * The branch below returns early whenever strict verification did not fully
+     * pass -- and that is the common case, since it needs the pipeline ready,
+     * the reliability summary passed, and the browser runner to have produced a
+     * real result. Launching the sandbox after it meant the one situation where
+     * a user most needs to see their app, a build carrying a warning, was the
+     * one situation where they saw nothing at all.
      *
-     * A sandbox that fails to come up is reported and does not fail the
-     * generation: the files are real and saved either way, and the existing
-     * preview stays as it was.
+     * A dev server actually serving the application is stronger evidence than a
+     * static check that is unsure about it, so it runs on both paths.
      */
     let livePreview: Awaited<ReturnType<typeof applyProjectEdit>> | null = null;
     let sandboxValidation: Awaited<ReturnType<typeof validateProject>> | null = null;
@@ -12877,6 +12692,214 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         console.warn('[coden:sandbox_launch_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
       }
     }
+
+    if (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary)) {
+      const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
+        ? sanitizeSuggestedProjectName(generation.appName, prompt)
+        : project.name;
+      const recoverableProject: GeneratedProject = {
+        ...project,
+        name: generatedProjectName,
+        slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
+        prompt,
+        model_id: generation.model,
+        status: project.status || 'draft',
+        preview_status: 'needs_fix',
+        preview_html: previewHtml,
+        updated_at: new Date().toISOString(),
+      };
+      await saveProject(recoverableProject, finalFiles).catch(error => {
+        console.warn('[coden:needs_fix_draft_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      });
+      const diff = diffFiles(existingFiles, finalFiles);
+      await createProjectVersion(recoverableProject, finalFiles, prompt, {
+        ...diff,
+        verification: verificationSummary,
+        reliability: reliabilitySummary,
+        needs_fix: true,
+        agent_run_id: agentRunId || null,
+      }).catch(error => {
+        console.warn('[coden:needs_fix_version_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      });
+      if (autoFix) await saveProjectPatch(recoverableProject, autoFix).catch(error => {
+        console.warn('[coden:needs_fix_patch_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      });
+      const blockingCount = Number(reliabilitySummary.blocking?.length || (reliabilitySummary as any).failed?.length || 1);
+      const finalizerDecision = { ...decision, intent: 'conversation', requiresFileChanges: false, requiresPreviewRebuild: false, requiresCredits: false } as IntentDecision;
+      const finalizer = await createAgentTextResponse({
+        project: recoverableProject,
+        prompt: `${promptWithPendingAgentInstructions(agentPromptForText, agentRunId)}\n\nWrite the terminal user-facing response from these verified facts only. The preview is needs_fix, not ready. Never claim readiness. This run ends after the response: do not say that you are about to inspect, fix, retest, or continue. State the remaining blocker, explain that the recoverable draft was saved, and offer an explicit retry. Facts: ${JSON.stringify(factLedger.facts)}`,
+        files: finalFiles,
+        decision: finalizerDecision,
+        modelId: effectiveModelSelection,
+        userCredits: walletForRouting,
+        allowLocalFallback: false,
+        signal: generationAbortController.signal,
+        finalizer: true,
+      });
+      const summary = finalizer.text.trim();
+      if (!summary) throw new Error('The selected AI model returned no fact-grounded recovery response.');
+      const recoveryContradictions = responseContradictions(summary, factLedger);
+      if (recoveryContradictions.length) {
+        throw new Error(`The model response contradicted verified facts: ${recoveryContradictions.join(', ')}`);
+      }
+      const outputContract = validateExecutionOutputContract({
+        contract: (decision as any).executionContract as ExecutionContract | undefined,
+        hasFiles: finalFiles.length > 0,
+        previewReady: false,
+        runnerChecked: Boolean(runnerResult),
+        reliabilityStatus: reliabilitySummary.status,
+        draftSaved: true,
+        assistantText: summary,
+      });
+      const durableContinuation = decideDurableRunContinuation({
+        reliabilityStatus: reliabilitySummary.status,
+        previewStatus: 'needs_fix',
+        autoFixAttempts: DEFAULT_AGENT_V3_BUDGET.maxAutoFixAttempts,
+        maxAutoFixAttempts: DEFAULT_AGENT_V3_BUDGET.maxAutoFixAttempts,
+        hasCredits: true,
+      });
+      await saveProjectMessage({
+        organization_id: recoverableProject.organization_id,
+        project_id: recoverableProject.id,
+        user_id: userId,
+        role: 'assistant',
+        content: summary,
+        intent: decision.intent,
+        requested_mode: decision.requestedMode,
+      }).catch(error => {
+        console.warn('[coden:needs_fix_message_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      });
+      await recordAgentImprovementSignal(recoverableProject, userId, {
+        prompt,
+        decision,
+        outcome: 'failed',
+        previewChanged: true,
+        qualityStatus: 'needs_fix',
+        issueCount: blockingCount,
+      }).catch(() => null);
+      await updateAgentRunStatus(agentRunId, 'completed', {
+        public_payload: {
+          needs_fix: true,
+          verification: verificationSummary,
+          reliability: reliabilitySummary,
+          quality: qualitySummary,
+          output_contract: outputContract,
+          durable_run: buildDurableRunPayload({
+            contract: durableRunContract,
+            continuation: durableContinuation,
+          }).durable_run,
+          browser: finalGate.browserResult ? { status: finalGate.browserResult.status, finding_count: finalGate.browserResult.findings.length } : null,
+          fact_ledger: factLedger,
+        },
+      }).catch(() => null);
+      const finalPayload = {
+        success: false,
+        needs_fix: true,
+        intent: decision,
+        project: recoverableProject,
+        files: finalFiles,
+        summary,
+        model: generation.model,
+        diff,
+        auto_fix: autoFix,
+        errors: pipeline.errors,
+        verification: verificationSummary,
+        reliability,
+        reliability_summary: reliabilitySummary,
+        output_contract: outputContract,
+        durable_run: buildDurableRunPayload({
+          contract: durableRunContract,
+          continuation: durableContinuation,
+        }).durable_run,
+        durable_continuation: durableContinuation,
+        runner: runnerResult ? { status: runnerResult.status, checks: runnerResult.checks } : null,
+        preview: {
+          status: 'needs_fix',
+          html: previewHtml,
+          // The static verdict is needs_fix, and the application may still be
+          // running. Withholding its URL here is what left the user with a
+          // blank panel while a working dev server sat behind it.
+          live_url: livePreview?.previewUrl || null,
+          live_state: livePreview?.state || null,
+          live_error: livePreview?.error || null,
+        },
+        sandbox_validation: sandboxValidation
+          ? { ok: sandboxValidation.ok, ran: sandboxValidation.ran, problems: sandboxValidation.problems.slice(0, 20), repair: sandboxRepairInstruction || undefined }
+          : null,
+        fact_ledger: factLedger,
+      };
+      phases.finish('done');
+      if (isStream) {
+        streamV2?.emit('assistant_delta', { text: summary });
+        streamV2?.emit('assistant_message_completed', {});
+        streamV2?.emit('done', { payload: finalPayload });
+        return res.end();
+      } else {
+        return res.json(finalPayload);
+      }
+    }
+    const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
+      ? sanitizeSuggestedProjectName(generation.appName, prompt)
+      : project.name;
+    const verificationPassed = strictRuntimeVerified;
+    const updatedProject: GeneratedProject = {
+      ...project,
+      name: generatedProjectName,
+      slug: await resolveStableProjectSlug(project, generatedProjectName, userId),
+      prompt,
+      model_id: generation.model,
+      status: project.status || 'draft',
+      preview_status: verificationPassed ? 'verified' : 'needs_fix',
+      preview_html: verificationPassed ? previewHtml : buildPreviewErrorHtml({ projectName: generatedProjectName, error: 'The generated runtime has not passed strict verification.' }),
+      updated_at: new Date().toISOString(),
+    };
+
+    const finalizerDecision = {
+      ...decision,
+      intent: 'conversation',
+      requiresFileChanges: false,
+      requiresPreviewRebuild: false,
+      requiresCredits: false,
+    } as IntentDecision;
+    const finalizer = await createAgentTextResponse({
+      project: updatedProject,
+      prompt: [
+        'Write the final user-facing response using only the verified facts below.',
+        'Do not claim readiness, publication, connected backend, successful tests, or bug resolution unless an explicit verified fact supports it.',
+        'Mention unresolved verification issues clearly and propose only actions supported by the facts.',
+        JSON.stringify({ objective: decision.executionContract || decision.userVisibleReason, facts: factLedger.facts, ledger_status: factLedger.status }),
+      ].join('\n\n'),
+      files: finalFiles,
+      decision: finalizerDecision,
+      modelId: generation.model,
+      userCredits: walletForRouting,
+      allowLocalFallback: false,
+      finalizer: true,
+      signal: generationAbortController.signal,
+    });
+    const finalSummary = finalizer.text.trim();
+    if (!finalSummary) throw new Error('The selected AI model returned no fact-grounded final response.');
+    const finalContradictions = responseContradictions(finalSummary, factLedger);
+    if (finalContradictions.length) {
+      throw new Error(`The model response contradicted verified facts: ${finalContradictions.join(', ')}`);
+    }
+
+    await saveProject(updatedProject, finalFiles);
+
+    /*
+     * Bring the application up.
+     *
+     * Deliberately here, before the finalizer writes its summary: the preview
+     * is the answer to the prompt, and making the user wait for a paragraph of
+     * prose before they can see their own app is the wrong order. The stream
+     * carries each stage as it happens, so the interface shows a pipeline
+     * rather than a spinner.
+     *
+     * A sandbox that fails to come up is reported and does not fail the
+     * generation: the files are real and saved either way, and the existing
+     * preview stays as it was.
+     */
     const diff = diffFiles(existingFiles, finalFiles);
     await createProjectVersion(updatedProject, finalFiles, prompt, { ...diff, verification: verificationSummary, reliability: reliabilitySummary, agent_run_id: agentRunId || null });
     if (autoFix) await saveProjectPatch(updatedProject, autoFix);

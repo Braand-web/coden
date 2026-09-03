@@ -1649,12 +1649,50 @@ function syncPreviewAddress(label?: string | null) {
   const hasRealPreviewAddress = Boolean(cleanLabel);
   row?.classList.toggle('address-hidden', !hasRealPreviewAddress);
   if (address) address.textContent = hasRealPreviewAddress ? cleanLabel : '';
+  syncPreviewTrustBadge();
 }
 
+/**
+ * Say how much to trust what is on screen.
+ *
+ * Showing an unverified preview is an improvement over showing nothing only
+ * while the reader knows it is unverified. Without this the change would trade
+ * an honest blank panel for a misleading full one.
+ */
+function syncPreviewTrustBadge() {
+  const panel = document.getElementById('screen-layout-preview') as HTMLElement | null;
+  if (!panel) return;
+  const showing = emptyPreviewMode === 'ready';
+  panel.dataset.previewTrust = showing ? currentPreviewStatus : '';
+  let badge = document.getElementById('preview-trust-badge');
+  if (!showing || currentPreviewStatus === 'verified' || currentPreviewStatus === 'live') {
+    badge?.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.id = 'preview-trust-badge';
+    badge.className = 'preview-trust-badge';
+    (document.querySelector('.preview-address-row') || panel).appendChild(badge);
+  }
+  const french = (document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('fr');
+  badge.textContent = french ? 'Aperçu non vérifié' : 'Unverified preview';
+  badge.title = french
+    ? 'Cette application s’affiche, mais la vérification n’a pas abouti.'
+    : 'This application renders, but verification did not complete.';
+}
+
+/**
+ * Whether an application is on screen, whatever verification made of it.
+ *
+ * Refresh and the device switcher act on the frame, not on a verdict, so
+ * gating them on `verified` left a visible preview the user could not reload
+ * or view at another width.
+ */
 function hasReadyAppPreview() {
   const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
   return currentBuilderView === 'preview'
-    && currentPreviewStatus === 'verified'
+    && ['verified', 'needs_fix', 'live'].includes(currentPreviewStatus)
     && emptyPreviewMode === 'ready'
     && isUsablePreviewHtml(currentPreviewHtml)
     && frame?.dataset.emptyPreview !== 'true'
@@ -2890,18 +2928,56 @@ function setLivePreview(url: string) {
   syncPreviewToolbarControls();
 }
 
+/**
+ * Point the panel at a dev server that is already running.
+ *
+ * The generation response carries a live URL, but reopening a project is not a
+ * generation: without this, a sandbox left running from an earlier run stays
+ * invisible and the reader gets the saved rendering instead of the
+ * application.
+ */
+async function resumeLivePreview() {
+  if (!currentProjectId) return;
+  try {
+    const status = await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/sandbox/status`) as { preview_url?: string; state?: string } | null;
+    const url = String(status?.preview_url || '').trim();
+    if (!url || status?.state !== 'running') return;
+    activateBuilderView('preview');
+    setLivePreview(url);
+  } catch {
+    // The live sandbox is optional. A server without it answers 503, and that
+    // is a configuration fact rather than something to report to the user.
+  }
+}
+
 /** Forget the live preview when its sandbox is gone. */
 function clearLivePreview() {
   livePreviewUrl = '';
 }
 
+/**
+ * Show a rendered preview, and say how much to trust it.
+ *
+ * This used to require `status === 'verified'` and show nothing otherwise —
+ * which is how a run ended with a blank panel while a complete rendering of
+ * the user's application sat in the payload, unused. The generate route saves
+ * the real preview on its needs_fix path; refusing to draw it told the user
+ * "Preview not verified" over an empty rectangle instead of over their app.
+ *
+ * An unverified preview the reader can see, labelled unverified, informs them
+ * strictly better than an empty one carrying the same words. What is still
+ * refused is html that shows nothing useful — a loader, a fallback, the
+ * placeholder copy — which `isUsablePreviewHtml` already recognises, and a run
+ * still in flight, which has a loader of its own.
+ */
 function setPreview(html: string, status = 'unknown') {
   const normalizedStatus = String(status || '').trim().toLowerCase() || 'idle';
-  if (normalizedStatus !== 'verified' || !isUsablePreviewHtml(html)) {
+  const stillWorking = normalizedStatus === 'building';
+  if (stillWorking || !isUsablePreviewHtml(html)) {
     currentPreviewHtml = '';
     currentPreviewStatus = normalizedStatus;
-    emptyPreviewMode = normalizedStatus === 'building' ? 'working' : 'idle';
-    setEmptyPreviewState(emptyPreviewMode, normalizedStatus === 'building' ? 'Generating' : normalizedStatus === 'needs_fix' ? 'Preview needs verification' : 'Preview not verified');
+    emptyPreviewMode = stillWorking ? 'working' : 'idle';
+    setEmptyPreviewState(emptyPreviewMode, stillWorking ? 'Generating' : normalizedStatus === 'needs_fix' ? 'Preview needs verification' : 'Preview not verified');
     syncProjectReadinessClass();
     syncPreviewToolbarControls();
     return;
@@ -4771,6 +4847,12 @@ async function loadProject() {
       currentPreviewHtml = '';
       setEmptyPreviewState('idle');
     }
+    // A sandbox that is still up from an earlier run should be what the reader
+    // sees on reopening the project, not the rendering saved beside it. Asked
+    // after the static preview so the panel is never empty while this answers,
+    // and silent on failure: a project with no sandbox is the normal case, not
+    // an error worth a message.
+    void resumeLivePreview();
     syncProjectReadinessClass();
     restoreMessages(payload);
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
