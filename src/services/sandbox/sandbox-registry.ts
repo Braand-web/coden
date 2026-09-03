@@ -15,6 +15,8 @@
  * difference between resuming in a second and resuming in a minute.
  */
 
+import os from 'node:os';
+import fs from 'node:fs';
 import { ProjectSandbox, type SandboxStatus } from './project-sandbox.ts';
 
 export type RegistryLimits = {
@@ -24,8 +26,54 @@ export type RegistryLimits = {
   idleMs: number;
 };
 
+/**
+ * How many dev servers this host can actually hold.
+ *
+ * Derived rather than constant, because the number that is safe is a property
+ * of the machine and not of the code. A Vite dev server settles around 250 MB
+ * and an npm install peaks higher, so a fixed default of six is fine on a
+ * workstation and takes down a 1 GB container — where the failure is not a
+ * slow preview but the whole API being OOM-killed.
+ *
+ * Half the memory is left to the server itself and to install peaks, and the
+ * result is clamped to at least one: a host too small for two sandboxes can
+ * still run one, and refusing to run any would be a worse answer than running
+ * them one at a time.
+ */
+const MB_PER_SANDBOX = 350;
+
+/**
+ * The memory this process may actually use.
+ *
+ * `os.totalmem()` reports the machine, not the container: on a 1 GB Railway
+ * service it answers with the host's 16 GB, and a limit derived from it is a
+ * safeguard that reads correctly and protects nothing. The cgroup file is the
+ * real ceiling, so it is asked first and the machine is only the fallback for
+ * hosts that are not containers.
+ *
+ * An unset cgroup limit is written as a number near 2^63, so anything at or
+ * above the machine's own memory is treated as "no limit set".
+ */
+export function availableMemoryBytes(): number {
+  const machine = os.totalmem();
+  for (const file of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+    try {
+      const raw = fs.readFileSync(file, 'utf8').trim();
+      if (raw === 'max') continue;
+      const value = Number(raw);
+      if (Number.isFinite(value) && value > 0 && value < machine) return value;
+    } catch { /* not a container, or a kernel that does not expose it */ }
+  }
+  return machine;
+}
+
+export function defaultMaxRunning(totalBytes = availableMemoryBytes()): number {
+  const budgetMb = (totalBytes / (1024 * 1024)) * 0.5;
+  return Math.max(1, Math.min(6, Math.floor(budgetMb / MB_PER_SANDBOX)));
+}
+
 export const DEFAULT_LIMITS: RegistryLimits = {
-  maxRunning: Number(process.env.CODEN_SANDBOX_MAX_RUNNING || 6),
+  maxRunning: Number(process.env.CODEN_SANDBOX_MAX_RUNNING) || defaultMaxRunning(),
   idleMs: Number(process.env.CODEN_SANDBOX_IDLE_MS || 15 * 60_000),
 };
 
