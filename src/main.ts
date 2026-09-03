@@ -12,7 +12,7 @@ import { initPublicPricingFlow } from './public-pricing-flow';
 import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { getProductPositioning, type ProductLocale } from './product-positioning';
-import { mountMarketingReactShell, mountLandingTestimonials } from './surface-react';
+import { mountMarketingReactShell } from './surface-react';
 
 // Helper to handle potential null elements gracefully
 function getElement<T extends HTMLElement | SVGElement>(id: string): T | null {
@@ -39,7 +39,6 @@ function init() {
     // The shared product chrome is critical UI. Mount it before optional
     // landing enhancements so a pricing/i18n failure cannot remove navigation.
     mountMarketingReactShell();
-    if (isHomeLanding()) mountLandingTestimonials();
     initCodenMotion();
     initCodenNavigationTransitions();
     // Manual French i18n for the landing. Runs before scroll-text-reveal so the

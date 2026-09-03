@@ -1,6 +1,5 @@
 import { createRoot, type Root } from "react-dom/client";
 import { MarketingHeader } from "./components/shells";
-import { TestimonialsSection } from "./components/ui/testimonial-v2";
 
 let marketingRoot: Root | null = null;
 
@@ -23,16 +22,4 @@ export function mountMarketingReactShell(): void {
   marketingRoot = createRoot(host);
   marketingRoot.render(<MarketingHeader />);
   document.body.classList.add("coden-react-surface-home");
-}
-
-let testimonialsRoot: Root | null = null;
-
-/** Mounts the testimonials section into its host div on the home landing
- * page. A separate root from the header: the two mount independently and a
- * failure in one must never take the other down with it. */
-export function mountLandingTestimonials(): void {
-  const host = document.getElementById("coden-landing-testimonials-root");
-  if (!host || testimonialsRoot) return;
-  testimonialsRoot = createRoot(host);
-  testimonialsRoot.render(<TestimonialsSection />);
 }
