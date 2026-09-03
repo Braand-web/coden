@@ -4562,7 +4562,17 @@ function summarizeProjectFilesForAgent(files: GeneratedFile[]) {
 }
 
 function buildExistingFilesContextForGeneration(files: GeneratedFile[], prompt?: string, modelId?: AllowedModelId) {
-  if (!files.length) return 'No existing files yet.';
+  if (!files.length) {
+    // A first message starts from a scaffold, not from nothing. Telling the
+    // model what already exists is what stops it re-emitting a package.json, a
+    // Vite config and an entry point on every new project -- tokens spent to
+    // reproduce a fixture, with a fresh chance each time of a version that does
+    // not match its plugin.
+    if (process.env.CODEN_LIVE_SANDBOX === '1' && prompt) {
+      return describeStarter(selectStarter(prompt));
+    }
+    return 'No existing files yet.';
+  }
   // Selection decides which file *contents* fit the budget, so the model's view
   // of the project changed shape from one message to the next — ask about the
   // header and the schema falls out. The map is what must never fall out.
@@ -12712,6 +12722,78 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
 
     await saveProject(updatedProject, finalFiles);
+
+    /*
+     * Bring the application up.
+     *
+     * Deliberately here, before the finalizer writes its summary: the preview
+     * is the answer to the prompt, and making the user wait for a paragraph of
+     * prose before they can see their own app is the wrong order. The stream
+     * carries each stage as it happens, so the interface shows a pipeline
+     * rather than a spinner.
+     *
+     * A sandbox that fails to come up is reported and does not fail the
+     * generation: the files are real and saved either way, and the existing
+     * preview stays as it was.
+     */
+    let livePreview: Awaited<ReturnType<typeof applyProjectEdit>> | null = null;
+    let sandboxValidation: Awaited<ReturnType<typeof validateProject>> | null = null;
+    let sandboxRepairInstruction = '';
+    if (process.env.CODEN_LIVE_SANDBOX === '1' && finalFiles.length) {
+      try {
+        // On a first build the scaffold goes under whatever the model wrote,
+        // and the paths it owns win: a model that rewrites the build config or
+        // the entry point breaks a project that worked, and the failure shows
+        // up as a blank preview rather than a rejected write.
+        const scaffolded = existingFiles.length
+          ? { files: finalFiles.map(file => ({ path: file.path, content: file.content || '' })), rejected: [] as string[] }
+          : applyStarter(selectStarter(prompt), finalFiles.map(file => ({ path: file.path, content: file.content || '' })));
+        if (scaffolded.rejected.length) {
+          console.warn('[coden:starter_protected_paths]', { project: project.id, rejected: scaffolded.rejected });
+        }
+        // Always the edit path: it hot-reloads when the server is already up
+        // and the change allows it, and falls back to a full launch when it
+        // does not. Deciding here would duplicate that judgement badly.
+        livePreview = await applyProjectEdit({
+          projectId: project.id,
+          userId,
+          files: scaffolded.files,
+          onEvent: event => {
+            if (!isStream || !streamV2 || streamAborted) return;
+            // The launch events carry their own discriminator; the wire event
+            // keeps it as `stage` so one event type covers the whole pipeline.
+            const { type, ...rest } = event as any;
+            streamV2.emit('sandbox', { stage: type, ...rest });
+          },
+        });
+        /*
+         * The verdict that counts.
+         *
+         * Writing code is not success. This asks the project's own toolchain
+         * whether it runs -- the dev server's output, then its typecheck --
+         * and keeps the answer with the run, so what the interface reports is
+         * what the compiler said rather than what the model claimed.
+         *
+         * The build is skipped here: it duplicates the typecheck's errors with
+         * worse locations, and it is what Publish runs anyway.
+         */
+        if (livePreview?.ok) {
+          const sandbox = sandboxRegistry.peek(project.id);
+          if (sandbox) {
+            sandboxValidation = await validateProject(sandbox, { skipBuild: true }).catch(() => null);
+            if (sandboxValidation && !sandboxValidation.ok) {
+              sandboxRepairInstruction = buildRepairInstruction(sandboxValidation);
+              console.warn('[coden:sandbox_validation_failed]', {
+                project: project.id,
+                problems: sandboxValidation.problems.slice(0, 6).map(problem => ({ source: problem.source, file: problem.file, missing: problem.missingPackage })),
+              });
+            }
+          }
+        }
+      } catch (error: any) {
+        console.warn('[coden:sandbox_launch_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      }
+    }
     const diff = diffFiles(existingFiles, finalFiles);
     await createProjectVersion(updatedProject, finalFiles, prompt, { ...diff, verification: verificationSummary, reliability: reliabilitySummary, agent_run_id: agentRunId || null });
     if (autoFix) await saveProjectPatch(updatedProject, autoFix);
@@ -12791,7 +12873,16 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       preview: {
         status: verificationPassed ? 'verified' : 'needs_fix',
         html: verificationPassed ? previewHtml : updatedProject.preview_html,
+        // When the sandbox is up this is the application itself, running its
+        // own dev server. The html above stays for the existing path.
+        live_url: livePreview?.previewUrl || null,
+        live_state: livePreview?.state || null,
+        live_error: livePreview?.error || null,
       },
+      // The project's own toolchain, not our reading of its source.
+      sandbox_validation: sandboxValidation
+        ? { ok: sandboxValidation.ok, ran: sandboxValidation.ran, problems: sandboxValidation.problems.slice(0, 20), repair: sandboxRepairInstruction || undefined }
+        : null,
       fact_ledger: factLedger,
     };
     // The last step closes on the run's real outcome: a project that still
@@ -14361,6 +14452,9 @@ import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
+import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
+import { selectStarter, applyStarter, describeStarter } from './src/services/sandbox/starters.ts';
+import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
 import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';

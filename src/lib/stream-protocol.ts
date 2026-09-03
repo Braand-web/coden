@@ -77,6 +77,7 @@ export type CodenStreamEventType =
   | 'assistant_message_completed'
   | 'decision_required'
   | 'preview_ready'
+  | 'sandbox'
   | 'deployment_ready'
   | 'cancelled'
   | 'blocked'
@@ -117,6 +118,7 @@ const EVENT_TYPES: readonly CodenStreamEventType[] = [
   'assistant_message_completed',
   'decision_required',
   'preview_ready',
+  'sandbox',
   'deployment_ready',
   'cancelled',
   'blocked',
@@ -412,6 +414,31 @@ export interface CodenPreviewReadyEvent extends CodenStreamEventBase {
   artifactHash?: string;
 }
 
+/**
+ * The application coming up in its own sandbox.
+ *
+ * Separate from `preview_ready`, which reports a verified static artifact.
+ * This one reports the stages of a real environment being built -- files
+ * written, dependencies installed, dev server starting -- so the interface can
+ * show the pipeline as it happens instead of a spinner that ends in a URL.
+ *
+ * `stage` is the machine-readable state; nothing here is a sentence, because
+ * the wording belongs to the interface and its locale, not to the wire.
+ */
+export interface CodenSandboxEvent extends CodenStreamEventBase {
+  type: 'sandbox';
+  stage: 'sandbox_writing' | 'sandbox_installing' | 'sandbox_installed' | 'sandbox_starting' | 'preview_ready' | 'sandbox_failed';
+  /** Set on preview_ready: the path the iframe should load. */
+  url?: string;
+  port?: number;
+  files?: number;
+  durationMs?: number;
+  /** Set on sandbox_failed. */
+  failedStage?: 'install' | 'start';
+  message?: string;
+  logs?: string[];
+}
+
 export interface CodenDeploymentReadyEvent extends CodenStreamEventBase {
   type: 'deployment_ready';
   artifactHash: string;
@@ -474,6 +501,7 @@ export type CodenStreamEvent =
   | CodenAssistantMessageCompletedEvent
   | CodenDecisionRequiredEvent
   | CodenPreviewReadyEvent
+  | CodenSandboxEvent
   | CodenDeploymentReadyEvent
   | CodenCancelledEvent
   | CodenBlockedEvent

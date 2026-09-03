@@ -2820,6 +2820,8 @@ function bindConnectorsButton() {
 let webContainerUrl = '';
 let webContainerTeardown: (() => void) | null = null;
 let webContainerBootInFlight = false;
+/** The dev server URL for this project, while its sandbox is up. */
+let livePreviewUrl = '';
 
 function requiresLiveRuntimePreview(files: GeneratedFile[]) {
   try {
@@ -2858,6 +2860,39 @@ async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: Gener
   } finally {
     webContainerBootInFlight = false;
   }
+}
+
+/**
+ * Point the preview at the application's own dev server.
+ *
+ * The distinction that matters: `setPreview` hands the iframe a document we
+ * built, and this hands it a URL something else is serving. The second is the
+ * application; the first is our rendering of it. When a live URL exists it
+ * wins, because it is the only one that can be wrong in the same way the
+ * deployed app will be.
+ */
+function setLivePreview(url: string) {
+  const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
+  if (!frame || !url) return;
+  livePreviewUrl = url;
+  currentPreviewStatus = 'live';
+  emptyPreviewMode = 'ready';
+  emptyPreviewLabel = '';
+  frame.dataset.emptyPreview = 'false';
+  frame.dataset.emptyPreviewMode = 'ready';
+  frame.removeAttribute('data-media-preview');
+  frame.removeAttribute('data-design-preview');
+  // srcdoc wins over src while it is set, so it has to go before the
+  // navigation or the iframe keeps showing the document it already had.
+  frame.removeAttribute('srcdoc');
+  frame.src = url;
+  syncProjectReadinessClass();
+  syncPreviewToolbarControls();
+}
+
+/** Forget the live preview when its sandbox is gone. */
+function clearLivePreview() {
+  livePreviewUrl = '';
 }
 
 function setPreview(html: string, status = 'unknown') {
@@ -5644,6 +5679,21 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     lastAgentRunId = '';
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
     let payload: any = await streamProjectGeneration(currentProjectId, requestBody, (type, data) => {
+      // The preview appears while the run is still going, not after it. This
+      // is the difference between watching an application be built and
+      // watching a spinner that ends in one.
+      if (type === 'sandbox') {
+        if (data?.stage === 'preview_ready' && data?.url) {
+          generationTouchesPreview = true;
+          activeGenerationTouchesPreview = true;
+          activateBuilderView('preview');
+          setLivePreview(String(data.url));
+        } else if (data?.stage === 'sandbox_failed') {
+          // The sandbox is gone; anything showing must not claim otherwise.
+          clearLivePreview();
+          setEmptyPreviewState('idle', speaksFrench ? 'L’aperçu n’a pas démarré' : 'The preview did not start');
+        }
+      }
       if (data?.runId) lastAgentRunId = String(data.runId);
       if (data?.threadId) activeHarnessThreadId = String(data.threadId);
       if (data?.turnId) activeHarnessTurnId = String(data.turnId);
@@ -5692,9 +5742,19 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       });
     }
 
+    // A running application beats a rendered one: when the sandbox came up,
+    // the iframe shows the dev server rather than the html we assembled.
+    const liveUrl = String(responsePayload.preview?.live_url || '').trim();
+    if (liveUrl) {
+      generationTouchesPreview = true;
+      activeGenerationTouchesPreview = true;
+      activateBuilderView('preview');
+      setLivePreview(liveUrl);
+    }
+
     const previewHtml = String(responsePayload.preview?.html || responsePayload.project?.preview_html || '').trim();
     const previewStatus = String(responsePayload.preview?.status || responsePayload.project?.preview_status || 'unknown');
-    if (previewHtml) {
+    if (previewHtml && !liveUrl) {
       generationTouchesPreview = true;
       activeGenerationTouchesPreview = true;
       activateBuilderView('preview');

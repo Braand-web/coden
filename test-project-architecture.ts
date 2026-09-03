@@ -102,7 +102,10 @@ assert.equal(renderProjectArchitecture([]), '', 'an empty project has no map');
 // of view exactly when the selector drops the file it describes.
 const server = fs.readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
 const contextStart = server.indexOf('function buildExistingFilesContextForGeneration');
-const contextBody = server.slice(contextStart, contextStart + 2400);
+// Wide enough to reach both return paths. The window is a guard against
+// matching a different function further down the file, not a size assertion:
+// widen it when the function grows, do not narrow the property.
+const contextBody = server.slice(contextStart, contextStart + 4200);
 assert.ok(/renderProjectArchitecture\(files\)/.test(contextBody), 'the map must be built from the project files');
 // Both context paths, not just one: the selected-context path a real project
 // takes, and the small-project fallback under five files.

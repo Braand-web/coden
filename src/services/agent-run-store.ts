@@ -40,6 +40,14 @@ export type AgentRunViewModel = AgentRunContract & {
   publicActivity?: { phase: AgentPublicPhase; message: string; active: boolean; sequence: number };
   lastAssistantSequence: number;
   decision?: InlineUserDecision;
+  /**
+   * The application, running.
+   *
+   * Held on the run rather than fetched separately because the URL is only
+   * meaningful for as long as the sandbox behind it is up, and the same stream
+   * that hands it over is the one that reports it going away.
+   */
+  sandbox?: { stage: string; url?: string; message?: string; logs?: string[] };
 };
 
 export function createAgentRunViewModel(input: Partial<AgentRunContract> & { runId: string; prompt: string; requestedMode?: AgentMode }): AgentRunViewModel {
@@ -281,6 +289,21 @@ export function applyAgentStreamEvent(previous: AgentRunViewModel, event: CodenS
     case 'preview_ready':
       state.publicActivity = { phase: 'checking_preview', message: publicMessageForPhase('checking_preview', state.language), active: false, sequence: event.sequence || event.id };
       break;
+    case 'sandbox': {
+      // Each stage replaces the last: the interface shows where the run is,
+      // not a transcript of how it got there.
+      state.sandbox = { stage: event.stage, url: event.url, message: event.message, logs: event.logs };
+      // A URL that arrives is the moment the preview becomes real, and a
+      // failure is the moment it stops being expected. Both are steps in the
+      // spine; the intermediate stages are covered by the phase events already
+      // on it, so they do not add a second row saying the same thing.
+      if (event.stage === 'preview_ready') {
+        addActivity(state, { id: 'sandbox:preview', label: state.language === 'fr' ? 'Aperçu disponible' : 'Preview available', status: 'done' });
+      } else if (event.stage === 'sandbox_failed') {
+        addActivity(state, { id: 'sandbox:preview', label: state.language === 'fr' ? 'L’aperçu n’a pas démarré' : 'The preview did not start', status: 'failed' });
+      }
+      break;
+    }
     case 'deployment_ready':
       state.publicActivity = { phase: 'preparing_deployment', message: publicMessageForPhase('preparing_deployment', state.language), active: false, sequence: event.sequence || event.id };
       break;
