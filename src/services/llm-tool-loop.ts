@@ -34,6 +34,36 @@ function parseToolArguments(raw: string | undefined) {
 }
 
 /**
+ * Keep the caller's own tools on every candidate model.
+ *
+ * `ProviderGateway` resolves a request's config as
+ * `runtimeConfigForModel?.(candidate) || runtimeConfig` — the per-model
+ * config wins outright. A caller that passes both (every real caller does:
+ * `buildToolLoopTurn` in multi-agent-pipeline.ts, and the sandbox-repair
+ * block in server.ts) therefore had the explicit tool list backing
+ * `handlers` silently replaced by whatever generic tools the per-model
+ * config happened to carry — advisory things like `inspect_project_files`,
+ * never `write_file`. The model was told it works through tools, found none
+ * that could write, and printed the whole application as text instead.
+ *
+ * Per-model shaping is still the caller's (formats, limits, reasoning); the
+ * tool list is this loop's, because it is the half that owns the handlers
+ * those tools resolve to. A fallback model must be able to call exactly what
+ * the primary could.
+ */
+function keepCallerTools(
+  perModel: ((modelId: any) => ProviderRequestConfig | undefined) | undefined,
+  explicit: ProviderRequestConfig | undefined,
+) {
+  if (!perModel || !explicit?.tools?.length) return perModel;
+  return (modelId: any) => {
+    const base = perModel(modelId);
+    if (!base) return base;
+    return { ...base, tools: explicit.tools, toolChoice: explicit.toolChoice ?? 'auto' };
+  };
+}
+
+/**
  * One model turn, streamed token-by-token when `onToken` is given.
  *
  * Reused unmodified when `onToken` is absent: the exact `gateway.chat(...)`
@@ -110,6 +140,7 @@ export async function runLlmToolLoop(input: {
   const messages = [...input.messages];
   const toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }> = [];
   const maxSteps = Math.max(1, Math.min(8, input.maxSteps || 4));
+  const runtimeConfigForModel = keepCallerTools(input.runtimeConfigForModel, input.runtimeConfig);
   let result: ChatCompletionResult | null = null;
 
   for (let step = 0; step < maxSteps; step += 1) {
@@ -118,7 +149,7 @@ export async function runLlmToolLoop(input: {
       modelId: input.modelId,
       messages,
       runtimeConfig: input.runtimeConfig,
-      runtimeConfigForModel: input.runtimeConfigForModel,
+      runtimeConfigForModel,
       timeoutMs: input.timeoutMs,
       onToken: input.onToken,
     });

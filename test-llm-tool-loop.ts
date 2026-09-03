@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { runLlmToolLoop } from './src/services/llm-tool-loop.ts';
+import { ProviderGateway } from './src/services/provider-gateway.ts';
 import type { ChatMessage } from './src/services/openrouter-service.ts';
 import { getAgentToolDefinition, toolNeedsApproval } from './src/services/agent-tools.ts';
 
@@ -184,5 +185,61 @@ assert.equal(streamed.toolExecutions.length, 1);
 assert.equal(streamed.toolExecutions[0].ok, true);
 assert.deepEqual(streamedTokens, ['Inspecting ', 'the file...', 'I inspected ', 'the file and can continue.'], 'every fragment must arrive, in order, across both model steps');
 assert.equal(streamedTokens.join(''), 'Inspecting the file...I inspected the file and can continue.', 'concatenated fragments must reconstruct the streamed step\'s own text exactly');
+
+/**
+ * The tools backing `handlers` must survive per-model config resolution.
+ *
+ * `ProviderGateway` resolves `runtimeConfigForModel?.(candidate) ||
+ * runtimeConfig`, so the per-model config used to win outright and the
+ * caller's real tool list was dropped on the floor. In production that meant
+ * the sandbox coder loop shipped `inspect_project_files` — read-only,
+ * advisory — where it meant to ship `write_file`, and the model, told it
+ * works through tools and handed none that write, printed the whole
+ * generated application into the conversation instead of building it.
+ *
+ * Driven through the real `ProviderGateway` rather than a duck-typed stand-in
+ * precisely because it is the gateway's own precedence rule under test.
+ */
+{
+  const sandboxTools = [{ type: 'function', function: { name: 'write_file', description: 'Write a file.', parameters: { type: 'object' } } }];
+  const advisoryTools = [{ type: 'function', function: { name: 'inspect_project_files', description: 'Read files.', parameters: { type: 'object' } } }];
+
+  const toolsPerCall: Array<string[] | undefined> = [];
+  const record = (runtimeConfig: any) =>
+    toolsPerCall.push(runtimeConfig?.tools?.map((tool: any) => tool.function?.name));
+
+  const service = {
+    async chat(modelId: string, _messages: ChatMessage[], _retries: number, _timeoutMs: number, runtimeConfig: any) {
+      record(runtimeConfig);
+      return { text: 'done', model: modelId, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0 };
+    },
+    async *streamChat(modelId: string, _messages: ChatMessage[], _timeoutMs: number, runtimeConfig: any) {
+      record(runtimeConfig);
+      yield { type: 'token' as const, text: 'done', model: modelId };
+      yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0, model: modelId };
+    },
+  } as any;
+
+  const call = (onToken?: (text: string) => void) => runLlmToolLoop({
+    gateway: new ProviderGateway(service),
+    modelId: 'openai/gpt-5.6-luna-pro',
+    messages: [{ role: 'user', content: 'Build the counter app.' }],
+    handlers: { write_file: () => ({ ok: true }) },
+    runtimeConfig: { tools: sandboxTools, toolChoice: 'auto' } as any,
+    // The shape every real caller passes: a per-model config carrying its own
+    // generic tools, which must shape the request without replacing the tools.
+    runtimeConfigForModel: () => ({ tools: advisoryTools, toolChoice: 'auto', temperature: 0.2 }) as any,
+    onToken,
+  });
+
+  await call();
+  await call(() => {});
+
+  assert.deepEqual(
+    toolsPerCall,
+    [['write_file'], ['write_file']],
+    'the caller\'s tools must reach the provider on both the buffered and the streamed path, not the per-model config\'s',
+  );
+}
 
 console.log('llm tool loop tests passed');
