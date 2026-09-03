@@ -306,6 +306,43 @@ try {
     assert.deepEqual(tokenEvents, ['Writing the counter component now.', 'Done.'], 'each step\'s own text must be relayed as its own token event, in call order');
   }
 
+  // -- a file body in the prose never reaches the conversation --------------
+  // The reported bug: the user read their generated application's source in
+  // the chat instead of watching it run in the preview. The files travel as
+  // files; the stream carries what the round is saying, not what it wrote.
+  {
+    const provider = scriptedProvider([
+      {
+        text: 'Creating index.html:\n```html\n<!DOCTYPE html><body>secret-file-body</body>\n```\nNow starting it.',
+        toolCall: { name: 'write_file', args: { path: 'src/App.tsx', content: COUNTER_APP } },
+      },
+      { text: 'Done.' },
+    ]);
+    const tokenEvents: string[] = [];
+    const outcome = await runMultiAgentPipeline({
+      gateway: new ProviderGateway(provider.service),
+      projectId: 'pipeline-no-code-dump',
+      userId: 'user-1',
+      prompt: 'change the counter',
+      route: 'small_edit',
+      existingFiles: [
+        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
+        { path: 'src/App.tsx', content: COUNTER_APP },
+      ],
+      userPlan: 'free',
+      onCoderEvent: event => { if ((event as any).type === 'token') tokenEvents.push((event as any).text); },
+    });
+    await cleanup('pipeline-no-code-dump');
+
+    assert.equal(outcome.started, true);
+    const streamed = tokenEvents.join('');
+    assert.ok(!streamed.includes('secret-file-body'), 'a fenced file body must never reach the conversation');
+    assert.ok(!streamed.includes('<!DOCTYPE html>'), 'nor the markup around it');
+    assert.match(streamed, /Creating index\.html:/, 'the narration around the block is still worth streaming');
+    assert.match(streamed, /Now starting it\./);
+    assert.match(streamed, /Done\./);
+  }
+
   console.log('multi-agent pipeline tests passed');
 } catch (error) {
   console.error(error);

@@ -27,6 +27,7 @@ import { selectModel } from './model-selection.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { runLlmToolLoop } from './llm-tool-loop.ts';
+import { createNarrationFilter } from './narration-filter.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter } from './sandbox/starters.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
@@ -151,6 +152,15 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       tool.name,
       async (args: Record<string, unknown>) => { toolCalls += 1; return call(tool.name, args); },
     ]));
+    // Per round, because a fence never spans two model calls. What the round
+    // says travels to the conversation; what it writes travels as files.
+    const narration = createNarrationFilter();
+    const onToken = input.onToken
+      ? (text: string) => {
+          const visible = narration(text);
+          if (visible) input.onToken!(visible);
+        }
+      : undefined;
     await runLlmToolLoop({
       gateway: input.gateway,
       modelId: input.modelId,
@@ -170,7 +180,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       runtimeConfigForModel: runtimeFor,
       timeoutMs: 60_000,
       maxSteps: Math.min(6, maxToolCalls),
-      onToken: input.onToken,
+      onToken,
       // A turn that throws produced nothing this round; `runCoderLoop`'s own
       // no-progress rule is what decides whether that is worth continuing
       // from, not this adapter guessing at a retry.
