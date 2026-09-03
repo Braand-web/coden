@@ -25,29 +25,55 @@ type ScriptedResponse = { text: string; toolCall?: { name: string; args: Record<
 
 /**
  * A provider that plays back a fixed script of responses in order — one per
- * `gateway.chat` call, wherever in the pipeline that call comes from. The
- * pipeline's own call order is what determines which response answers which
- * step, exactly as the real provider would see one call at a time.
+ * model call, wherever in the pipeline that call comes from. The pipeline's
+ * own call order is what determines which response answers which step,
+ * exactly as the real provider would see one call at a time.
+ *
+ * Both `chat` and `streamChat` share the same script and cursor: the
+ * planner's one-shot call always goes through `chat`, and the coder loop's
+ * steps always go through `streamChat` now that `buildToolLoopTurn` streams
+ * unconditionally (its `onToken` always forwards to the pipeline's own event
+ * stream). `streamChat` plays its step back as the same events a real
+ * provider would emit — one `token` carrying the whole step's text, then
+ * `tool_calls` when the step scripts one, then `usage` — so it exercises the
+ * exact reassembly `runLlmToolLoop`'s streaming path performs.
  */
 function scriptedProvider(script: ScriptedResponse[]) {
   const chatCalls: Array<{ modelId: string }> = [];
   let index = 0;
+  const nextStep = () => {
+    const step = script[Math.min(index, script.length - 1)];
+    index += 1;
+    return { step, callIndex: index };
+  };
   return {
     chatCalls,
     service: {
       async chat(modelId: string) {
         chatCalls.push({ modelId });
-        const step = script[Math.min(index, script.length - 1)];
-        index += 1;
+        const { step, callIndex } = nextStep();
         return {
           text: step.text,
           model: modelId,
           tool_calls: step.toolCall
-            ? [{ id: `call_${index}`, type: 'function' as const, function: { name: step.toolCall.name, arguments: JSON.stringify(step.toolCall.args) } }]
+            ? [{ id: `call_${callIndex}`, type: 'function' as const, function: { name: step.toolCall.name, arguments: JSON.stringify(step.toolCall.args) } }]
             : undefined,
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
           cost_usd: 0,
         };
+      },
+      async *streamChat(modelId: string) {
+        chatCalls.push({ modelId });
+        const { step, callIndex } = nextStep();
+        if (step.text) yield { type: 'token' as const, text: step.text, model: modelId };
+        if (step.toolCall) {
+          yield {
+            type: 'tool_calls' as const,
+            tool_calls: [{ id: `call_${callIndex}`, type: 'function' as const, function: { name: step.toolCall.name, arguments: JSON.stringify(step.toolCall.args) } }],
+            model: modelId,
+          };
+        }
+        yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0, model: modelId };
       },
     } as any,
   };
@@ -249,6 +275,35 @@ try {
         `a small edit must not be routed to a pricier model than a full build: ${editOutcome.modelId} vs ${buildOutcome.modelId}`,
       );
     }
+  }
+
+  // -- the coder's own prose streams token by token, live -------------------
+  // Real per-token forwarding is the whole point of switching the coder loop
+  // to `streamChat`: the model's own explanatory text ("Done.", etc.) must
+  // reach the caller as it is produced, not only once the whole run ends.
+  {
+    const provider = scriptedProvider([
+      { text: 'Writing the counter component now.', toolCall: { name: 'write_file', args: { path: 'src/App.tsx', content: COUNTER_APP } } },
+      { text: 'Done.' },
+    ]);
+    const tokenEvents: string[] = [];
+    const outcome = await runMultiAgentPipeline({
+      gateway: new ProviderGateway(provider.service),
+      projectId: 'pipeline-token-stream',
+      userId: 'user-1',
+      prompt: 'change the counter to start at 1',
+      route: 'small_edit',
+      existingFiles: [
+        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
+        { path: 'src/App.tsx', content: COUNTER_APP },
+      ],
+      userPlan: 'free',
+      onCoderEvent: event => { if ((event as any).type === 'token') tokenEvents.push((event as any).text); },
+    });
+    await cleanup('pipeline-token-stream');
+
+    assert.equal(outcome.started, true);
+    assert.deepEqual(tokenEvents, ['Writing the counter component now.', 'Done.'], 'each step\'s own text must be relayed as its own token event, in call order');
   }
 
   console.log('multi-agent pipeline tests passed');

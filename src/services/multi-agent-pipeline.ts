@@ -134,7 +134,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onToken?: (text: string) => void }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -170,6 +170,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       runtimeConfigForModel: runtimeFor,
       timeoutMs: 60_000,
       maxSteps: Math.min(6, maxToolCalls),
+      onToken: input.onToken,
       // A turn that throws produced nothing this round; `runCoderLoop`'s own
       // no-progress rule is what decides whether that is worth continuing
       // from, not this adapter guessing at a retry.
@@ -255,7 +256,7 @@ export async function runMultiAgentPipeline(input: {
     sandbox,
     mode: 'build',
     initialInstruction,
-    turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox }),
+    turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox, onToken: text => onEvent({ type: 'token', text }) }),
     onEvent,
   });
 

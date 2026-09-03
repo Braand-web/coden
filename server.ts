@@ -11956,6 +11956,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         },
         onCoderEvent: event => {
           if (!isStream || !streamV2 || streamAborted) return;
+          // The model's own prose streams as real assistant text, not as a
+          // technical sandbox event — the same channel `/api/assistant/chat/stream`
+          // already uses, so the client needs no new event type to render it.
+          if ((event as any).type === 'token') {
+            streamV2.emit('assistant_delta', { text: (event as any).text });
+            return;
+          }
           streamV2.emit('sandbox', { stage: 'coder', ...(event as any) });
         },
       });

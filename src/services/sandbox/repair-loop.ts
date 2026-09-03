@@ -72,7 +72,15 @@ export type RepairTurn = (input: {
 export type RepairEvent =
   | { type: 'repair_round_started'; round: number; errors: number }
   | { type: 'repair_round_finished'; round: number; errorsBefore: number; errorsAfter: number; filesTouched: string[] }
-  | { type: 'repair_finished'; ok: boolean; rounds: number; reason: RepairOutcome['stoppedBecause'] };
+  | { type: 'repair_finished'; ok: boolean; rounds: number; reason: RepairOutcome['stoppedBecause'] }
+  /**
+   * A fragment of the model's own prose for the round in progress — the
+   * announcements and explanations it produces between tool calls, not the
+   * validation bookkeeping above. Emitted by a `RepairTurn` implementation
+   * that streams (see `buildToolLoopTurn` in `multi-agent-pipeline.ts`), not
+   * by this loop itself, which never sees the model's output directly.
+   */
+  | { type: 'token'; text: string };
 
 /** Forward-facing names for callers that are building, not only repairing. */
 export type CoderLoopRound = RepairRound;
