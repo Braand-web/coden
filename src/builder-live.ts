@@ -1701,6 +1701,7 @@ function hasReadyAppPreview() {
 }
 
 function syncPreviewToolbarControls() {
+  syncLivePreviewStartControl();
   const controls = document.querySelector('.preview-toolbar-controls') as HTMLElement | null;
   const refresh = document.getElementById('btn-preview-refresh') as HTMLButtonElement | null;
   const visible = hasReadyAppPreview();
@@ -2860,6 +2861,7 @@ let webContainerTeardown: (() => void) | null = null;
 let webContainerBootInFlight = false;
 /** The dev server URL for this project, while its sandbox is up. */
 let livePreviewUrl = '';
+let liveStartInFlight = false;
 
 function requiresLiveRuntimePreview(files: GeneratedFile[]) {
   try {
@@ -2941,7 +2943,9 @@ async function resumeLivePreview() {
   try {
     const status = await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/sandbox/status`) as { preview_url?: string; state?: string } | null;
     const url = String(status?.preview_url || '').trim();
-    if (!url || status?.state !== 'running') return;
+    // Nothing running: the reader is looking at a saved rendering, and the way
+    // back to the application itself is the start control.
+    if (!url || status?.state !== 'running') { syncLivePreviewStartControl(); return; }
     activateBuilderView('preview');
     setLivePreview(url);
   } catch {
@@ -2950,9 +2954,69 @@ async function resumeLivePreview() {
   }
 }
 
+/**
+ * Bring a stopped application back up, on request.
+ *
+ * `resumeLivePreview` only reattaches to a server that is already running, and
+ * a dev server does not survive a redeploy, an eviction, or the project simply
+ * being left alone. That left a real gap: a project generated yesterday could
+ * only be seen running again by generating it again, which costs a model call
+ * to rebuild something already on disk.
+ *
+ * It is deliberately a request rather than something the panel does on load.
+ * Starting a server means an npm install and a Vite process, and production
+ * has room for one at a time — spending that on every project the user merely
+ * opens would evict the one they are actually working on.
+ */
+async function startLivePreview() {
+  if (!currentProjectId || liveStartInFlight) return;
+  const button = document.getElementById('btn-live-preview-start') as HTMLButtonElement | null;
+  const label = document.getElementById('btn-live-preview-start-label');
+  const idleText = label?.textContent || '';
+  liveStartInFlight = true;
+  if (button) button.disabled = true;
+  if (label) label.textContent = 'Démarrage…';
+  try {
+    const response = await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/sandbox/start`, { method: 'POST' }) as
+      { preview_url?: string; state?: string; message?: string } | null;
+    const url = String(response?.preview_url || '').trim();
+    if (!url) throw new Error(response?.message || 'Le serveur de développement n’a pas démarré.');
+    activateBuilderView('preview');
+    setLivePreview(url);
+    showTransientNotice('Aperçu live démarré.', 2200);
+  } catch (error: any) {
+    // The install log and the dev server's own error are the useful part here,
+    // and the route returns them; a generic failure notice would hide the one
+    // line that says which package or which file is the problem.
+    const detail = String(error?.message || '').trim();
+    showTransientNotice(detail ? `Aperçu live indisponible : ${detail}` : 'Aperçu live indisponible.', 5200);
+  } finally {
+    liveStartInFlight = false;
+    if (button) button.disabled = false;
+    if (label) label.textContent = idleText || 'Lancer l’aperçu live';
+    syncLivePreviewStartControl();
+  }
+}
+
+/**
+ * Offer the control exactly when it is the thing to do.
+ *
+ * Not while a server is already running — the button would restart what the
+ * user is looking at — and not on a project with nothing to run, where it can
+ * only fail.
+ */
+function syncLivePreviewStartControl() {
+  const button = document.getElementById('btn-live-preview-start') as HTMLButtonElement | null;
+  if (!button) return;
+  const offer = Boolean(currentProjectId) && !livePreviewUrl && currentBuilderView === 'preview' && !isGenerating;
+  button.hidden = !offer;
+}
+
 /** Forget the live preview when its sandbox is gone. */
 function clearLivePreview() {
   livePreviewUrl = '';
+  // The server is gone, so starting one is the thing to offer again.
+  syncLivePreviewStartControl();
 }
 
 /**
@@ -3122,6 +3186,7 @@ function ensureToolbar() {
   document.getElementById('btn-live-cancel')?.addEventListener('click', cancelBuild);
   document.getElementById('action-download-zip')?.addEventListener('click', exportCode);
   document.getElementById('btn-preview-refresh')?.addEventListener('click', refreshPreviewFrame);
+  document.getElementById('btn-live-preview-start')?.addEventListener('click', () => { void startLivePreview(); });
   document.querySelectorAll<HTMLButtonElement>('.btn-publish').forEach(button => {
     if (button.dataset.publishBound === 'true') return;
     button.dataset.publishBound = 'true';
@@ -3738,6 +3803,7 @@ function autoResizeChatInput() {
 
 function setBusy(busy: boolean) {
   isGenerating = busy;
+  syncLivePreviewStartControl();
   const cancel = document.getElementById('btn-live-cancel') as HTMLButtonElement | null;
   if (cancel) cancel.style.display = busy ? 'inline-flex' : 'none';
   syncSubmitButtonState();

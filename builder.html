@@ -2509,6 +2509,52 @@
 
     /* Says an on-screen preview is unverified. Shape as well as colour, so it
        still reads for anyone who cannot separate the amber from the text. */
+    /*
+     * Bring a stopped application back up.
+     *
+     * A sandbox does not survive a redeploy or an eviction, and reopening a
+     * project is not a generation, so without this the only way back to a
+     * running application was to build it again from scratch. It is the
+     * primary action whenever the panel is not showing one, so it is a filled
+     * button rather than an icon among the view controls.
+     */
+    .preview-live-start-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 30px;
+      padding: 0 12px;
+      border: 1px solid color-mix(in srgb, var(--accent, #2f6df6) 34%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent, #2f6df6) 12%, transparent);
+      color: var(--accent, #2f6df6);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 150ms cubic-bezier(.22,1,.36,1), transform 150ms cubic-bezier(.22,1,.36,1);
+    }
+
+    .preview-live-start-btn:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--accent, #2f6df6) 20%, transparent);
+    }
+
+    .preview-live-start-btn:disabled {
+      opacity: .62;
+      cursor: progress;
+    }
+
+    .preview-live-start-btn svg {
+      width: 13px;
+      height: 13px;
+      fill: currentColor;
+      stroke: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .preview-live-start-btn { transition: none; }
+    }
+
     .preview-trust-badge {
       display: inline-flex;
       align-items: center;
@@ -4761,6 +4807,13 @@
           </div>
 
           <div class="sub-nav-right">
+            <button class="preview-live-start-btn" id="btn-live-preview-start" type="button" hidden
+                    aria-label="Lancer l'aperçu live" title="Démarrer le serveur de développement de cette application">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 5.5v13l11-6.5z"></path>
+              </svg>
+              <span id="btn-live-preview-start-label">Lancer l'aperçu live</span>
+            </button>
             <div class="preview-toolbar-controls" aria-label="Contrôles d'aperçu" aria-hidden="true" translate="no">
               <div class="preview-address-row address-hidden">
                 <div class="preview-address-glow">
