@@ -14,7 +14,7 @@
 :root {
   --cdn-measure: 1120px;
   --cdn-gutter: clamp(20px, 5vw, 40px);
-  --cdn-section: clamp(72px, 10vw, 132px);
+  --cdn-section: clamp(68px, 8vw, 104px);
 
   /* Type scale — one ratio, held everywhere. */
   --cdn-display: clamp(40px, 7vw, 76px);
@@ -48,10 +48,20 @@
   --cdn-glow: color-mix(in srgb, var(--coden-blue, #6366f1) 22%, transparent);
 }
 
+/*
+ * Light theme.
+ *
+ * The light palette's page background and its surface token are both #ffffff,
+ * so a card painted with the surface token vanishes into the page and is held
+ * up by its border alone. Cards here take the raised surface instead, and the
+ * page keeps the plain one — the elevation has to come from the colour, not
+ * from the shadow, which is nearly invisible on white.
+ */
 :root[data-theme="light"] {
   --cdn-ok: #16a34a;
   --cdn-err: #dc2626;
-  --cdn-surface: #ffffff;
+  --cdn-surface: var(--coden-surface-raised, #f7f7f8);
+  --cdn-glow: color-mix(in srgb, var(--coden-blue, #6366f1) 13%, transparent);
 }
 
 /* ── layout ───────────────────────────────────────────────── */
@@ -300,6 +310,9 @@
   letter-spacing: -0.012em;
   line-height: 1.25;
   color: var(--coden-text, #f5f5f7);
+  /* Even line lengths across the row: without this one title takes three
+     ragged lines while its neighbours take two. */
+  text-wrap: balance;
   margin: 0 0 8px;
 }
 
@@ -315,7 +328,7 @@
 .cdn-run {
   border: 1px solid var(--cdn-line);
   border-radius: var(--cdn-radius-lg);
-  background: var(--cdn-surface);
+  background: var(--coden-surface, #101114);
   box-shadow: 0 32px 80px rgba(0, 0, 0, .30), 0 2px 6px rgba(0, 0, 0, .16);
   overflow: hidden;
 }
