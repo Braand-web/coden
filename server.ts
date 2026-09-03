@@ -3713,8 +3713,29 @@ function renderPreviewHtml(
   return injectAnalyticsSnippet(seoHtml, projectId, environment);
 }
 
+/**
+ * The preview document for a project, and the one place the two audiences
+ * differ.
+ *
+ * Production serves the public. An application that did not pass verification
+ * must not be published, so an unverified project gets the failure document
+ * there and nothing else — that boundary is the point of strict verification.
+ *
+ * Preview serves the author, and the author's question is "what did you build
+ * for me". Answering it with a placeholder while a complete rendering of their
+ * application sits in `preview_html` is how the product came to look broken:
+ * the run produced the app, saved it, and the reader was shown a page saying
+ * the runtime could not be verified. They see the rendering; the interface
+ * badges it as unverified, which is the honest version of the same warning.
+ *
+ * When the pipeline genuinely failed, `preview_html` is already a failure
+ * document carrying the real reason, so this hands back a better message than
+ * the generic one it replaces.
+ */
 function getProjectPreviewHtml(project: GeneratedProject, files: GeneratedFile[], environment: 'preview' | 'production' = 'preview'): string {
-  if (project.preview_status === 'verified' && project.preview_html) {
+  const servesThePublic = environment === 'production';
+  const verified = project.preview_status === 'verified';
+  if (project.preview_html && (verified || !servesThePublic)) {
     const seoHtml = enhanceHtmlSeo(project.preview_html, project.name, project.prompt || project.name, project.slug || project.id, environment);
     return injectAnalyticsSnippet(seoHtml, project.id, environment);
   }
@@ -12851,7 +12872,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       model_id: generation.model,
       status: project.status || 'draft',
       preview_status: verificationPassed ? 'verified' : 'needs_fix',
-      preview_html: verificationPassed ? previewHtml : buildPreviewErrorHtml({ projectName: generatedProjectName, error: 'The generated runtime has not passed strict verification.' }),
+      // The rendering is saved whatever verification concluded; `preview_status`
+      // carries the verdict. Overwriting it with a placeholder threw away the
+      // only artefact the author actually wanted to look at, and replaced a
+      // specific failure — the pipeline already writes its real reason into
+      // this html — with a generic sentence.
+      preview_html: previewHtml,
       updated_at: new Date().toISOString(),
     };
 
