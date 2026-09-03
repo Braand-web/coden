@@ -14303,6 +14303,33 @@ app.use((req, res, next) => {
   next();
 });
 
+const LIVE_SANDBOX_ENABLED = process.env.CODEN_LIVE_SANDBOX === '1';
+
+function requireLiveSandbox(res: any): boolean {
+  if (LIVE_SANDBOX_ENABLED) return true;
+  res.status(503).json({ success: false, error: 'live_sandbox_disabled', message: 'The live sandbox is not enabled on this server.' });
+  return false;
+}
+
+app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
+  if (!LIVE_SANDBOX_ENABLED) return res.status(503).json({ error: 'live_sandbox_disabled' });
+  const token = req.params[0];
+  const grant = readPreviewToken(token);
+  if (!grant) return res.status(401).json({ error: 'preview_token_invalid' });
+  const sandbox = sandboxRegistry.peek(grant.projectId);
+  const status = sandbox?.status();
+  if (!sandbox || !status?.port) {
+    return res.status(503).json({ error: 'preview_not_running', state: status?.state || 'idle', message: status?.lastError || 'The preview is not running.' });
+  }
+  sandbox.lastUsedAt = Date.now();
+  // Nothing is stripped: the dev server was started with this exact prefix as
+  // its base, so it owns the whole path. Stripping it would hand the server a
+  // URL outside its own base, which it answers with a redirect back to the
+  // base -- and the browser and the proxy then chase each other until Chrome
+  // gives up with ERR_TOO_MANY_REDIRECTS.
+  proxyHttp(req, res, { port: status.port }, status.basePath ? '' : `/preview/${token}`);
+});
+
 app.use(express.static(pathExists(staticRoot) ? staticRoot : __dirname));
 
 function pathExists(target: string): boolean {
@@ -14334,6 +14361,9 @@ import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
+import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
+import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
+import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject) {
   const files = await loadProjectFiles(project.id);
@@ -15068,7 +15098,150 @@ app.get('/api/projects/:id/workflows/:workflowId/runs', requireAuth, async (req:
   return res.json({ success: true, runs: data || [] });
 });
 
-app.listen(port, () => {
+/* ── Live sandbox preview ─────────────────────────────────────────────
+ *
+ * The project, actually running. Its files go to disk, its own dependencies
+ * are installed, its own dev server serves it, and the builder's iframe
+ * reaches that server through the proxy below.
+ *
+ * This is a second preview path, not a replacement: the existing one stays
+ * the default until this has run against real generations. `CODEN_LIVE_SANDBOX=1`
+ * turns it on.
+ */
+
+app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: any) => {
+  if (!requireLiveSandbox(res)) return;
+  try {
+    const auth = getRequiredAuth(req);
+    const project = await loadProject(req.params.id, auth.userId, req);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!requireProjectCapability(req, res, 'view', project)) return;
+
+    const files = await loadProjectFiles(project.id);
+    if (!files.length) return res.status(422).json({ success: false, error: 'This project has no files to run yet.' });
+
+    const sandbox = sandboxRegistry.get(project.id);
+    // Before starting, not after: going over the host's limit and then
+    // trimming makes the moment of peak load the moment it is most loaded.
+    const evicted = await sandboxRegistry.makeRoomFor(project.id);
+    await sandbox.writeFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
+
+    // Installing is the slow step, so it is skipped when the tree is already
+    // there. Reopening a project should resume in a second, not a minute.
+    let install: { ok: boolean; durationMs: number } | null = null;
+    if (!(await sandbox.hasFile('node_modules/.package-lock.json')) && !(await sandbox.hasFile('node_modules/.bin'))) {
+      const result = await sandbox.install();
+      install = { ok: result.ok, durationMs: result.durationMs };
+      if (!result.ok) {
+        return res.status(422).json({
+          success: false, state: 'crashed', error: 'install_failed',
+          message: 'The project dependencies could not be installed.',
+          logs: sandbox.getLogs(60), install,
+        });
+      }
+    }
+
+    // The token is minted before the server starts, because it is also the
+    // path the server is told to serve under: a dev server writes absolute
+    // URLs for its own modules, so it has to know the prefix the browser will
+    // reach it through, or every module 404s behind a document that loaded.
+    const token = issuePreviewToken({ projectId: project.id, userId: auth.userId });
+    const status = await sandbox.start({ basePath: `/preview/${token}/` });
+    if (status.state !== 'running') {
+      return res.status(422).json({
+        success: false, state: status.state, error: 'dev_server_failed',
+        message: status.lastError || 'The dev server did not start.',
+        logs: sandbox.getLogs(60), install,
+      });
+    }
+    return res.json({
+      success: true,
+      state: status.state,
+      // Same-origin, so the iframe needs no cross-site cookie and the hot
+      // reload socket needs no separate grant.
+      preview_url: `/preview/${token}/`,
+      port: status.port,
+      install,
+      evicted,
+      logs: sandbox.getLogs(30),
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'sandbox_start_failed', message: error?.message || 'The sandbox could not start.' });
+  }
+});
+
+app.get('/api/projects/:id/sandbox/status', requireAuth, async (req: any, res: any) => {
+  if (!requireLiveSandbox(res)) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, auth.userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const sandbox = sandboxRegistry.peek(project.id);
+  if (!sandbox) return res.json({ success: true, state: 'idle', url: null, logs: [] });
+  const status = sandbox.status();
+  return res.json({
+    success: true,
+    state: status.state,
+    port: status.port,
+    last_error: status.lastError,
+    // The prefix the server was started with, not a new one: a fresh token
+    // would be a valid grant for a base this process never emits.
+    preview_url: status.state === 'running' ? status.basePath : null,
+    logs: sandbox.getLogs(Number(req.query.logs) || 60),
+  });
+});
+
+app.post('/api/projects/:id/sandbox/stop', requireAuth, async (req: any, res: any) => {
+  if (!requireLiveSandbox(res)) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, auth.userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const sandbox = sandboxRegistry.peek(project.id);
+  if (!sandbox) return res.json({ success: true, state: 'idle' });
+  const status = await sandbox.stop();
+  return res.json({ success: true, state: status.state });
+});
+
+/**
+ * Write files into a running sandbox without restarting it.
+ *
+ * This is the incremental edit path: the dev server's own watcher notices the
+ * change and hot-reloads it. Restarting is reserved for the cases that
+ * genuinely need it -- a changed dependency list or build config -- which the
+ * caller signals rather than this route guessing.
+ */
+app.post('/api/projects/:id/sandbox/files', requireAuth, async (req: any, res: any) => {
+  if (!requireLiveSandbox(res)) return;
+  const auth = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, auth.userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const incoming = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (!incoming.length) return res.status(400).json({ success: false, error: 'No files given.' });
+  const sandbox = sandboxRegistry.get(project.id);
+  try {
+    const written = await sandbox.writeFiles(incoming.map((file: any) => ({ path: String(file?.path || ''), content: String(file?.content ?? '') })));
+    // A new dependency or a changed build config is not something hot reload
+    // can absorb; the caller is told so rather than being left with a preview
+    // that quietly no longer matches the project.
+    const needsRestart = written.some(path => /^(?:package\.json|package-lock\.json|(?:vite|next|astro|svelte|nuxt)\.config\.[cm]?[jt]s)$/i.test(path));
+    return res.json({ success: true, written, needs_restart: needsRestart, state: sandbox.status().state });
+  } catch (error: any) {
+    // A path that escapes the sandbox is a refusal, not a server fault.
+    return res.status(400).json({ success: false, error: 'invalid_path', message: error?.message || 'The file could not be written.' });
+  }
+});
+
+/**
+ * The preview itself.
+ *
+ * Everything under the token is forwarded to that project's dev server: the
+ * document, its modules, its assets, and — through the upgrade handler
+ * installed below — its hot-reload socket.
+ */
+
+const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
@@ -15135,3 +15308,44 @@ app.listen(port, () => {
     console.warn('[coden:job_queue] Skipped — Supabase not configured');
   }
 });
+
+/**
+ * Hot reload's channel.
+ *
+ * A dev server's HMR runs over a WebSocket, and a WebSocket upgrade never
+ * reaches an Express route — it arrives on the HTTP server as an `upgrade`
+ * event before any middleware runs. Proxying the documents and forgetting
+ * this is the classic half-working preview: the app loads once, then never
+ * updates, while the console fills with failed reconnects.
+ */
+if (LIVE_SANDBOX_ENABLED) {
+  httpServer.on('upgrade', (req: any, socket: any, head: any) => {
+    const match = /^\/preview\/([^/?]+)(\/[^?]*)?/.exec(String(req.url || ''));
+    if (!match) return; // Not ours — leave it for whatever else is listening.
+    const token = match[1];
+    const grant = readPreviewToken(token);
+    const sandbox = grant ? sandboxRegistry.peek(grant.projectId) : null;
+    const port = sandbox?.status().port;
+    if (!grant || !port) {
+      // The socket is ours to close: a dev server that is restarting refuses
+      // the upgrade, and the client's reconnect loop handles it from there.
+      socket.destroy();
+      return;
+    }
+    sandbox!.lastUsedAt = Date.now();
+    proxyUpgrade(req, socket, head, { port }, sandbox!.status().basePath ? '' : `/preview/${token}`);
+  });
+
+  // Idle dev servers stop on their own; their files stay, so coming back to a
+  // project restarts over an existing node_modules instead of reinstalling it.
+  sandboxRegistry.startSweeper();
+
+  // A child that outlives the server holds a port and a few hundred megabytes
+  // for nothing. Two signals, because Railway sends SIGTERM and a local Ctrl-C
+  // sends SIGINT.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void sandboxRegistry.stopAll().finally(() => process.exit(0));
+    });
+  }
+}
