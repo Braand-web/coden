@@ -18,6 +18,8 @@ body {
 
 :where(
   .navbar,
+  .hero-content,
+  .hero-visual,
   .feature-card,
   .pricing-card,
   .testimonial-card,

@@ -26,6 +26,17 @@ body.coden-modern-shell .navbar:not(.navbar-transparent-on-scroll) {
   -webkit-backdrop-filter: blur(18px) saturate(125%);
 }
 
+body.coden-modern-shell .hero-halo { opacity: 0 !important; filter: none !important; }
+body.coden-modern-shell .hero h1,
+body.coden-modern-shell .hero h1 .neon-highlight,
+body.coden-modern-shell .hero h1 .neon-glow {
+  text-shadow: none !important;
+  filter: none !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+body.coden-modern-shell .badge::after,
+body.coden-modern-shell .badge-dot { animation: none !important; }
+
 body.coden-modern-shell .input-wrapper,
 body.coden-modern-shell .pricing-card,
 body.coden-modern-shell .auth-card,

@@ -1,7 +1,6 @@
 // @ts-ignore
 import './index.css';
 import './styles/modern-shell.css';
-import './styles/landing.css';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
 import { initCodenMotion } from './coden-motion';
 import { initProviderModelSelectors } from './model-selector-ui';
@@ -672,11 +671,8 @@ function init() {
         reveals.forEach(el => {
             const rect = el.getBoundingClientRect();
             const viewHeight = window.innerHeight || document.documentElement.clientHeight;
-            // Anything at or above the fold is revealed — including what the
-            // reader has already scrolled past. The old bound also required
-            // `rect.bottom >= -150`, so a jump to an anchor, a restored scroll
-            // position or Cmd+End left every skipped section stuck at opacity 0.
-            if (rect.top <= viewHeight * 1.05) {
+            // Reveal if the element is inside or close to the viewport
+            if (rect.top <= viewHeight * 1.05 && rect.bottom >= -150) {
                 el.classList.add('active');
             }
         });
