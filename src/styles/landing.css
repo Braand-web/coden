@@ -1,0 +1,797 @@
+/*
+ * Coden — landing design system
+ *
+ * One vocabulary for the home page. Everything here is prefixed `cdn-`, sits on
+ * the product's own `--coden-*` tokens, and reuses the four typefaces the page
+ * already loads — so the landing looks like the builder rather than like a
+ * separate marketing site, and costs no extra font request.
+ *
+ * The page's signature is the product's own instrument: the run pipeline with
+ * real states. That is what Coden has and a generic gradient hero does not, so
+ * it is the hero visual rather than decoration.
+ */
+
+:root {
+  --cdn-measure: 1120px;
+  --cdn-gutter: clamp(20px, 5vw, 40px);
+  --cdn-section: clamp(72px, 10vw, 132px);
+
+  /* Type scale — one ratio, held everywhere. */
+  --cdn-display: clamp(40px, 7vw, 76px);
+  --cdn-h2: clamp(28px, 3.6vw, 42px);
+  --cdn-h3: clamp(18px, 1.6vw, 21px);
+  --cdn-body: clamp(15px, 1.15vw, 17px);
+  --cdn-small: 13.5px;
+  --cdn-label: 11.5px;
+
+  --cdn-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --cdn-sans: 'Inter', 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  --cdn-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --cdn-radius-sm: 10px;
+  --cdn-radius: 16px;
+  --cdn-radius-lg: 22px;
+
+  --cdn-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cdn-fast: 140ms;
+  --cdn-normal: 240ms;
+  --cdn-slow: 520ms;
+
+  /* Semantic states, shared with the run pipeline in the product. */
+  --cdn-ok: #22c55e;
+  --cdn-warn: #d97706;
+  --cdn-err: #f87171;
+
+  --cdn-surface: color-mix(in srgb, var(--coden-surface, #101114) 92%, transparent);
+  --cdn-line: var(--coden-border, #26272d);
+  --cdn-line-soft: color-mix(in srgb, var(--coden-border, #26272d) 55%, transparent);
+  --cdn-glow: color-mix(in srgb, var(--coden-blue, #6366f1) 22%, transparent);
+}
+
+:root[data-theme="light"] {
+  --cdn-ok: #16a34a;
+  --cdn-err: #dc2626;
+  --cdn-surface: #ffffff;
+}
+
+/* ── layout ───────────────────────────────────────────────── */
+
+.cdn-wrap {
+  width: 100%;
+  max-width: var(--cdn-measure);
+  margin: 0 auto;
+  padding-inline: var(--cdn-gutter);
+}
+
+.cdn-section {
+  padding-block: var(--cdn-section);
+  position: relative;
+}
+
+/* A hairline between sections instead of a hard edge, so the page reads as one
+   surface rather than stacked slabs. */
+.cdn-section + .cdn-section {
+  border-top: 1px solid var(--cdn-line-soft);
+}
+
+.cdn-section__head {
+  max-width: min(100%, 640px);
+  margin-bottom: clamp(32px, 5vw, 56px);
+}
+
+/* ── type ─────────────────────────────────────────────────── */
+
+.cdn-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--cdn-mono);
+  font-size: var(--cdn-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--coden-blue, #6366f1);
+  margin-bottom: 16px;
+}
+
+.cdn-h2 {
+  font-family: var(--cdn-serif);
+  font-size: var(--cdn-h2);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  color: var(--coden-text, #f5f5f7);
+  text-wrap: balance;
+  margin: 0 0 14px;
+}
+
+.cdn-lede {
+  font-size: var(--cdn-body);
+  line-height: 1.62;
+  color: var(--coden-muted, #a1a1aa);
+  margin: 0;
+  max-width: 54ch;
+}
+
+/* ── hero ─────────────────────────────────────────────────── */
+
+.cdn-hero {
+  position: relative;
+  padding-block: clamp(56px, 9vw, 104px) clamp(40px, 4vw, 56px);
+  overflow: clip;
+}
+
+/* A single soft light behind the composer. One light source, not a gradient
+   wash — it points at the thing the user is meant to type into. */
+.cdn-hero::before {
+  content: "";
+  position: absolute;
+  top: -18%;
+  left: 50%;
+  width: min(900px, 120%);
+  aspect-ratio: 2 / 1;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, var(--cdn-glow), transparent 68%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cdn-hero__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: clamp(40px, 6vw, 64px);
+}
+
+@media (min-width: 1000px) {
+  .cdn-hero__inner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 440px);
+    align-items: center;
+  }
+}
+
+.cdn-hero__title {
+  font-family: var(--cdn-serif);
+  font-size: var(--cdn-display);
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  color: var(--coden-text, #f5f5f7);
+  text-wrap: balance;
+  margin: 0 0 18px;
+}
+
+.cdn-hero__title em {
+  font-style: italic;
+  color: var(--coden-blue, #6366f1);
+}
+
+.cdn-hero__sub {
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.58;
+  color: var(--coden-muted, #a1a1aa);
+  max-width: 48ch;
+  margin: 0 0 30px;
+}
+
+.cdn-hero__reassure {
+  margin: 14px 0 0;
+  font-size: var(--cdn-small);
+  color: var(--coden-subtle, #71717a);
+}
+
+/* ── badge ────────────────────────────────────────────────── */
+
+.cdn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--cdn-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--coden-surface, #101114) 70%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--coden-muted, #a1a1aa);
+  margin-bottom: 22px;
+}
+
+.cdn-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cdn-ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cdn-ok) 22%, transparent);
+}
+
+/* ── buttons ──────────────────────────────────────────────── */
+
+.cdn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 22px;
+  border-radius: var(--cdn-radius-sm);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform var(--cdn-fast) var(--cdn-ease),
+              background-color var(--cdn-fast) var(--cdn-ease),
+              border-color var(--cdn-fast) var(--cdn-ease),
+              box-shadow var(--cdn-fast) var(--cdn-ease);
+}
+
+.cdn-btn--primary {
+  background: var(--coden-blue, #6366f1);
+  color: #fff;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--coden-blue, #6366f1) 26%, transparent);
+}
+
+.cdn-btn--primary:hover {
+  background: var(--coden-blue-deep, #4f46e5);
+  transform: translateY(-1px);
+}
+
+.cdn-btn--primary:active { transform: translateY(0); }
+
+.cdn-btn--ghost {
+  background: transparent;
+  border-color: var(--cdn-line);
+  color: var(--coden-text, #f5f5f7);
+}
+
+.cdn-btn--ghost:hover {
+  background: color-mix(in srgb, var(--coden-text, #f5f5f7) 6%, transparent);
+  border-color: var(--coden-border-strong, #3a3b42);
+}
+
+.cdn-btn:focus-visible {
+  outline: 2px solid var(--coden-blue, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── cards ────────────────────────────────────────────────── */
+
+.cdn-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(248px, 1fr));
+}
+
+.cdn-card {
+  position: relative;
+  padding: 24px 22px 26px;
+  border: 1px solid var(--cdn-line);
+  border-radius: var(--cdn-radius);
+  background: var(--cdn-surface);
+  transition: transform var(--cdn-normal) var(--cdn-ease),
+              border-color var(--cdn-normal) var(--cdn-ease),
+              box-shadow var(--cdn-normal) var(--cdn-ease);
+}
+
+.cdn-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--coden-blue, #6366f1) 42%, var(--cdn-line));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .18);
+}
+
+.cdn-card__icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  margin-bottom: 16px;
+  color: var(--coden-blue, #6366f1);
+  background: color-mix(in srgb, var(--coden-blue, #6366f1) 12%, transparent);
+}
+
+.cdn-card__title {
+  font-family: var(--cdn-sans);
+  font-size: var(--cdn-h3);
+  font-weight: 640;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+  color: var(--coden-text, #f5f5f7);
+  margin: 0 0 8px;
+}
+
+.cdn-card__text {
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--coden-muted, #a1a1aa);
+  margin: 0;
+}
+
+/* ── the run panel: the product, shown as itself ──────────── */
+
+.cdn-run {
+  border: 1px solid var(--cdn-line);
+  border-radius: var(--cdn-radius-lg);
+  background: var(--cdn-surface);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, .30), 0 2px 6px rgba(0, 0, 0, .16);
+  overflow: hidden;
+}
+
+.cdn-run__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--cdn-line-soft);
+  background: color-mix(in srgb, var(--coden-text, #f5f5f7) 3%, transparent);
+}
+
+.cdn-run__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.cdn-run__dots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cdn-line);
+}
+
+.cdn-run__file {
+  font-family: var(--cdn-mono);
+  font-size: 11.5px;
+  color: var(--coden-subtle, #71717a);
+  margin-left: 4px;
+}
+
+.cdn-run__body {
+  padding: 18px 18px 20px;
+  display: grid;
+  gap: 3px;
+}
+
+.cdn-step {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--coden-muted, #a1a1aa);
+}
+
+.cdn-step__mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.cdn-step__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cdn-step[data-state="done"] { color: var(--cdn-ok); }
+.cdn-step[data-state="done"] .cdn-step__label { color: var(--coden-muted, #a1a1aa); }
+.cdn-step[data-state="failed"] { color: var(--cdn-err); }
+.cdn-step[data-state="active"] {
+  color: var(--coden-text, #f5f5f7);
+  font-weight: 600;
+}
+
+.cdn-step[data-state="active"] .cdn-step__dot {
+  animation: cdn-pulse 1.3s var(--cdn-ease) infinite;
+}
+
+.cdn-step[data-state="pending"] { opacity: .45; }
+
+@keyframes cdn-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.6); opacity: .5; }
+}
+
+.cdn-run__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--cdn-line-soft);
+  font-family: var(--cdn-mono);
+  font-size: 11.5px;
+  color: var(--coden-subtle, #71717a);
+}
+
+.cdn-run__url {
+  color: var(--coden-blue, #6366f1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── the loop rail ────────────────────────────────────────── */
+
+.cdn-rail {
+  display: grid;
+  gap: 14px;
+  counter-reset: cdn-step;
+}
+
+@media (min-width: 860px) {
+  .cdn-rail { grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; }
+}
+
+.cdn-rail__item {
+  position: relative;
+  padding: 22px 20px;
+  border: 1px solid var(--cdn-line);
+  border-radius: var(--cdn-radius);
+  background: var(--cdn-surface);
+}
+
+/* On desktop the items share one continuous rail, so the loop reads as a
+   sequence rather than four separate cards. */
+@media (min-width: 860px) {
+  .cdn-rail__item {
+    border-radius: 0;
+    border-left-width: 0;
+  }
+  .cdn-rail__item:first-child {
+    border-left-width: 1px;
+    border-radius: var(--cdn-radius) 0 0 var(--cdn-radius);
+  }
+  .cdn-rail__item:last-child {
+    border-radius: 0 var(--cdn-radius) var(--cdn-radius) 0;
+  }
+}
+
+.cdn-rail__n {
+  font-family: var(--cdn-mono);
+  font-size: var(--cdn-label);
+  letter-spacing: 0.1em;
+  color: var(--coden-blue, #6366f1);
+  display: block;
+  margin-bottom: 12px;
+}
+
+.cdn-rail__title {
+  font-size: 15.5px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--coden-text, #f5f5f7);
+  margin: 0 0 6px;
+}
+
+.cdn-rail__text {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--coden-muted, #a1a1aa);
+  margin: 0;
+}
+
+/* ── hero lead column ─────────────────────────────────────── */
+
+.cdn-hero__lead {
+  min-width: 0;
+}
+
+/* The composer's own styling lives with the composer, in index.css, so it is
+   identical here and in the builder. All the hero does is give it its width. */
+.cdn-hero__lead .input-wrapper {
+  max-width: 100%;
+  margin-bottom: 14px;
+}
+
+/*
+ * The one place the landing overrules the shared composer.
+ *
+ * In the builder that button is a send arrow in a dense chat column, and the
+ * icon alone is right. Here it is the page's primary call to action, and an
+ * unlabelled arrow asks a first-time visitor to guess. The rule it overrides
+ * is injected at runtime with !important, so this one has to answer in kind.
+ */
+.cdn-hero__lead .input-wrapper .submit-btn span {
+  display: inline !important;
+}
+
+.cdn-hero__lead .input-wrapper .submit-btn {
+  gap: 7px;
+  padding: 0 14px;
+  width: auto !important;
+  border-radius: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── example prompts ──────────────────────────────────────── */
+
+/*
+ * These fill the composer rather than navigating away, so the first thing a
+ * visitor does is the thing the product is for.
+ */
+.cdn-seeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cdn-seed {
+  border: 1px solid var(--cdn-line);
+  border-radius: 999px;
+  background: transparent;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--coden-muted, #a1a1aa);
+  cursor: pointer;
+  transition: color var(--cdn-fast) var(--cdn-ease),
+              border-color var(--cdn-fast) var(--cdn-ease),
+              background-color var(--cdn-fast) var(--cdn-ease);
+}
+
+.cdn-seed:hover {
+  color: var(--coden-text, #f5f5f7);
+  border-color: color-mix(in srgb, var(--coden-blue, #6366f1) 46%, var(--cdn-line));
+  background: color-mix(in srgb, var(--coden-blue, #6366f1) 8%, transparent);
+}
+
+.cdn-seed:focus-visible {
+  outline: 2px solid var(--coden-blue, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── pricing ──────────────────────────────────────────────── */
+
+.cdn-plans {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  align-items: start;
+}
+
+.cdn-plan {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 24px 28px;
+  border: 1px solid var(--cdn-line);
+  border-radius: var(--cdn-radius);
+  background: var(--cdn-surface);
+}
+
+/* The recommended plan is marked by its border and a label, not by growing
+   taller than its neighbours — the row stays readable at every width. */
+.cdn-plan--featured {
+  border-color: color-mix(in srgb, var(--coden-blue, #6366f1) 55%, var(--cdn-line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--coden-blue, #6366f1) 22%, transparent),
+              0 24px 60px rgba(0, 0, 0, .18);
+}
+
+.cdn-plan__badge {
+  position: absolute;
+  top: -10px;
+  left: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--coden-blue, #6366f1);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.cdn-plan__name {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--coden-muted, #a1a1aa);
+  margin: 0 0 10px;
+}
+
+.cdn-plan__price {
+  font-family: var(--cdn-serif);
+  font-size: 42px;
+  line-height: 1;
+  color: var(--coden-text, #f5f5f7);
+  margin: 0 0 6px;
+}
+
+.cdn-plan__price small {
+  font-family: var(--cdn-sans);
+  font-size: 13px;
+  color: var(--coden-subtle, #71717a);
+  margin-left: 4px;
+}
+
+.cdn-plan__note {
+  font-size: 13.5px;
+  color: var(--coden-muted, #a1a1aa);
+  margin: 0 0 20px;
+}
+
+.cdn-plan__features {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid var(--cdn-line-soft);
+  padding-top: 18px;
+}
+
+.cdn-plan__features li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--coden-muted, #a1a1aa);
+}
+
+.cdn-plan__features li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 7px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--cdn-ok);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(42deg);
+}
+
+/* The call to action sits on the card's floor whatever the feature count, so
+   the three buttons line up across the row. */
+.cdn-plan__cta {
+  margin-top: auto;
+  width: 100%;
+}
+
+.cdn-textlink {
+  display: inline-block;
+  margin-top: 26px;
+  font-size: 14px;
+  color: var(--coden-blue, #6366f1);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--cdn-fast) var(--cdn-ease);
+}
+
+.cdn-textlink:hover { border-bottom-color: currentColor; }
+
+.cdn-textlink:focus-visible {
+  outline: 2px solid var(--coden-blue, #6366f1);
+  outline-offset: 3px;
+}
+
+/* ── FAQ ──────────────────────────────────────────────────── */
+
+/*
+ * The open/close behaviour is the shared one from main.ts, keyed on
+ * `.faq-item.active` — this only dresses it, so there is one FAQ mechanism on
+ * the site rather than a landing-only copy.
+ */
+.cdn-faq {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--cdn-line-soft);
+  max-width: 780px;
+}
+
+.cdn-faq .faq-item {
+  border-bottom: 1px solid var(--cdn-line-soft);
+  border-radius: 0;
+  background: none;
+}
+
+.cdn-faq .faq-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  padding: 20px 2px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  color: var(--coden-text, #f5f5f7);
+  cursor: pointer;
+}
+
+.cdn-faq .faq-question:focus-visible {
+  outline: 2px solid var(--coden-blue, #6366f1);
+  outline-offset: -2px;
+}
+
+.cdn-faq .faq-icon {
+  flex: none;
+  color: var(--coden-subtle, #71717a);
+  transition: transform var(--cdn-normal) var(--cdn-ease);
+}
+
+.cdn-faq .faq-item.active .faq-icon { transform: rotate(180deg); }
+
+/* Height is animated through a grid track rather than max-width guesswork, so
+   the answer opens to exactly its own height at any viewport. */
+.cdn-faq .faq-answer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--cdn-normal) var(--cdn-ease);
+}
+
+.cdn-faq .faq-item.active .faq-answer { grid-template-rows: 1fr; }
+
+.cdn-faq .faq-answer > p {
+  overflow: hidden;
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--coden-muted, #a1a1aa);
+}
+
+.cdn-faq .faq-item.active .faq-answer > p { padding-bottom: 22px; }
+
+/* ── closing call to action ───────────────────────────────── */
+
+.cdn-closing__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.cdn-closing .cdn-h2 { margin-bottom: 0; }
+
+/* ── motion ───────────────────────────────────────────────── */
+
+/*
+ * Scroll reveal is the site-wide `.reveal` / `.active` pair from index.css,
+ * observed in main.ts with a scroll fallback and an iframe escape hatch. The
+ * landing adds no second observer and no second hidden state; it only tunes
+ * the stagger for its own rails and grids.
+ */
+.cdn-rail.stagger-grid > *:nth-child(1) { transition-delay: 0ms; }
+.cdn-rail.stagger-grid > *:nth-child(2) { transition-delay: 60ms; }
+.cdn-rail.stagger-grid > *:nth-child(3) { transition-delay: 120ms; }
+.cdn-rail.stagger-grid > *:nth-child(4) { transition-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cdn-step[data-state="active"] .cdn-step__dot { animation: none; }
+  .cdn-btn:hover,
+  .cdn-card:hover { transform: none; }
+  .cdn-faq .faq-answer,
+  .cdn-faq .faq-icon { transition: none; }
+}
+
+/* ── responsive ───────────────────────────────────────────── */
+
+/*
+ * Below the two-column breakpoint the run panel follows the composer instead
+ * of sitting beside it, and the hero keeps its full type scale — the phone
+ * gets the same page, laid out for its width, not a squeezed desktop.
+ */
+@media (max-width: 999px) {
+  .cdn-run { max-width: 520px; }
+}
+
+@media (max-width: 620px) {
+  .cdn-hero { padding-block: 40px 56px; }
+  .cdn-run__body { padding: 14px 14px 16px; }
+  .cdn-closing__inner { flex-direction: column; align-items: flex-start; }
+  .cdn-closing .cdn-btn { width: 100%; }
+  .cdn-plan__price { font-size: 36px; }
+}

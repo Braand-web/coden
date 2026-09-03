@@ -31,12 +31,40 @@ assert.match(landing, /data-i18n="hero\.title"/);
 assert.match(landing, /data-i18n="hero\.subtitle"/);
 assert.match(landing, /data-i18n="hero\.cta"/);
 assert.match(landing, /data-i18n="hero\.reassurance"/);
+// Without scripting the page must still offer the real routes. The old markup
+// also carried a menu toggle in there, which could not open anything without
+// the script that drives it — so the assertion is on the links, not the button.
 assert.match(landing, /id="landing-navbar"/);
-assert.match(landing, /id="landing-nav-toggle"/);
+for (const route of ['/features.html', '/pricing.html', '/documentation.html', '/auth.html']) {
+  assert.ok(
+    new RegExp(`<noscript>[\\s\\S]*?href="${route}"[\\s\\S]*?</noscript>`).test(landing),
+    `the no-script navigation must reach ${route}`,
+  );
+}
 assert.doesNotMatch(landing, /class="hero-flow-rail"/, 'the removed proof rail must not return');
 assert.doesNotMatch(landing, /class="hero-import-row"/, 'the removed import rail must not return');
-assert.match(landing, /class="[^"]*footer-cta[^"]*"/);
+// The closing call to action, whatever it is called: one link to sign-up that
+// carries the conversion event the funnel counts.
+assert.match(landing, /data-conversion-event="start_building_click"[^>]*data-conversion-place="footer"/);
 assert.match(landing, /id="lang-select"/);
+
+// The hero composer is the product's entry point; every control the prompt
+// wiring binds to has to survive a redesign of the page around it.
+for (const hook of ['id="ai-textarea"', 'id="submit-btn"', 'class="input-wrapper"', 'id="model-select-btn"', 'data-prompt-mode="auto"']) {
+  assert.ok(landing.includes(hook), `the hero composer must keep ${hook}`);
+}
+
+// The hero pipeline quotes the generator. If a phase label is reworded in the
+// product, the marketing copy has to be reworded with it, not left behind.
+const phaseLabels = readFileSync('src/services/generation-phases.ts', 'utf8');
+for (const [key, label] of [
+  ['run.p1', 'understand'], ['run.p4', 'build'], ['run.p6', 'fix'], ['run.p8', 'recap'],
+] as const) {
+  const french = new RegExp(`${label}: \\{ fr: '([^']+)'`).exec(phaseLabels)?.[1];
+  assert.ok(french, `generation-phases must define a French label for ${label}`);
+  assert.match(landing, new RegExp(`data-i18n="${key}"`));
+  assert.ok(landingI18n.includes(`'${key}': '${french}'`), `${key} must quote the ${label} label verbatim`);
+}
 assert.doesNotMatch(landing, /<footer[\s\S]*?href="#"/i, 'landing footer must not contain dead placeholder links');
 assert.doesNotMatch(landing, /id="rotating-word"/i, 'hero positioning must not depend on rotating words');
 assert.match(landingI18n, /FR_POSITIONING = getProductPositioning\('fr'\)/);

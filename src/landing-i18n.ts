@@ -32,7 +32,13 @@ const FR: Record<string, string> = {
   'nav.close': 'Fermer la navigation',
 
   // Hero
-  'hero.title': FR_POSITIONING.heroTitle,
+  // The markup emphasises the noun; French emphasises the same noun rather
+  // than dropping to a flat sentence.
+  'hero.title': 'De l’idée à l’<em>application web</em>.',
+  'hero.badge': 'Construire, vérifier, publier',
+  'hero.seed1': 'Un tableau de bord SaaS avec authentification et facturation',
+  'hero.seed2': 'Un outil de réservation avec créneaux et confirmations',
+  'hero.seed3': 'Une boutique en ligne avec panier et paiement',
   'hero.subtitle': FR_POSITIONING.heroSubtitle,
   'hero.placeholder': FR_POSITIONING.promptPlaceholder,
   'hero.cta': FR_POSITIONING.primaryCta,
@@ -41,6 +47,43 @@ const FR: Record<string, string> = {
   'hero.refine': FR_POSITIONING.refineLabel,
   'hero.publish': FR_POSITIONING.publishLabel,
   'hero.import': 'ou importez depuis',
+
+  // Run pipeline shown in the hero. These are the labels the generator really
+  // emits — kept identical to LABELS in src/services/generation-phases.ts.
+  'run.p1': 'Analyse de votre demande',
+  'run.p2': 'Choix de l’approche',
+  'run.p3': 'Plan de l’application',
+  'run.p4': 'Création de l’application',
+  'run.p5': 'Vérification de l’application',
+  'run.p6': 'Correction des problèmes détectés',
+  'run.p7': 'Vérification de l’application',
+  'run.p8': 'Application prête',
+
+  // The loop
+  'loop.kicker': 'La boucle',
+  'loop.title': 'Décrivez, regardez construire, corrigez, publiez.',
+  'loop.lede': 'Chaque message suit les quatre mêmes temps. Rien n’est regénéré depuis zéro : Coden garde le projet qu’il a déjà construit.',
+  'loop.s1.title': 'Décrire',
+  'loop.s1.text': 'Écrivez ce que vous voulez en langage naturel. Coden relit le projet existant avant de modifier quoi que ce soit.',
+  'loop.s2.title': 'Construire',
+  'loop.s2.text': 'Un vrai projet React et TypeScript est écrit fichier par fichier, et l’aperçu se met à jour au fil de la construction.',
+  'loop.s3.title': 'Vérifier',
+  'loop.s3.text': 'L’application est compilée et contrôlée. En cas d’erreur, Coden répare les fichiers nommés par le build — pas toute l’application.',
+  'loop.s4.title': 'Publier',
+  'loop.s4.text': 'Un clic met la version vérifiée en ligne sur Cloudflare. Vos visiteurs ne voient jamais de travail inachevé.',
+
+  // Capabilities
+  'cap.kicker': 'Ce que vous obtenez',
+  'cap.title': 'Une application qui fonctionne, pas une maquette.',
+  'cap.lede': 'Quatre choses que Coden fait de bout en bout. Chacune existe déjà dans le produit.',
+  'cap.c1.title': 'Un aperçu qui s’exécute vraiment',
+  'cap.c1.text': 'Votre application est compilée et exécutée dans le navigateur, avec ses routes, son état et ses styles. C’est l’application, pas une capture.',
+  'cap.c2.title': 'Les erreurs corrigées avant vous',
+  'cap.c2.text': 'Quand le build échoue, Coden lit la sortie du compilateur, répare les fichiers qu’elle désigne, puis vérifie à nouveau — automatiquement.',
+  'cap.c3.title': 'Publié sur Cloudflare',
+  'cap.c3.text': 'La publication met la version vérifiée sur le réseau Cloudflare, servie depuis une URL en ligne dès la fin du déploiement.',
+  'cap.c4.title': 'Votre propre domaine',
+  'cap.c4.text': 'Pointez votre domaine vers l’application et suivez chaque étape — vérification DNS, propagation, actif — sans quitter le panneau Publier.',
 
   // Partners / integrations strip
   'partners.heading': 'Compatible avec les outils que vous utilisez déjà.',

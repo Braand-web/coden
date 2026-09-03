@@ -16,20 +16,29 @@ test('landing keeps one clear primary heading and the Coden brand', async ({ pag
   expect(runtimeErrors).toEqual([]);
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('h1')).toBeVisible();
-  await expect(page.locator('#landing-navbar [data-coden-logo="brand"]')).toBeVisible();
+  // The brand lives in the mounted header, not in the <noscript> fallback:
+  // with scripting on, a browser parses noscript content as text, so nothing
+  // inside it is ever a queryable element.
+  await expect(page.locator('[data-coden-logo="brand"]').first()).toBeVisible();
   await expect(page.locator('.hero-flow-rail')).toHaveCount(0);
   await expect(page.locator('.import-row')).toHaveCount(0);
+  // The composer is the hero's point. It has to be reachable and typable.
+  await expect(page.locator('#ai-textarea')).toBeVisible();
+  await expect(page.locator('#submit-btn')).toBeVisible();
   await expect(page.locator('body')).not.toHaveCSS('overflow-x', 'scroll');
   await expect(page.locator('html')).toHaveCSS('scroll-behavior', 'smooth');
 
-  const layout = await page.evaluate(() => {
-    const viewportCenter = document.documentElement.clientWidth / 2;
-    return ['.hero-content', '.section-header', '.footer-cta'].map(selector => {
+  // Every section shares one measure, so their content columns line up rather
+  // than each block finding its own width. A missing selector fails loudly
+  // instead of scoring as centred.
+  const offsets = await page.evaluate(() => {
+    const center = document.documentElement.clientWidth / 2;
+    return ['.cdn-hero__inner', '.cdn-section .cdn-wrap', '.cdn-closing__inner'].map(selector => {
       const rect = document.querySelector(selector)?.getBoundingClientRect();
-      return rect ? Math.abs(rect.left + rect.width / 2 - viewportCenter) : Number.POSITIVE_INFINITY;
+      return rect ? Math.abs(rect.left + rect.width / 2 - center) : Number.POSITIVE_INFINITY;
     });
   });
-  expect(Math.max(...layout)).toBeLessThanOrEqual(1);
+  expect(Math.max(...offsets)).toBeLessThanOrEqual(1);
 });
 
 test('canonical public pages do not expose horizontal overflow', async ({ page }) => {
