@@ -1,7 +1,6 @@
 import { RotateCcw, Square } from 'lucide-react';
-import { AgentActivityShimmer } from './agent-activity-shimmer';
 import { AgentSteps } from './agent-steps';
-import { AgentResponse } from './agent-response';
+import { AgentStream } from './agent-stream';
 import { AgentProgressNote } from './agent-progress-note';
 import { InlineUserDecision } from './inline-user-decision';
 import type { AgentRunStatus } from '../../services/agent-run-contract';
@@ -70,8 +69,7 @@ export function AgentRunPanel({
         </div>
       ) : null}
       <AgentSteps activities={view.activities} locale={locale} />
-      {activity ? <AgentActivityShimmer runId={view.runId} phase={activity.phase} message={activity.message} active={showActivity} /> : null}
-      <AgentResponse content={responseContent} streaming={streamingResponse} />
+      <AgentStream runId={view.runId} activity={activity} showActivity={showActivity} content={responseContent} streaming={streamingResponse} />
       {decision ? <InlineUserDecision decision={decision} onSubmit={onClarification} onConfirm={onBuildPlan} onCancel={onCancel} /> : null}
       <div className="coden-agent-compact-actions">
         {active && onCancel ? <button type="button" onClick={onCancel}><Square aria-hidden="true" size={12} />{locale === 'fr' ? 'Arrêter' : 'Stop'}</button> : null}

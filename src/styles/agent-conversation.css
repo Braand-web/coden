@@ -12,6 +12,22 @@
   line-height: 1.55;
 }
 
+/*
+ * One slot the shimmer and the streamed response crossfade through, so the
+ * handoff between "nothing to show yet" and "real text arriving" reads as
+ * one continuous stream instead of a shimmer block being swapped for a
+ * separate response block underneath it.
+ */
+.coden-agent-stream {
+  min-height: 22px;
+  margin: 4px 0 10px;
+}
+.coden-agent-stream .coden-shimmering-text {
+  color: var(--text-muted, #94a3b8);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .coden-agent-progress-list {
   display: grid;
   gap: 12px;
