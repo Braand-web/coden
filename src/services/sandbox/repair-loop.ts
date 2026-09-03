@@ -1,15 +1,22 @@
 /**
- * Repairing a broken project with tools instead of regenerating it.
+ * Building or repairing a project with tools, in the same loop.
  *
- * When validation fails, the generation path's answer was to ask the model for
- * the whole application again. That is expensive, slow, and unsafe: a
- * regeneration is a fresh chance to lose a file the previous one got right,
- * and it fixes a missing import by rewriting forty files.
+ * The old generation path asked the model for the whole application as one
+ * JSON document, parsed it, and — on failure — asked for the whole thing
+ * again. That is expensive, slow, and unsafe: a regeneration is a fresh
+ * chance to lose a file the previous attempt got right, and it fixes a
+ * missing import by rewriting forty files.
  *
- * Here the model is given the compiler's own errors and the tools to act on
- * them: read the file the error names, edit the line, install the package that
- * is missing. Then the project's toolchain is asked again. That loop either
- * converges or it does not, and both are reported honestly.
+ * Here the model is given tools instead: read the file an error names, edit
+ * the line, install the package that is missing. Then the project's own
+ * toolchain is asked again. That loop either converges or it does not, and
+ * both are reported honestly.
+ *
+ * Building and repairing are the same mechanism wearing different framing.
+ * Building is "here is what to write" for round one, followed by rounds of
+ * "here is what is still broken" until the toolchain is happy — which is
+ * exactly what repair already was. `mode` selects only the first round's
+ * instruction; the loop, its limits and its stopping rules do not change.
  *
  * Three limits, each for a failure this would otherwise have:
  *
@@ -18,7 +25,10 @@
  *   sustained cost.
  * - No progress, no continue. If a round leaves the same number of errors, the
  *   next round has nothing new to work with; going again is spending money to
- *   watch the model rephrase itself.
+ *   watch the model rephrase itself. The exception is a build's first round:
+ *   there is no earlier attempt at the same task to compare it against, only
+ *   the empty scaffold it started from, so that comparison would end every
+ *   build whose first pass introduces any error at all.
  * - A bounded number of tool calls per round, so a single round cannot become
  *   the unbounded loop the round limit was meant to prevent.
  */
@@ -64,6 +74,12 @@ export type RepairEvent =
   | { type: 'repair_round_finished'; round: number; errorsBefore: number; errorsAfter: number; filesTouched: string[] }
   | { type: 'repair_finished'; ok: boolean; rounds: number; reason: RepairOutcome['stoppedBecause'] };
 
+/** Forward-facing names for callers that are building, not only repairing. */
+export type CoderLoopRound = RepairRound;
+export type CoderLoopOutcome = RepairOutcome;
+export type CoderLoopTurn = RepairTurn;
+export type CoderLoopEvent = RepairEvent;
+
 const DEFAULT_MAX_ROUNDS = 3;
 const DEFAULT_MAX_TOOL_CALLS = 12;
 
@@ -71,22 +87,43 @@ function countErrors(report: ValidationReport): number {
   return report.problems.filter(problem => problem.severity === 'error').length;
 }
 
-export async function runRepairLoop(input: {
+export async function runCoderLoop(input: {
   sandbox: ProjectSandbox;
   turn: RepairTurn;
+  /**
+   * `'build'` writes something new; `'repair'` fixes something that already
+   * exists. Defaults to `'repair'`, which is every caller before this
+   * generalization — their behaviour is unchanged by this parameter existing.
+   */
+  mode?: 'build' | 'repair';
+  /**
+   * What to write, for a build's first round — typically the plan the user
+   * approved. Required when `mode` is `'build'`: without an instruction the
+   * first round would ask the model to write nothing in particular.
+   */
+  initialInstruction?: string;
   maxRounds?: number;
   maxToolCallsPerRound?: number;
   onEvent?: (event: RepairEvent) => void;
   /** Validation already run by the caller, so the first round costs nothing extra. */
   initialReport?: ValidationReport;
 }): Promise<RepairOutcome> {
+  const mode = input.mode ?? 'repair';
+  if (mode === 'build' && !input.initialInstruction) {
+    throw new Error('runCoderLoop requires initialInstruction when mode is "build".');
+  }
+
   const emit = input.onEvent || (() => {});
   const maxRounds = input.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const maxToolCalls = input.maxToolCallsPerRound ?? DEFAULT_MAX_TOOL_CALLS;
   const rounds: RepairRound[] = [];
 
   let report = input.initialReport ?? await validateProject(input.sandbox, { skipBuild: true });
-  if (report.ok) {
+  // A build asked for something that has not been written yet, so an empty,
+  // valid scaffold reporting "ok" here is not the outcome — it is the
+  // starting line. Exiting on it would report success on an unbuilt project.
+  // A repair has nothing to do until something is actually broken.
+  if (mode === 'repair' && report.ok) {
     emit({ type: 'repair_finished', ok: true, rounds: 0, reason: 'no_errors' });
     return { ok: true, rounds, finalReport: report, stoppedBecause: 'no_errors' };
   }
@@ -119,8 +156,14 @@ export async function runRepairLoop(input: {
       return result;
     };
 
+    // Only a build's first round is "write this"; every other round, in
+    // either mode, is "here is what the toolchain still does not like" — the
+    // one instruction shape a repair has ever had.
+    const isBuildRound = mode === 'build' && round === 1;
+    const instruction = isBuildRound ? input.initialInstruction! : buildRepairInstruction(report);
+
     await input.turn({
-      instruction: buildRepairInstruction(report),
+      instruction,
       tools: SANDBOX_TOOL_SCHEMAS,
       call: guardedCall,
       maxToolCalls,
@@ -143,9 +186,24 @@ export async function runRepairLoop(input: {
     if (report.ok) return finish('fixed');
     // Fewer errors is progress even without a clean result — the next round
     // gets a shorter list. The same count or worse means the round taught the
-    // model nothing, and another one will teach it the same.
-    if (errorsAfter >= errorsBefore) return finish('no_progress');
+    // model nothing, and another one will teach it the same. Not for a
+    // build's first round: `errorsBefore` there is the empty scaffold's error
+    // count, not an earlier attempt at this task, so it is not a baseline
+    // this round's result can meaningfully be judged against.
+    if (!isBuildRound && errorsAfter >= errorsBefore) return finish('no_progress');
   }
 
   return finish('round_limit');
+}
+
+/**
+ * The pre-generalization name, kept for the one caller that has not moved to
+ * `runCoderLoop` yet. Behaviour is identical to before this change: `mode`
+ * is always `'repair'`, so every branch above that depends on `mode` takes
+ * exactly the path it always did.
+ */
+export function runRepairLoop(
+  input: Omit<Parameters<typeof runCoderLoop>[0], 'mode' | 'initialInstruction'>,
+): Promise<RepairOutcome> {
+  return runCoderLoop({ ...input, mode: 'repair' });
 }

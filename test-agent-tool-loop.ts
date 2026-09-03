@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {
   DEFAULT_AGENT_V3_BUDGET,
-  ToolLoopController,
   buildAgentV3Context,
   isAgentV3Enabled,
   summarizeResearchForMemory,
@@ -11,12 +10,6 @@ import {
 assert.equal(isAgentV3Enabled({}), true);
 assert.equal(isAgentV3Enabled({ AGENT_V3_ENABLED: '0' }), false);
 assert.equal(isAgentV3Enabled({ AGENT_V3_ENABLED: 'false' }), false);
-
-const controller = new ToolLoopController({ maxToolSteps: 2 });
-assert.equal(controller.snapshot.remainingToolSteps, 2);
-controller.claim('research');
-controller.claim('runner');
-assert.throws(() => controller.claim('fix'), /Tool loop budget exhausted/);
 
 const context = buildAgentV3Context({
   baseContext: { project: { name: 'Demo' }, provider_cost_usd: 99 },

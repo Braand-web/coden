@@ -4,10 +4,8 @@ import {
   CodenAgentHarness,
   HarnessToolRegistry,
   InMemoryAgentHarnessStore,
-  assertNoWriterResourceConflict,
-  buildExecutionPlan,
+  buildDefinitionOfDone,
   createHarnessTurnIdempotencyKey,
-  runnableExecutionNodes,
 } from './src/services/agent-harness/index.ts';
 
 const store = new InMemoryAgentHarnessStore();
@@ -79,15 +77,14 @@ await harness.transitionTurn(first.turn.id, 'completed', { verified: true });
 assert.equal((await store.getThread(thread.id))?.activeTurnId, undefined);
 await assert.rejects(harness.transitionTurn(first.turn.id, 'running'), /Invalid harness turn transition/);
 
-const plan = buildExecutionPlan({ prompt: 'Build a CRM', mode: 'build', hasExistingFiles: false, hasBackend: true, hasDatabase: true });
-assertNoWriterResourceConflict(plan.nodes);
-assert.deepEqual(runnableExecutionNodes(plan, new Set(), new Set()).map(node => node.id), ['inspect']);
-assert.ok(plan.definitionOfDone.some(item => item.id === 'backend_health'));
-assert.ok(plan.definitionOfDone.some(item => item.id === 'database'));
-assert.throws(() => assertNoWriterResourceConflict([
-  { id: 'a', title: 'A', role: 'frontend', dependencies: [], resourceKeys: ['src/App.tsx'], optional: false },
-  { id: 'b', title: 'B', role: 'backend', dependencies: [], resourceKeys: ['src/App.tsx'], optional: false },
-]), /resource conflict/);
+// `buildDefinitionOfDone` is the one export of orchestrator.ts that is
+// actually wired into production (server.ts, feeding harness.createTurn) —
+// the DAG execution engine that used to sit alongside it never had a caller
+// outside this file's own removed assertions.
+const definitionOfDone = buildDefinitionOfDone({ prompt: 'Build a CRM', mode: 'build', hasBackend: true, hasDatabase: true });
+assert.ok(definitionOfDone.some(item => item.id === 'backend_health'));
+assert.ok(definitionOfDone.some(item => item.id === 'database'));
+assert.deepEqual(buildDefinitionOfDone({ prompt: 'What does this do?', mode: 'ask' }).map(item => item.id), ['answer_complete']);
 
 const cancelThread = await harness.createThread({ organizationId: 'org_1', projectId: 'project_2', userId: 'user_1' });
 const cancelTurn = await harness.createTurn({ threadId: cancelThread.id, userId: 'user_1', prompt: 'Build', idempotencyKey: 'cancel_1' });

@@ -1,7 +1,6 @@
 import type { ExecutionContract } from './execution-contract.ts';
 import { normalizeExecutionText } from './execution-contract.ts';
 import { buildExecutionSyncMatrix } from './execution-sync-matrix.ts';
-import { buildProductionReliabilityPlan } from './production-reliability-harness.ts';
 
 export type ExecutionPhase =
   | 'idle'
@@ -180,7 +179,6 @@ export function buildInternalExecutionPlan(input: {
 }) {
   const { contract } = input;
   const syncMatrix = buildExecutionSyncMatrix(contract);
-  const productionReliabilityPlan = buildProductionReliabilityPlan({ contract, syncMatrix });
   const phases: ExecutionPhase[] = contract.can_mutate_files
     ? ['deciding', 'planning', 'executing', 'checking', 'fixing', 'ready']
     : contract.requires_clarification
@@ -203,9 +201,6 @@ export function buildInternalExecutionPlan(input: {
     user_visible_surface: syncMatrix.user_visible_surface,
     save_policy: syncMatrix.save_policy,
     recovery_policy: syncMatrix.recovery_policy,
-    production_reliability_plan: productionReliabilityPlan,
-    delivery_policy: productionReliabilityPlan.deliveryPolicy,
-    production_requirements: productionReliabilityPlan.requirements.map(item => item.key),
     user_visible: false,
   };
 }

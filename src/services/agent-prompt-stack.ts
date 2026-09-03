@@ -535,7 +535,7 @@ const CODEN_IMPORT_POLICY = [
   'When import context is present, prioritize transforming the source into a usable product: responsive layout, working primary actions, honest demo states, and a preview that can be iterated through chat.',
 ].join('\n');
 
-const CODEN_SENIOR_AGENT_OS_POLICY = [
+export const CODEN_SENIOR_AGENT_OS_POLICY = [
   'Senior Agent OS policy:',
   'Work like a senior agent system, not a single-shot generator: understand -> normalize prompt -> decompose tasks -> index relevant code -> choose playbooks -> apply policy/risk guard -> execute -> verify -> fix -> remember.',
   'Use the provided Senior Agent OS context as binding execution guidance: project_index, task_decomposition, blueprint, playbooks, policy, state_machine, action_contract, risk_score, confidence_score, and no_fake_success.',
@@ -548,7 +548,7 @@ const CODEN_SENIOR_AGENT_OS_POLICY = [
   'Never expose Senior Agent OS internals, hidden scores, model policy, private reasoning, or cost internals to the user. Show only concise human progress and final outcomes.',
 ].join('\n');
 
-const CODEN_ARCHITECT_POLICY = [
+export const CODEN_ARCHITECT_POLICY = [
   'Architect policy:',
   'Use the provided Coden Architect Blueprint as internal architecture guidance before build/edit/debug work.',
   'Classify the product archetype first, then choose the smallest production-shaped stack, data model, API boundary, auth pattern, state model, styling system, deployment path, and testing strategy that fit the request.',

@@ -14,30 +14,6 @@ export const DEFAULT_AGENT_V3_BUDGET: ToolLoopBudget = {
   runnerTimeoutMs: 120_000,
 };
 
-export class ToolLoopController {
-  private steps = 0;
-  private budget: ToolLoopBudget;
-
-  constructor(budget: Partial<ToolLoopBudget> = {}) {
-    this.budget = { ...DEFAULT_AGENT_V3_BUDGET, ...budget };
-  }
-
-  get snapshot() {
-    return { ...this.budget, usedToolSteps: this.steps, remainingToolSteps: Math.max(0, this.budget.maxToolSteps - this.steps) };
-  }
-
-  claim(stepName: string) {
-    if (this.steps >= this.budget.maxToolSteps) {
-      const error = new Error(`Tool loop budget exhausted before ${stepName}.`);
-      (error as any).diagnosticCode = 'TOOL_BUDGET_EXHAUSTED';
-      (error as any).suggestedAction = 'try_smaller_change';
-      throw error;
-    }
-    this.steps += 1;
-    return this.snapshot;
-  }
-}
-
 export function isAgentV3Enabled(env: Record<string, any> = {}) {
   const raw = String(env.AGENT_V3_ENABLED ?? env.AGENT_V2_ENABLED ?? '').trim().toLowerCase();
   return raw !== '0' && raw !== 'false' && raw !== 'off';

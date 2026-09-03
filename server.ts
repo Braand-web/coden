@@ -182,7 +182,6 @@ import {
 } from './src/services/web-research-gateway.ts';
 import {
   DEFAULT_AGENT_V3_BUDGET,
-  ToolLoopController,
   buildAgentV3Context,
   isAgentV3Enabled,
   summarizeResearchForMemory,
@@ -11906,6 +11905,125 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   }
   const decision: IntentDecision = initialDecision;
+
+  /**
+   * The multi-agent pipeline: a real sandbox, real tools, an approvable plan
+   * before code is written. Behind a flag, off by default, and structured to
+   * change nothing about the path below when it does not apply.
+   *
+   * This is an early, self-contained branch rather than a rewrite of the
+   * ~1200 lines that follow: those lines are entangled with the blob path's
+   * own verification apparatus (a reliability gate, a browser runner, a fact
+   * ledger) that this pipeline does not need — its coder loop already
+   * validates against the project's real toolchain and repairs what that
+   * finds, which is stronger evidence than the heuristic gate it replaces.
+   * Manufacturing fake versions of that bookkeeping to slot into the old
+   * branching would be a worse trade than a short, separate answer.
+   *
+   * `resolvePipelineRoute` is `null` for anything that does not write code —
+   * conversation, verify, deploy guidance, a clarifying question — so those
+   * intents fall through completely unaffected, flag or no flag.
+   */
+  const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
+  if (process.env.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute) {
+    try {
+      const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
+      const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
+
+      emitActivity(
+        pipelineRoute === 'small_edit' ? 'building' : 'planning',
+        pipelineRoute === 'small_edit' ? 'Coden modifie le fichier concerné…' : 'Coden prépare le plan…',
+        pipelineRoute === 'small_edit' ? 'Coden is editing the affected file…' : 'Coden is preparing the plan…',
+      );
+      phases.start('plan');
+
+      const outcome = await runMultiAgentPipeline({
+        gateway: providerGateway,
+        projectId: project.id,
+        userId,
+        prompt: agentPrompt,
+        route: pipelineRoute,
+        existingFiles,
+        userPlan: routingPlan,
+        credits: routingCredits,
+        harnessContext: harnessContext
+          ? { harness: harnessContext.harness, threadId: harnessContext.thread.id, turnId: harnessContext.turn.id }
+          : undefined,
+        onSandboxEvent: event => {
+          if (!isStream || !streamV2 || streamAborted) return;
+          const { type, ...rest } = event as any;
+          streamV2.emit('sandbox', { stage: type, ...rest });
+        },
+        onCoderEvent: event => {
+          if (!isStream || !streamV2 || streamAborted) return;
+          streamV2.emit('sandbox', { stage: 'coder', ...(event as any) });
+        },
+      });
+
+      if (outcome.started) {
+        phases.start('build');
+        const pipelineFiles = outcome.files as GeneratedFile[];
+        // The blob path renames the project from a fresh `appName` guess the
+        // model invents every run; this pipeline's plan carries no such
+        // field, so there is nothing honest to rename to — the name is left
+        // exactly as it was.
+        const updatedProject: GeneratedProject = {
+          ...project,
+          prompt,
+          model_id: outcome.modelId,
+          status: 'active',
+          preview_status: outcome.ok ? 'verified' : 'needs_fix',
+          updated_at: new Date().toISOString(),
+        };
+        const previewPipeline = runPreviewPipeline(updatedProject, pipelineFiles);
+        updatedProject.preview_html = previewPipeline.html;
+
+        await saveProject(updatedProject, pipelineFiles).catch(error => {
+          console.warn('[coden:multi_agent_save_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+        });
+        const diff = diffFiles(existingFiles, pipelineFiles);
+        await createProjectVersion(updatedProject, pipelineFiles, prompt, {
+          ...diff,
+          multi_agent_pipeline: true,
+          route: pipelineRoute,
+          ok: outcome.ok,
+        }).catch(() => null);
+
+        phases.finish(outcome.ok ? 'done' : 'failed');
+        return respondJson(200, {
+          success: outcome.ok,
+          needs_fix: !outcome.ok,
+          intent: decision,
+          project: updatedProject,
+          files: pipelineFiles,
+          diff,
+          model: outcome.modelId,
+          plan: outcome.plan,
+          preview: {
+            status: outcome.ok ? 'verified' : 'needs_fix',
+            html: previewPipeline.html,
+            live_url: outcome.liveUrl,
+            live_state: outcome.liveState,
+            live_error: outcome.ok ? null : outcome.repairOutcome.stoppedBecause,
+          },
+          pipeline: 'multi_agent',
+        });
+      }
+
+      // The sandbox itself never came up (capacity, an install failure) —
+      // nothing was written, so there is nothing to undo. Falling through to
+      // the proven legacy path below answers the request instead of failing
+      // it outright.
+      console.warn('[coden:multi_agent_pipeline_fallback]', { project: project.id, reason: outcome.startError });
+    } catch (error: any) {
+      // Same fallback, for a failure this branch cannot characterize (a
+      // planner that could not produce a valid plan, a provider outage): the
+      // legacy path can still answer the request even though this one could
+      // not.
+      console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+    }
+  }
+
   const decisionPhase = decision.intent === 'plan'
     ? 'planning'
     : decision.intent === 'verify'
@@ -14602,6 +14720,7 @@ import { selectStarter, applyStarter, describeStarter } from './src/services/san
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
+import { runMultiAgentPipeline, resolvePipelineRoute } from './src/services/multi-agent-pipeline.ts';
 import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
