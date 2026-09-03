@@ -12,12 +12,17 @@ import {
   validateAllowedModel, 
   ModelNotAllowedForPlanError, 
 } from './ai-validator.ts';
+import { MODELS_BY_COST, selectModel, type SelectionResult, type TaskComplexity, type TaskKind } from './model-selection.ts';
 
 export interface RoutingContext {
   plan: UserPlan | 'free' | 'pro' | 'scale' | 'enterprise';
   mode: 'Auto' | 'Fast' | 'Balanced' | 'Pro' | 'Premium' | 'Max Quality' | 'Custom';
   userCredits: number;
-  taskComplexity?: 'simple' | 'medium' | 'complex' | 'extreme';
+  taskComplexity?: TaskComplexity;
+  /** What the caller is actually asking for. Drives the competence bar. */
+  task?: TaskKind;
+  /** Someone is waiting on this answer, so deferred tiers are excluded. */
+  interactive?: boolean;
   preferredModels?: AllowedModelId[];
   requiredCapabilities?: {
     vision?: boolean;
@@ -94,48 +99,39 @@ export class ModelRouter {
       throw new Error('Action unavailable with current plan. Please use Auto or upgrade.');
     }
 
-    const firstAffordable = (preferred: AllowedModelId[]) => (
-      preferred.find(modelId => affordableModels.includes(modelId)) || this.selectBestAutoModel(affordableModels, context)
-    );
-
-    // 4. Smart Router Mode Selection logic
+    // 4. One selection policy, applied here.
+    //
+    // This used to be five hardcoded preference lists plus a scoring function,
+    // each free to disagree with the others about the same request. They are
+    // gone: `selectModel` walks the catalogue cheapest-first and returns the
+    // first model good enough for the task, so a mode is now nothing more than
+    // a floor on complexity.
     let selectedModel: AllowedModelId;
     const preferredModel = context.preferredModels?.find(modelId => affordableModels.includes(modelId));
 
-    if (context.mode === 'Auto' && preferredModel) {
-      selectedModel = preferredModel;
+    if (context.mode === 'Custom' || (context.mode === 'Auto' && preferredModel)) {
+      selectedModel = preferredModel || DEFAULT_PROVIDER_MODEL_ID;
     } else {
-
-      switch (context.mode) {
-        case 'Fast':
-          selectedModel = firstAffordable(['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro-0813']);
-          break;
-
-        case 'Balanced':
-          selectedModel = firstAffordable(['openai/gpt-5.6-terra', 'z-ai/glm-5.3', 'anthropic/claude-sonnet-5', 'deepseek/deepseek-v4-pro-0813']);
-          break;
-
-        case 'Pro':
-          selectedModel = firstAffordable(['anthropic/claude-sonnet-5', 'openai/gpt-5.6-terra', 'x-ai/grok-4.6']);
-          break;
-
-        case 'Premium':
-        case 'Max Quality':
-          selectedModel = firstAffordable(['openai/gpt-5.6-sol', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5']);
-          break;
-
-        case 'Auto':
-        default: {
-          selectedModel = this.selectBestAutoModel(affordableModels, context);
-          break;
-        }
-      }
+      const decision = selectModel({
+        task: context.task || inferTaskFromCapabilities(context),
+        complexity: complexityForMode(context.mode, context.taskComplexity),
+        plan: context.plan,
+        credits: context.userCredits,
+        interactive: context.interactive,
+        needs: {
+          vision: context.requiredCapabilities?.vision,
+          tools: context.requiredCapabilities?.tools,
+          structuredOutput: context.requiredCapabilities?.structuredOutput,
+        },
+      });
+      this.lastDecision = decision;
+      selectedModel = decision.modelId;
     }
 
     // Double check compatibility filtering
     if (!capableModels.includes(selectedModel)) {
-       selectedModel = capableModels.includes(DEFAULT_PROVIDER_MODEL_ID) 
-        ? DEFAULT_PROVIDER_MODEL_ID 
+       selectedModel = capableModels.includes(DEFAULT_PROVIDER_MODEL_ID)
+        ? DEFAULT_PROVIDER_MODEL_ID
         : capableModels[0] as AllowedModelId;
     }
 
@@ -144,27 +140,8 @@ export class ModelRouter {
     return selectedModel;
   }
 
-  private selectBestAutoModel(models: AllowedModelId[], context: RoutingContext): AllowedModelId {
-    if (!models.length) return DEFAULT_PROVIDER_MODEL_ID;
-    const complexity = context.taskComplexity || 'medium';
-    if (!this.hasSpecificCapabilityNeeds(context)) {
-      if (complexity === 'simple') {
-        return this.firstAvailable(models, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash', 'deepseek/deepseek-v4-pro-0813']);
-      }
-      if (complexity === 'complex') {
-        return this.firstAvailable(models, ['anthropic/claude-sonnet-5', 'z-ai/glm-5.3', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol', 'deepseek/deepseek-v4-pro-0813']);
-      }
-      if (complexity === 'extreme') {
-        return this.firstAvailable(models, ['openai/gpt-5.6-sol', 'anthropic/claude-opus-5', 'anthropic/claude-fable-5', 'anthropic/claude-sonnet-5']);
-      }
-      return this.firstAvailable(models, ['openai/gpt-5.6-terra', 'z-ai/glm-5.3', 'anthropic/claude-sonnet-5', 'openai/gpt-5.6-luna', 'deepseek/deepseek-v4-pro-0813']);
-    }
-    const scored = models.map(modelId => ({
-      modelId,
-      score: this.scoreModel(modelId, context, complexity),
-    })).sort((a, b) => b.score - a.score);
-    return scored[0]?.modelId || models[0];
-  }
+  /** The reasoning behind the most recent Auto choice, for logs and events. */
+  lastDecision: SelectionResult | null = null;
 
   private firstAvailable(models: AllowedModelId[], preferred: AllowedModelId[]) {
     return preferred.find(modelId => models.includes(modelId)) || models[0];
@@ -275,36 +252,50 @@ export class ModelRouter {
    * - Falls back to the default model if no better option is available
    */
   selectJudgeModel(generatorModelId: string, userCredits: number, plan: string): AllowedModelId {
-    // Ordered preference: good reasoning, mid-tier cost, different from generator
-    const judgePreferences: AllowedModelId[] = [
-      'anthropic/claude-sonnet-5',
-      'openai/gpt-5.6-sol',
-      'openai/gpt-5.6-terra',
-      'deepseek/deepseek-v4-pro-0813',
-      'x-ai/grok-4.6',
-      'google/gemini-3.7-flash',
-      'openai/gpt-5.6-luna',
-    ];
+    // The judge is a `review` task, so it goes through the same selector as
+    // everything else — a second hardcoded preference list here is how the
+    // policy drifted apart in the first place. The only extra constraint is
+    // independence: a model reviewing its own output is not a second opinion,
+    // so the generator is excluded and the next cheapest qualified model wins.
+    const decision = selectModel({ task: 'review', plan, credits: userCredits });
+    if (decision.modelId !== generatorModelId) return decision.modelId;
 
-    const planAccessibleModels = AI_ALLOWED_MODELS.filter(modelId => {
-      const minPlan = AI_MODEL_PLAN_ACCESS[modelId];
-      return this.isPlanSufficient(plan, minPlan);
-    });
-
-    for (const candidate of judgePreferences) {
-      if (
-        candidate !== generatorModelId &&
-        planAccessibleModels.includes(candidate) &&
-        MODEL_ACTION_CREDIT_FLOORS[candidate] <= userCredits
-      ) {
-        return candidate;
-      }
-    }
-
-    // Last resort: any different affordable model
-    const fallback = planAccessibleModels.find(m =>
-      m !== generatorModelId && MODEL_ACTION_CREDIT_FLOORS[m] <= userCredits
-    );
-    return (fallback as AllowedModelId) || DEFAULT_PROVIDER_MODEL_ID;
+    const alternatives = MODELS_BY_COST.filter(modelId => (
+      modelId !== generatorModelId
+      && this.isPlanSufficient(plan, AI_MODEL_PLAN_ACCESS[modelId])
+      && MODEL_ACTION_CREDIT_FLOORS[modelId] <= userCredits
+      && AI_MODEL_CAPABILITIES[modelId].reasoningLevel !== 'low'
+    ));
+    return alternatives[0] || DEFAULT_PROVIDER_MODEL_ID;
   }
+}
+
+
+/**
+ * A mode is a floor on complexity, not a model list.
+ *
+ * 'Fast' asks for the simplest treatment the task allows and 'Max Quality' for
+ * the most thorough; the selector still picks the cheapest model that clears
+ * the resulting bar, so a mode can never name a model.
+ */
+function complexityForMode(mode: RoutingContext['mode'], declared?: TaskComplexity): TaskComplexity {
+  const order: TaskComplexity[] = ['simple', 'medium', 'complex', 'extreme'];
+  const base = order.indexOf(declared || 'medium');
+  const floor = mode === 'Fast' ? 0
+    : mode === 'Balanced' ? 1
+    : mode === 'Pro' ? 2
+    : mode === 'Premium' || mode === 'Max Quality' ? 3
+    : base;
+  return order[Math.max(base >= 0 ? base : 1, floor)] || 'medium';
+}
+
+/** Infer the task when a caller only stated the capabilities it needs. */
+function inferTaskFromCapabilities(context: RoutingContext): TaskKind {
+  const needs = context.requiredCapabilities || {};
+  if (needs.security) return 'security';
+  if (needs.design) return 'design';
+  if (needs.code) return 'code_generation';
+  if (needs.agentic) return 'research';
+  if (needs.reasoning) return 'planning';
+  return 'conversation';
 }

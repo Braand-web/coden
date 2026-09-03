@@ -2043,17 +2043,25 @@ function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, opti
   return card;
 }
 
-function setMessageShimmer(card: HTMLElement | null, label = 'Coden is writing', withTimer = true) {
-  // [REMPLACEMENT STREAMING UI ICI]
-  // Ancien shimmer/progress/token streaming retire: on conserve seulement un
-  // etat d'attente textuel pour ne pas casser le flux d'envoi.
+/**
+ * Show that work is happening, in the words of the work itself.
+ *
+ * The label handed here is the run's current phase — "Coden analyse votre
+ * demande", "Coden construit l'application" — and it is replaced by the next
+ * one the server reports, never on a timer. A cycle of phrases rotating every
+ * three seconds independently of the backend is a progress bar that cannot be
+ * wrong because it is not measuring anything, and that is precisely why it is
+ * useless: it reads the same whether the pipeline is working or hung.
+ */
+function setMessageShimmer(card: HTMLElement | null, label = 'Coden prépare la réponse…') {
   if (!card) return;
-  void withTimer;
   const id = messageHandleId(card);
   if (id && conversationApi) {
     conversationApi.setWorking(id, label);
   }
   card.setAttribute('aria-busy', 'true');
+  // Without the React island there is no shimmer to drive, so the plain card
+  // carries the same words rather than nothing.
   if (!id || !conversationApi) updateMessage(card, label);
 }
 
@@ -2064,11 +2072,24 @@ function clearMessageShimmer(card: HTMLElement | null) {
   card.removeAttribute('aria-busy');
 }
 
+/**
+ * Assistant text as it arrives.
+ *
+ * Deltas go to the React island, which owns the streamed response; this exists
+ * for the path where the island is not mounted, and there the card simply
+ * shows what has arrived so far rather than discarding it. It used to discard
+ * it: the function was an empty stub, so a run whose island failed to mount
+ * streamed its entire answer into nothing.
+ */
 function appendToMessageShimmer(card: HTMLElement | null, text: string) {
-  void card;
-  void text;
-  // [REMPLACEMENT STREAMING UI ICI]
-  // Token-by-token rendering intentionally removed.
+  if (!card || !text) return;
+  const id = messageHandleId(card);
+  if (id && conversationApi) {
+    conversationApi.appendAssistantDelta(id, text);
+    return;
+  }
+  const paragraph = card.querySelector('.msg-body-paragraph');
+  if (paragraph) paragraph.textContent = `${paragraph.textContent || ''}${text}`;
 }
 
 function completeMessageShimmer(card: HTMLElement | null, label = 'Completed') {
@@ -5404,7 +5425,9 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
     const card = appendMessage('assistant', '', { working: true });
-    setMessageShimmer(card, '', false);
+    // An empty label used to reach the shimmer here, which drew nothing while
+    // the model was already working. Say what is happening instead.
+    setMessageShimmer(card, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
     try {
       await answerSimpleConversationFromProvider(card, safePrompt, speaksFrench, requestedMode);
     } finally {
@@ -5864,9 +5887,9 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       }
     }
 
-    // [REMPLACEMENT STREAMING UI ICI]
-    // Le nouveau rendu React consomme le transport SSE existant et retombe sur
-    // cette reponse finale uniquement si le flux ne demarre pas.
+    // The React island consumes the SSE transport as it arrives; this final
+    // response is the authoritative record, and the only source when the
+    // stream never started.
     if (!payload) throw new Error('Generation failed or empty response');
 
     const responsePayload = redactInternalModelFields(payload || {});

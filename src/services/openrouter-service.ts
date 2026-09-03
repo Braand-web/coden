@@ -3,6 +3,7 @@ import { MODEL_REGISTRY } from '../config/ai-models.ts';
 import { toOpenRouterChatPayloadExtras, type ProviderRequestConfig } from './provider-adapters.ts';
 import { applyPromptCaching, type CacheableMessage } from './prompt-caching.ts';
 import { ToolCallStreamAccumulator, type AssembledToolCall } from './tool-call-stream-accumulator.ts';
+import { ProviderCancelledError, ProviderHttpError, ProviderTimeoutError, isRetryableStatus } from './provider-errors.ts';
 
 export const OPENROUTER_API_KEY_ENV_NAMES = [
   'OPENROUTER_API_KEY',
@@ -136,7 +137,7 @@ export class OpenRouterService {
 
         if (!response.ok) {
           const errMsg = await this.readProviderError(response);
-          throw new Error(`OpenRouter HTTP ${response.status}: ${errMsg || response.statusText}`);
+          throw new ProviderHttpError('OpenRouter', response.status, errMsg || response.statusText);
         }
 
         const data: any = await response.json();
@@ -188,9 +189,26 @@ export class OpenRouterService {
         };
 
       } catch (err: any) {
-        if (attempt >= retryAttempts || err?.name === 'AbortError') {
-          throw new Error(`Failed AI response after ${attempt} attempts: ${err.message}`);
+        // An abort is two different events wearing one name. The caller's
+        // signal firing means the user pressed stop, and retrying that spends
+        // their credits against their instruction; our own timeout firing is
+        // an ordinary transient failure and is exactly what the retries are
+        // for. Telling them apart is the difference between a run that
+        // recovers and a run that quietly bills for work nobody wanted.
+        if (err?.name === 'AbortError') {
+          if (signal?.aborted) throw new ProviderCancelledError();
+          const timedOut = new ProviderTimeoutError('OpenRouter', timeoutMs);
+          if (attempt >= retryAttempts) throw timedOut;
+          console.warn(`[OPENROUTER CLIENT] Attempt ${attempt} timed out after ${timeoutMs}ms. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2;
+          continue;
         }
+        // A request the provider refused on its merits will be refused again.
+        // Three identical 400s cost the user three seconds of backoff and
+        // teach us nothing.
+        if (err instanceof ProviderHttpError && !isRetryableStatus(err.status)) throw err;
+        if (attempt >= retryAttempts) throw err;
         console.warn(`[OPENROUTER CLIENT] Attempt ${attempt} failed: ${err.message}. Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // exponential backoff
@@ -244,7 +262,7 @@ export class OpenRouterService {
 
       if (!response.ok) {
         const errMsg = await this.readProviderError(response);
-        throw new Error(`OpenRouter HTTP ${response.status}: ${errMsg || response.statusText}`);
+        throw new ProviderHttpError('OpenRouter', response.status, errMsg || response.statusText);
       }
 
       if (!response.body) {
@@ -336,6 +354,14 @@ export class OpenRouterService {
           yield { type: 'tool_calls', tool_calls: finalized, model };
         }
       }
+    } catch (err: any) {
+      // Same distinction as `chat`, and it matters more here: a generation
+      // stream is the long call, so it is the one a user actually stops.
+      if (err?.name === 'AbortError') {
+        if (signal?.aborted) throw new ProviderCancelledError();
+        throw new ProviderTimeoutError('OpenRouter', timeoutMs);
+      }
+      throw err;
     } finally {
       if (idleTimeout) clearTimeout(idleTimeout);
       clearTimeout(hardTimeout);

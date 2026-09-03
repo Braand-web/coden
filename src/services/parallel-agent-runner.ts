@@ -83,8 +83,8 @@ export type ParallelAgentContext = {
 // ─── Default model tiers (overridden by availableModels if provided) ──────────
 
 const DEFAULT_MODELS: Record<AgentModelTier, AllowedModelId> = {
-  fast:      'openai/gpt-5.6-luna',
-  balanced:  'deepseek/deepseek-v4-pro-0813',
+  fast:      'openai/gpt-5.6-luna-pro',
+  balanced:  'moonshotai/kimi-k3',
   reasoning: 'anthropic/claude-sonnet-5',
   design:    'anthropic/claude-sonnet-5',
 };

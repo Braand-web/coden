@@ -8,6 +8,7 @@ import { validateAllowedModel } from './ai-validator.ts';
 import type { ChatCompletionResult, ChatMessage, OpenRouterService, StreamChatEvent } from './openrouter-service.ts';
 import type { AnthropicService } from './anthropic-service.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
+import { ProviderCancelledError, ProviderHttpError, ProviderTimeoutError, isRetryableStatus } from './provider-errors.ts';
 
 type CircuitState = {
   failures: number;
@@ -42,6 +43,15 @@ export class ProviderGatewayError extends Error {
   }
 }
 
+/** A stream failure that arrived after output was already yielded. */
+class StreamAlreadyStarted extends Error {
+  readonly cause: unknown;
+  constructor(cause: unknown) {
+    super('stream failed after emitting output');
+    this.cause = cause;
+  }
+}
+
 export class ProviderGateway {
   private circuits = new Map<string, CircuitState>();
   private metrics = new Map<string, ModelRuntimeMetric>();
@@ -54,8 +64,8 @@ export class ProviderGateway {
   }
 
   resolveAutoModel(policy: 'economy' | 'balanced' | 'premium' | 'auto' = 'auto'): AllowedModelId {
-    if (policy === 'premium') return 'openai/gpt-5.6-sol';
-    if (policy === 'economy') return 'openai/gpt-5.6-luna';
+    if (policy === 'premium') return 'openai/gpt-5.6-sol-pro';
+    if (policy === 'economy') return 'openai/gpt-5.6-luna-pro';
     return DEFAULT_PROVIDER_MODEL_ID;
   }
 
@@ -169,14 +179,15 @@ export class ProviderGateway {
       const startedAt = Date.now();
       this.noteRequest(candidate);
       try {
-        for await (const event of this.streamWithProvider(candidate, messages, options.timeoutMs || 90_000, candidateRuntimeConfig, options.signal)) {
-          yieldedAnyEvent = true;
-          yield event;
-        }
+        yield* this.streamAttempts(candidate, messages, options, candidateRuntimeConfig, () => { yieldedAnyEvent = true; });
         this.noteMetricSuccess(candidate, Date.now() - startedAt);
         this.noteSuccess(candidate);
         return;
       } catch (error: any) {
+        if (error instanceof StreamAlreadyStarted) {
+          yieldedAnyEvent = true;
+          throw this.classifyError(error.cause, candidate);
+        }
         lastError = error;
         const classified = this.classifyError(error, candidate);
         if (!yieldedAnyEvent && classified.diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG' && candidateRuntimeConfig) {
@@ -376,6 +387,47 @@ export class ProviderGateway {
       .filter(isAllowedModelId);
   }
 
+  /**
+   * Try one model's stream a bounded number of times, before any token escapes.
+   *
+   * A stream had no retry at all: the loop above only moves to the *next*
+   * model, and only when the caller opted into fallback. So an explicitly
+   * pinned model that hit one 503 — the failure the classifier now finally
+   * reports correctly — ended the generation, even though nothing had been
+   * shown to the user yet and repeating the request was free of consequence.
+   *
+   * The moment a token is yielded the retries stop for good. Restarting a
+   * stream that has already emitted output would replay it, and the caller has
+   * no way to tell the duplicate from the original.
+   */
+  private async *streamAttempts(
+    candidate: AllowedModelId,
+    messages: ChatMessage[],
+    options: { timeoutMs?: number; signal?: AbortSignal; maxAttempts?: number },
+    runtimeConfig: ProviderRequestConfig | undefined,
+    markStarted: () => void,
+  ): AsyncGenerator<StreamChatEvent> {
+    const maxAttempts = Math.max(1, options.maxAttempts || 2);
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let started = false;
+      try {
+        for await (const event of this.streamWithProvider(candidate, messages, options.timeoutMs || 90_000, runtimeConfig, options.signal)) {
+          if (!started) { started = true; markStarted(); }
+          yield event;
+        }
+        return;
+      } catch (error: any) {
+        // Past the first token this is no longer retryable by construction,
+        // whatever the error says: the caller has already seen output.
+        if (started) throw new StreamAlreadyStarted(error);
+        const classified = this.classifyError(error, candidate);
+        if (!classified.retryable || attempt >= maxAttempts) throw error;
+        this.noteRetry(candidate);
+        await sleep(250 * attempt);
+      }
+    }
+  }
+
   private chatWithProvider(
     modelId: AllowedModelId,
     messages: ChatMessage[],
@@ -470,8 +522,101 @@ export class ProviderGateway {
     metric.last_error_code = diagnosticCode;
   }
 
+  /** Map a provider's own status code onto a diagnostic and a retry verdict. */
+  private classifyHttpStatus(error: ProviderHttpError, modelId: string): ProviderGatewayError {
+    const status = error.status;
+    const retryable = isRetryableStatus(status);
+    const detail = error.body ? ` (${error.body.slice(0, 160)})` : '';
+
+    if (status === 401 || status === 403) {
+      const anthropic = error.provider === 'Anthropic';
+      return new ProviderGatewayError(anthropic
+        ? 'Anthropic key invalid or unauthorized. Update ANTHROPIC_API_KEY on Railway and redeploy.'
+        : 'OpenRouter key invalid or unauthorized. Update OPENROUTER_API_KEY on Railway and redeploy.', {
+        diagnosticCode: anthropic ? 'ANTHROPIC_KEY_INVALID' : 'OPENROUTER_KEY_INVALID',
+        statusCode: 503, retryable: false, modelId,
+      });
+    }
+    if (status === 402) {
+      return new ProviderGatewayError('The AI provider rejected the request because the provider account has insufficient credits or quota.', {
+        diagnosticCode: 'PROVIDER_QUOTA_OR_BILLING', statusCode: 503, retryable: false, modelId,
+      });
+    }
+    if (status === 404) {
+      return new ProviderGatewayError('The selected AI model is unavailable on the provider. Choose Auto or another allowed model.', {
+        diagnosticCode: 'MODEL_UNAVAILABLE', statusCode: 502, retryable: true, modelId,
+      });
+    }
+    if (status === 429) {
+      return new ProviderGatewayError('The AI provider rate limit was reached. Coden will retry shortly.', {
+        diagnosticCode: 'PROVIDER_RATE_LIMITED', statusCode: 429, retryable: true, modelId,
+      });
+    }
+    if (status === 400 || status === 422) {
+      // A rejected *option* is recoverable by dropping the option, which the
+      // caller already knows how to do; a rejected request is not.
+      if (/unsupported|not supported|response_format|tool_choice|json_schema|reasoning/i.test(error.body)) {
+        return new ProviderGatewayError('The selected model rejected an advanced runtime option. Coden will retry with a simpler compatible request.', {
+          diagnosticCode: 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG', statusCode: 502, retryable: true, modelId,
+        });
+      }
+      return new ProviderGatewayError(`The AI provider rejected the request format.${detail}`, {
+        diagnosticCode: 'PROVIDER_BAD_REQUEST', statusCode: 502, retryable: false, modelId,
+      });
+    }
+    if (status === 408 || status === 504) {
+      return new ProviderGatewayError('The selected AI model did not answer in time.', {
+        diagnosticCode: 'PROVIDER_TIMEOUT', statusCode: 504, retryable: true, modelId,
+      });
+    }
+    if (status >= 500) {
+      // 529 is Anthropic's overloaded signal and the commonest failure on
+      // frontier models. It is temporary by definition.
+      return new ProviderGatewayError('The selected AI model is temporarily unavailable.', {
+        diagnosticCode: 'PROVIDER_UNAVAILABLE', statusCode: 502, retryable: true, modelId,
+      });
+    }
+    return new ProviderGatewayError(`The AI provider request failed.${detail}`, {
+      diagnosticCode: 'PROVIDER_REQUEST_FAILED', statusCode: 502, retryable, modelId,
+    });
+  }
+
+  /**
+   * Decide what a provider failure was, and whether it is worth another try.
+   *
+   * Typed failures answer first. Everything below them is text matching, which
+   * is what this used to do exclusively and why the retry machinery almost
+   * never fired: the patterns are unanchored substrings, so `/400/` matched
+   * the "40000" in "upstream timeout after 40000ms" and turned a 503 into a
+   * non-retryable bad request, while `/402/` matched a request id and told the
+   * user their account was out of credits. Every one of those failures was
+   * transient and every one of them was reported as permanent.
+   *
+   * The text rules are kept for callers that still throw plain Errors, but
+   * they now only ever see messages that carry no status code, so they can no
+   * longer misread one.
+   */
   private classifyError(error: any, modelId: string): ProviderGatewayError {
     if (error instanceof ProviderGatewayError) return error;
+
+    // The user pressed stop. Not a failure, and above all not something to
+    // retry or fall back from — that would spend their credits on work they
+    // just cancelled.
+    if (error instanceof ProviderCancelledError) {
+      return new ProviderGatewayError('The request was cancelled.', {
+        diagnosticCode: 'REQUEST_CANCELLED', statusCode: 499, retryable: false, modelId,
+      });
+    }
+
+    if (error instanceof ProviderTimeoutError) {
+      return new ProviderGatewayError('The selected AI model did not answer in time.', {
+        diagnosticCode: 'PROVIDER_TIMEOUT', statusCode: 504, retryable: true, modelId,
+      });
+    }
+
+    // A status code is a fact. Reading it beats inferring it from prose.
+    if (error instanceof ProviderHttpError) return this.classifyHttpStatus(error, modelId);
+
     if (String(error?.diagnosticCode || '') === 'MODEL_OUTPUT_PARSE_FAILED') {
       return new ProviderGatewayError('The selected AI model returned an unusable project artifact.', {
         diagnosticCode: 'MODEL_OUTPUT_PARSE_FAILED',
@@ -500,7 +645,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/Anthropic HTTP (401|403)|Anthropic.*invalid api key|Anthropic.*unauthorized/i.test(message)) {
+    if (/Anthropic.*invalid api key|Anthropic.*unauthorized/i.test(message)) {
       return new ProviderGatewayError('Anthropic key invalid or unauthorized. Update ANTHROPIC_API_KEY on Railway and redeploy.', {
         diagnosticCode: 'ANTHROPIC_KEY_INVALID',
         statusCode: 503,
@@ -508,7 +653,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/401|403|invalid api key|unauthorized|permission/i.test(message)) {
+    if (/invalid api key|unauthorized|insufficient permission/i.test(message)) {
       return new ProviderGatewayError('OpenRouter key invalid or unauthorized. Update OPENROUTER_API_KEY on Railway and redeploy.', {
         diagnosticCode: 'OPENROUTER_KEY_INVALID',
         statusCode: 503,
@@ -516,7 +661,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/402|quota|billing|insufficient.*credit|payment required/i.test(message)) {
+    if (/quota|billing|insufficient.*credit|payment required/i.test(message)) {
       return new ProviderGatewayError('The AI provider rejected the request because the provider account has insufficient credits or quota.', {
         diagnosticCode: 'PROVIDER_QUOTA_OR_BILLING',
         statusCode: 503,
@@ -524,7 +669,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/404|model.*not.*found|not found|not available/i.test(message)) {
+    if (/model.*not.*found|model.*not available/i.test(message)) {
       return new ProviderGatewayError('The selected AI model is unavailable on OpenRouter. Choose Auto or another allowed model.', {
         diagnosticCode: 'MODEL_UNAVAILABLE',
         statusCode: 502,
@@ -532,7 +677,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/429|rate limit|too many requests/i.test(message)) {
+    if (/rate limit|too many requests/i.test(message)) {
       return new ProviderGatewayError('OpenRouter rate limit reached. Please wait a moment and try again.', {
         diagnosticCode: 'PROVIDER_RATE_LIMITED',
         statusCode: 429,
@@ -548,7 +693,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/400|bad request|invalid request|provider rejected/i.test(message)) {
+    if (/bad request|invalid request|provider rejected/i.test(message)) {
       return new ProviderGatewayError('OpenRouter rejected the AI request format. Retry with Auto; if it keeps happening, check the selected model and Railway logs.', {
         diagnosticCode: 'PROVIDER_BAD_REQUEST',
         statusCode: 502,
@@ -556,7 +701,7 @@ export class ProviderGateway {
         modelId,
       });
     }
-    if (/timeout|AbortError|aborted|OpenRouter HTTP 5|ECONNRESET|ENOTFOUND|fetch failed|network|provider|upstream/i.test(message)) {
+    if (/timeout|AbortError|aborted|ECONNRESET|ENOTFOUND|fetch failed|network error|upstream/i.test(message)) {
       const isTimeout = /timeout|AbortError|aborted/i.test(message);
       return new ProviderGatewayError(isTimeout
         ? 'The selected AI model did not answer in time.'

@@ -37,7 +37,7 @@ import {
     hasFiles: false,
   });
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'openai/gpt-5.6-sol',
+    modelId: 'openai/gpt-5.6-sol-pro',
     task: 'frontend_generation',
     stream: false,
     estimatedInputTokens: 24_000,

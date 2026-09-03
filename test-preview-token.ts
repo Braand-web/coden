@@ -23,7 +23,26 @@ assert.ok(grant!.expiresAt > Date.now());
 // Everything malformed is refused, and refused the same way: a caller that
 // could tell "bad signature" from "expired" would be telling an attacker how
 // close a forgery got.
-for (const bad of ['', 'nonsense', 'a.b', `${token}x`, token.replace(/.$/, 'A'), 'eyJwIjoieCJ9.', '.', '..']) {
+/**
+ * A tampered signature, tampered where it counts.
+ *
+ * This used to rewrite the token's last character to 'A', which failed as a
+ * test in two compounding ways. The final base64url character of a 32-byte
+ * HMAC carries only two significant bits — the other four are padding — so it
+ * takes one of four values, and rewriting it either left the token identical
+ * or produced a different encoding of the *same* signature bytes. Either way
+ * `readPreviewToken` correctly returned a grant, and the assertion demanding
+ * null failed: the security test was flaking at 15% on valid tokens.
+ *
+ * Mutating inside the signature changes real bytes, so the check tests what it
+ * claims to.
+ */
+const [tokenPayload, tokenSignature] = token.split('.');
+const flipAt = Math.floor(tokenSignature.length / 2);
+const tampered = `${tokenPayload}.${tokenSignature.slice(0, flipAt)}${tokenSignature[flipAt] === 'A' ? 'B' : 'A'}${tokenSignature.slice(flipAt + 1)}`;
+assert.notEqual(tampered, token, 'the tampered token must actually differ');
+
+for (const bad of ['', 'nonsense', 'a.b', `${token}x`, tampered, 'eyJwIjoieCJ9.', '.', '..']) {
   assert.equal(readPreviewToken(bad), null, `must refuse ${JSON.stringify(bad.slice(0, 24))}`);
 }
 assert.equal(readPreviewToken(undefined), null);

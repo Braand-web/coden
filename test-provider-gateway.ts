@@ -106,7 +106,7 @@ class FakeAnthropic {
     };
   };
   const gateway = new ProviderGateway(fake as any);
-  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, {
+  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna-pro', messages, {
     allowFallback: false,
     validateResult: candidate => assert.equal(candidate.text, '{"files":[]}'),
   });
@@ -127,7 +127,7 @@ class FakeAnthropic {
   };
   const transitions: Array<{ from: string; to: string; reason: string }> = [];
   const gateway = new ProviderGateway(fake as any);
-  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, {
+  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna-pro', messages, {
     allowFallback: true,
     validateResult: candidate => {
       if (candidate.text === 'malformed') {
@@ -139,7 +139,7 @@ class FakeAnthropic {
     onFallback: transition => transitions.push(transition),
   });
   assert.equal(result.text, '{"files":[]}');
-  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash']);
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch']);
   assert.equal(transitions[0]?.reason, 'MODEL_OUTPUT_PARSE_FAILED');
 }
 
@@ -148,16 +148,16 @@ class FakeAnthropic {
   fake.failures.push(new Error('AbortError: provider timeout'));
   const gateway = new ProviderGateway(fake as any);
   const transitions: Array<{ from: string; to: string; reason: string }> = [];
-  const result = await gateway.chat('openai/gpt-5.6-luna', messages, {
+  const result = await gateway.chat('openai/gpt-5.6-luna-pro', messages, {
     maxAttempts: 1,
     allowFallback: true,
     onFallback: transition => transitions.push(transition),
   });
   assert.equal(result.text, 'ok');
-  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash']);
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch']);
   assert.deepEqual(transitions, [{
-    from: 'openai/gpt-5.6-luna',
-    to: 'google/gemini-3.7-flash',
+    from: 'openai/gpt-5.6-luna-pro',
+    to: 'google/gemini-3.8-flash:batch',
     reason: 'PROVIDER_TIMEOUT',
   }]);
 }
@@ -174,7 +174,7 @@ class FakeAnthropic {
     };
   };
   const gateway = new ProviderGateway(fake as any);
-  const result = await gateway.chat('openai/gpt-5.6-luna', messages, {
+  const result = await gateway.chat('openai/gpt-5.6-luna-pro', messages, {
     maxAttempts: 1,
     allowFallback: true,
     validateResult: candidate => {
@@ -187,7 +187,7 @@ class FakeAnthropic {
   assert.equal(result.text, 'valid-project-artifact');
   assert.deepEqual(
     fake.calls,
-    ['openai/gpt-5.6-luna', 'google/gemini-3.7-flash'],
+    ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch'],
     'Auto recovery must retry a malformed artifact with the configured compatible model.',
   );
 }
@@ -202,7 +202,7 @@ class FakeAnthropic {
   assert.equal(resolveAnthropicApiKey({ ANTHROPIC_API_KEY: '  sk-ant-direct\n' }), 'sk-ant-direct');
   assert.equal(resolveDirectAnthropicModelId('anthropic/claude-sonnet-5'), 'claude-sonnet-5');
   assert.equal(resolveDirectAnthropicModelId('anthropic/claude-opus-5'), 'claude-opus-5');
-  assert.equal(resolveDirectAnthropicModelId('openai/gpt-5.6-luna'), null);
+  assert.equal(resolveDirectAnthropicModelId('openai/gpt-5.6-luna-pro'), null);
 }
 
 {
@@ -220,7 +220,7 @@ class FakeAnthropic {
   fakeOpenRouter.failures.push(...Array.from({ length: 10 }, () => new Error('OpenRouter HTTP 402: insufficient credits')));
   const fakeAnthropic = new FakeAnthropic();
   const gateway = new ProviderGateway(fakeOpenRouter as any, { anthropic: fakeAnthropic as any });
-  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 1 }));
+  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna-pro', messages, { maxAttempts: 1 }));
   assert.deepEqual(fakeAnthropic.calls, [], 'Quota errors must not trigger a hidden provider or model fallback.');
 }
 
@@ -239,18 +239,18 @@ class FakeAnthropic {
   const fake = new FakeOpenRouter();
   fake.failures.push(new Error('OpenRouter HTTP 500: upstream unavailable'));
   const gateway = new ProviderGateway(fake as any);
-  const result = await gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 2 });
+  const result = await gateway.chat('openai/gpt-5.6-luna-pro', messages, { maxAttempts: 2 });
   assert.equal(result.text, 'ok');
   assert.equal(fake.calls.length, 2);
   const metrics = gateway.getRuntimeMetricsSnapshot();
-  assert.ok(metrics.some(item => item.model_id === 'openai/gpt-5.6-luna' && item.requests >= 2 && item.successes === 1 && item.retries >= 1));
+  assert.ok(metrics.some(item => item.model_id === 'openai/gpt-5.6-luna-pro' && item.requests >= 2 && item.successes === 1 && item.retries >= 1));
 }
 
 {
   const fake = new FakeOpenRouter();
   fake.failures.push(new Error('OpenRouter HTTP 401: invalid api key'));
   const gateway = new ProviderGateway(fake as any);
-  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna', messages), (error: any) => {
+  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna-pro', messages), (error: any) => {
     assert.equal(error.diagnosticCode, 'OPENROUTER_KEY_INVALID');
     assert.equal(error.retryable, false);
     return true;
@@ -286,10 +286,10 @@ class FakeAnthropic {
   const fake = new FakeOpenRouter();
   fake.failures.push(...Array.from({ length: 12 }, () => new Error('OpenRouter HTTP 500: upstream unavailable')));
   const gateway = new ProviderGateway(fake as any, { failureThreshold: 2, breakerMs: 60_000 });
-  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 1 }));
-  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 1 }));
+  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna-pro', messages, { maxAttempts: 1 }));
+  await assert.rejects(() => gateway.chat('openai/gpt-5.6-luna-pro', messages, { maxAttempts: 1 }));
   const snapshot = gateway.getCircuitSnapshot();
-  assert.ok(snapshot.some(item => item.model_id === 'openai/gpt-5.6-luna' && item.blocked));
+  assert.ok(snapshot.some(item => item.model_id === 'openai/gpt-5.6-luna-pro' && item.blocked));
 }
 
 console.log('test-provider-gateway passed');

@@ -104,12 +104,12 @@ assert.equal(domainPlanLimits.getCustomDomainLimit('enterprise'), 9999);
 const premiumRates = MODEL_CREDIT_RATES.filter(rate => rate.tier === 'Premium');
 assert.ok(premiumRates.length >= 1);
 assert.equal(
-  premiumRates.filter(rate => rate.id !== 'anthropic/claude-fable-5')
+  premiumRates.filter(rate => rate.id !== 'anthropic/claude-fable-5.1:batch')
     .every(rate => rate.availability === UserPlan.SCALE),
   true,
 );
 assert.equal(
-  premiumRates.find(rate => rate.id === 'anthropic/claude-fable-5')?.availability,
+  premiumRates.find(rate => rate.id === 'anthropic/claude-fable-5.1:batch')?.availability,
   UserPlan.ENTERPRISE,
 );
 

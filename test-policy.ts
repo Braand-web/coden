@@ -9,18 +9,19 @@ import {
   getPlatformIntelligence,
 } from './src/services/design-generation-policy.ts';
 
+// The nine authorised models, and only those. The catalogue was cut from
+// eleven: DeepSeek, Qwen and GLM were retired, and the remaining ids moved to
+// their current provider names.
 const EXPECTED_ALLOWED_MODELS = [
-  'openai/gpt-5.6-luna',
-  'google/gemini-3.7-flash',
-  'deepseek/deepseek-v4-pro-0813',
-  'openai/gpt-5.6-terra',
-  'qwen/qwen3.8-27b',
-  'z-ai/glm-5.3',
+  'google/gemini-3.8-flash:batch',
+  'openai/gpt-5.6-luna-pro',
+  'moonshotai/kimi-k3',
+  'openai/gpt-5.6-terra-pro',
   'anthropic/claude-sonnet-5',
   'x-ai/grok-4.6',
-  'openai/gpt-5.6-sol',
+  'openai/gpt-5.6-sol-pro',
   'anthropic/claude-opus-5',
-  'anthropic/claude-fable-5',
+  'anthropic/claude-fable-5.1:batch',
 ] as const;
 
 async function runTests() {

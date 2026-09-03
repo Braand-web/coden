@@ -6,14 +6,14 @@ const report = buildAgentMoatIntelligence({
     {
       id: 'run_1',
       intent: 'build',
-      model_id: 'openai/gpt-5.6-luna',
+      model_id: 'openai/gpt-5.6-luna-pro',
       status: 'completed',
       duration_ms: 42000,
     },
     {
       id: 'run_2',
       intent: 'debug_fix',
-      model_id: 'openai/gpt-5.6-luna',
+      model_id: 'openai/gpt-5.6-luna-pro',
       status: 'failed',
       diagnostic_code: 'OPENROUTER_TIMEOUT',
       suggested_action: 'retry_later',
@@ -79,7 +79,7 @@ assert.notEqual(runnerReputation?.status, 'strong', 'runner should be watch/weak
 const publishReputation = report.module_reputation.find(item => item.module === 'publish');
 assert.ok(publishReputation?.signals.some(signal => signal.includes('DEPLOYMENT_PERSISTENCE')));
 
-const economyModel = report.model_performance.find(item => item.model_id === 'openai/gpt-5.6-luna');
+const economyModel = report.model_performance.find(item => item.model_id === 'openai/gpt-5.6-luna-pro');
 assert.equal(economyModel?.attempts, 2);
 assert.equal(economyModel?.failures, 1);
 assert.equal(economyModel?.recommendation, 'avoid_for_now');

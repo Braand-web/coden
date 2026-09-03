@@ -6,6 +6,7 @@ import type {
   ToolCall,
 } from './openrouter-service.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
+import { ProviderHttpError } from './provider-errors.ts';
 
 export const ANTHROPIC_API_KEY_ENV_NAMES = [
   'ANTHROPIC_API_KEY',
@@ -22,10 +23,19 @@ export function resolveAnthropicApiKey(env: AnthropicEnv = process.env, fallback
   return '';
 }
 
+/**
+ * Models Coden may call on Anthropic's API directly rather than through
+ * OpenRouter.
+ *
+ * Fable is deliberately absent. The authorised catalogue lists it as
+ * `:batch` — a deferred execution tier with its own price — and there is no
+ * such tier on this endpoint, so mapping it here would silently run a batch
+ * selection as an interactive call and bill it at the interactive rate. A
+ * deferred model goes through OpenRouter, where the tier it names exists.
+ */
 const DIRECT_ANTHROPIC_MODEL_IDS: Record<string, string> = {
   'anthropic/claude-sonnet-5': 'claude-sonnet-5',
   'anthropic/claude-opus-5': 'claude-opus-5',
-  'anthropic/claude-fable-5': 'claude-fable-5',
 };
 
 export function resolveDirectAnthropicModelId(modelId: string): string | null {
@@ -176,7 +186,7 @@ export class AnthropicService {
         } catch {
           // Keep the bounded provider response.
         }
-        throw new Error(`Anthropic HTTP ${response.status}: ${message || response.statusText}`);
+        throw new ProviderHttpError('Anthropic', response.status, message || response.statusText);
       }
       return response;
     } finally {

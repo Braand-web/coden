@@ -10,7 +10,7 @@ const gateway = {
     if (calls.length === 1) {
       return {
         text: '',
-        model: 'openai/gpt-5.6-luna',
+        model: 'openai/gpt-5.6-luna-pro',
         tool_calls: [{
           id: 'tool_1',
           type: 'function' as const,
@@ -22,7 +22,7 @@ const gateway = {
     }
     return {
       text: 'I inspected the file and can continue.',
-      model: 'openai/gpt-5.6-luna',
+      model: 'openai/gpt-5.6-luna-pro',
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       cost_usd: 0,
     };
@@ -31,7 +31,7 @@ const gateway = {
 
 const result = await runLlmToolLoop({
   gateway,
-  modelId: 'openai/gpt-5.6-luna',
+  modelId: 'openai/gpt-5.6-luna-pro',
   messages: [{ role: 'user', content: 'Inspect the app.' }],
   handlers: {
     inspect_project_files: ({ paths }) => ({ paths, content: 'export default function App() {}' }),
@@ -55,7 +55,7 @@ const migrationGateway = {
     if (blockedCalls.length === 1) {
       return {
         text: '',
-        model: 'openai/gpt-5.6-luna',
+        model: 'openai/gpt-5.6-luna-pro',
         tool_calls: [{
           id: 'tool_migration',
           type: 'function' as const,
@@ -67,7 +67,7 @@ const migrationGateway = {
     }
     return {
       text: 'Waiting for approval.',
-      model: 'openai/gpt-5.6-luna',
+      model: 'openai/gpt-5.6-luna-pro',
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       cost_usd: 0,
     };
@@ -76,7 +76,7 @@ const migrationGateway = {
 
 const blocked = await runLlmToolLoop({
   gateway: migrationGateway,
-  modelId: 'openai/gpt-5.6-luna',
+  modelId: 'openai/gpt-5.6-luna-pro',
   messages: [{ role: 'user', content: 'Apply a migration.' }],
   handlers: {
     apply_migration: () => {
@@ -101,7 +101,7 @@ const approvedGateway = {
     if (approvedCalls.length === 1) {
       return {
         text: '',
-        model: 'openai/gpt-5.6-luna',
+        model: 'openai/gpt-5.6-luna-pro',
         tool_calls: [{
           id: 'tool_migration_approved',
           type: 'function' as const,
@@ -113,7 +113,7 @@ const approvedGateway = {
     }
     return {
       text: 'Migration applied.',
-      model: 'openai/gpt-5.6-luna',
+      model: 'openai/gpt-5.6-luna-pro',
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       cost_usd: 0,
     };
@@ -122,7 +122,7 @@ const approvedGateway = {
 
 const approved = await runLlmToolLoop({
   gateway: approvedGateway,
-  modelId: 'openai/gpt-5.6-luna',
+  modelId: 'openai/gpt-5.6-luna-pro',
   messages: [{ role: 'user', content: 'Apply the approved migration.' }],
   approvalResolver: async request => {
     approvalRequestSeen = request.name === 'apply_migration' && /Database migrations/.test(request.reason);

@@ -18,7 +18,14 @@ assert.ok(builderLive.includes('/api/assistant/chat/stream'), 'simple conversati
 assert.ok(builderLive.includes('openCodenStream'), 'builder should consume the preserved SSE transport');
 assert.ok(builderLive.includes("/api/projects/${encodeURIComponent(currentProjectId)}/generate"), 'builder should keep non-streaming generation fallback');
 assert.ok(builderLive.includes("/api/assistant/chat"), 'simple conversation should keep non-streaming chat fallback');
-assert.ok(builderLive.includes('[REMPLACEMENT STREAMING UI ICI]'), 'builder should expose a clear streaming UI replacement anchor');
+// The anchor this used to assert was a TODO marker left where the old
+// streaming UI had been ripped out. Pinning it kept three stubs alive: a
+// shimmer that dropped its label, a delta handler that discarded the model's
+// answer, and a comment where the replacement was supposed to go. The
+// replacement now exists, so the assertions are on it.
+assert.ok(!builderLive.includes('[REMPLACEMENT STREAMING UI ICI]'), 'the streaming UI replacement is done; the placeholder anchor must be gone');
+assert.ok(!builderLive.includes('// Token-by-token rendering intentionally removed.'), 'assistant deltas must not be discarded');
+assert.match(builderLive, /conversationApi\.appendAssistantDelta\(id, text\)/, 'assistant deltas must reach the renderer');
 assert.ok(conversation.includes('createRoot'), 'conversation renderer should be a React runtime');
 assert.ok(conversation.includes('DOMPurify'), 'assistant markdown should be sanitized');
 assert.ok(conversation.includes('MarkdownIt'), 'assistant markdown should render rich markdown');

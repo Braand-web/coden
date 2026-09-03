@@ -29,17 +29,17 @@ for (const modelId of AI_ALLOWED_MODELS) {
 }
 
 {
-  const luna = getAIModelCapabilityProfile('openai/gpt-5.6-luna');
+  const luna = getAIModelCapabilityProfile('openai/gpt-5.6-luna-pro');
   assert.equal(
     luna.fallbackPrimary,
-    'google/gemini-3.7-flash',
+    'google/gemini-3.8-flash:batch',
     'The capability registry must expose Luna’s bounded Auto recovery candidate.',
   );
 }
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'openai/gpt-5.6-luna',
+    modelId: 'openai/gpt-5.6-luna-pro',
     task: 'conversation',
     stream: true,
   });
@@ -75,7 +75,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'google/gemini-3.7-flash',
+    modelId: 'google/gemini-3.8-flash:batch',
     task: 'backend_generation',
     allowTools: false,
   });
@@ -132,7 +132,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'openai/gpt-5.6-luna',
+    modelId: 'openai/gpt-5.6-luna-pro',
     task: 'intent',
   });
   assert.equal(runtime.responseFormat.type, 'json_schema');
@@ -152,17 +152,20 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'deepseek/deepseek-v4-pro-0813',
+    modelId: 'moonshotai/kimi-k3',
     task: 'intent',
   });
   const providerConfig = buildProviderRequestConfig(runtime);
   const extras = toOpenRouterChatPayloadExtras(providerConfig);
-  assert.equal(providerConfig.adapter, 'deepseek');
-  assert.equal((extras.response_format as any)?.type, 'json_schema', 'DeepSeek V4 Pro supports structured output in the verified OpenRouter catalog.');
+  // Moonshot has no first-party integration here, so it is reached through
+  // OpenRouter like any other model without one. The adapter is a transport
+  // choice, not a capability claim: structured output still has to work.
+  assert.equal(providerConfig.adapter, 'openrouter');
+  assert.equal((extras.response_format as any)?.type, 'json_schema', 'Kimi K3 supports structured output.');
 }
 
 {
-  const openAiRuntime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra', task: 'security' });
+  const openAiRuntime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'security' });
   const anthropicRuntime = buildAIModelRuntimeConfig({ modelId: 'anthropic/claude-sonnet-5', task: 'security' });
   const openAiConfig = buildProviderRequestConfig(openAiRuntime);
   const anthropicConfig = buildProviderRequestConfig(anthropicRuntime);
@@ -203,7 +206,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 // Thinking/reasoning budget tests
 {
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra', task: 'security' });
+  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'security' });
   assert.ok(runtime.thinking, 'Runtime config should include thinking section');
   assert.ok(runtime.thinking.budgetTokens > 0, 'Security task with reasoning model should get a thinking budget');
   assert.equal(runtime.thinking.includeInResponse, false, 'Thinking should not be included in user-facing response');
@@ -211,13 +214,13 @@ for (const modelId of AI_ALLOWED_MODELS) {
 }
 
 {
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-luna', task: 'conversation' });
+  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-luna-pro', task: 'conversation' });
   assert.ok('thinking' in runtime, 'All runtime configs should include thinking section');
 }
 
 // Expanded reasoning control detection
 {
-  const fableProfile = getAIModelCapabilityProfile('anthropic/claude-fable-5');
+  const fableProfile = getAIModelCapabilityProfile('anthropic/claude-fable-5.1:batch');
   assert.equal(fableProfile.reasoning, 'frontier', 'Claude Fable 5 should be treated as a frontier reasoning model');
   assert.equal(fableProfile.code, 'frontier', 'Claude Fable 5 should be treated as a frontier coding model');
   assert.equal(fableProfile.supports.reasoningControl, true, 'Claude Fable 5 should support reasoning control');
@@ -225,13 +228,13 @@ for (const modelId of AI_ALLOWED_MODELS) {
 }
 
 {
-  const latestFableProfile = getAIModelCapabilityProfile('anthropic/claude-fable-5');
+  const latestFableProfile = getAIModelCapabilityProfile('anthropic/claude-fable-5.1:batch');
   assert.equal(latestFableProfile.supports.toolCalling, true, 'Latest Fable alias should support tool calling');
   assert.equal(latestFableProfile.supports.structuredOutput, true, 'Latest Fable alias should support structured output');
 }
 
 {
-  const solProfile = getAIModelCapabilityProfile('openai/gpt-5.6-sol');
+  const solProfile = getAIModelCapabilityProfile('openai/gpt-5.6-sol-pro');
   assert.equal(solProfile.adapter, 'openai');
   assert.equal(solProfile.code, 'frontier');
   assert.equal(solProfile.supports.vision, true);
@@ -260,7 +263,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 // Thinking budget for OpenRouter extras
 {
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra', task: 'backend_generation' });
+  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'backend_generation' });
   const providerConfig = buildProviderRequestConfig(runtime);
   const extras = toOpenRouterChatPayloadExtras(providerConfig);
   if (providerConfig.thinking_budget) {

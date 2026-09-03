@@ -42,7 +42,7 @@ assert.deepEqual(responseContradictions('The preview is not verified yet.', empt
 assert.deepEqual(responseContradictions("L'application n'est pas publiée.", emptyLedger), []);
 assert.deepEqual(responseContradictions('The tests passed.', ledger), ['test success']);
 
-assert.doesNotThrow(() => assertAgentModelCapabilities('anthropic/claude-fable-5', { structuredOutput: true }));
+assert.doesNotThrow(() => assertAgentModelCapabilities('anthropic/claude-fable-5.1:batch', { structuredOutput: true }));
 assert.throws(() => assertAgentModelCapabilities('not-a-model', { structuredOutput: true }), /not allowed/i);
 
 console.log('agent runtime v2 tests passed');

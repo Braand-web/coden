@@ -423,7 +423,19 @@ function createStore() {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        ensureLiveRun(message, { activeText: label });
+        const run = ensureLiveRun(message, { activeText: label });
+        // The shimmer draws `view.publicActivity`; writing only `activeText`
+        // put the label somewhere nothing reads, so the panel stayed blank
+        // between the user pressing send and the first server phase event —
+        // exactly the window where a reader most needs to see that something
+        // started.
+        //
+        // Sequence 0 is what makes this safe: every server event carries a
+        // higher sequence, so the first real phase replaces this without a
+        // race, and this can never overwrite one that has already arrived.
+        if (run.view && (run.view.publicActivity?.sequence ?? -1) < 0) {
+          run.view.publicActivity = { phase: 'understanding', message: label, active: true, sequence: 0 };
+        }
       });
     },
     clearWorking(id) {
@@ -431,6 +443,12 @@ function createStore() {
         const message = find(id);
         if (!message) return;
         message.working = false;
+        // The shimmer is a claim that work is happening. Leaving it animating
+        // after the run ended is the interface lying about the backend, which
+        // is the whole failure mode this rework exists to remove.
+        if (message.liveRun?.view?.publicActivity) {
+          message.liveRun.view.publicActivity = { ...message.liveRun.view.publicActivity, active: false };
+        }
       });
     },
     setBlock(id, block) {

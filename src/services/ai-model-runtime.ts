@@ -123,9 +123,9 @@ const PROVIDER_ADAPTERS: Record<ModelProvider, RuntimeProviderAdapter> = {
   anthropic: 'anthropic',
   openai: 'openai',
   google: 'gemini',
-  deepseek: 'deepseek',
-  qwen: 'openrouter',
-  zai: 'openrouter',
+  // Moonshot has no first-party adapter here; it is reached through OpenRouter
+  // like any other model without a direct integration.
+  moonshot: 'openrouter',
   xai: 'xai',
 };
 
@@ -143,7 +143,7 @@ function comprehensionForProfile(modelId: AllowedModelId): RuntimeStrength {
 
 function knownLimitsForProvider(provider: ModelProvider, modelId: AllowedModelId) {
   const limits: string[] = [];
-  if (provider === 'deepseek') limits.push('text-only input');
+  if (provider === 'moonshot') limits.push('text-only input');
   if (provider === 'xai') limits.push('500k context window');
   if (modelId.includes('fable')) {
     limits.push('enterprise-only, high-cost and opt-in');

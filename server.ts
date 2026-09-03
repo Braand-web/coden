@@ -93,6 +93,7 @@ import {
 } from './src/services/ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
+import { selectModelForAgent } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
   deriveProjectName,
@@ -4438,8 +4439,13 @@ function guardAiDecisionWithUnderstanding(
 
 async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentDecision): Promise<IntentDecision | null> {
   if (!hasLiveAiProvider() || !agentIntentNeedsAiRouter(fallback)) return null;
+  // The intent router used to name its own model. Every agent that does that
+  // is a copy of the routing policy that will not be updated when the policy
+  // changes, so this asks the central selector like everything else: the task
+  // is classification, and someone is waiting on the answer.
+  const routerModel = selectModelForAgent('router', { interactive: true }).modelId;
   const routerRuntime = buildAIModelRuntimeConfig({
-    modelId: DEFAULT_PROVIDER_MODEL_ID,
+    modelId: routerModel,
     task: 'intent',
     stream: false,
     timeoutMs: 18_000,
@@ -4471,7 +4477,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     timeoutMs: 18_000,
     maxTokens: 1600,
   }));
-  const result = await providerGateway.chat(DEFAULT_PROVIDER_MODEL_ID, routerMessages, {
+  const result = await providerGateway.chat(routerModel, routerMessages, {
     maxAttempts: 2,
     timeoutMs: routerRuntime.timeoutMs,
     runtimeConfig,
@@ -4486,7 +4492,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     result.text,
     isIntentRouterStructuredOutput,
     async invalidText => {
-      const repaired = await providerGateway.chat(DEFAULT_PROVIDER_MODEL_ID, [
+      const repaired = await providerGateway.chat(routerModel, [
         {
           role: 'system',
           content: `${buildIntentRouterSystemPrompt()}\nRepair the invalid router output below. Return one valid JSON object only, matching the required intent contract.`,
@@ -6353,8 +6359,8 @@ async function generateFilesWithAi(input: {
         language: input.deepReasoningContract?.language || 'auto',
         // ✅ Dynamic model resolution — each agent gets the best model for its tier
         availableModels: {
-          fast:      'openai/gpt-5.6-luna',
-          balanced:  'deepseek/deepseek-v4-pro-0813',
+          fast:      'openai/gpt-5.6-luna-pro',
+          balanced:  'moonshotai/kimi-k3',
           reasoning: selectedModel, // use the already-resolved primary model for reasoning tasks
           design:    /gemini-3\.7|sonnet-5|opus-5|gpt-5\.6-sol/i.test(selectedModel)
                        ? selectedModel
