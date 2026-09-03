@@ -1,5 +1,26 @@
 @import "tailwindcss";
+/*
+ * The site's real theme toggle sets `data-theme="dark"|"light"` on <html>
+ * (theme-controller.ts) -- it never adds a `.dark` class, and nothing here
+ * used Tailwind's `dark:` variant before now, so its default
+ * `prefers-color-scheme` behavior was simply never exercised. Repointing it
+ * at the attribute the site actually toggles is what makes `dark:` classes
+ * (used by src/components/ui/testimonial-v2.tsx) follow the real toggle
+ * instead of the OS preference.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 @import "./design-system.css";
+
+/*
+ * design-system.css already defines --primary (the site's real accent, not
+ * a value invented for one component); this just exposes it as a Tailwind
+ * color token so utilities like `ring-primary`/`selection:bg-primary` (used
+ * by src/components/ui/testimonial-v2.tsx) resolve to it instead of
+ * silently generating nothing.
+ */
+@theme inline {
+  --color-primary: var(--primary);
+}
 @import "./styles/coden-ux-polish.css";
 @import "./styles/coden-light-theme.css";
 @import "./styles/coden-shell.css";
