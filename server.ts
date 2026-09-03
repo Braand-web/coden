@@ -927,6 +927,20 @@ const AGENT_V3_ENABLED = isAgentV3Enabled(process.env);
 const AGENT_V2_ENABLED = isAgentV2Enabled(process.env) || AGENT_V3_ENABLED;
 const AGENT_RUNTIME_V2_ENABLED = process.env.CODEN_AGENT_RUNTIME_V2 !== '0';
 const STRICT_VERIFICATION_ENABLED = process.env.CODEN_STRICT_VERIFICATION !== '0';
+/*
+ * Script execution stays off, and turning it on is not an improvement.
+ *
+ * This runner writes the project to a throwaway temp directory and runs
+ * `npm run build` there — without ever installing dependencies. With scripts
+ * enabled every build fails on "vite: not found", which is a fact about the
+ * empty directory rather than about the generated app, and the repair loop
+ * then chases an error the model did not cause.
+ *
+ * Its static checks (package.json parsing, unsafe-script refusal) still earn
+ * their place. Real execution belongs to the sandbox, which installs the
+ * project's own dependencies before asking its toolchain anything —
+ * src/services/sandbox/validate.ts.
+ */
 const projectRunner = new HybridProjectRunner({ executeScripts: process.env.AGENT_RUNNER_EXECUTE_SCRIPTS === '1' });
 const webResearchGateway = new WebResearchGateway(process.env);
 const falMediaGateway = new FalMediaGateway(process.env);
@@ -12739,6 +12753,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     let livePreview: Awaited<ReturnType<typeof applyProjectEdit>> | null = null;
     let sandboxValidation: Awaited<ReturnType<typeof validateProject>> | null = null;
     let sandboxRepairInstruction = '';
+    let sandboxRepair: Awaited<ReturnType<typeof runRepairLoop>> | null = null;
     if (process.env.CODEN_LIVE_SANDBOX === '1' && finalFiles.length) {
       try {
         // On a first build the scaffold goes under whatever the model wrote,
@@ -12787,6 +12802,74 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
                 project: project.id,
                 problems: sandboxValidation.problems.slice(0, 6).map(problem => ({ source: problem.source, file: problem.file, missing: problem.missingPackage })),
               });
+
+              /*
+               * Repair with tools, not with a regeneration.
+               *
+               * The model is handed the compiler's own errors and the means to
+               * act on them — read the file the error names, edit the line,
+               * install the package that is missing — and the project's
+               * toolchain is asked again. Asking for the whole application a
+               * second time costs as much as the first, and is a fresh chance
+               * to lose a file the first one got right.
+               *
+               * The loop's own limits do the stopping: it gives up when a
+               * round achieves nothing, because a model that could not fix an
+               * error will not fix it by being asked twice.
+               */
+              const repairRuntime = createProviderRuntimeOptions({
+                model: generation.model as AllowedModelId,
+                prompt,
+                decision,
+                files: finalFiles,
+                mode: 'text',
+                stream: false,
+                timeoutMs: 60_000,
+                maxTokens: 6_000,
+              });
+              sandboxRepair = await runRepairLoop({
+                sandbox,
+                initialReport: sandboxValidation,
+                onEvent: event => {
+                  if (!isStream || !streamV2 || streamAborted) return;
+                  streamV2.emit('sandbox', { stage: 'sandbox_repair', ...(event as any) });
+                },
+                turn: async ({ instruction, tools, call, maxToolCalls }) => {
+                  let toolCalls = 0;
+                  const handlers = Object.fromEntries(tools.map(tool => [
+                    tool.name,
+                    async (args: Record<string, unknown>) => { toolCalls += 1; return call(tool.name, args); },
+                  ]));
+                  await runLlmToolLoop({
+                    gateway: providerGateway,
+                    modelId: generation.model,
+                    messages: [
+                      { role: 'system', content: 'You repair a running application. Read the files the errors name, make the smallest change that fixes them, and change nothing else. Install a missing dependency rather than rewriting the import that needs it.' },
+                      { role: 'user', content: instruction },
+                    ],
+                    handlers,
+                    runtimeConfig: {
+                      ...repairRuntime.providerConfig,
+                      tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
+                      toolChoice: 'auto',
+                    } as any,
+                    runtimeConfigForModel: repairRuntime.runtimeConfigForModel,
+                    timeoutMs: 60_000,
+                    maxSteps: Math.min(6, maxToolCalls),
+                  }).catch((error: any) => {
+                    console.warn('[coden:sandbox_repair_turn_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+                  });
+                  return { toolCalls };
+                },
+              }).catch((error: any) => {
+                console.warn('[coden:sandbox_repair_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+                return null;
+              });
+
+              // The repair is only real if the checks now pass. Whatever the
+              // loop concluded, the report it ends on is the verdict.
+              if (sandboxRepair) sandboxValidation = sandboxRepair.finalReport;
+              sandboxRepairInstruction = sandboxValidation.ok ? '' : buildRepairInstruction(sandboxValidation);
             }
           }
         }
@@ -12881,7 +12964,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       },
       // The project's own toolchain, not our reading of its source.
       sandbox_validation: sandboxValidation
-        ? { ok: sandboxValidation.ok, ran: sandboxValidation.ran, problems: sandboxValidation.problems.slice(0, 20), repair: sandboxRepairInstruction || undefined }
+        ? {
+          ok: sandboxValidation.ok,
+          ran: sandboxValidation.ran,
+          problems: sandboxValidation.problems.slice(0, 20),
+          repair: sandboxRepairInstruction || undefined,
+          repair_rounds: sandboxRepair ? sandboxRepair.rounds : undefined,
+          repair_outcome: sandboxRepair ? sandboxRepair.stoppedBecause : undefined,
+        }
         : null,
       fact_ledger: factLedger,
     };
@@ -14455,6 +14545,7 @@ import { repairNarration, writingFileNarration } from './src/services/agent-narr
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter } from './src/services/sandbox/starters.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
+import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
 import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';

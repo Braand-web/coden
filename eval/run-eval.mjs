@@ -19,7 +19,8 @@
 //      harness run fully offline against captured generations.
 //   3. otherwise SKIPPED (never invent an output — no fake success).
 //
-// The optional LLM design judge (0-100, criteria from coden-design-prompt-v26.md)
+// The optional LLM design judge (0-100, criteria from the generated-app design
+// contract in src/lib/prompts/generated-app-design.ts)
 // runs only when OPENROUTER_API_KEY is set; otherwise designScore is null.
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';

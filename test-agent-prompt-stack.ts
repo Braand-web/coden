@@ -79,7 +79,21 @@ for (const prompt of [routerPrompt, textPrompt]) {
 assert.ok(generationPrompt.includes('This contract has priority over every lower-level Coden prompt policy'), 'generation must keep the root contract');
 assert.ok(generationPrompt.includes('Product engineering operating contract'), 'generation must keep the engineering contract');
 assert.ok(generationPrompt.includes('Never invent file contents, tool results, API behavior, tests, preview status, deployment status, or success'), 'generation must remain truthful');
-assert.ok(generationPrompt.length < 55_000, `generation prompt must stay output-focused, received ${generationPrompt.length} characters`);
+/*
+ * The ceiling exists so policy cannot grow without anyone noticing — it rides
+ * on every generation request.
+ *
+ * Raised from 55k when the owner's design specification replaced the five
+ * blocks that carried design rules before it. The accounting: those blocks
+ * totalled about 7.2k characters, the contract is about 9.5k, so the stack
+ * grew by roughly 2.2k and bought the removal of two direct contradictions —
+ * one block banned Inter while another recommended it, one mandated HSL while
+ * the standard is OKLCH.
+ *
+ * Raise this again only with the same kind of accounting. A number moved to
+ * make a test pass is not a budget.
+ */
+assert.ok(generationPrompt.length < 60_000, `generation prompt must stay output-focused, received ${generationPrompt.length} characters`);
 
 assert.ok(MODE_SELECTION_PROMPT.includes('DISCUSS leads to PLAN'), 'mode prompt must include transitions');
 assert.ok(MODE_SELECTION_PROMPT.includes('Never print DISCUSS, PLAN, BUILD, ASK'), 'mode prompt must forbid exposing internal modes');
@@ -137,13 +151,19 @@ assert.ok(generationPrompt.includes('Never generate throw new Error() inside src
 assert.ok(generationPrompt.includes('Never output __CODEN_FORCE_ERROR__'), 'generation prompt must forbid forced runtime failure markers');
 assert.ok(generationPrompt.includes('Coden is a general web-app builder'), 'generation prompt must stay general-purpose');
 assert.ok(generationPrompt.includes('Recovery pass is mandatory'), 'generation prompt must require repair/retest before final delivery');
-assert.ok(generationPrompt.includes('Generated app design system policy'), 'generation prompt must include generated app design system policy');
-assert.ok(generationPrompt.includes('design tokens'), 'generation prompt must require design tokens');
-assert.ok(generationPrompt.includes('Avoid generic AI patterns'), 'generation prompt must reject generic AI aesthetics');
-assert.ok(generationPrompt.includes('Frontend craft policy'), 'generation prompt must include frontend craft policy');
-assert.ok(generationPrompt.includes('Touch targets must be at least 44x44px'), 'generation prompt must enforce touch target accessibility');
+// Design is now one contract rather than five policies. These assertions
+// follow the properties, not the old headings: what must reach the model is
+// the rule, and the rule's wording is the owner's.
+assert.ok(generationPrompt.includes('Generated app design contract version'), 'generation prompt must carry the design contract');
+assert.ok(generationPrompt.includes('single authority on their design'), 'and say that nothing overrides it');
+assert.ok(generationPrompt.includes('CSS custom properties'), 'generation prompt must require a token layer');
+assert.ok(generationPrompt.includes('oklch()'), 'generation prompt must fix the colour space');
+assert.ok(generationPrompt.includes('ANTI-PATTERNS À PROSCRIRE'), 'generation prompt must reject the anti-pattern list');
+assert.ok(generationPrompt.includes('IA générative'), 'including the generic AI-gradient aesthetic');
+assert.ok(generationPrompt.includes('cibles tactiles >= 44px'), 'generation prompt must enforce touch target accessibility');
 assert.ok(generationPrompt.includes('prefers-reduced-motion'), 'generation prompt must respect reduced motion');
-assert.ok(generationPrompt.includes('Motion and polish policy'), 'generation prompt must include motion polish guidance');
+assert.ok(generationPrompt.includes('motion-reduce:'), 'and say how to express that fallback in the real stack');
+assert.ok(generationPrompt.includes('4.5:1'), 'generation prompt must carry the WCAG AA threshold');
 assert.ok(generationPrompt.includes('Generated-application security contract'), 'generation prompt must include generated-app security boundaries');
 assert.ok(generationPrompt.includes('Every generated application has an immutable project id'), 'generation prompt must include infrastructure isolation');
 

@@ -99,6 +99,40 @@ for (const id of Object.keys(STARTERS) as Array<keyof typeof STARTERS>) {
     assert.doesNotMatch(css, /@tailwind/, 'the Tailwind directives must be compiled, not shipped');
     assert.match(css, /\.text-xl/, 'a class used in the app must survive into the bundle');
 
+    // -- the scaffold obeys the design contract it ships under -----------
+    // A scaffold that violates the contract hands every generated project a
+    // violation it did not write, and a repair pass chasing it.
+    assert.match(css, /oklch\(/, `${id} must ship OKLCH tokens`);
+    assert.match(css, /--color-bg:/, `${id} must define colour tokens`);
+    for (const semantic of ['--color-success', '--color-warning', '--color-error', '--color-info']) {
+      assert.ok(css.includes(semantic), `${id} must define the semantic state token ${semantic}`);
+    }
+    assert.match(css, /--radius-control|--radius-card/, `${id} must define a radius scale`);
+    assert.match(css, /prefers-reduced-motion/, `${id} must ship the reduced-motion opt-out`);
+    assert.match(css, /focus-visible/, `${id} must keep focus visible`);
+    // Pure white and pure black are forbidden by §2 — but the assertion is on
+    // the scaffold's own token block, not the whole bundle. Tailwind's reset
+    // carries #fff in --tw-ring-offset-color and #0000 in its shadow
+    // placeholders; those are framework machinery, not design decisions, and a
+    // test that flags them is testing Tailwind rather than the contract.
+    const tokenBlock = /:root\{[^}]*\}/.exec(css)?.[0] || '';
+    assert.ok(tokenBlock.includes('--color-bg'), `${id} token block must be findable`);
+    assert.doesNotMatch(tokenBlock, /#fff\b|#ffffff\b|#000\b|#000000\b|oklch\(1 0 0\)/i, `${id} tokens must not be pure white or black`);
+    // Chroma at or below 0.02 on the neutrals is what "tinted, never pure"
+    // means numerically — the rule the eye cannot check but the contract can.
+    for (const [, chroma] of [...tokenBlock.matchAll(/--color-(?:bg|surface|surface-raised|border|border-subtle|text|text-secondary|text-tertiary): oklch\([\d.]+ ([\d.]+)/g)]) {
+      assert.ok(Number(chroma) <= 0.02, `${id} neutral chroma must stay at or below 0.02, got ${chroma}`);
+    }
+
+    // The scaffold's own components must reference tokens, never raw palette
+    // utilities — otherwise the theme is a decoration and dark mode breaks.
+    const scaffoldSource = STARTERS[id].files.map(file => file.content).join('\n');
+    assert.doesNotMatch(
+      scaffoldSource,
+      /\b(?:bg|text|border)-(?:neutral|gray|slate|zinc|red|blue|green|indigo|violet|purple)-\d{2,3}\b/,
+      `${id} components must use theme tokens, not raw Tailwind colours`,
+    );
+
     // The dev server renders it.
     mark = Date.now();
     const started = await sandbox.start({ basePath: '/preview/starter/' });

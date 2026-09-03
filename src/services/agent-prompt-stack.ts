@@ -29,7 +29,7 @@ import {
   CODEN_UNIVERSAL_BUILDER_COMPLETION_RULES,
   CODEN_UNIVERSAL_BUILDER_SYSTEM_PROMPT,
 } from '../lib/prompts/system-prompt.ts';
-import { CODEN_DESIGN_SYSTEM_TOKENS_PROMPT } from '../lib/prompts/design-system.ts';
+import { CODEN_GENERATED_APP_DESIGN_PROMPT } from '../lib/prompts/generated-app-design.ts';
 import { CODEN_USER_ROLES_CONTRACT } from '../lib/prompts/user-roles.ts';
 import { CODEN_PUBLIC_SCHEMA_GRANTS_PROMPT } from '../lib/prompts/public-schema-grants.ts';
 import { CODEN_BROWSER_VERIFICATION_PROMPT } from '../lib/prompts/browser-verification.ts';
@@ -420,52 +420,6 @@ const CODEN_PLATFORM_INTELLIGENCE_POLICY = [
   'Use the provided uiGenerationPolicy.designBrief and uiGenerationPolicy.platformIntelligence as binding product requirements, not optional inspiration.',
 ].join('\n');
 
-const CODEN_GENERATED_APP_DESIGN_SYSTEM_POLICY = [
-  'Generated app design system policy:',
-  'Before writing UI code, internally create a compact design brief: app type, target user, product mood, visual direction, layout system, component set, interaction states, accessibility risks, and anti-generic-design risks.',
-  'Every generated app must include design tokens in the implementation: semantic color roles, neutral surfaces, typography scale, spacing scale, radius scale, shadow/elevation, focus ring, motion duration, and responsive breakpoints.',
-  'Use CSS custom properties or Tailwind theme-consistent values when practical. Do not scatter random colors, one-off spacing, mismatched radii, or unrelated shadow styles across the app.',
-  'Semantic state roles are part of the token set: success, warning, error, and info must exist as named colors in the Tailwind theme extension or as CSS custom properties, and the UI must use those roles rather than ad-hoc greens and reds.',
-  'Choose a deliberate aesthetic direction that fits the product: calm operational, editorial, refined luxury, playful, technical, local-business warm, fintech sober, creator/media expressive, or another context-true direction.',
-  'Avoid generic AI patterns: purple-blue gradient hero, three identical feature cards, oversized vague headlines, fake SaaS dashboards, meaningless glassmorphism, bland placeholder copy, inert CTAs, and UI that could belong to any product.',
-  'Typography should feel chosen, not defaulted. If external fonts are not available, use a thoughtful CSS font stack and hierarchy; do not rely on Arial/Roboto/Inter-like generic defaults as the whole visual personality.',
-  'Use real layout architecture: clear zones, stable grids, useful density, constrained line lengths, predictable navigation, and responsive transformations that preserve the primary workflow on mobile.',
-  'Cards are for repeated items, tools, panels, or modals. Do not nest decorative cards inside cards or turn every section into a floating card.',
-].join('\n');
-
-const CODEN_FRONTEND_CRAFT_POLICY = [
-  'Frontend craft policy:',
-  'Build real working components, not visual screenshots. Every important component needs default, hover, focus-visible, active/selected, disabled, loading, empty, error, and success states when relevant.',
-  'Buttons must look clickable and have visible feedback. Forms need labels, validation, helper/error text near the field, keyboard submission, and visible success or failure feedback.',
-  'Use icons only when they improve scanning. Prefer lucide-react icons already allowed by the stack, keep sizes consistent, and do not use emoji as UI icons.',
-  'For dashboards and operational tools, prioritize scanability: restrained surfaces, compact controls, aligned tables/lists, filters, bulk/action affordances, and calm hierarchy.',
-  'For marketing or landing experiences, prioritize conversion: specific offer, proof, differentiated sections, clear CTAs, trust signals, and no vague filler.',
-  'For creative/media experiences, allow more expressive motion and composition, but keep the workflow usable and accessible.',
-  'Never invent user-facing records, users, products, transactions, metrics, or activity. Start with an honest empty state until the user creates data or a real backend returns it.',
-].join('\n');
-
-const CODEN_RESPONSIVE_ACCESSIBILITY_POLICY = [
-  'Responsive and accessibility policy:',
-  'Design mobile-first and ensure the app works at mobile, tablet, and desktop sizes without horizontal scroll or overlapping text.',
-  'Touch targets must be at least 44x44px for interactive controls unless the control is inside a dense data surface with an accessible equivalent.',
-  'Body text should be readable: usually 16px or larger, comfortable line-height, sufficient contrast, and no negative letter spacing.',
-  'Meet WCAG contrast expectations for text and controls. Preserve visible focus states and keyboard navigation for buttons, links, tabs, menus, modals, and forms.',
-  'Use semantic HTML, accessible labels, aria only where it helps, alt text for meaningful images, and aria-live for dynamic status messages that users need to know.',
-  'Modals, popovers, dropdowns, and command menus must open/close reliably, not trap users accidentally, and expose clear cancel/close controls.',
-  'Responsive elements need stable dimensions with min/max constraints, grid tracks, aspect ratios, or container-aware sizing so dynamic content does not break layout.',
-  'Express responsiveness in the stack you are actually generating. With Tailwind that means real breakpoint variants (sm:, md:, lg:) on the layout, grid, spacing, and typography classes that change between mobile and desktop; with plain CSS that means media queries, clamp(), or grid minmax(). A layout that carries no breakpoint variant and no media query is not responsive and fails verification.',
-].join('\n');
-
-const CODEN_MOTION_POLISH_POLICY = [
-  'Motion and polish policy:',
-  'Use motion to explain state changes, not to decorate randomly. Prefer transform and opacity animations, keep most UI transitions between 150ms and 300ms, and avoid layout-thrashing properties.',
-  'Respect prefers-reduced-motion with reduced or disabled animations. Never rely on motion alone to communicate state.',
-  'Write motion in the stack you are generating: with Tailwind use transition, duration, ease, and animate utilities, and express the reduced-motion fallback as motion-reduce: variants; with plain CSS use transition/animation plus a prefers-reduced-motion media query.',
-  'Use subtle page/component reveal, button feedback, list item insertion/removal, modal transitions, skeleton/loading states, and success/error feedback when they make the experience clearer.',
-  'Do not create heavy animated backgrounds, orb decorations, distracting bokeh blobs, or effects that compete with the main workflow.',
-  'Before final JSON output, silently run a design QA pass: visual hierarchy, spacing consistency, contrast, responsive behavior, keyboard/focus, states, copy specificity, and anti-generic-design quality.',
-].join('\n');
-
 const CODEN_FUNCTIONAL_QUALITY_POLICY = [
   'Functional quality gate:',
   'A beautiful app that is broken is a failed generation.',
@@ -516,18 +470,6 @@ const CODEN_AI_CONNECTOR_POLICY = [
   'If provider keys are not configured, the generated app should show a clear setup-required state and still render a usable preview. Never fake a completed AI response.',
   'For generated live/video streaming features, prefer standards such as HLS/DASH/native video players, buffering/offline/reconnect states, and independent async chat/widgets so media playback never blocks the rest of the app.',
   'Streaming UI inside generated apps must be stable: no layout jumping, no giant loaders, no fake progress. Use compact loading dots or shimmer only while a real request is pending, respect reduced motion, and keep the transcript/results persistent when useful.',
-].join('\n');
-
-const CODEN_PREMIUM_UI_ESCALATION_POLICY = [
-  'Premium UI escalation gate:',
-  'Before coding, answer internally: real problem, end user, primary action, critical journey, visual direction, required screens/components, and required states.',
-  'Every screen must pass the 3-second rule: specific title, obvious primary action, discreet secondary actions, clean grid, and separated zones.',
-  'Every generated app must define a mini design system with primary/secondary accents, neutral surfaces, semantic --success/--warning/--error/--info tokens, type scale, spacing scale, radius scale, shadows, and motion tokens.',
-  'Before returning generated app files, silently run three reviews: product fit, visual craft, and functional behavior.',
-  'Product fit review: the platform type must match the request. A CRM, marketplace, restaurant app, portfolio, AI tool, fintech app, auth screen, and landing page require different layouts, density, trust signals, and states.',
-  'Visual craft review: reject generic AI tells such as oversized hero-only pages, identical card grids, meaningless gradients, flat controls, missing hover/focus states, weak hierarchy, or copy that reads like a template.',
-  'Functional behavior review: primary controls must work locally or show honest disabled/placeholder feedback. Navigation, tabs, modals, filters, forms, carts, menus, and toggles must update visible state when present.',
-  'If the app is generic, incomplete, non-responsive, or non-functional, revise the files before finalizing instead of describing the weakness.',
 ].join('\n');
 
 const CODEN_GENERATION_PRODUCT_POLICY = [
@@ -637,68 +579,6 @@ const CODEN_JSON_OUTPUT_POLICY = [
   'Every generated app must include working primary controls or honest disabled/empty states. A visually polished but non-functional app is not complete.',
 ].join('\n');
 
-export const CODEN_DESIGN_OVERRIDE_POLICY = [
-  'Premium Anti-AI Aesthetic Override v1.0:',
-  'You are not a template engine. You are designing a specific product for a specific human need. Every pixel, color choice, font pairing, and spacing decision must be intentional and distinctive.',
-  'Internal quality bar: would a senior designer at Linear, Stripe, Vercel, or Raycast be proud to ship this? If the answer is not a clear yes, go further.',
-  '',
-  'FORBIDDEN VISUAL PATTERNS (HARD BLOCK):',
-  'Forbidden colors: #667eea/#764ba2 (AI gradient starter pack), #8b5cf6/#6366f1 (Tailwind indigo/violet default), #3b82f6-to-#8b5cf6 gradient (Claude/ChatGPT blue-purple fade), bg-gray-50+border-gray-200+text-gray-900 (Tailwind default reset), dark bg+neon purple/pink glow (AI startup template), white bg+every card the same size (SaaS starter kit look).',
-  'Forbidden layouts: centered hero with giant headline+2-line subtitle+two CTAs+gradient blob behind; feature grid with icon+title+2 lines repeated 6 times in 3 columns; floating glassmorphism cards (backdrop-filter:blur); animated gradient mesh/aurora/noise background; gradient text (background-clip:text) on primary content; full-width pill buttons on desktop; every element with border-radius:9999px or 24px+; confetti/particles/floating blobs; hero with dashboard screenshot in browser frame.',
-  'Forbidden copy: "Transform your workflow", "All-in-one platform", "Seamless experience for modern teams", "Get started today. It is free.", Feature 1/Feature 2/Feature 3, "Powerful. Simple. Fast." or any 3-word tagline combo, placeholder avatars with stock testimonial from John CEO of TechCorp.',
-  '',
-  'COLOR PALETTES (pick ONE per project, never mix):',
-  'EDITORIAL DARK (dev tools, fintech, productivity): --color-bg:#0C0C0D; --color-surface:#161618; --color-surface-raised:#1E1E21; --color-border:#2C2C30; --color-border-subtle:#1F1F23; --color-text-primary:#EDEDEE; --color-text-secondary:#8E8E96; --color-text-tertiary:#56565E; --color-accent:#E8C547; --color-accent-hover:#F2D55A; --color-accent-subtle:rgba(232,197,71,0.1).',
-  'ARCHITECT WHITE (SaaS, B2B, admin, CRM): --color-bg:#F5F2EE; --color-surface:#FFFFFF; --color-surface-raised:#FAFAF8; --color-border:#E0DDD8; --color-border-subtle:#EAE8E3; --color-text-primary:#18181A; --color-text-secondary:#6B6862; --color-text-tertiary:#A09C96; --color-accent:#C84B31; --color-accent-hover:#B5411F; --color-accent-subtle:rgba(200,75,49,0.08).',
-  'MIDNIGHT PRO (analytics, data tools, monitoring): --color-bg:#0F1117; --color-surface:#181B24; --color-surface-raised:#20232E; --color-border:#2A2D3A; --color-border-subtle:#1E2130; --color-text-primary:#E4E5F0; --color-text-secondary:#6B7299; --color-text-tertiary:#434869; --color-accent:#4FFFB0; --color-accent-hover:#3DEAA0; --color-accent-subtle:rgba(79,255,176,0.08).',
-  'STUDIO CLEAN (portfolio, creative, agency, marketplace): --color-bg:#FFFFFF; --color-surface:#FAFAFA; --color-surface-raised:#F4F4F4; --color-border:#E8E8E8; --color-border-subtle:#F0F0F0; --color-text-primary:#111111; --color-text-secondary:#737373; --color-text-tertiary:#ABABAB; --color-accent:#FF4040; --color-accent-hover:#E53535; --color-accent-subtle:rgba(255,64,64,0.06).',
-  'WARM PRODUCT (consumer apps, onboarding, health, education): --color-bg:#FBF9F6; --color-surface:#FFFFFF; --color-surface-raised:#F5F3EF; --color-border:#E6E2DB; --color-border-subtle:#EDE9E3; --color-text-primary:#1C1917; --color-text-secondary:#78716C; --color-text-tertiary:#A8A29E; --color-accent:#0066CC; --color-accent-hover:#0055AA; --color-accent-subtle:rgba(0,102,204,0.08).',
-  '',
-  'TYPOGRAPHY (maximum 2 families per project):',
-  'Type scale: --text-xs:11px; --text-sm:13px; --text-base:15px; --text-md:17px; --text-lg:20px; --text-xl:24px; --text-2xl:30px; --text-3xl:38px; --text-4xl:52px; --text-5xl:72px.',
-  'Line height: --leading-tight:1.15; --leading-snug:1.3; --leading-base:1.6; --leading-relaxed:1.75.',
-  'Letter spacing: --tracking-tight:-0.025em; --tracking-normal:0em; --tracking-wide:0.06em; --tracking-wider:0.1em.',
-  'Font pairings: Landing/Marketing uses Inter+Playfair Display or DM Serif Display; Dashboard/Tool uses Inter alone at multiple weights; Editorial/Portfolio uses Syne+Instrument Serif; Fintech/Admin uses IBM Plex Sans+IBM Plex Mono; Consumer/Warm uses Plus Jakarta Sans+Lora.',
-  'Heading rules: letter-spacing:--tracking-tight on all headings >=24px; headings are weight 600-700 never 400; never use gradient on heading text as primary style; large headings 48px+ use line-height:--leading-tight.',
-  '',
-  'SPACING (consistent scale, intentional density):',
-  '--space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px; --space-6:24px; --space-7:32px; --space-8:40px; --space-9:48px; --space-10:64px; --space-11:80px; --space-12:96px. Only use values from this scale.',
-  '',
-  'BORDER RADIUS (intentional, not maximal):',
-  '--radius-sm:4px (tags, badges, code); --radius-md:6px (inputs, buttons, small cards); --radius-lg:10px (cards, panels, modals); --radius-xl:16px (feature cards, dialogs); --radius-full:9999px (avatars, pills only when deliberate). Default to --radius-md. NEVER apply --radius-full to buttons by default.',
-  '',
-  'SHADOWS (subtle, real depth):',
-  '--shadow-xs:0 1px 2px rgba(0,0,0,0.04); --shadow-sm:0 1px 3px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04); --shadow-md:0 4px 6px rgba(0,0,0,0.05),0 2px 4px rgba(0,0,0,0.04); --shadow-lg:0 10px 15px rgba(0,0,0,0.05),0 4px 6px rgba(0,0,0,0.03); --shadow-xl:0 20px 25px rgba(0,0,0,0.06),0 10px 10px rgba(0,0,0,0.02).',
-  'Forbidden shadows: colored box-shadows (neon glow=banned), heavy shadows (>0.12 opacity), inset glow effects.',
-  '',
-  'LAYOUT PATTERNS:',
-  'Dashboard/Tool: CSS Grid named areas, sidebar 220px (not 256px Bootstrap/Tailwind default), nav items 36px height 12px horizontal padding, active state 2px left border accent+subtle bg tint, section labels 10px tracking-wider uppercase color-text-tertiary, NO gradient hover on nav items.',
-  'Content areas: max width 1120px (not 1280px Tailwind default), page padding --space-8 desktop --space-5 mobile, section spacing --space-10, cards --space-6 internal padding.',
-  'Landing pages: break 3-column feature grid. Use split layout 60/40, narrative scroll, data-led with real metrics, or product-first showing actual UI.',
-  '',
-  'COMPONENT SPECS:',
-  'Buttons: no gradients, no box-shadow glow, consistent height small=32px default=38px large=44px, icon-only must have aria-label, destructive uses text-color red on hover not red fill by default.',
-  'Form inputs: every field must have label with for attribute, error message below field, aria-describedby for errors, real-time validation feedback.',
-  'Data tables preferred over card grids for tabular data: sticky headers, uppercase tracking-wide labels, hover row highlighting.',
-  'Status indicators: use semantic colors WITH shape (never color-only), dot indicator 6px before label text.',
-  'Loading states: skeleton screens over spinners, shimmer animation 1.4s ease-in-out, respect prefers-reduced-motion.',
-  'Empty states: centered flex column with icon, specific title, helpful one-liner, primary action button.',
-  '',
-  'INTERACTION AND MOTION:',
-  '--ease-out:cubic-bezier(0.16,1,0.3,1); --ease-in-out:cubic-bezier(0.4,0,0.2,1); --duration-fast:100ms; --duration-base:180ms; --duration-slow:280ms.',
-  'Only animate transform, opacity, and background-color. Never animate width, height, top, left. Use prefers-reduced-motion. Hover transitions 150ms or less. Page transitions 200-280ms. No bounce/elastic easing unless game or creative app.',
-  '',
-  'DOMAIN-SPECIFIC DIRECTION:',
-  'SaaS dashboard/admin: information density is a feature, tables>cards, metrics at top, muted palette with one accent, use ARCHITECT WHITE or EDITORIAL DARK.',
-  'Analytics/monitoring: data is hero, monospace for metrics (IBM Plex Mono), green=good amber=warning red=critical, dense layout for power users, use MIDNIGHT PRO.',
-  'Landing/marketing: show product immediately, specific social proof, honest pricing, one primary CTA repeated, use ARCHITECT WHITE or STUDIO CLEAN.',
-  'E-commerce: 3-4 column product grid with white product backgrounds, bold current price strikethrough original, cart accessible everywhere, checkout 3 steps max, use STUDIO CLEAN or WARM PRODUCT.',
-  'Fintech/billing: trust signals non-negotiable, transaction tables not cards, monospace monetary amounts, conservative colors, use ARCHITECT WHITE or EDITORIAL DARK.',
-  '',
-  'FINAL GENERATION CHECKLIST:',
-  'Verify: CSS tokens at :root, chosen palette matches domain, no gradient backgrounds/blob animations/glassmorphism, typography max 2 families with clear hierarchy, layout uses CSS Grid with named areas, all interactive elements have hover+focus+disabled states, all data fetches have loading/error/empty states, all forms have labels/validation/error messages, semantic HTML, responsive sidebar collapse and table scroll, status indicators use color+shape, no AI-generated copy, no emoji icons in UI (use Lucide or Phosphor), animations use transform/opacity and respect prefers-reduced-motion, code is modular: tokens then reset then layout then components then utils then media queries.',
-].join('\n');
-
 const CODEN_ZERO_BUG_GENERATION_POLICY = [
   'Zero-bug generation contract:',
   'Coden is a general web-app builder. Do not specialize the generation around todo, commerce, CRM, auth, or any fixed archetype unless the user prompt actually asks for that product type.',
@@ -778,21 +658,6 @@ const CODEN_PROACTIVE_INTELLIGENCE_POLICY = [
   'Do not add features that go beyond the product scope. Anticipate only the most obvious, low-effort additions that make the delivered product feel complete.',
   'When generation is complete, briefly mention 1–2 natural next steps the user might want. Frame them as options, not requirements.',
   'If a feature requires an external service (auth, payments, emails), generate the real integration contract when configured; otherwise render an honest setup-required state and never fake success.',
-].join('\n');
-
-const CODEN_DESIGN_EXCELLENCE_POLICY = [
-  'Design excellence policy (Claude-grade or better):',
-  'Every generated app must reach the visual and UX quality bar of the best modern product interfaces (Claude, Linear, Stripe, Vercel) or better, while staying original and domain-true. This bar is mandatory, not aspirational.',
-  'Typography first: choose an intentional type system with a distinct heading personality and a highly readable body. Use a modular scale (about 1.25 ratio), slightly tight heading letter-spacing, 1.5-1.7 body line-height, and 65-75ch maximum reading width for long text.',
-  'Color discipline: one deliberately chosen neutral family (warm or cool), one primary accent used sparingly for the main action, and semantic tokens for success/warning/error/info. Use subtle layered background tints to separate zones instead of flat pure white/black blocks, unless the design direction demands stark contrast.',
-  'Spacing system: strict 4/8px rhythm with generous whitespace. Related elements group tightly, unrelated elements separate clearly. Sections must breathe; cramped layouts and uniform gap-4-everywhere spacing are rejected.',
-  'Depth and surfaces: soft layered shadows, hairline 1px borders with low-contrast tints, and one consistent radius scale. No heavy glassmorphism, no random elevation, no lifeless flat cards.',
-  'Visual hierarchy must be obvious in 3 seconds: one focal point per screen, the primary action visually dominant, secondary actions discreet, tertiary actions minimal. If everything looks important, nothing is.',
-  'Structure UX as a product, not a page: clear information architecture, persistent predictable navigation, a logical user journey from first paint to primary action, progressive disclosure for complexity, sensible defaults, and zero dead ends.',
-  'Micro-interactions everywhere they add clarity: hover/focus-visible/active transitions on all interactive elements (150-250ms ease-out), subtle entrance reveals, skeleton loading, and tactile button feedback. Quality over quantity; respect prefers-reduced-motion.',
-  'Copywriting is part of design: specific, confident, benefit-driven text in the user language. No lorem ipsum, no vague filler, no template-sounding headlines, no "Welcome to our platform".',
-  'Empty, loading, and error states are designed moments, not afterthoughts: a helpful icon or illustration, a clear one-line explanation, and one constructive next action.',
-  'Final quality bar: if a screenshot of the generated app could be mistaken for a generic AI template, silently redesign before returning. The result must look like a funded product team with a dedicated designer shipped it.',
 ].join('\n');
 
 const CODEN_AUTONOMOUS_GENERATION_POLICY = [
@@ -1035,10 +900,12 @@ export function buildGenerationSystemPrompt(input: {
     // them here used more than 22k input tokens before a single file existed.
     CODEN_PLATFORM_INTELLIGENCE_POLICY,
     input.uiPolicySystemPrompt,
-    CODEN_GENERATED_APP_DESIGN_SYSTEM_POLICY,
-    CODEN_FRONTEND_CRAFT_POLICY,
-    CODEN_RESPONSIVE_ACCESSIBILITY_POLICY,
-    CODEN_MOTION_POLISH_POLICY,
+    // One design authority. These five blocks used to be four policies plus a
+    // token contract, and two of them contradicted the rest -- one banned
+    // Inter as a generic default while another recommended it, one mandated
+    // HSL through shadcn while the standard is OKLCH. A model given
+    // contradictory rules resolves them differently every run.
+    CODEN_GENERATED_APP_DESIGN_PROMPT,
     CODEN_GENERATION_PRODUCT_POLICY,
     CODEN_FUNCTIONAL_QUALITY_POLICY,
     CODEN_CLOUD_POLICY,
@@ -1046,7 +913,6 @@ export function buildGenerationSystemPrompt(input: {
     CODEN_INFRASTRUCTURE_PROVISIONING_STATES,
     CODEN_PRODUCTION_READINESS_POLICY,
     CODEN_AI_CONNECTOR_POLICY,
-    CODEN_DESIGN_SYSTEM_TOKENS_PROMPT,
     CODEN_USER_ROLES_CONTRACT,
     CODEN_PUBLIC_SCHEMA_GRANTS_PROMPT,
     CODEN_SEO_CONTRACT,

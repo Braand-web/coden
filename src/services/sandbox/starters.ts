@@ -137,10 +137,10 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-6">
-        <div className="max-w-lg w-full rounded-xl border border-red-900/60 bg-neutral-900 p-6">
-          <h1 className="text-base font-semibold text-red-300">This screen failed to render</h1>
-          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs leading-relaxed text-neutral-400">
+      <div className="min-h-screen flex items-center justify-center bg-bg p-6">
+        <div className="w-full max-w-lg rounded-card border border-border bg-surface p-6 shadow-card">
+          <h1 className="text-base font-semibold text-error">This screen failed to render</h1>
+          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs leading-relaxed text-secondary">
             {this.state.error.message}
           </pre>
         </div>
@@ -150,25 +150,163 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 `;
 
+/**
+ * The token layer every generated project starts with.
+ *
+ * Written to the design contract in src/lib/prompts/generated-app-design.ts so
+ * a project is compliant before the model writes a line: tinted neutrals in
+ * OKLCH with chroma at or below 0.02, one accent, semantic states sharing the
+ * accent's lightness and chroma so only hue distinguishes them, and a radius
+ * scale keyed by component category.
+ *
+ * It also means a fresh project passes the design audit's token checks. A
+ * scaffold with no tokens hands every generated app two failed checks it did
+ * nothing to earn, and a repair pass chasing them.
+ */
 const INDEX_CSS = `@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Neutrals carry a trace of hue (250, cool) rather than being achromatic, and
+ * never reach pure white or black — a pure #FFF surface next to a pure #000
+ * text reads as harsh on a screen and leaves no room for elevation.
+ */
 :root {
   color-scheme: dark;
+
+  --color-bg: oklch(0.16 0.008 250);
+  --color-surface: oklch(0.20 0.008 250);
+  --color-surface-raised: oklch(0.24 0.010 250);
+  --color-border: oklch(0.30 0.012 250);
+  --color-border-subtle: oklch(0.25 0.010 250);
+
+  --color-text: oklch(0.96 0.004 250);
+  --color-text-secondary: oklch(0.74 0.008 250);
+  --color-text-tertiary: oklch(0.56 0.010 250);
+
+  /* One accent. Semantic states share its lightness and chroma; only hue moves,
+     so nothing shouts louder than anything else. */
+  --color-accent: oklch(0.62 0.15 250);
+  --color-accent-hover: oklch(0.68 0.15 250);
+  --color-on-accent: oklch(0.16 0.008 250);
+
+  --color-success: oklch(0.62 0.15 150);
+  --color-warning: oklch(0.62 0.15 75);
+  --color-error: oklch(0.62 0.15 25);
+  --color-info: oklch(0.62 0.15 230);
+
+  /* Radii by component category, not by whim. */
+  --radius-control: 8px;
+  --radius-card: 14px;
+  --radius-modal: 18px;
+
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.20), 0 4px 12px oklch(0 0 0 / 0.12);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.22), 0 8px 24px oklch(0 0 0 / 0.16);
+
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-micro: 150ms;
+  --duration-state: 250ms;
+}
+
+/* The light palette is rebuilt with the same logic, not inverted. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg: oklch(0.98 0.004 250);
+  --color-surface: oklch(0.995 0.002 250);
+  --color-surface-raised: oklch(0.965 0.005 250);
+  --color-border: oklch(0.90 0.008 250);
+  --color-border-subtle: oklch(0.94 0.006 250);
+
+  --color-text: oklch(0.22 0.010 250);
+  --color-text-secondary: oklch(0.46 0.012 250);
+  --color-text-tertiary: oklch(0.62 0.010 250);
+
+  --color-accent: oklch(0.52 0.15 250);
+  --color-accent-hover: oklch(0.46 0.15 250);
+  --color-on-accent: oklch(0.99 0.002 250);
+
+  --color-success: oklch(0.52 0.15 150);
+  --color-warning: oklch(0.52 0.15 75);
+  --color-error: oklch(0.52 0.15 25);
+  --color-info: oklch(0.52 0.15 230);
 }
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Inter, ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Focus is never removed, only restyled — the contract makes it non-negotiable. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Motion is opt-out for anyone who has asked the OS to reduce it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 `;
 
 const TAILWIND_CONFIG = `/** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  theme: { extend: {} },
+  darkMode: ['class', '[data-theme="light"]'],
+  theme: {
+    extend: {
+      // The tokens, reachable as utilities: bg-surface, text-secondary,
+      // border-border. Components never name a raw colour, so the theme is
+      // changed in one place and dark mode follows for free.
+      colors: {
+        bg: 'var(--color-bg)',
+        surface: 'var(--color-surface)',
+        'surface-raised': 'var(--color-surface-raised)',
+        border: 'var(--color-border)',
+        'border-subtle': 'var(--color-border-subtle)',
+        content: 'var(--color-text)',
+        secondary: 'var(--color-text-secondary)',
+        tertiary: 'var(--color-text-tertiary)',
+        accent: 'var(--color-accent)',
+        'accent-hover': 'var(--color-accent-hover)',
+        'on-accent': 'var(--color-on-accent)',
+        success: 'var(--color-success)',
+        warning: 'var(--color-warning)',
+        error: 'var(--color-error)',
+        info: 'var(--color-info)',
+      },
+      // A bare "border" utility should use the token, not Tailwind's reset
+      // grey. Making the token the default means a component has to opt out of
+      // the theme rather than remember to opt in.
+      borderColor: { DEFAULT: 'var(--color-border)' },
+      borderRadius: {
+        control: 'var(--radius-control)',
+        card: 'var(--radius-card)',
+        modal: 'var(--radius-modal)',
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
+        'card-hover': 'var(--shadow-card-hover)',
+      },
+      transitionTimingFunction: { standard: 'var(--ease-standard)' },
+      transitionDuration: { micro: '150ms', state: '250ms' },
+      // Tailwind's default spacing scale is already the contract's:
+      // 1=4px, 2=8, 3=12, 4=16, 6=24, 8=32, 12=48, 16=64.
+      maxWidth: { prose: '72ch', container: '1280px' },
+    },
+  },
   plugins: [],
 };
 `;
@@ -178,8 +316,8 @@ const POSTCSS_CONFIG = `export default { plugins: { tailwindcss: {}, autoprefixe
 
 const APP_PLACEHOLDER = `export default function App() {
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
-      <p className="text-sm text-neutral-500">Building…</p>
+    <main className="flex min-h-screen items-center justify-center bg-bg">
+      <p className="text-sm text-tertiary">Building…</p>
     </main>
   );
 }
