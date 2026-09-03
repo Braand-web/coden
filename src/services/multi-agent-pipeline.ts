@@ -65,6 +65,53 @@ export type MultiAgentPipelineOutcome =
       repairOutcome: RepairOutcome;
     };
 
+/**
+ * Same detection heuristic already duplicated in `agent-execution-os.ts` and
+ * `execution-contract.ts` — a third small, local copy for this module's one
+ * caller is simpler than promoting either of those private helpers into a
+ * shared export for a single additional user.
+ */
+function speaksFrench(value: string) {
+  return /\b(le|la|les|un|une|des|je|tu|vous|mon|ma|mes|dans|avec|pour|corrige|cree|genere|publie|ajoute|supprime|modifie)\b/i.test(String(value || ''));
+}
+
+/**
+ * The client's final assistant message for this pipeline run — a real,
+ * user-visible sentence, not a placeholder. It is built entirely from data
+ * this run already produced (the planner's own summary, the real file diff,
+ * the coder loop's own stop reason), never from an extra model call: nothing
+ * here is invented on top of what genuinely happened.
+ */
+export function summarizePipelineOutcome(input: {
+  plan?: BuildPlan;
+  ok: boolean;
+  route: PipelineRoute;
+  diff: { created: string[]; modified: string[]; deleted: string[] };
+  stoppedBecause: RepairOutcome['stoppedBecause'];
+  prompt: string;
+}): string {
+  const fr = speaksFrench(input.prompt);
+  const { created, modified, deleted } = input.diff;
+  const diffRecap = fr
+    ? `${created.length} fichier(s) créé(s), ${modified.length} modifié(s), ${deleted.length} supprimé(s).`
+    : `${created.length} file(s) created, ${modified.length} modified, ${deleted.length} deleted.`;
+
+  if (!input.ok) {
+    const reason = input.stoppedBecause === 'round_limit'
+      ? (fr ? 'le nombre maximal de tentatives de correction a été atteint' : 'the maximum number of repair rounds was reached')
+      : (fr ? 'les corrections successives n\'ont plus progressé' : 'successive fixes stopped making progress');
+    return fr
+      ? `Le travail est sauvegardé, mais la vérification n'est pas encore passée : ${reason}. ${diffRecap}`
+      : `The work is saved, but verification did not pass yet: ${reason}. ${diffRecap}`;
+  }
+
+  if (input.plan?.summary) return `${input.plan.summary.trim()} ${diffRecap}`.trim();
+
+  return fr
+    ? `Modification effectuée. ${diffRecap}`
+    : `Change applied. ${diffRecap}`;
+}
+
 /** The plan's file list and rationale, as round one's instruction. */
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];

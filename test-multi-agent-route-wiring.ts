@@ -49,6 +49,11 @@ const startedBlock = route.slice(route.indexOf('if (outcome.started) {'), route.
 assert.match(startedBlock, /return respondJson\(200, \{/, 'a started pipeline must end the request with a complete response');
 assert.match(startedBlock, /success: outcome\.ok,\s*\n\s*needs_fix: !outcome\.ok,/, 'success and needs_fix must be the honest inverse of the reviewer\'s own verdict');
 assert.match(startedBlock, /live_url: outcome\.liveUrl/, 'the live sandbox URL must reach the client exactly like the legacy path\'s');
+// `src/builder-live.ts` throws "The selected AI model did not return a
+// usable final summary." whenever `summary`/`text`/`message` are all empty —
+// a response with none of them silently breaks every generation that takes
+// this branch, exactly what shipped before this assertion existed.
+assert.match(startedBlock, /summary: summarizePipelineOutcome\(/, 'the response must carry a real summary field or the client throws on every pipeline run');
 
 // The two failure exits (sandbox never started; anything else threw) must
 // both be logged and neither may return — falling through to the legacy

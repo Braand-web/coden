@@ -11997,6 +11997,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           project: updatedProject,
           files: pipelineFiles,
           diff,
+          summary: summarizePipelineOutcome({
+            plan: outcome.plan,
+            ok: outcome.ok,
+            route: pipelineRoute,
+            diff,
+            stoppedBecause: outcome.repairOutcome.stoppedBecause,
+            prompt,
+          }),
           model: outcome.modelId,
           plan: outcome.plan,
           preview: {
@@ -14720,7 +14728,7 @@ import { selectStarter, applyStarter, describeStarter } from './src/services/san
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
-import { runMultiAgentPipeline, resolvePipelineRoute } from './src/services/multi-agent-pipeline.ts';
+import { runMultiAgentPipeline, resolvePipelineRoute, summarizePipelineOutcome } from './src/services/multi-agent-pipeline.ts';
 import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
