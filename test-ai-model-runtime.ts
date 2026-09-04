@@ -267,7 +267,9 @@ for (const modelId of AI_ALLOWED_MODELS) {
   const providerConfig = buildProviderRequestConfig(runtime);
   const extras = toOpenRouterChatPayloadExtras(providerConfig);
   if (providerConfig.thinking_budget) {
-    assert.ok(extras.thinking, 'OpenRouter extras should forward thinking params');
+    assert.ok(extras.reasoning, 'OpenRouter requires the normalized reasoning parameter');
+    assert.equal((extras.reasoning as any).exclude, true, 'private reasoning must not be rendered as public narration');
+    assert.equal(extras.thinking, undefined);
   }
 }
 console.log('ai-model-runtime tests passed');

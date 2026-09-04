@@ -53,8 +53,8 @@ const base: RoutingContext = {
 // Guardrail: a constrained plan/credit budget cannot be pushed past what it affords.
 {
   const free: RoutingContext = { plan: 'free', mode: 'Auto', userCredits: 5, taskComplexity: 'simple' };
-  const escalated = await router.selectModelEscalated(free, { heavyBuild: true });
-  assert.ok(MODEL_ACTION_CREDIT_FLOORS[escalated] <= 5, 'escalation must still respect the credit floor');
+  await assert.rejects(() => router.selectModelEscalated(free, { heavyBuild: true }), /No eligible model/,
+    'an unaffordable escalation must explicitly fail rather than silently violate the capability bar');
 }
 
 console.log('test-model-escalation passed');

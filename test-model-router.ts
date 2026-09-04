@@ -21,7 +21,7 @@ assert.equal(
     userCredits: 10,
     taskComplexity: 'simple',
   }),
-  'openai/gpt-5.6-luna-pro',
+  'openai/gpt-5.6-luna',
   'Auto simple tasks should prefer the lightweight economy model.',
 );
 
@@ -32,7 +32,7 @@ assert.equal(
     userCredits: 10,
     taskComplexity: 'medium',
   }),
-  'openai/gpt-5.6-luna-pro',
+  'openai/gpt-5.6-luna',
   'Auto medium tasks should avoid provider lock-in and use a capable free-tier model.',
 );
 
@@ -48,13 +48,13 @@ assert.notEqual(
 
 assert.equal(
   await router.selectModel({
-    plan: 'pro',
+    plan: 'scale',
     mode: 'Auto',
     userCredits: 80,
     taskComplexity: 'complex',
     task: 'code_generation',
   }),
-  'anthropic/claude-sonnet-5',
+  'openai/gpt-5.6-sol',
   'Auto complex generation should upgrade to a frontier coding model when plan and credits allow it.',
 );
 
@@ -66,7 +66,7 @@ assert.equal(
     taskComplexity: 'extreme',
     task: 'code_generation',
   }),
-  'anthropic/claude-sonnet-5',
+  'openai/gpt-5.6-sol',
   'extreme generation takes the cheapest frontier coder, not the most expensive model the plan permits.',
 );
 
@@ -80,7 +80,7 @@ assert.equal(
     taskComplexity: 'extreme',
     task: 'architecture',
   }),
-  'x-ai/grok-4.6',
+  'openai/gpt-5.6-sol',
   'architecture takes the cheapest frontier reasoner.',
 );
 
@@ -115,7 +115,7 @@ assert.equal(
     taskComplexity: 'medium',
     preferredModels: ['anthropic/claude-opus-5', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5'],
   }),
-  'openai/gpt-5.6-luna-pro',
+  'openai/gpt-5.6-luna',
   'Studio Opus preference should fall back to the diversified safe router when Opus is not available.',
 );
 

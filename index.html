@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Coden — Turn an idea into a web app with AI</title>
-  <!-- CODEN_SEO_START -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coden — Turn an idea into a web app with AI</title>
+<!-- CODEN_SEO_START -->
   <meta name="description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/" />
@@ -65,437 +65,599 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "What is Coden?",
+      "name": "Do I own the code Coden generates?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Coden helps you turn an idea into a working web app, preview it, improve it, and publish it after verification."
+        "text": "Your project contains standard source files. You can inspect the code in the Builder and continue working on it as your application grows."
       }
     },
     {
       "@type": "Question",
-      "name": "Can Coden generate SEO-ready apps?",
+      "name": "Can I connect my own database or Stripe account?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Coden can help structure generated apps with semantic pages and metadata, then you can inspect and verify the result before publishing."
+        "text": "You can request integrations such as Supabase or Stripe. Services need their own configuration and credentials; Coden will ask for the information required by your project."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens when I publish?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Preview your application and check the result first. Publishing is a separate action in the Builder, subject to your plan and the deployment configuration."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can Coden follow my existing design system?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Attach a reference or provide your styles, tokens and component conventions with your request. Coden can use them while building your interface."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is there a free plan?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Free includes discovery credits to create a first prototype. Paid plans provide additional credits and hosting allowances. See the plan details before subscribing."
       }
     }
   ]
 }</script>
   <!-- CODEN_SEO_END -->
-    <script>
-        // Emergency fix for "Cannot set property fetch of #<Window> which has only a getter"
-        (function() {
-            try {
-                let currentFetch = window.fetch;
-                Object.defineProperty(window, 'fetch', {
-                    get: () => currentFetch,
-                    set: (v) => { currentFetch = v; },
-                    configurable: true,
-                    enumerable: true
-                });
-            } catch (e) {
-                // If it's not configurable, we can't do much about direct assignments to window.fetch
-                // But we can try to intercept if it's a global variable assignment
-                try {
-                    window.fetch = window.fetch; 
-                } catch (e2) {}
-            }
-        })();
-    </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <script>
-        (function() {
-            const theme = localStorage.getItem('coden-theme') || 'dark';
-            document.documentElement.setAttribute('data-theme', theme);
-        })();
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@300;400;500;600&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/src/styles/landing-v3.css">
 </head>
-<body data-coden-surface="marketing">
-    <div id="curtain"></div>
-    <div class="navbar-line"></div>
-    <div id="coden-marketing-header-root" aria-live="off"></div>
-    <noscript>
-        <nav id="landing-navbar" aria-label="Main navigation">
-            <a href="/">Coden</a>
-            <a href="/features.html">Features</a>
-            <a href="/pricing.html">Pricing</a>
-            <a href="/documentation.html">Documentation</a>
-            <a href="/auth.html">Create my app</a>
-            <button id="landing-nav-toggle" type="button" aria-label="Open navigation">Menu</button>
-        </nav>
-    </noscript>
+<body data-coden-surface="landing-v3">
+<div style="background:#0e1116;color:#f8fafc;font-family:'Instrument Sans',Inter,system-ui,sans-serif;font-size:16px;line-height:1.6;overflow-x:hidden">
 
-    <main id="main-content">
-    <section class="hero">
-        <div class="hero-halo" aria-hidden="true"></div>
-        <div class="hero-content" translate="no">
-            <div class="badge">
-                <div class="badge-dot"></div>
-                <span class="badge-text">AI-POWERED APP BUILDER</span>
-            </div>
-            <h1>
-                <span class="neon-highlight neon-glow" data-i18n="hero.title">From idea to web app.</span>
-            </h1>
-            <p class="hero-subtitle" data-i18n="hero.subtitle">Describe your project. Coden builds it, verifies it, and helps you publish it.</p>
-
-            <div class="input-wrapper">
-                <textarea id="ai-textarea" placeholder="Describe the app you want to create…" data-i18n-placeholder="hero.placeholder"></textarea>
-                <div class="input-actions">
-                    <div class="actions-left">
-                        <button class="icon-btn" id="btn-upload" data-tooltip="Upload files" data-prompt-action="upload" aria-label="Attach files" type="button">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                        </button>
-                        <input type="file" id="file-input" style="display: none;" multiple>
-                        <button class="icon-btn" id="btn-search" data-tooltip="Search snippets" type="button">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <circle cx="12" cy="12" r="7"></circle>
-                                <line x1="12" y1="2" x2="12" y2="5"></line>
-                                <line x1="12" y1="19" x2="12" y2="22"></line>
-                                <line x1="2" y1="12" x2="5" y2="12"></line>
-                                <line x1="19" y1="12" x2="22" y2="12"></line>
-                            </svg>
-                        </button>
-                        <button class="icon-btn" id="btn-voice" data-tooltip="Voice input" data-prompt-action="voice" aria-label="Voice input" type="button">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                                <line x1="8" y1="23" x2="16" y2="23"></line>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="actions-right">
-                        <div class="model-select" id="model-select-btn" data-tooltip="Switch AI engine">
-                            <span class="model-label-prefix">Model</span>
-                            <span id="current-model-label">Auto</span>
-                            <svg id="chevron-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 200ms;">
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
-                            <div class="dropdown" id="model-dropdown">
-                                <div class="dropdown-header">Choose AI Engine</div>
-                            </div>
-                        </div>
-                        <div class="prompt-mode" data-prompt-mode="auto">
-                            <button class="prompt-mode-btn" type="button" aria-haspopup="menu" aria-expanded="false" title="Choose Auto, Build or Plan">
-                                <span class="prompt-mode-label">Auto</span>
-                                <svg class="prompt-mode-chevron" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </button>
-                            <div class="prompt-mode-menu" role="menu">
-                                <button type="button" data-prompt-mode-option="auto" role="menuitem" class="active">
-                                    <span>Auto</span>
-                                    <small>Let Coden decide</small>
-                                </button>
-                                <button type="button" data-prompt-mode-option="build" role="menuitem">
-                                    <span>Build</span>
-                                    <small>Generate or edit the app</small>
-                                </button>
-                                <button type="button" data-prompt-mode-option="plan" role="menuitem">
-                                    <span>Plan</span>
-                                    <small>Think without changing files</small>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="submit-wrapper">
-                            <button class="submit-btn" id="submit-btn" title="Create my app">
-                                <span data-i18n="hero.cta">Create my app</span>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="19" x2="12" y2="5"></line>
-                                    <polyline points="5 12 12 5 19 12"></polyline>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <p class="hero-reassurance" data-i18n="hero.reassurance">Start free. No payment is required to create your first prototype.</p>
-
-        </div>
-    </section>
-
-    <template id="legacy-partner-strip" hidden>
-        <p class="partners-heading" data-i18n="partners.heading">Works with the tools you already use.</p>
-        <div class="partners-viewport">
-            <div class="partners-track">
-                <div class="partners-group">
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 76 65" aria-hidden="true"><path d="M37.927 0 75.854 64H0L37.927 0Z"/></svg>
-                        <span>Vercel</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.9 2.7 4.5 13.2c-.6.7-.1 1.8.8 1.8h5l-1.1 6.2c-.2 1.1 1.2 1.7 1.9.8l8.4-10.7c.6-.8.1-1.8-.9-1.8h-4.7l1.4-5.9c.2-1.1-1.1-1.8-1.8-.9Z"/></svg>
-                        <span>Supabase</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 10.8c0-.6.5-.9 1.4-.9 1.3 0 3 .4 4.2 1.1V7.6a10.7 10.7 0 0 0-4.3-.8c-3.5 0-5.8 1.8-5.8 4.2 0 3.7 5 3.1 5 4.7 0 .6-.6 1-1.6 1-1.4 0-3.2-.6-4.6-1.5v3.5c1.6.8 3.1 1.1 4.6 1.1 3.6 0 6.1-1.8 6.1-4.4 0-4-5-3.3-5-4.6Zm8.1-3.7h3.4v12.4h-3.4V7.1Z"/></svg>
-                        <span>Stripe</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1-9.4 13.4L15.4 2.6A10 10 0 0 1 12 2Zm6.5 4.2L6.2 18.5c.5.5 1 .9 1.6 1.2L19.7 7.8c-.3-.6-.7-1.1-1.2-1.6Zm2 4.1L10.3 20.5c.5.1 1.1.2 1.7.2a8.7 8.7 0 0 0 8.7-8.7c0-.6-.1-1.2-.2-1.7Z"/></svg>
-                        <span>Linear</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 31 30" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M.927 21.128 16.6.582a.735.735 0 0 1 1.19.072l13.006 21.26a.735.735 0 0 1-.498 1.086l-28.9 6.607a.735.735 0 0 1-.886-.975l.415-7.504Zm2.773-.193v7.257l23.977-5.48L16.462 4.375 3.7 20.935Z"/></svg>
-                        <span>Prisma</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.9 14.5-6-8.7v8.7H9.4V6.6h1.8l5.8 8.4V6.6h1.5v9.9h-1.6Z"/></svg>
-                        <span>Next.js</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 14 21" aria-hidden="true"><path d="M0 0h14v7H7L0 0Zm0 7h7l7 7H7v7l-7-7V7Z"/></svg>
-                        <span>Framer</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.36 9.36 0 0 1 12 6.91c.85 0 1.7.12 2.5.34 1.9-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.9 0 1.38-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.1 10.1 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z"/></svg>
-                        <span>GitHub</span>
-                    </div>
-                </div>
-                <div class="partners-group" aria-hidden="true">
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 76 65"><path d="M37.927 0 75.854 64H0L37.927 0Z"/></svg>
-                        <span>Vercel</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24"><path d="M13.9 2.7 4.5 13.2c-.6.7-.1 1.8.8 1.8h5l-1.1 6.2c-.2 1.1 1.2 1.7 1.9.8l8.4-10.7c.6-.8.1-1.8-.9-1.8h-4.7l1.4-5.9c.2-1.1-1.1-1.8-1.8-.9Z"/></svg>
-                        <span>Supabase</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24"><path d="M8.2 10.8c0-.6.5-.9 1.4-.9 1.3 0 3 .4 4.2 1.1V7.6a10.7 10.7 0 0 0-4.3-.8c-3.5 0-5.8 1.8-5.8 4.2 0 3.7 5 3.1 5 4.7 0 .6-.6 1-1.6 1-1.4 0-3.2-.6-4.6-1.5v3.5c1.6.8 3.1 1.1 4.6 1.1 3.6 0 6.1-1.8 6.1-4.4 0-4-5-3.3-5-4.6Zm8.1-3.7h3.4v12.4h-3.4V7.1Z"/></svg>
-                        <span>Stripe</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1-9.4 13.4L15.4 2.6A10 10 0 0 1 12 2Zm6.5 4.2L6.2 18.5c.5.5 1 .9 1.6 1.2L19.7 7.8c-.3-.6-.7-1.1-1.2-1.6Zm2 4.1L10.3 20.5c.5.1 1.1.2 1.7.2a8.7 8.7 0 0 0 8.7-8.7c0-.6-.1-1.2-.2-1.7Z"/></svg>
-                        <span>Linear</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 31 30"><path fill-rule="evenodd" clip-rule="evenodd" d="M.927 21.128 16.6.582a.735.735 0 0 1 1.19.072l13.006 21.26a.735.735 0 0 1-.498 1.086l-28.9 6.607a.735.735 0 0 1-.886-.975l.415-7.504Zm2.773-.193v7.257l23.977-5.48L16.462 4.375 3.7 20.935Z"/></svg>
-                        <span>Prisma</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm4.9 14.5-6-8.7v8.7H9.4V6.6h1.8l5.8 8.4V6.6h1.5v9.9h-1.6Z"/></svg>
-                        <span>Next.js</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 14 21"><path d="M0 0h14v7H7L0 0Zm0 7h7l7 7H7v7l-7-7V7Z"/></svg>
-                        <span>Framer</span>
-                    </div>
-                    <div class="partner-logo">
-                        <svg viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.36 9.36 0 0 1 12 6.91c.85 0 1.7.12 2.5.34 1.9-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.9 0 1.38-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.1 10.1 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z"/></svg>
-                        <span>GitHub</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </template>
-
-    <section class="workflow-section reveal" aria-label="How Coden works" translate="no">
-        <div class="section-header compact">
-            <h2 data-i18n="workflow.title">From idea to live app, in three moves.</h2>
-            <p data-i18n="workflow.subtitle">Coden keeps the path simple: describe it, watch it come alive, then refine and ship.</p>
-        </div>
-        <div class="workflow-steps three stagger-grid">
-            <div class="workflow-step reveal">
-                <div class="workflow-visual wv-idea" aria-hidden="true"><span></span><span></span><span></span></div>
-                <span class="step-number">01</span>
-                <h3 data-i18n="workflow.s1.title">Start with an idea</h3>
-                <p data-i18n="workflow.s1.text">Describe the app you want in plain language &mdash; or drop in a screenshot, a repo or a URL.</p>
-            </div>
-            <div class="workflow-step reveal">
-                <div class="workflow-visual wv-build" aria-hidden="true"><i></i><i></i><i></i></div>
-                <span class="step-number">02</span>
-                <h3 data-i18n="workflow.s2.title">Watch it come alive</h3>
-                <p data-i18n="workflow.s2.text">Coden generates a real React app and shows the working preview as it builds.</p>
-            </div>
-            <div class="workflow-step reveal">
-                <div class="workflow-visual wv-publish" aria-hidden="true"><b></b></div>
-                <span class="step-number">03</span>
-                <h3 data-i18n="workflow.s3.title">Refine &amp; publish</h3>
-                <p data-i18n="workflow.s3.text">Ask for changes in chat &mdash; Coden edits the project &mdash; then publish in one click.</p>
-            </div>
-        </div>
-    </section>
-
-    <section id="pricing" class="pricing-full reveal" translate="no">
-        <div class="section-header compact">
-            <p class="section-kicker" data-i18n="pricing.kicker">Pricing</p>
-            <h2 data-i18n="pricing.title">Start free. Upgrade when you publish.</h2>
-            <p data-i18n="pricing.subtitle">Free to validate the idea. Pro to ship real apps. Scale for teams.</p>
-        </div>
-        <div class="pricing-grid-full stagger-grid">
-            <div class="plan-card reveal">
-                <div class="plan-head">
-                    <span class="plan-name" data-i18n="pricing.free.name">Free</span>
-                    <span class="plan-price">$0<small data-i18n="pricing.unit">/mo</small></span>
-                    <span class="plan-note" data-i18n="pricing.free.benefit">Validate your idea</span>
-                </div>
-                <ul class="plan-features">
-                    <li data-i18n="pricing.free.f1">50 starter credits</li>
-                    <li data-i18n="pricing.free.f2">1 active project</li>
-                    <li data-i18n="pricing.free.f3">Live preview while you build</li>
-                    <li data-i18n="pricing.free.f4">$1 Cloud balance included</li>
-                    <li data-i18n="pricing.free.f5">Coden subdomain</li>
-                </ul>
-                <a class="plan-cta" href="/auth.html" data-conversion-event="pricing_plan_click" data-conversion-plan="free" data-i18n="pricing.free.cta">Get started</a>
-            </div>
-            <div class="plan-card featured reveal">
-                <span class="plan-badge" data-i18n="pricing.pro.badge">Most popular</span>
-                <div class="plan-head">
-                    <span class="plan-name" data-i18n="pricing.pro.name">Pro</span>
-                    <span class="plan-price">$25<small data-i18n="pricing.unit">/mo</small></span>
-                    <span class="plan-note" data-i18n="pricing.pro.benefit">Publish real apps</span>
-                </div>
-                <ul class="plan-features">
-                    <li data-i18n="pricing.pro.f1">1,000 credits / month</li>
-                    <li data-i18n="pricing.pro.f2">10 active projects, 3 published</li>
-                    <li data-i18n="pricing.pro.f3">$10 Cloud balance included</li>
-                    <li data-i18n="pricing.pro.f4">Custom domain &amp; badge removal</li>
-                    <li data-i18n="pricing.pro.f5">Deploy, export, versions, rollback</li>
-                </ul>
-                <a class="plan-cta plan-cta-primary" href="/auth.html?plan=pro" data-conversion-event="pricing_plan_click" data-conversion-plan="pro" data-i18n="pricing.pro.cta">Start with Pro</a>
-            </div>
-            <div class="plan-card reveal">
-                <div class="plan-head">
-                    <span class="plan-name" data-i18n="pricing.scale.name">Scale</span>
-                    <span class="plan-price">$200<small data-i18n="pricing.unit">/mo</small></span>
-                    <span class="plan-note" data-i18n="pricing.scale.benefit">More control for teams</span>
-                </div>
-                <ul class="plan-features">
-                    <li data-i18n="pricing.scale.f1">10,000 credits / month</li>
-                    <li data-i18n="pricing.scale.f2">Unlimited drafts, 25 published</li>
-                    <li data-i18n="pricing.scale.f3">$75 Cloud balance included</li>
-                    <li data-i18n="pricing.scale.f4">Team workspace &amp; roles</li>
-                    <li data-i18n="pricing.scale.f5">Priority support &amp; premium models</li>
-                </ul>
-                <a class="plan-cta" href="/auth.html?plan=scale" data-conversion-event="pricing_plan_click" data-conversion-plan="scale" data-i18n="pricing.scale.cta">Upgrade to Scale</a>
-            </div>
-        </div>
-        <a class="pricing-link" href="/pricing.html" data-i18n="pricing.link">Compare plans &amp; billing &rarr;</a>
-    </section>
-
-    <section class="faq-section landing-faq reveal" aria-label="Frequently asked questions" translate="no">
-        <div class="section-header compact faq-head">
-            <p class="section-kicker" data-i18n="faq.kicker">FAQ</p>
-            <h2 data-i18n="faq.title">Questions before you build.</h2>
-        </div>
-        <div class="faq-list">
-            <div class="faq-item active">
-                <button class="faq-question" type="button" aria-expanded="true">
-                    <span data-i18n="faq.q1">What can Coden build?</span>
-                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="faq-answer"><p data-i18n="faq.a1">Web products: SaaS dashboards, portals, booking tools, e-commerce, internal tools and landing pages. Coden opens a builder workspace and turns your idea into a working preview, then a publishable app.</p></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-question" type="button" aria-expanded="false">
-                    <span data-i18n="faq.q2">Real apps or just mockups?</span>
-                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="faq-answer"><p data-i18n="faq.a2">Real apps. For app requests, Coden builds structured React, TypeScript and Vite projects — with files, styles, interactions and a live preview — not static mockups.</p></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-question" type="button" aria-expanded="false">
-                    <span data-i18n="faq.q3">How do credits and plans work?</span>
-                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="faq-answer"><p data-i18n="faq.a3">Credits power building and improving apps with AI. Paid plans include more credits and higher limits. Cloud, storage and deployed AI usage are tracked separately as your live apps grow.</p></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-question" type="button" aria-expanded="false">
-                    <span data-i18n="faq.q4">What's the difference between preview and publish?</span>
-                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="faq-answer"><p data-i18n="faq.a4">Preview is where you inspect and iterate safely. Your live site changes only when you click Publish, so visitors never see unfinished work.</p></div>
-            </div>
-            <div class="faq-item">
-                <button class="faq-question" type="button" aria-expanded="false">
-                    <span data-i18n="faq.q5">Is my data secure?</span>
-                    <svg class="faq-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                <div class="faq-answer"><p data-i18n="faq.a5">Provider keys and private tokens never appear in generated frontend code. Server-side secrets stay in secure backend environments, and sensitive actions stay confirmed and server-safe.</p></div>
-            </div>
-        </div>
-    </section>
-
-    </main>
-
-    <section class="footer-cta reveal" aria-label="Start building with Coden">
-        <div>
-            <p class="section-kicker" data-i18n="footer.cta">Start with your idea.</p>
-            <h2 data-i18n="footer.ctaTitle">Your idea deserves a first prototype.</h2>
-        </div>
-        <a href="/auth.html" class="footer-cta-button" data-conversion-event="start_building_click" data-conversion-place="footer" data-i18n="footer.ctaButton">Create my app</a>
-    </section>
-
-    <footer class="footer">
-        <div class="footer-grid">
-            <div class="footer-brand">
-                <a href="/" class="logo coden-brand" data-coden-logo="brand">
-                    <div class="logo-mark">
-                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
-                        </svg>
-                    </div>
-                    <span class="logo-text">Coden</span>
-                </a>
-                <p data-i18n="footer.tagline">From idea to verified web product.</p>
-            </div>
-            <div class="footer-col">
-                <h5 data-i18n="footer.col.product">Product</h5>
-                <ul class="footer-links">
-                    <li><a href="/features.html" data-i18n="footer.link.features">Features</a></li>
-                    <li><a href="/pricing.html" data-i18n="footer.link.pricing">Pricing</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5 data-i18n="footer.col.resources">Resources</h5>
-                <ul class="footer-links">
-                    <li><a href="/documentation.html" data-i18n="footer.link.documentation">Documentation</a></li>
-                    <li><a href="/security.html" data-i18n="footer.link.security">Security</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5 data-i18n="footer.col.legal">Legal</h5>
-                <ul class="footer-links">
-                    <li><a href="/terms.html" data-i18n="footer.link.terms">Terms</a></li>
-                    <li><a href="/privacy.html" data-i18n="footer.link.privacy">Privacy</a></li>
-                    <li><a href="mailto:contact@coden.fun" data-i18n="footer.link.contact">Contact</a></li>
-                </ul>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            <span>© 2026 Coden Inc.</span>
-            <div class="footer-bottom-actions">
-                <label for="lang-select" data-i18n="footer.lang">Language</label>
-                <select id="lang-select" aria-label="Language">
-                    <option value="en">English</option>
-                    <option value="fr">Français</option>
-                </select>
-            </div>
-        </div>
-    </footer>
-
-    <!-- Modal Overlay -->
-    <div id="modal-overlay" class="modal-overlay">
-        <div class="modal-content">
-            <button id="modal-close" class="modal-close">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-            <div id="modal-body"></div>
-        </div>
+  <a class="cdn-skip" href="#top">Skip to content</a>
+<header id="coden-marketing-header-root" style="position:sticky;top:0;z-index:50;padding:12px clamp(12px,3vw,20px) 0">
+    <div class="cdn-pill" style="max-width:1160px;margin:0 auto;padding:0 10px 0 14px;height:60px;display:flex;align-items:center;gap:32px;border:1px solid #263244;border-radius:9999px;background:rgba(21,26,34,.82);backdrop-filter:blur(18px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+      <a aria-label="Coden home" href="#top" style="display:inline-flex;align-items:center;gap:9px;color:#f8fafc;flex:none;font-weight:700;letter-spacing:-.02em" class="cdn-interaction-1">
+        <svg width="30" height="30" viewBox="0 0 32 32" style="display:block;flex:none" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="#f8fafc"></rect>
+          <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="#0e1116"></path>
+          <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="#0e1116"></path>
+          <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="#0e1116"></path>
+        </svg>
+        <span style="font-size:19px">coden</span>
+      </a>
+      <nav class="cdn-nav" style="display:flex;gap:28px;margin:0 auto">
+        <a href="#platform" style="color:#aab4c3;font-size:15px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-2">Platform</a>
+        <a href="#roles" style="color:#aab4c3;font-size:15px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-3">Use cases</a>
+        <a href="#system" style="color:#aab4c3;font-size:15px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-4">Design system</a>
+        <a href="#pricing" style="color:#aab4c3;font-size:15px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-5">Pricing</a>
+      </nav>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex:none">
+        <a class="cdn-interaction-6 cdn-signin" href="/auth.html" style="color:#aab4c3;font-size:15px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)">Sign in</a>
+        <a href="/auth.html" style="background:#4f8cff;color:#08111f;font-size:14.5px;font-weight:600;padding:10px 18px;border-radius:10px;white-space:nowrap;transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-7">Get started</a>
+      </div>
     </div>
+  </header>
 
-    <!-- Toast Container -->
-    <div id="toast-container"></div>
+  <main id="landing-main"><section id="top" style="position:relative;overflow:hidden;background:#0b0e13;padding:clamp(64px,9vw,120px) clamp(20px,4vw,40px) clamp(120px,16vw,220px);margin-top:-72px;padding-top:clamp(136px,17vw,192px)">
+      <div aria-hidden="true" style="position:absolute;inset:0;background-image:repeating-linear-gradient(30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px),repeating-linear-gradient(-30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px);mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 34%, #000 72%);-webkit-mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 34%, #000 72%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:62%;background:radial-gradient(120% 100% at 50% 116%, #4f8cff 0%, rgba(59,130,246,.52) 18%, rgba(29,78,216,.3) 40%, rgba(16,32,64,.12) 66%, transparent 84%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:34%;background:radial-gradient(46% 74% at 50% 122%, rgba(214,231,255,.62), rgba(143,183,255,.2) 48%, transparent 78%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg, transparent, rgba(187,212,255,.5) 30%, rgba(214,231,255,.75) 50%, rgba(187,212,255,.5) 70%, transparent)"></div>
 
-    <script type="module" src="/src/main.ts"></script>
+      <div style="position:relative;max-width:840px;margin:0 auto;text-align:center;animation:cdnRise .55s cubic-bezier(.16,1,.3,1) both">
+        <a href="#system" style="display:inline-flex;align-items:center;gap:9px;padding:8px 12px 8px 15px;border-radius:9999px;background:rgba(14,17,22,.42);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(8px);color:#ffffff;font-size:14.5px;font-weight:500;transition:background 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-8">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.4 6.6L22 12l-6.6 2.4L13 21l-2.4-6.6L4 12l6.6-2.4L13 3z"></path></svg>
+          From idea to working application
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </a>
+
+        <h1 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(42px,7vw,76px);line-height:1.02;letter-spacing:-.025em;margin:24px 0 0;text-wrap:balance">
+          What will you build today?
+        </h1>
+        <p style="max-width:560px;margin:18px auto 0;font-size:clamp(17px,2.2vw,19px);color:rgba(248,250,252,.86)">
+          Describe your idea. Build, preview and refine it with Coden.
+        </p>
+
+        <div style="margin:32px auto 0;max-width:700px;text-align:left;border:1px solid #263244;background:#151a22;border-radius:18px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 48px rgba(0,0,0,.55);transition:box-shadow 280ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-9">
+          <textarea aria-label="Describe your app" maxlength="12000" rows="2" placeholder="Describe the app you want to build…" style="width:100%;resize:none;border:0;outline:0;background:transparent;color:#f8fafc;font-size:16px;line-height:1.6;padding:18px 18px 4px"></textarea>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 12px 14px">
+            <button type="button" aria-label="Attach a file" data-prompt-action="upload" style="display:grid;place-items:center;width:34px;height:34px;border-radius:10px;border:0;background:transparent;color:#8d98a8;cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-10">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+              <button type="button" data-mode-toggle aria-pressed="false" aria-label="Plan before building" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 11px;border-radius:9px;border:0;background:transparent;color:#8d98a8;font-family:'Instrument Sans',sans-serif;font-size:14px;cursor:pointer;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-11">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"></path></svg>
+                <span data-mode-label>Auto</span>
+              </button>
+              <button type="button" aria-label="Build now" data-build style="display:grid;place-items:center;width:40px;height:40px;border-radius:10px;border:0;background:#4f8cff;color:#08111f;cursor:pointer;transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-12">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"></path></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px;margin-top:30px">
+          <span style="font-size:15px;color:rgba(248,250,252,.78)">or start from</span>
+          <a href="#top" style="display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#ffffff;padding:9px 13px;border-radius:10px;background:rgba(14,17,22,.42);border:1px solid rgba(255,255,255,.14);transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-13" data-start-from="repository">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.7.5.1.68-.22.68-.49 0-.24-.01-1.04-.01-1.89-2.78.62-3.37-1.22-3.37-1.22-.46-1.19-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.35 1.12 2.92.85.09-.66.35-1.12.64-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.31.1-2.72 0 0 .84-.28 2.75 1.05A9.36 9.36 0 0 1 12 6.91c.85 0 1.7.12 2.5.34 1.9-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.95.68 1.9 0 1.38-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.1 10.1 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z"></path></svg>
+            A repository
+          </a>
+          <a href="#top" style="display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#ffffff;padding:9px 13px;border-radius:10px;background:rgba(14,17,22,.42);border:1px solid rgba(255,255,255,.14);transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-14" data-start-from="screenshot">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18M9 9v11"></path></svg>
+            A screenshot
+          </a>
+          <a href="#top" style="display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:#ffffff;padding:9px 13px;border-radius:10px;background:rgba(14,17,22,.42);border:1px solid rgba(255,255,255,.14);transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-15" data-start-from="starter">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h13"></path></svg>
+            A starter idea
+          </a>
+        </div>
+      </div>
+  </section>
+
+
+  <section aria-label="Technologies for your projects" style="padding:clamp(38px,5.5vw,64px) clamp(16px,3vw,24px)">
+    <p class="cdn-stack-caption">Built with familiar technologies</p><div class="cdn-marquee" style="max-width:1200px;margin:0 auto;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)">
+      <div class="cdn-track" style="display:flex;width:max-content;align-items:center;gap:clamp(34px,5vw,68px);animation:cdnMarquee 34s linear infinite">
+        <span class="cdn-stack-name">React</span><span class="cdn-stack-name">TypeScript</span><span class="cdn-stack-name">Vite</span><span class="cdn-stack-name">Node.js</span><span class="cdn-stack-name">Supabase</span><span class="cdn-stack-name">GitHub</span><span class="cdn-stack-name">React</span><span class="cdn-stack-name">TypeScript</span><span class="cdn-stack-name">Vite</span><span class="cdn-stack-name">Node.js</span><span class="cdn-stack-name">Supabase</span><span class="cdn-stack-name">GitHub</span>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="manifesto" style="position:relative;padding:clamp(60px,9vw,130px) clamp(16px,3vw,24px) clamp(56px,8vw,100px);text-align:center">
+    <div aria-hidden="true" style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:min(720px,100%);height:480px;background:radial-gradient(closest-side, rgba(79,140,255,.26), rgba(79,140,255,.05) 54%, transparent 78%)"></div>
+    <div aria-hidden="true" style="position:relative;height:140px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end">
+      <span style="width:1px;flex:1;background:linear-gradient(180deg,transparent,rgba(187,212,255,.7))"></span>
+      <span style="display:block;width:16px;height:16px;border-radius:9999px;background:#e8f0ff;box-shadow:0 0 0 6px rgba(79,140,255,.3),0 0 34px 14px rgba(79,140,255,.5);animation:cdnGlow 3.4s ease-in-out infinite"></span>
+    </div>
+    <div style="position:relative;max-width:820px;margin:0 auto">
+      <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(32px,5vw,58px);line-height:1.06;letter-spacing:-.02em;margin:42px 0 0;text-wrap:balance;color:#aab4c3">
+        Empowering product builders<br/><span style="color:#f8fafc">with agents that actually ship</span>
+      </h2>
+      <p style="max-width:540px;margin:20px auto 0;font-size:17px;color:#8d98a8;text-wrap:pretty">
+        Coden does the heavy lifting, so you can focus on your product instead of fighting errors.
+      </p>
+    </div>
+  </section>
+
+  <section aria-label="Reliability" style="padding:0 clamp(16px,3vw,24px) clamp(56px,8vw,96px)">
+    <p class="cdn-example-note">Illustrations of the workflow — not live project metrics.</p><div style="max-width:1200px;margin:0 auto;display:grid;gap:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(20px,2.6vw,28px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-16">
+          <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:24px;letter-spacing:-.015em;margin:0">The right tools for your next idea</h3>
+          <p style="margin:10px 0 0;font-size:15px;color:#8d98a8;text-wrap:pretty">Describe the outcome you want. Coden works with your project, writes code and checks the result in one workspace.</p>
+        </div>
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;border-radius:10px;background:#1b2230;border:1px solid #263244">
+            <span style="font-size:14px;font-weight:600;color:#f8fafc">Coden Agent</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8d98a8">router</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-radius:10px;background:#11161e;border:1px solid #263244">
+            <span style="display:flex;align-items:center;gap:9px;font-size:14px;color:#aab4c3"><span style="width:7px;height:7px;border-radius:9999px;background:#4f8cff"></span>Auto</span>
+            <span style="font-size:12.5px;color:#8d98a8">All users</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-radius:10px;background:#11161e;border:1px solid #263244">
+            <span style="display:flex;align-items:center;gap:9px;font-size:14px;color:#aab4c3"><span style="width:7px;height:7px;border-radius:9999px;background:#8fb7ff"></span>Plan</span>
+            <span style="padding:2px 9px;border-radius:9999px;background:rgba(79,140,255,.14);color:#bbd4ff;font-size:11.5px;font-weight:600">Read-only</span>
+          </div>
+        </div>
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(18px,2.4vw,24px);display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+          <span style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;color:#f8fafc"><span style="width:7px;height:7px;border-radius:9999px;background:#8fb7ff"></span>Plan</span>
+          <p style="margin:0;font-size:14.5px;color:#8d98a8">Explore the approach before asking Coden to change your application.</p>
+          <div style="display:grid;gap:8px">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">Purpose</span><span style="color:#aab4c3">Planning</span></div>
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">Output</span><span style="color:#aab4c3">A clear approach</span></div>
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">File changes</span><span style="color:#aab4c3">None</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(24px,3.4vw,40px);text-align:center;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+          <p style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(60px,9vw,108px);line-height:1;letter-spacing:-.03em;margin:0;color:#f8fafc">Build &amp; test</p>
+          <p style="margin:4px 0 0;font-family:'Instrument Serif',Georgia,serif;font-size:clamp(20px,2.4vw,27px);color:#8d98a8">an iterative workflow</p>
+          <p style="max-width:330px;margin:18px auto 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Inspect the preview, review the checks and ask Coden to improve the result.</p>
+        </div>
+        <div style="position:relative;overflow:hidden;border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(22px,3vw,30px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+          <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:24px;letter-spacing:-.015em;margin:0">Build big without breaking</h3>
+          <p style="margin:10px 0 0;max-width:400px;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Keep your code, conversation and preview together. Make focused changes as your project grows.</p>
+          <p style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(54px,10vw,112px);line-height:1;letter-spacing:-.035em;margin:20px 0 -16px;color:#1b2230">Iterate.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="system" style="padding:0 clamp(16px,3vw,24px) clamp(60px,9vw,110px)">
+    <div style="max-width:1200px;margin:0 auto;overflow:hidden;border:1px solid #263244;border-radius:24px;background:linear-gradient(180deg,#151a22,#11161e 70%);padding:clamp(30px,5vw,60px) clamp(20px,4vw,52px);box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 48px rgba(0,0,0,.55)">
+      <div style="max-width:620px">
+        <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8d98a8">Design system</p>
+        <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(30px,4.6vw,50px);line-height:1.06;letter-spacing:-.02em;margin:16px 0 0">
+          Build with <span style="font-style:italic;color:#8fb7ff">your</span> design system
+        </h2>
+        <p style="margin:14px 0 0;font-size:16.5px;color:#8d98a8;text-wrap:pretty">Share your tokens, components and visual references to guide a consistent interface.</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:clamp(28px,4vw,44px);align-items:start">
+        <div style="border:1px solid #263244;border-radius:14px;background:#11161e;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #263244">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8d98a8" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M14 3v5h5"></path><path d="M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5z"></path></svg>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3">tokens.css</span>
+            <span style="margin-left:auto;padding:2px 8px;border-radius:9999px;background:rgba(54,201,143,.14);color:#36c98f;font-family:'JetBrains Mono',monospace;font-size:10px;white-space:nowrap">imported</span>
+          </div>
+          <div style="display:grid">
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1b2230">
+              <span style="flex:none;width:16px;height:16px;border-radius:5px;background:#4f8cff"></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--primary</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8d98a8">#4f8cff</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1b2230">
+              <span style="flex:none;width:16px;height:16px;border-radius:5px;background:#151a22;border:1px solid #3a4a60"></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--surface</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8d98a8">#151a22</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1b2230">
+              <span style="flex:none;display:grid;place-items:center;width:16px;height:16px;font-family:'Instrument Serif',Georgia,serif;font-size:14px;color:#f8fafc">A</span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--font-display</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8d98a8">Serif</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1b2230">
+              <span aria-hidden="true" style="flex:none;width:16px;height:16px;border-top:2px solid #3a4a60;border-left:2px solid #3a4a60;border-top-left-radius:7px"></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--radius-lg</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8d98a8">14px</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px">
+              <span aria-hidden="true" style="flex:none;display:flex;align-items:center;gap:2px;width:16px"><span style="width:3px;height:10px;border-radius:1px;background:#3a4a60"></span><span style="width:3px;height:10px;border-radius:1px;background:#2c3d57"></span><span style="width:3px;height:10px;border-radius:1px;background:#263244"></span></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--space-*</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8d98a8">4 → 128</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid #263244;border-radius:14px;background:#11161e;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #263244">
+            <span style="display:flex;gap:5px"><span style="width:8px;height:8px;border-radius:9999px;background:#263244"></span><span style="width:8px;height:8px;border-radius:9999px;background:#263244"></span><span style="width:8px;height:8px;border-radius:9999px;background:#263244"></span></span>
+            <span style="margin-left:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3">What Coden builds</span>
+          </div>
+          <div style="padding:clamp(18px,3vw,24px)">
+            <div style="border:1px solid #263244;border-radius:14px;background:#151a22;padding:20px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+              <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8d98a8">Invoice</p>
+              <p style="margin:10px 0 0;font-family:'Instrument Serif',Georgia,serif;font-size:30px;letter-spacing:-.02em;line-height:1">€2,480.00</p>
+              <p style="margin:6px 0 0;font-size:13.5px;color:#8d98a8">Due in 6 days · Northwind Ltd</p>
+              <div style="display:flex;gap:8px;margin-top:18px">
+                <span style="flex:1;text-align:center;padding:9px;border-radius:10px;background:#4f8cff;color:#08111f;font-size:13.5px;font-weight:600">Send reminder</span>
+                <span style="text-align:center;padding:9px 14px;border-radius:10px;border:1px solid #263244;color:#aab4c3;font-size:13.5px;font-weight:600">View</span>
+              </div>
+            </div>
+            <p style="margin:16px 0 0;font-size:13.5px;color:#8d98a8;text-wrap:pretty">Same accent, same radius, same type scale — pulled straight from your tokens, not guessed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="platform" style="background:#11161e;border-top:1px solid #263244;border-bottom:1px solid #263244;padding:clamp(60px,9vw,110px) clamp(16px,3vw,24px)">
+    <div style="max-width:1200px;margin:0 auto">
+      <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(30px,4.8vw,54px);line-height:1.06;letter-spacing:-.02em;margin:0;text-align:center;color:#aab4c3">
+        Everything you need to scale<br/><span style="color:#f8fafc">Built in.</span>
+      </h2>
+      <p style="text-align:center;margin:18px auto 0;max-width:580px;font-size:16.5px;color:#8d98a8;text-wrap:pretty">
+        Build your interface, connect the services your app needs and prepare it for publication from the same workspace.
+      </p>
+
+      <div style="display:grid;gap:16px;margin-top:clamp(32px,5vw,52px)">
+        <div class="cdn-span2" style="border:1px solid #263244;border-radius:18px;background:#151a22;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+          <div style="padding:clamp(24px,3.4vw,34px)">
+            <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8d98a8">Hosting</p>
+            <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(22px,2.8vw,28px);letter-spacing:-.015em;margin:12px 0 0">One click from preview to production</h3>
+            <p style="margin:10px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Check the working preview before publishing. Deployment options depend on your plan and connected services.</p>
+          </div>
+          <div style="border-left:1px solid #263244;background:#11161e;padding:clamp(20px,3vw,28px);display:grid;gap:10px;align-content:center">
+            <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid #263244;border-radius:12px;background:#151a22">
+              <span style="width:7px;height:7px;border-radius:9999px;background:#36c98f;flex:none"></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">app.example.com</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8d98a8;white-space:nowrap">live</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid #263244;border-radius:12px;background:#151a22">
+              <span style="width:7px;height:7px;border-radius:9999px;background:#4f8cff;flex:none"></span>
+              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">preview-4c1e</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8d98a8;white-space:nowrap">building</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;padding:0 4px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8d98a8">
+              <span>build checks</span><span>SSL auto</span><span>preview → publish</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px">
+          <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-17">
+            <div>
+              <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Connected databases</h3>
+              <p style="margin:8px 0 0;font-size:14px;color:#8d98a8;text-wrap:pretty">Connect a database when your app needs persistent data.</p>
+            </div>
+            <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:11px">
+              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;border-bottom:1px solid #1b2230;color:#8d98a8"><span>invoices</span><span>1,248</span></div>
+              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;border-bottom:1px solid #1b2230;color:#8d98a8"><span>customers</span><span>312</span></div>
+              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;color:#8d98a8"><span>reminders</span><span>74</span></div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-18">
+            <div>
+              <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Users &amp; auth</h3>
+              <p style="margin:8px 0 0;font-size:14px;color:#8d98a8;text-wrap:pretty">Build sign-in and account flows around your configured authentication provider.</p>
+            </div>
+            <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;padding:13px;display:grid;gap:9px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:#263244;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#aab4c3">AM</span>
+                <span style="flex:1;height:5px;border-radius:4px;background:#263244"></span>
+                <span style="padding:1px 7px;border-radius:9999px;background:rgba(79,140,255,.14);color:#bbd4ff;font-family:'JetBrains Mono',monospace;font-size:9.5px">admin</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:#1b2230;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8d98a8">JD</span>
+                <span style="flex:1;height:5px;border-radius:4px;background:#1b2230"></span>
+                <span style="padding:1px 7px;border-radius:9999px;background:#1b2230;color:#8d98a8;font-family:'JetBrains Mono',monospace;font-size:9.5px">member</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:#1b2230;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8d98a8">SR</span>
+                <span style="flex:1;height:5px;border-radius:4px;background:#1b2230"></span>
+                <span style="padding:1px 7px;border-radius:9999px;background:#1b2230;color:#8d98a8;font-family:'JetBrains Mono',monospace;font-size:9.5px">member</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-19">
+            <div>
+              <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">SEO out of the box</h3>
+              <p style="margin:8px 0 0;font-size:14px;color:#8d98a8;text-wrap:pretty">Include metadata and responsive pages, then check your app before launch.</p>
+            </div>
+            <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;padding:14px;display:grid;gap:11px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8d98a8">Lighthouse</span>
+                <span style="font-family:'Instrument Serif',Georgia,serif;font-size:26px;line-height:1;color:#f8fafc">Check</span>
+              </div>
+              <span style="display:block;height:4px;border-radius:4px;background:#1b2230;overflow:hidden"><span style="display:block;width:100%;height:100%;border-radius:4px;background:linear-gradient(90deg,#4f8cff,#36c98f)"></span></span>
+              <div style="display:flex;justify-content:space-between;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#8d98a8"><span>Loading</span><span>Stability</span><span>Interaction</span></div>
+            </div>
+          </div>
+
+          <div class="cdn-span2" style="grid-column:span 2;border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px;align-items:center;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+            <div>
+              <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">A workflow you can inspect</h3>
+              <p style="margin:8px 0 0;font-size:14px;color:#8d98a8;text-wrap:pretty">Review project changes, test important flows and keep publication under your control.</p>
+            </div>
+            <div aria-hidden="true" style="border:1px solid #263244;border-radius:12px;background:#11161e;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:10.5px">
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #1b2230"><span style="color:#8d98a8;flex:none">09:42</span><span style="color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">deploy · a.morel</span></div>
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #1b2230"><span style="color:#8d98a8;flex:none">09:31</span><span style="color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">role changed · s.reyes</span></div>
+              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px"><span style="color:#8d98a8;flex:none">09:12</span><span style="color:#aab4c3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">SSO login · j.dupont</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="roles" style="padding:clamp(60px,9vw,110px) clamp(16px,3vw,24px)">
+    <div style="max-width:1200px;margin:0 auto">
+      <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(30px,4.8vw,54px);line-height:1.06;letter-spacing:-.02em;margin:0;text-align:center;color:#aab4c3">
+        Whatever your role<br/><span style="color:#f8fafc">Coden gives you superpowers</span>
+      </h2>
+      <p style="text-align:center;margin:18px auto 0;max-width:560px;font-size:16.5px;color:#8d98a8;text-wrap:pretty">From idea to live product, Coden adapts to the way you work.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;margin-top:clamp(32px,5vw,52px)">
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-20">
+          <div>
+            <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Product managers</h3>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Go from insight to prototype in hours and test ideas with your team before the day is over.</p>
+          </div>
+          <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;padding:13px;display:grid;gap:9px">
+            <span style="font-size:12.5px;font-weight:600;color:#aab4c3">Version history</span>
+            <span style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:#151a22;border:1px solid #263244"><span style="width:6px;height:6px;border-radius:9999px;background:#4f8cff"></span><span style="flex:1;height:5px;border-radius:4px;background:#263244"></span></span>
+            <span style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:#151a22;border:1px solid #263244"><span style="width:6px;height:6px;border-radius:9999px;background:#3a4a60"></span><span style="flex:1;height:5px;border-radius:4px;background:#1b2230"></span></span>
+          </div>
+        </div>
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-21">
+          <div>
+            <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Entrepreneurs</h3>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Launch a full business in days, not months. From landing page to product, all in one flow.</p>
+          </div>
+          <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;padding:13px;display:grid;gap:8px">
+            <span style="font-size:12.5px;font-weight:600;color:#aab4c3">Publish your project</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8fb7ff;word-break:break-all">studio.example.com</span>
+            <span style="display:flex;align-items:center;gap:7px;font-size:12px;color:#8d98a8"><span style="width:6px;height:6px;border-radius:9999px;background:#36c98f"></span>Live · updated 1 min ago</span>
+          </div>
+        </div>
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-22">
+          <div>
+            <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Marketers</h3>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Spin up high-performing campaign pages in hours, with SEO and hosting built in.</p>
+          </div>
+          <div aria-hidden="true" style="margin-top:auto;border:1px solid #263244;border-radius:12px;background:#11161e;padding:13px">
+            <span style="display:block;font-size:12.5px;font-weight:600;color:#aab4c3">Unique visitors</span>
+            <span style="display:flex;align-items:flex-end;gap:5px;height:60px;margin-top:12px">
+              <span style="flex:1;height:22%;border-radius:3px;background:#263244"></span>
+              <span style="flex:1;height:38%;border-radius:3px;background:#2c3d57"></span>
+              <span style="flex:1;height:30%;border-radius:3px;background:#263244"></span>
+              <span style="flex:1;height:58%;border-radius:3px;background:#31537f"></span>
+              <span style="flex:1;height:74%;border-radius:3px;background:#4f8cff"></span>
+              <span style="flex:1;height:92%;border-radius:3px;background:#6b9bff"></span>
+            </span>
+          </div>
+        </div>
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-23">
+          <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Agencies</h3>
+          <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Multiply your impact: deliver more projects, faster, without scaling headcount.</p>
+        </div>
+        <div class="cdn-span2" style="grid-column:span 2;border:1px solid #263244;border-radius:18px;background:#151a22;padding:24px;display:flex;gap:22px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45)">
+          <div style="flex:1;min-width:220px">
+            <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Students &amp; builders</h3>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Learn by doing. Take ideas from class or side projects and turn them into working apps.</p>
+          </div>
+          <div aria-hidden="true" style="flex:1;min-width:220px;border:1px solid #263244;border-radius:12px;background:#11161e;padding:13px;display:grid;gap:8px">
+            <span style="font-size:12.5px;font-weight:600;color:#aab4c3">Plan</span>
+            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:#8d98a8"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#36c98f" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Analyze project structure</span>
+            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:#8d98a8"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#36c98f" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Design component structure</span>
+            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:#8d98a8"><span style="width:13px;height:13px;border-radius:9999px;border:2px solid #3a4a60"></span>Implement state management</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="pricing" style="background:#11161e;border-top:1px solid #263244;padding:clamp(60px,9vw,110px) clamp(16px,3vw,24px)">
+    <div style="max-width:1140px;margin:0 auto">
+      <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(30px,4.6vw,50px);line-height:1.06;letter-spacing:-.02em;margin:0;text-align:center">Simple pricing, real infrastructure</h2>
+      <p style="text-align:center;margin:16px auto 0;max-width:500px;font-size:16.5px;color:#8d98a8;text-wrap:pretty">Every plan ships a real codebase you own. Upgrade when you go to production.</p>
+      <div style="display:flex;justify-content:center;margin-top:28px">
+        <div style="position:relative;display:grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:9999px;border:1px solid #263244;background:#151a22">
+          <span aria-hidden="true" class="cdn-billing-indicator"></span>
+          <button type="button" data-billing="monthly" aria-pressed="true" class="cdn-billing-button">Monthly</button>
+          <button type="button" data-billing="annual" aria-pressed="false" class="cdn-billing-button">Annual · −20%</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:18px;margin-top:36px;align-items:stretch">
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:28px;display:flex;flex-direction:column;gap:20px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);animation:cdnCardIn .6s cubic-bezier(.16,1,.3,1) both;transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-24">
+          <div>
+            <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#8d98a8">Free</p>
+            <p style="margin:12px 0 0;font-family:'Instrument Serif',Georgia,serif;font-size:52px;letter-spacing:-.03em;line-height:1">$0</p>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8">Forever. For your first prototypes.</p>
+          </div>
+          <ul style="list-style:none;margin:0;padding:0;display:grid">
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Discovery credits for a first prototype</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>AI-assisted generation</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Unpublished local preview</li>
+          </ul>
+          <a href="/auth.html?plan=free" style="margin-top:auto;text-align:center;padding:12px;border-radius:10px;border:1px solid #263244;color:#f8fafc;font-size:14.5px;font-weight:600;transition:border-color 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-25">Start free</a>
+        </div>
+
+        <div style="position:relative;overflow:hidden;border:1px solid rgba(79,140,255,.42);border-radius:18px;background:linear-gradient(180deg,#16213a,#151a22 62%);padding:28px;display:flex;flex-direction:column;gap:20px;box-shadow:0 1px 0 rgba(255,255,255,.07) inset, 0 24px 70px rgba(0,0,0,.46);animation:cdnCardIn .6s cubic-bezier(.16,1,.3,1) .08s both;transition:transform 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-26">
+          <div aria-hidden="true" style="position:absolute;top:-40%;right:-20%;width:70%;height:80%;background:radial-gradient(closest-side,rgba(79,140,255,.24),transparent 74%);pointer-events:none"></div>
+          <div style="position:relative">
+            <div style="display:flex;align-items:center;gap:10px">
+              <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#bbd4ff">Pro</p>
+              <span style="margin-left:auto;padding:3px 10px;border-radius:9999px;background:rgba(79,140,255,.14);color:#bbd4ff;font-family:'JetBrains Mono',monospace;font-size:10.5px;white-space:nowrap">Most popular</span>
+            </div>
+            <p class="cdn-price" data-plan-price="pro">$25</p>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8"><span data-price-period>Per month</span> · for builders shipping to production.</p>
+          </div>
+          <ul style="position:relative;list-style:none;margin:0;padding:0;display:grid">
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#f8fafc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>1,000 credits</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#f8fafc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>$10 hosting allowance</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#f8fafc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Build and improve your applications</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#f8fafc"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4f8cff" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Preview before publishing</li>
+          </ul>
+          <a href="/auth.html?plan=pro&amp;billing=monthly" data-plan-cta="pro" style="position:relative;margin-top:auto;text-align:center;padding:12px;border-radius:10px;background:#4f8cff;color:#08111f;font-size:14.5px;font-weight:600;transition:background 160ms cubic-bezier(.16,1,.3,1),transform 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-27">Get started</a>
+        </div>
+
+        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:28px;display:flex;flex-direction:column;gap:20px;box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 6px 16px rgba(0,0,0,.45);animation:cdnCardIn .6s cubic-bezier(.16,1,.3,1) .16s both;transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-28">
+          <div>
+            <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#8d98a8">Scale</p>
+            <p style="margin:12px 0 0;font-family:'Instrument Serif',Georgia,serif;font-size:52px;letter-spacing:-.03em;line-height:1" data-plan-price="scale">$200</p>
+            <p style="margin:8px 0 0;font-size:14.5px;color:#8d98a8">For teams shipping multiple applications.</p>
+          </div>
+          <ul style="list-style:none;margin:0;padding:0;display:grid">
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>10,000 credits</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>$75 hosting allowance</li>
+            <li style="display:flex;gap:11px;padding:11px 0;border-top:1px solid #263244;font-size:14.5px;color:#aab4c3"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3a4a60" stroke-width="3" stroke-linecap="round" style="flex:none;margin-top:4px" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>More capacity for your projects</li>
+          </ul>
+          <a href="/auth.html?plan=scale&amp;billing=monthly" data-plan-cta="scale" style="margin-top:auto;text-align:center;padding:12px;border-radius:10px;border:1px solid #263244;color:#f8fafc;font-size:14.5px;font-weight:600;transition:border-color 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-29">Choose Scale</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+
+  <section id="faq" style="padding:clamp(60px,9vw,110px) clamp(16px,3vw,24px)">
+    <div style="max-width:820px;margin:0 auto">
+      <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(29px,4.4vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0;text-align:center">Questions, answered</h2>
+      <div style="display:grid;gap:10px;margin-top:34px">
+        <details class="cdn-faq" open><summary>Do I own the code Coden generates?<span aria-hidden="true">⌄</span></summary><p>Your project contains standard source files. You can inspect the code in the Builder and continue working on it as your application grows.</p></details>
+<details class="cdn-faq"><summary>Can I connect my own database or Stripe account?<span aria-hidden="true">⌄</span></summary><p>You can request integrations such as Supabase or Stripe. Services need their own configuration and credentials; Coden will ask for the information required by your project.</p></details>
+<details class="cdn-faq"><summary>What happens when I publish?<span aria-hidden="true">⌄</span></summary><p>Preview your application and check the result first. Publishing is a separate action in the Builder, subject to your plan and the deployment configuration.</p></details>
+<details class="cdn-faq"><summary>Can Coden follow my existing design system?<span aria-hidden="true">⌄</span></summary><p>Attach a reference or provide your styles, tokens and component conventions with your request. Coden can use them while building your interface.</p></details>
+<details class="cdn-faq"><summary>Is there a free plan?<span aria-hidden="true">⌄</span></summary><p>Yes. Free includes discovery credits to create a first prototype. Paid plans provide additional credits and hosting allowances. See the plan details before subscribing.</p></details>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="cta" style="position:relative;overflow:hidden;background:#0b0e13;border-top:1px solid #263244;padding:clamp(64px,9vw,120px) clamp(20px,4vw,40px) clamp(110px,14vw,190px)">
+      <div aria-hidden="true" style="position:absolute;inset:0;background-image:repeating-linear-gradient(30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px),repeating-linear-gradient(-30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px);mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 38%, #000 74%);-webkit-mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 38%, #000 74%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:58%;background:radial-gradient(120% 100% at 50% 118%, #4f8cff 0%, rgba(59,130,246,.5) 18%, rgba(29,78,216,.28) 42%, transparent 82%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:30%;background:radial-gradient(44% 72% at 50% 124%, rgba(214,231,255,.58), rgba(143,183,255,.18) 48%, transparent 78%)"></div>
+      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg, transparent, rgba(187,212,255,.45) 32%, rgba(214,231,255,.7) 50%, rgba(187,212,255,.45) 68%, transparent)"></div>
+      <div style="position:relative;max-width:700px;margin:0 auto;text-align:center">
+        <h2 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(30px,4.6vw,50px);line-height:1.06;letter-spacing:-.02em;margin:0;text-wrap:balance">Ready to build something real?</h2>
+        <p style="margin:14px auto 0;font-size:clamp(16px,2vw,18px);color:rgba(248,250,252,.86)">Try it out and start building for free.</p>
+        <div style="margin:30px auto 0;max-width:600px;text-align:left;border:1px solid #263244;background:#151a22;border-radius:16px;box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 48px rgba(0,0,0,.55)">
+          <textarea aria-label="Describe your app" maxlength="12000" rows="2" placeholder="Let's build…" style="width:100%;resize:none;border:0;outline:0;background:transparent;color:#f8fafc;font-size:16px;line-height:1.6;padding:18px 18px 4px"></textarea>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 12px 14px">
+            <button type="button" aria-label="Attach a file" data-prompt-action="upload" style="display:grid;place-items:center;width:32px;height:32px;border-radius:9px;border:0;background:transparent;color:#8d98a8;cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-31">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button type="button" aria-label="Build now" data-build style="margin-left:auto;display:grid;place-items:center;width:38px;height:38px;border-radius:10px;border:0;background:#4f8cff;color:#08111f;cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),transform 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-32">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+  </section>
+
+  </main>
+<footer style="padding:clamp(50px,7vw,84px) clamp(16px,3vw,24px) 36px">
+    <div style="max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:34px">
+      <div>
+        <p style="margin:0 0 16px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8d98a8">Solutions</p>
+        <div style="display:grid;gap:10px">
+          <a href="#top" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-33">AI app builder</a>
+          <a href="#top" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-34">AI website builder</a>
+          <a href="#roles" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-35">SaaS dev</a>
+          <a href="#roles" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-36">Prototyping</a>
+          <a href="#pricing" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-37">Enterprise</a>
+        </div>
+      </div>
+      <div>
+        <p style="margin:0 0 16px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8d98a8">Resources</p>
+        <div style="display:grid;gap:10px">
+          <a href="/documentation.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-38">Documentation</a>
+          <a href="/documentation.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-39">Features</a>
+          <a href="/documentation.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-40">Getting started</a>
+          <a href="/security.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-41">Security &amp; trust</a>
+          <a href="/dashboard.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-42">Your workspace</a>
+        </div>
+      </div>
+      <div>
+        <p style="margin:0 0 16px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8d98a8">Company</p>
+        <div style="display:grid;gap:10px">
+          <a href="/documentation.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-43">Product guide</a>
+          <a href="#pricing" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-44">Pricing</a>
+          <a href="/terms.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-45">Terms of use</a>
+          <a href="/privacy.html" style="font-size:14px;color:#aab4c3;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-46">Privacy policy</a>
+        </div>
+      </div>
+      <div>
+        <p style="margin:0 0 16px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#8d98a8">Connect</p>
+        <div><a href="/documentation.html">Documentation &amp; help ↗</a></div>
+      </div>
+    </div>
+    <div style="max-width:1200px;margin:40px auto 0;padding-top:22px;border-top:1px solid #263244;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+      <span style="display:inline-flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.02em;color:#3a4a60">
+        <svg width="24" height="24" viewBox="0 0 32 32" style="display:block;flex:none" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="#263244"></rect>
+          <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="#0e1116"></path>
+          <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="#0e1116"></path>
+          <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="#0e1116"></path>
+        </svg>
+        <span style="font-size:15px">coden</span>
+      </span>
+      <span style="font-size:13px;color:#8d98a8">© 2026 Coden. All rights reserved.</span>
+    </div>
+  </footer>
+</div>
+<p id="landing-notice" role="status" aria-live="polite" hidden></p>
+<script type="module" src="/src/landing-v3.ts"></script>
 </body>
 </html>

@@ -13,6 +13,8 @@ import {
 // eleven: DeepSeek, Qwen and GLM were retired, and the remaining ids moved to
 // their current provider names.
 const EXPECTED_ALLOWED_MODELS = [
+  'openai/gpt-5.6-luna', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol',
+  'google/gemini-3.8-flash', 'anthropic/claude-fable-5.1',
   'google/gemini-3.8-flash:batch',
   'openai/gpt-5.6-luna-pro',
   'moonshotai/kimi-k3',

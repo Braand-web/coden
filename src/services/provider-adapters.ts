@@ -118,10 +118,10 @@ export function toOpenRouterChatPayloadExtras(config?: ProviderRequestConfig) {
   const extras: Record<string, unknown> = {};
   if (Number.isFinite(config.temperature)) extras.temperature = config.temperature;
   if (Number.isFinite(config.maxTokens)) extras.max_tokens = config.maxTokens;
-  if (config.responseFormat && config.adapter !== 'anthropic') {
+  if (config.responseFormat) {
     extras.response_format = (config.responseFormat as any).response_mime_type === 'application/json'
       ? { type: 'json_object' }
-      : config.responseFormat;
+      : (config.responseFormat as any).type === 'json_instruction' ? { type: 'json_object' } : config.responseFormat;
   }
   if (config.tools?.length) {
     extras.tools = config.tools.map(tool => {
@@ -151,8 +151,8 @@ export function toOpenRouterChatPayloadExtras(config?: ProviderRequestConfig) {
     });
     if (config.toolChoice && config.toolChoice !== 'none') extras.tool_choice = config.toolChoice;
   }
-  if (config.reasoning) extras.reasoning = config.reasoning;
-  if (config.thinking_budget) extras.thinking = { budget_tokens: config.thinking_budget };
+  if (config.reasoning) extras.reasoning = { ...config.reasoning, exclude: true };
+  else if (config.thinking_budget) extras.reasoning = { max_tokens: config.thinking_budget, exclude: true };
   return extras;
 }
 

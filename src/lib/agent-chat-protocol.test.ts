@@ -49,7 +49,7 @@ describe('agent streaming protocol', () => {
     const stream = createAgentEventStream(res, 'run-1');
     stream.chat({ type: 'text_delta', delta: 'Je modifie.' });
     stream.chat({ type: 'files_touched', action: 'edit', paths: ['src/App.tsx'] });
-    stream.finish({ success: true, summary: 'Build vérifié.' }, 200);
+    stream.finish({ success: true, summary: 'Build vérifié.', assistant_source:'model' }, 200);
     stream.finish({ success: true }, 200);
     const events: AgentEnvelope[] = []; await consumeAgentStream(response(wire, 17), e => events.push(e));
     expect(events.map(e => e.payload.type)).toEqual(['text_delta', 'text_end', 'files_touched', 'result', 'text_delta', 'text_end', 'run_finished']);
@@ -58,5 +58,12 @@ describe('agent streaming protocol', () => {
   it('returns recoverable files even when the run reports failure', async () => {
     const result = { success: false, needs_fix: true, files: [{ path: 'index.html' }] };
     expect(await consumeAgentStream(response(encode(1, 'workspace', { type: 'result', result }) + encode(2, 'chat', { type: 'run_failed', message: 'Build failed' })), () => {})).toEqual(result);
+  });
+  it('never promotes a technical summary to model narration', () => {
+    const res = new EventEmitter() as any; let wire = '';
+    res.status = () => res; res.set = () => res; res.flushHeaders = () => {}; res.write = (s:string) => { wire += s; }; res.end = () => res.emit('finish');
+    const stream = createAgentEventStream(res,'run-1');
+    stream.finish({success:true,summary:'Generated internal summary'},200);
+    expect(wire).not.toContain('text_delta');
   });
 });

@@ -34,6 +34,9 @@ import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
 import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
 import type { CodenAgentHarness } from './agent-harness/harness.ts';
+import { verifyLivePreview } from './sandbox/live-smoke.ts';
+import { createHash } from 'node:crypto';
+import { redactSecrets } from './secret-redaction.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -116,7 +119,7 @@ export function summarizePipelineOutcome(input: {
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
   for (const file of plan.files) lines.push(`- [${file.action}] ${file.path} — ${file.rationale}`);
-  if (plan.risks?.length) lines.push('', `Known risks, already accepted: ${plan.risks.join('; ')}`);
+  if (plan.risks?.length) lines.push('', `Unresolved risks (not approvals): ${plan.risks.join('; ')}. Do not perform sensitive operations without explicit authorization.`);
   return lines.join('\n');
 }
 
@@ -138,10 +141,11 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
+    preferStructuredOutput: false,
     allowTools: true,
     stream: false,
     timeoutMs: 60_000,
-    maxTokens: 6_000,
+    maxTokens: 16_000,
   }));
   const runtimeConfig = runtimeFor(input.modelId);
 
@@ -186,21 +190,20 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       runtimeConfigForModel: runtimeFor,
       timeoutMs: 60_000,
       maxSteps: Math.min(6, maxToolCalls),
+      maxToolCalls,
       signal: input.signal,
       onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,
       onTextEnd: () => input.onChatEvent?.({ type: 'text_end' }),
-      onToolsStarted: () => input.onChatEvent?.({ type: 'activity', label: 'Exécution des actions sur le projet' }),
       onToolsCompleted: () => {
         for (const [action, paths] of touched) {
           input.onChatEvent?.({ type: 'files_touched', action, paths: [...paths] });
-          input.onChatEvent?.({ type: 'activity', label: 'Analyse des résultats des actions' });
         }
         touched.clear();
       },
       // A turn that throws produced nothing this round; `runCoderLoop`'s own
       // no-progress rule is what decides whether that is worth continuing
       // from, not this adapter guessing at a retry.
-    }).catch(error => { if (input.signal?.aborted) throw error; });
+    });
     return { toolCalls };
   };
 }
@@ -219,11 +222,11 @@ export async function runMultiAgentPipeline(input: {
   onCoderEvent?: (event: RepairEvent) => void;
   onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void;
   signal?: AbortSignal;
+  onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
 }): Promise<MultiAgentPipelineOutcome> {
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
-    input.onChatEvent?.({ type: 'activity', label: 'Préparation du plan de votre application' });
     // Before the sandbox exists, deliberately: planning needs no filesystem,
     // and paying the sandbox's cost for a plan that turns out unusable would
     // be the exact waste this ordering avoids.
@@ -233,7 +236,10 @@ export async function runMultiAgentPipeline(input: {
       existingFiles: input.existingFiles,
       plan: input.userPlan,
       credits: input.credits,
+      signal: input.signal,
     });
+    input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
+    input.onChatEvent?.({ type:'text_end' });
   }
 
   const launchFiles = input.route === 'new_project'
@@ -255,8 +261,8 @@ export async function runMultiAgentPipeline(input: {
   const modelId = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits }).modelId;
   const initialInstruction = plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt);
 
-  // A harness write can fail on its own terms and must never be the reason a
-  // real build does not happen — recording is degraded, not the build.
+  // Failure to persist a checkpoint is explicit; never claim a resumable run
+  // when its durable state was not recorded.
   const ctx = input.harnessContext;
   const coderItem = ctx
     ? await ctx.harness.spawnSubagent({
@@ -264,38 +270,70 @@ export async function runMultiAgentPipeline(input: {
         role: 'integrator',
         title: input.route === 'small_edit' ? 'Edit' : 'Build',
         context: { route: input.route },
-      }).catch(() => null)
+      })
     : null;
 
-  const onEvent = (event: RepairEvent) => {
-    input.onCoderEvent?.(event);
-    if (!ctx || !coderItem || event.type !== 'repair_round_finished') return;
-    ctx.harness.createItem({
+  const afterRound: NonNullable<Parameters<typeof runCoderLoop>[0]['afterRound']> = async (round, report) => {
+    const files = await readAllFiles(sandbox);
+    await input.onSnapshot?.(files);
+    if (!ctx || !coderItem) return;
+    await ctx.harness.saveCheckpoint(ctx.turnId, {
+      phase:'verification', round:round.round, modelId,
+      revision:createHash('sha256').update(JSON.stringify(files)).digest('hex'),
+      checks:JSON.parse(redactSecrets(JSON.stringify(report))),
+    });
+    await ctx.harness.createItem({
       threadId: ctx.threadId,
       turnId: ctx.turnId,
       parentItemId: coderItem.id,
       kind: 'verification',
       role: 'integrator',
-      status: event.errorsAfter === 0 ? 'completed' : 'failed',
-      title: `Round ${event.round}`,
-      payload: { errorsBefore: event.errorsBefore, errorsAfter: event.errorsAfter, filesTouched: event.filesTouched },
-    }).catch(() => {});
+      status: report.ok ? 'completed' : 'failed',
+      title: `Round ${round.round}`,
+      payload: { errorsBefore: round.errorsBefore, errorsAfter: round.errorsAfter, filesTouched: round.filesTouched },
+    });
   };
 
-  const repairOutcome = await runCoderLoop({
+  let repairOutcome: RepairOutcome;
+  try { repairOutcome = await runCoderLoop({
     sandbox,
     mode: 'build',
     initialInstruction,
     turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox, onChatEvent: input.onChatEvent, signal: input.signal }),
-    onEvent,
-  });
+    onEvent:input.onCoderEvent,
+    signal:input.signal,
+    verifyPreview:async () => {
+      const preview = await verifyLivePreview(sandbox, input.signal);
+      if (input.route === 'new_project') {
+        const baseline = new Map(launchFiles.map(file => [file.path,file.content]));
+        const files = await readAllFiles(sandbox);
+        const changed = files.some(file => !/^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(file.path) && baseline.get(file.path) !== file.content);
+        if (!changed) {
+          preview.ok=false;
+          preview.problems.push({source:'runtime',severity:'error',message:'The application is still the starter scaffold. Implement the requested functionality with file tools before claiming completion.'});
+        }
+      }
+      return preview;
+    },
+    afterRound,
+    beforeRound:async () => {
+      if (!ctx) return;
+      const instructions = await ctx.harness.consumePendingInstructions(ctx.turnId);
+      return instructions.map(instruction => instruction.text).join('\n');
+    },
+  }); } catch (error) {
+    // Preserve successful writes even if a later model call/verification fails.
+    await input.onSnapshot?.(await readAllFiles(sandbox));
+    if (ctx && coderItem) await ctx.harness.transitionItem(coderItem.id, input.signal?.aborted ? 'cancelled' : 'failed', { reason:'execution_interrupted' });
+    throw error;
+  }
 
   if (ctx && coderItem) {
     if (repairOutcome.ok) {
       const filesTouched = [...new Set(repairOutcome.rounds.flatMap(round => round.filesTouched))];
-      await ctx.harness.completeSubagent(coderItem.id, `Done in ${repairOutcome.rounds.length} round(s).`, filesTouched).catch(() => {});
+      await ctx.harness.completeSubagent(coderItem.id, `Done in ${repairOutcome.rounds.length} round(s).`, filesTouched);
     } else {
-      await ctx.harness.transitionItem(coderItem.id, 'failed', { reason: repairOutcome.stoppedBecause, rounds: repairOutcome.rounds.length }).catch(() => {});
+      await ctx.harness.transitionItem(coderItem.id, 'failed', { reason: repairOutcome.stoppedBecause, rounds: repairOutcome.rounds.length });
     }
   }
 

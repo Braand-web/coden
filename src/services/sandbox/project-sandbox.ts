@@ -30,6 +30,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { mkdir, writeFile, readFile, rm, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { existsSync } from 'node:fs';
 import { decideCommand } from './command-policy.ts';
 import { resolveInSandbox, sandboxDir } from './paths.ts';
 
@@ -76,7 +77,18 @@ function plain(text: string): string {
  * What a sandboxed process needs to exist: a shell's worth of context, and
  * nothing that identifies us to anyone.
  */
-const BASE_ENV_KEYS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'SHELL', 'USER'];
+const BASE_ENV_KEYS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'SHELL', 'USER', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT'];
+
+/** Launch npm through Node on Windows: no .cmd shell interpolation of tool arguments. */
+function executable(binary: string, args: readonly string[]) {
+  if (process.platform === 'win32' && binary === 'npm') {
+    const candidates = [process.env.npm_execpath, path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')];
+    const cli = candidates.find(value => value && /npm-cli\.js$/i.test(value) && existsSync(value));
+    if (!cli) throw new Error('NPM_EXECUTABLE_UNAVAILABLE');
+    return { binary:process.execPath, args:[cli,...args] };
+  }
+  return { binary, args:[...args] };
+}
 
 /**
  * How this host reaches the network.
@@ -266,7 +278,8 @@ export class ProjectSandbox {
     this.lastUsedAt = Date.now();
     const timeoutMs = options.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
-      const child = spawn(binary, [...args], {
+      const command = executable(binary,args);
+      const child = spawn(command.binary, command.args, {
         cwd: this.dir,
         env: sandboxEnv(this.env),
         shell: false,
@@ -362,7 +375,8 @@ export class ProjectSandbox {
       // prefix, the server writes URLs that come back to it.
       const args = ['run', script, '--', '--host', '127.0.0.1', '--port', '0'];
       if (this.basePath) args.push(`--base=${this.basePath}`);
-      const child = spawn('npm', args, {
+      const command = executable('npm',args);
+      const child = spawn(command.binary, command.args, {
         cwd: this.dir,
         env: sandboxEnv(this.env),
         shell: false,
@@ -446,6 +460,15 @@ export class ProjectSandbox {
     this.port = null;
     if (!child || child.exitCode !== null) return;
     const pid = child.pid;
+    if (pid && process.platform === 'win32') {
+      await new Promise<void>((resolve, reject) => {
+        const killer = spawn('taskkill', ['/pid',String(pid),'/t','/f'], { windowsHide:true, shell:false, stdio:'ignore' });
+        const timer = setTimeout(() => { killer.kill(); reject(new Error('Sandbox process tree did not stop.')); }, 5000);
+        killer.once('error', error => { clearTimeout(timer); reject(error); });
+        killer.once('close', () => { clearTimeout(timer); resolve(); });
+      });
+      return;
+    }
     const signal = (which: NodeJS.Signals) => {
       if (pid && process.platform !== 'win32') {
         // Negative pid addresses the group. ESRCH here means it is already

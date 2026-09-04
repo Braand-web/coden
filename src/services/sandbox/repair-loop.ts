@@ -107,6 +107,10 @@ export async function runCoderLoop(input: {
   onEvent?: (event: RepairEvent) => void;
   /** Validation already run by the caller, so the first round costs nothing extra. */
   initialReport?: ValidationReport;
+  signal?: AbortSignal;
+  beforeRound?: (round: number) => Promise<string | undefined>;
+  afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
+  verifyPreview?: () => Promise<ValidationReport>;
 }): Promise<RepairOutcome> {
   const mode = input.mode ?? 'repair';
   if (mode === 'build' && !input.initialInstruction) {
@@ -134,6 +138,8 @@ export async function runCoderLoop(input: {
   };
 
   for (let round = 1; round <= maxRounds; round += 1) {
+    input.signal?.throwIfAborted();
+    const steering = await input.beforeRound?.(round);
     const errorsBefore = countErrors(report);
     emit({ type: 'repair_round_started', round, errors: errorsBefore });
 
@@ -145,6 +151,7 @@ export async function runCoderLoop(input: {
 
     let calls = 0;
     const guardedCall = async (name: string, args: Record<string, unknown>) => {
+      input.signal?.throwIfAborted();
       // The per-round ceiling is enforced here rather than trusted to the
       // model: a run that ignores its budget is exactly the run that needs one.
       if (calls >= maxToolCalls) {
@@ -160,7 +167,7 @@ export async function runCoderLoop(input: {
     // either mode, is "here is what the toolchain still does not like" — the
     // one instruction shape a repair has ever had.
     const isBuildRound = mode === 'build' && round === 1;
-    const instruction = isBuildRound ? input.initialInstruction! : buildRepairInstruction(report);
+    const instruction = (isBuildRound ? input.initialInstruction! : buildRepairInstruction(report)) + (steering ? `\n\nAdditional user instructions to apply now:\n${steering}` : '');
 
     await input.turn({
       instruction,
@@ -177,10 +184,16 @@ export async function runCoderLoop(input: {
       await input.sandbox.start({ basePath });
     }
 
-    report = await validateProject(input.sandbox, { skipBuild: true });
+    report = await validateProject(input.sandbox);
+    input.signal?.throwIfAborted();
+    if (report.ok && input.verifyPreview) {
+      const preview = await input.verifyPreview();
+      report = { ...report, ok:preview.ok, problems:[...report.problems,...preview.problems], ran:{...report.ran,browser:preview.ran.browser}, durationMs:report.durationMs+preview.durationMs };
+    }
     const errorsAfter = countErrors(report);
     const filesTouched = [...touched];
     rounds.push({ round, errorsBefore, errorsAfter, toolCalls: calls, filesTouched, restarted: restartRequired });
+    await input.afterRound?.(rounds[rounds.length-1], report);
     emit({ type: 'repair_round_finished', round, errorsBefore, errorsAfter, filesTouched });
 
     if (report.ok) return finish('fixed');

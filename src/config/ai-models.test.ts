@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_ALLOWED_MODELS, AI_MODEL_FALLBACKS, MODEL_REGISTRY } from './ai-models';
+import { AI_ALLOWED_MODELS, AI_MODEL_FALLBACKS, MODEL_REGISTRY, AUTO_MODEL_IDS, UNAVAILABLE_MODEL_ROLES } from './ai-models';
 
 /**
  * The authorised catalogue, pinned exactly.
@@ -10,6 +10,8 @@ import { AI_ALLOWED_MODELS, AI_MODEL_FALLBACKS, MODEL_REGISTRY } from './ai-mode
  * test is what stops that being a quiet edit.
  */
 const AUTHORISED = [
+  'openai/gpt-5.6-luna', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol',
+  'google/gemini-3.8-flash', 'anthropic/claude-fable-5.1',
   'google/gemini-3.8-flash:batch',
   'anthropic/claude-fable-5.1:batch',
   'anthropic/claude-opus-5',
@@ -22,10 +24,14 @@ const AUTHORISED = [
 ];
 
 describe('Coden production model registry', () => {
-  it('contains exactly the nine authorised models and nothing else', () => {
+  it('preserves historical model IDs and adds only the verified interactive models', () => {
     expect([...AI_ALLOWED_MODELS].sort()).toEqual([...AUTHORISED].sort());
-    expect(MODEL_REGISTRY).toHaveLength(9);
+    expect(MODEL_REGISTRY).toHaveLength(14);
     expect(new Set(AI_ALLOWED_MODELS).size).toBe(AI_ALLOWED_MODELS.length);
+  });
+  it('limits Auto to the seven available roles, excluding deferred tiers and Astra', () => {
+    expect([...AUTO_MODEL_IDS].sort()).toEqual(['openai/gpt-5.6-luna','openai/gpt-5.6-terra','openai/gpt-5.6-sol','google/gemini-3.8-flash','x-ai/grok-4.6','anthropic/claude-opus-5','anthropic/claude-fable-5.1'].sort());
+    expect(UNAVAILABLE_MODEL_ROLES.ultimate.reason).toBe('not_in_openrouter_catalog');
   });
 
   it('prices every model, because the router chooses on cost', () => {

@@ -28,9 +28,10 @@ function parseToolArguments(raw: string | undefined) {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid tool arguments');
+    return parsed as Record<string, unknown>;
   } catch {
-    return {};
+    throw new Error('MODEL_TOOL_ARGUMENTS_INVALID: Tool arguments must be a valid JSON object.');
   }
 }
 
@@ -75,6 +76,7 @@ export async function runLlmToolLoop(input: {
   sensitiveTools?: Record<string, { needsApproval: boolean; reason?: string }>;
   timeoutMs?: number;
   maxSteps?: number;
+  maxToolCalls?: number;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void;
   onTextEnd?: () => void;
@@ -119,7 +121,14 @@ export async function runLlmToolLoop(input: {
     for (const call of result.tool_calls) {
       input.signal?.throwIfAborted();
       const handler = input.handlers[call.function.name];
-      const args = parseToolArguments(call.function.arguments);
+      if (toolExecutions.length >= (input.maxToolCalls ?? 48)) throw new Error('TOOL_BUDGET_EXCEEDED');
+      let args: Record<string, unknown>;
+      try { args = parseToolArguments(call.function.arguments); }
+      catch (error) {
+        toolExecutions.push({ name: call.function.name, ok: false });
+        messages.push({ role:'tool', tool_call_id:call.id, content:String(error) });
+        continue;
+      }
       let output: unknown;
       let ok = false;
       let approvalRequired = false;
@@ -148,13 +157,14 @@ export async function runLlmToolLoop(input: {
               };
             } else {
               output = await handler(args);
-              ok = true;
+              ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
             }
           } else {
             output = await handler(args);
-            ok = true;
+            ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
           }
         } catch (error: any) {
+          input.signal?.throwIfAborted();
           output = { error: String(error?.message || 'Tool execution failed.').slice(0, 500) };
         }
       }

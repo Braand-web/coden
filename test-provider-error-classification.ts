@@ -62,7 +62,7 @@ assert.equal(
   classify(new ProviderHttpError('OpenRouter', 400, 'unsupported parameter: response_format')).diagnosticCode,
   'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG',
 );
-assert.equal(classify(new ProviderHttpError('OpenRouter', 400, 'unsupported parameter: response_format')).retryable, true);
+assert.equal(classify(new ProviderHttpError('OpenRouter', 400, 'unsupported parameter: response_format')).retryable, false);
 
 // 404 is the model, not the request: another model can serve it.
 assert.equal(classify(new ProviderHttpError('OpenRouter', 404, 'no endpoints found')).diagnosticCode, 'MODEL_UNAVAILABLE');

@@ -267,5 +267,5 @@ export class CodenAgentHarness {
 }
 
 export function createHarnessTurnIdempotencyKey(input: { userId: string; projectId: string; requestId?: string; clientMessageId?: string }) {
-  return [input.userId, input.projectId, input.requestId || input.clientMessageId || harnessId('turn')].join(':');
+  return [input.userId, input.projectId, input.clientMessageId || input.requestId || harnessId('turn')].join(':');
 }

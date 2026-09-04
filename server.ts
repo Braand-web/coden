@@ -1392,7 +1392,14 @@ async function prepareAgentHarnessContext(input: {
         requestId: input.requestId,
         clientMessageId: input.clientMessageId,
       });
-      if (activeTurn?.idempotencyKey !== expectedKey) thread = null;
+      if (activeTurn && !['completed','failed','cancelled','blocked'].includes(activeTurn.status)) {
+        const age = Date.now() - Date.parse(activeTurn.startedAt || activeTurn.createdAt);
+        if (Number.isFinite(age) && age > 20 * 60_000 && !activeHarnessTurnControllers.has(activeTurn.id)) {
+          await harness.transitionTurn(activeTurn.id,'failed',{diagnostic_code:'RUN_INTERRUPTED',recoverable:true});
+        } else if (activeTurn.idempotencyKey !== expectedKey) {
+          throw new Error('HARNESS_RUN_ACTIVE: send an instruction to the current run or cancel it first.');
+        }
+      }
     }
     if (!thread) {
       thread = await harness.createThread({
@@ -1423,6 +1430,7 @@ async function prepareAgentHarnessContext(input: {
       }),
     });
     let turn = turnResult.turn;
+    if (!turnResult.created) throw new Error('HARNESS_RUN_ALREADY_EXISTS: this request already has a turn. Resume or steer it instead of generating twice.');
     if (turn.status === 'queued') turn = await harness.transitionTurn(turn.id, 'running', { requestId: input.requestId });
     const assistantItem = await harness.createItem({
       threadId: thread.id,
@@ -11243,6 +11251,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const generationAbortController = new AbortController();
+  const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), 15 * 60_000);
+  generationDeadline.unref();
+  res.once('finish', () => clearTimeout(generationDeadline));
+  res.once('close', () => clearTimeout(generationDeadline));
   if (harnessContext) {
     activeHarnessTurnControllers.set(harnessContext.turn.id, generationAbortController);
     const releaseHarnessController = () => activeHarnessTurnControllers.delete(harnessContext!.turn.id);
@@ -11262,14 +11274,53 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const eventStream = req.headers.accept?.includes('text/event-stream')
     ? createAgentEventStream(res, harnessContext?.turn.id || requestId) : null;
   const respondJson = async (status: number, payload: any) => {
+    if (status < 400 && payload.pipeline === 'multi_agent') {
+      try {
+        let seen = 0;
+        const recap = await providerGateway.streamingCompletion('openai/gpt-5.6-luna', [
+          { role:'system', content:'Write a concise user-facing report in the language of the request, at most three sentences. Report only the observed facts supplied. A passing build is not proof of functional browser QA. Mention unverified checks. Do not expose private reasoning, internal model names or secrets. Never invent successful tests.' },
+          { role:'user', content:JSON.stringify({ request:prompt, success:payload.success, changes:{ created:payload.diff?.created?.length, modified:payload.diff?.modified?.length, deleted:payload.diff?.deleted?.length }, preview:payload.preview?.status, checks:payload.verification || null }) },
+        ], { timeoutMs:30_000, signal:generationAbortController.signal, allowFallback:false,
+          runtimeConfig:{ adapter:'openrouter', maxTokens:1200, reasoning:{ effort:'low' } },
+          onChunk: accumulated => { const delta = accumulated.slice(seen); seen = accumulated.length; if (delta) eventStream?.chat({ type:'text_delta', delta }); },
+        });
+        payload.summary = recap.text;
+        payload.assistant_source = 'model';
+        payload.assistant_streamed = Boolean(eventStream);
+      } catch (error) {
+        payload.summary = '';
+        payload.narration_error = 'MODEL_RECAP_UNAVAILABLE';
+        eventStream?.workspace({ type:'narration_failed', code:'MODEL_RECAP_UNAVAILABLE' });
+      }
+    }
+    if (harnessContext) {
+      payload.threadId = harnessContext.thread.id;
+      payload.turnId = harnessContext.turn.id;
+      payload.runId = harnessContext.turn.id;
+      try {
+        if (payload.pipeline === 'multi_agent' && payload.summary) {
+          await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:payload.summary,intent:payload.intent?.intent,requested_mode:requestedMode});
+        }
+        const terminal = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
+        const current = await harnessContext.harness.store.getTurn(harnessContext.turn.id);
+        if (current && !['completed','failed','cancelled','blocked'].includes(current.status)) {
+          await harnessContext.harness.transitionItem(harnessContext.assistantItemId, terminal, { source:payload.assistant_source || 'system', diagnostic_code:payload.diagnostic_code || null });
+          await harnessContext.harness.transitionTurn(harnessContext.turn.id, terminal, { diagnostic_code:payload.diagnostic_code || null });
+        }
+      } catch (error) {
+        console.error('[coden:harness_finalize_failed]', {requestId,message:redactSecrets(String(error))});
+        status=503;
+        payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
+      }
+    }
     if (eventStream) { eventStream.finish(payload, status); return res; }
     return res.status(status).json(payload);
   };
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
-  eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Analyse de votre demande' : 'Analyzing your request' });
+  if (harnessContext) eventStream?.workspace({type:'run_acknowledged',threadId:harnessContext.thread.id,turnId:harnessContext.turn.id,runId:harnessContext.turn.id});
 
-  // The decision call can take noticeable time on a live provider. Emit the
-  // first real activity before awaiting it so a connected Builder never looks
+  // The decision call can take noticeable time on a live provider. Acknowledge
+  // the run without inventing model-authored narration so the Builder never looks
   // frozen while Coden is already analysing the request.
 
   const helpers = getDbHelpers();
@@ -11322,6 +11373,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
   if (process.env.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute) {
     try {
+      await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
       const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
       const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
 
@@ -11337,13 +11389,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         credits: routingCredits,
         onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
         signal: generationAbortController.signal,
+        onSnapshot: async files => { await saveProject({ ...project, preview_status:'needs_fix', updated_at:new Date().toISOString() }, files as GeneratedFile[]); },
         onSandboxEvent: event => {
           eventStream?.workspace({ ...event });
-          eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Préparation de l’environnement de preview' : 'Preparing the preview environment' });
         },
         onCoderEvent: event => {
           eventStream?.workspace({ ...event });
-          if (event.type === 'repair_round_started') eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Construction et vérification de votre application' : 'Building and checking your application' });
         },
         harnessContext: harnessContext
           ? { harness: harnessContext.harness, threadId: harnessContext.thread.id, turnId: harnessContext.turn.id }
@@ -11367,9 +11418,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         const previewPipeline = runPreviewPipeline(updatedProject, pipelineFiles);
         updatedProject.preview_html = previewPipeline.html;
 
-        await saveProject(updatedProject, pipelineFiles).catch(error => {
-          console.warn('[coden:multi_agent_save_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-        });
+        await saveProject(updatedProject, pipelineFiles);
         const diff = diffFiles(existingFiles, pipelineFiles);
         await createProjectVersion(updatedProject, pipelineFiles, prompt, {
           ...diff,
@@ -11394,6 +11443,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             prompt,
           }),
           model: outcome.modelId,
+          verification: outcome.repairOutcome.finalReport,
           plan: outcome.plan,
           preview: {
             status: outcome.ok ? 'verified' : 'needs_fix',
@@ -11406,35 +11456,19 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
       }
 
-      // The sandbox itself never came up (capacity, an install failure) —
-      // nothing was written, so there is nothing to undo. Falling through to
-      // the proven legacy path below answers the request instead of failing
-      // it outright.
-      console.warn('[coden:multi_agent_pipeline_fallback]', { project: project.id, reason: outcome.startError });
-      eventStream?.chat({ type: 'activity', label: frenchActivity ? 'La sandbox est indisponible. Reprise avec le générateur de fichiers.' : 'Sandbox unavailable. Continuing with the file generator.' });
+      // Keep the failed runtime explicit; never disguise it as a file-only success.
+      console.warn('[coden:multi_agent_sandbox_failed]', { project: project.id, reason: outcome.startError });
+      return respondJson(503, { success:false, error:outcome.startError, diagnostic_code:'SANDBOX_START_FAILED', recoverable:true });
     } catch (error: any) {
-      // Same fallback, for a failure this branch cannot characterize (a
-      // planner that could not produce a valid plan, a provider outage): the
-      // legacy path can still answer the request even though this one could
-      // not.
+      // Partial files are retained by onSnapshot; surface the failure for recovery.
       if (generationAbortController.signal.aborted) {
-        eventStream?.finish({ success: false, error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' }, 499);
-        return;
+        return respondJson(499,{ success: false, diagnostic_code:'RUN_INTERRUPTED', error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' });
       }
       console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Le moteur principal a rencontré une erreur. Reprise avec le générateur de fichiers.' : 'The primary engine encountered an error. Continuing with the file generator.' });
+      return respondJson(502, { success:false, error:redactSecrets(error?.message || 'Execution failed', '[redacted]'), diagnostic_code:error?.diagnosticCode || 'AGENT_EXECUTION_FAILED', recoverable:true });
     }
   }
 
-  const decisionPhase = decision.intent === 'plan'
-    ? 'planning'
-    : decision.intent === 'verify'
-      ? 'inspecting'
-      : decision.intent === 'debug_fix'
-        ? 'fixing'
-        : 'understanding';
-  if (decisionPhase !== 'understanding') {
-  }
   const publicGoal = String(decision.modelObjective?.goal || decision.userVisibleReason || '').trim().slice(0, 240);
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
@@ -11598,6 +11632,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       intent: decision,
       text: content,
       model: agentText.model,
+      assistant_source: agentText.model === 'router' ? 'system' : 'model',
       reliability,
       files: reliability.should_mutate_files ? existingFiles : undefined,
       preview: reliability.should_touch_preview
@@ -11645,7 +11680,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
-    eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Génération des fichiers de votre application' : 'Generating your application files' });
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
@@ -12276,7 +12310,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       throw new Error(`The model response contradicted verified facts: ${finalContradictions.join(', ')}`);
     }
 
-    eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Enregistrement des fichiers et du résultat des vérifications' : 'Saving files and verification results' });
     await saveProject(updatedProject, finalFiles);
 
     /*

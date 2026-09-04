@@ -51,7 +51,7 @@ assert.equal(taskKindForRoute('large_change'), 'code_generation');
  */
 {
   const editModel = selectModel({ task: taskKindForRoute('small_edit'), plan: 'pro', credits: 100 });
-  const buildModel = selectModel({ task: taskKindForRoute('new_project'), complexity: 'complex', plan: 'pro', credits: 100 });
+  const buildModel = selectModel({ task: taskKindForRoute('new_project'), complexity: 'complex', plan: 'scale', credits: 100 });
   const costOf = (id: AllowedModelId) => blendedCost(id);
   assert.ok(costOf(editModel.modelId) <= costOf(buildModel.modelId),
     `a small edit must not be routed to a more expensive model than a full build: ${editModel.modelId} vs ${buildModel.modelId}`);

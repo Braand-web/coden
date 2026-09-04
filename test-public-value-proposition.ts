@@ -10,10 +10,10 @@ const french = getProductPositioning('fr');
 const english = getProductPositioning('en');
 
 assert.match(landing, /Coden — Turn an idea into a web app with AI/);
-assert.match(landing, /data-i18n="hero\.title"/);
-assert.match(landing, /data-i18n="hero\.subtitle"/);
-assert.match(landing, /data-i18n="hero\.cta"/);
-assert.match(landing, /data-i18n="hero\.reassurance"/);
+assert.match(landing, /data-coden-surface="landing-v3"/);
+assert.match(landing, /data-build/);
+assert.match(landing, /aria-label="Build now"/);
+assert.match(landing, /preview.*publish/i);
 assert.match(pricing, /Transformez votre idée/i);
 assert.match(pricing, /preview.*publish|prévisualisez.*publiez/i);
 assert.match(auth, /projets.*prévisualisez.*publiez/i);

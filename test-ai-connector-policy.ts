@@ -119,6 +119,10 @@ assert.match(byPath.get('src/lib/aiStream.ts') || '', /AbortController/);
 assert.match(byPath.get('src/lib/aiStream.ts') || '', /\/functions\/v1\/ai-stream/);
 assert.match(byPath.get('supabase/functions/ai-stream/index.ts') || '', /text\/event-stream/);
 assert.match(byPath.get('supabase/functions/ai-stream/index.ts') || '', /Deno\.env\.get/);
+const connector = byPath.get('supabase/functions/ai-stream/index.ts') || '';
+assert.match(connector, /https:\/\/openrouter\.ai\/api\/v1\/chat\/completions/);
+assert.match(connector, /OPENROUTER_API_KEY/);
+assert.doesNotMatch(connector, /api\.anthropic\.com|api\.openai\.com|generativelanguage\.googleapis\.com|ANTHROPIC_API_KEY|GEMINI_API_KEY/);
 assert.doesNotMatch(byPath.get('src/lib/aiStream.ts') || '', /VITE_(OPENAI|ANTHROPIC|GEMINI|GOOGLE|DEEPSEEK|FAL).*KEY|new\s+OpenAI|Anthropic\(/i);
 
 const validationChecks = validateCodenFullstackFiles(files, requirement);

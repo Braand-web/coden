@@ -79,7 +79,7 @@ const commonTextTools = {
 // merely better. `:batch` variants are the provider's deferred-execution tier —
 // materially cheaper, higher latency — which is why they sit at the economy end
 // and are kept off the interactive paths.
-export const MODEL_REGISTRY = [
+const LEGACY_MODEL_REGISTRY = [
   {
     id: 'google/gemini-3.8-flash:batch', label: 'Gemini 3.8 Flash', provider: 'google',
     contextWindow: 1_048_576, maxOutputTokens: 65_536,
@@ -172,6 +172,27 @@ export const MODEL_REGISTRY = [
   },
 ] as const satisfies readonly ModelDefinition[];
 
+// Preserve historical explicit selections. Auto uses only the interactive pool
+// below; legacy batch and retired role assignments cannot leak into new runs.
+export const MODEL_REGISTRY = [
+  ...LEGACY_MODEL_REGISTRY,
+  { ...LEGACY_MODEL_REGISTRY[1], id:'openai/gpt-5.6-luna', label:'Luna', inputUsdPerMillion:0.2, outputUsdPerMillion:1.2 },
+  { ...LEGACY_MODEL_REGISTRY[3], id:'openai/gpt-5.6-terra', label:'Terra' },
+  { ...LEGACY_MODEL_REGISTRY[6], id:'openai/gpt-5.6-sol', label:'Sol', inputUsdPerMillion:4, outputUsdPerMillion:20 },
+  { ...LEGACY_MODEL_REGISTRY[0], id:'google/gemini-3.8-flash', label:'Gemini 3.8 Flash', inputUsdPerMillion:0.75, outputUsdPerMillion:3.75,
+    capabilities:{ ...LEGACY_MODEL_REGISTRY[0].capabilities, codeLevel:'high', agenticLevel:'high', designLevel:'high' } },
+  { ...LEGACY_MODEL_REGISTRY[8], id:'anthropic/claude-fable-5.1', label:'Fable 5.1', inputUsdPerMillion:10, outputUsdPerMillion:50 },
+] as const satisfies readonly ModelDefinition[];
+
+export const AUTO_MODEL_ROLES = {
+  router:'openai/gpt-5.6-luna', worker:'openai/gpt-5.6-terra',
+  visual:'google/gemini-3.8-flash', builder:'x-ai/grok-4.6',
+  lead:'openai/gpt-5.6-sol', senior:'anthropic/claude-opus-5', expert:'anthropic/claude-fable-5.1',
+} as const;
+// Not an API id: this slot cannot execute until the provider lists it.
+export const UNAVAILABLE_MODEL_ROLES = { ultimate: { name:'GPT-6 Astra', reason:'not_in_openrouter_catalog' } } as const;
+export const AUTO_MODEL_IDS = Object.values(AUTO_MODEL_ROLES);
+
 export type AllowedModelId = (typeof MODEL_REGISTRY)[number]['id'];
 export type ModelSelectionId = AllowedModelId | 'auto';
 export const DEFAULT_PROVIDER_MODEL_ID: AllowedModelId = 'openai/gpt-5.6-luna-pro';
@@ -226,6 +247,11 @@ export const AI_MODEL_CAPABILITIES = buildRecord<ModelCapabilities>(model => ({
 // chains short and within the same or a lower accessible tier so a recovery is
 // bounded, explainable and never turns into an unbounded multi-model run.
 export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
+  'openai/gpt-5.6-luna':['google/gemini-3.8-flash'],
+  'openai/gpt-5.6-terra':['x-ai/grok-4.6'],
+  'openai/gpt-5.6-sol':['anthropic/claude-opus-5'],
+  'google/gemini-3.8-flash':['openai/gpt-5.6-luna'],
+  'anthropic/claude-fable-5.1':['anthropic/claude-opus-5'],
   'google/gemini-3.8-flash:batch': ['openai/gpt-5.6-luna-pro'],
   'openai/gpt-5.6-luna-pro': ['google/gemini-3.8-flash:batch'],
   'moonshotai/kimi-k3': ['openai/gpt-5.6-terra-pro'],

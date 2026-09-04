@@ -1,0 +1,41 @@
+@import './landing-reference.css';
+
+html { scroll-behavior:smooth; scroll-padding-top:100px; color-scheme:dark; }
+body { min-width:320px; }
+button, input, textarea, select { font:inherit; }
+button, a { -webkit-tap-highlight-color:transparent; }
+button:disabled { opacity:.5; cursor:wait; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline:2px solid #8fb7ff; outline-offset:5px; }
+textarea:focus-visible { outline:none; }
+.cdn-stack-name { font-family:'Instrument Serif',Georgia,serif; font-size:clamp(24px,2.4vw,28px); color:#8190a5; white-space:nowrap; }
+.cdn-stack-caption, .cdn-example-note { color:#8d98a8; text-align:center; font-size:14px; margin:0 auto 22px; }
+.cdn-price { margin:12px 0 0; font-family:'Instrument Serif',Georgia,serif; font-size:52px; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
+.cdn-billing-button { position:relative; z-index:1; padding:9px 20px; border-radius:9999px; border:0; background:transparent; font-size:14px; font-weight:600; cursor:pointer; color:#aab4c3; transition:color 180ms ease; }
+.cdn-billing-button[aria-pressed=true] { color:#08111f; }
+.cdn-billing-indicator { position:absolute; top:4px; left:4px; height:calc(100% - 8px); width:calc(50% - 4px); border-radius:9999px; background:#4f8cff; transition:transform 220ms ease; }
+.cdn-billing-indicator.annual { transform:translateX(100%); }
+.cdn-faq { border:1px solid #263244; border-radius:14px; background:#151a22; overflow:hidden; }
+.cdn-faq summary { display:flex; align-items:center; gap:16px; padding:17px 20px; cursor:pointer; font-weight:500; list-style:none; }
+.cdn-faq summary::-webkit-details-marker { display:none; }
+.cdn-faq summary:hover { background:#1b2230; }
+.cdn-faq summary span { margin-left:auto; transition:transform 180ms ease; }
+.cdn-faq[open] summary span { transform:rotate(180deg); }
+.cdn-faq p { margin:0; padding:0 20px 20px; color:#aab4c3; font-size:15px; }
+.cdn-skip { position:fixed; top:8px; left:16px; z-index:100; padding:10px 14px; background:#151a22; border-radius:8px; transform:translateY(-150%); }
+.cdn-skip:focus { transform:none; }
+#landing-notice { position:fixed; z-index:100; bottom:24px; left:50%; transform:translateX(-50%); width:max-content; max-width:calc(100% - 32px); padding:14px 20px; border:1px solid #3a4a60; border-radius:12px; background:#151a22; color:#f8fafc; box-shadow:0 8px 30px #0006; font:15px/1.5 'Instrument Sans',sans-serif; }
+.input-wrapper { position:relative; }
+.input-wrapper:focus-within { box-shadow:0 0 0 2px #8fb7ff,0 18px 48px #0008 !important; }
+.input-wrapper [data-mode-toggle][aria-pressed=true] { color:#bbd4ff !important; background:#263244 !important; }
+@media(max-width:900px) { .cdn-pill { gap:12px !important; } }
+@media(max-width:560px) {
+  main section > div { min-width:0; }
+  main [style*="grid-template-columns:repeat(auto-fit"] { grid-template-columns:minmax(0,1fr) !important; }
+  .cdn-span2 { grid-column:auto !important; }
+  .cdn-pill { padding-left:12px !important; }
+  .cdn-signin { display:inline !important; font-size:13px !important; }
+  .cdn-pill > div { gap:10px !important; }
+  .cdn-pill > div > a:last-child { padding:9px 12px !important; font-size:13px !important; }
+  .cdn-billing-button { padding:10px 16px; }
+}
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .cdn-track { animation:none !important; } }

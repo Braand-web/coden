@@ -4,6 +4,8 @@ import { toOpenRouterChatPayloadExtras, type ProviderRequestConfig } from './pro
 import { applyPromptCaching, type CacheableMessage } from './prompt-caching.ts';
 import { ToolCallStreamAccumulator, type AssembledToolCall } from './tool-call-stream-accumulator.ts';
 import { ProviderCancelledError, ProviderHttpError, ProviderTimeoutError, isRetryableStatus } from './provider-errors.ts';
+import { OpenRouterCapabilities, enforceModelCapabilities } from './openrouter-capabilities.ts';
+import { readProviderSse } from './provider-sse.ts';
 
 export const OPENROUTER_API_KEY_ENV_NAMES = [
   'OPENROUTER_API_KEY',
@@ -93,6 +95,7 @@ export type StreamChatEvent =
 
 export class OpenRouterService {
   private config: OpenRouterConfig;
+  private capabilities = new OpenRouterCapabilities();
 
   constructor(config: OpenRouterConfig) {
     this.config = {
@@ -116,7 +119,7 @@ export class OpenRouterService {
     // 1. Validate models against strict allowlist
     validateAllowedModel(modelId);
 
-    const payload = this.buildChatPayload(modelId, messages, runtimeConfig);
+    const payload = enforceModelCapabilities(await this.capabilities.get(modelId, signal), this.buildChatPayload(modelId, messages, runtimeConfig));
 
     let attempt = 0;
     let delay = 1000; // start with 1s backoff
@@ -147,6 +150,7 @@ export class OpenRouterService {
         }
 
         const choice = data?.choices?.[0];
+        if (choice?.finish_reason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED: completion token limit reached.');
         const text = typeof choice?.message?.content === 'string' ? choice.message.content : choice?.text || '';
         const tool_calls = Array.isArray(choice?.message?.tool_calls)
           ? choice.message.tool_calls
@@ -234,6 +238,7 @@ export class OpenRouterService {
     signal?: AbortSignal,
   ): AsyncGenerator<StreamChatEvent> {
     validateAllowedModel(modelId);
+    const payload = enforceModelCapabilities(await this.capabilities.get(modelId, signal), this.buildChatPayload(modelId, messages, runtimeConfig));
 
     const controller = new AbortController();
     // A healthy large code generation can exceed the conversational timeout,
@@ -254,7 +259,7 @@ export class OpenRouterService {
         headers: this.buildHeaders(),
         signal: combineAbortSignals(signal, controller.signal) as any,
         body: JSON.stringify({
-          ...this.buildChatPayload(modelId, messages, runtimeConfig),
+          ...payload,
           stream: true,
           stream_options: { include_usage: true }
         })
@@ -269,53 +274,27 @@ export class OpenRouterService {
         throw new Error('OpenRouter streaming response body is empty');
       }
 
-      let buffer = '';
       let model = modelId;
-      // Partial-JSON accumulator for cross-chunk SSE data fragments
-      let partialData = '';
+      let completed = false;
       // Structured tool-call accumulator: stitches fragmented delta.tool_calls
       // chunks back into complete calls (parallel-call safe by index).
       const toolCalls = new ToolCallStreamAccumulator();
 
-      for await (const chunk of response.body as any) {
-        armIdleTimeout();
-        buffer += Buffer.from(chunk).toString('utf8');
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() || '';
-
-        for (const part of parts) {
-          // Skip SSE comment/heartbeat lines
-          if (!part.trim() || part.trim().startsWith(':')) continue;
-
-          const lines = part.split('\n').filter(line => line.startsWith('data:'));
-          for (const line of lines) {
-            const raw = line.replace(/^data:\s*/, '').trim();
-            if (!raw || raw === '[DONE]') {
-              partialData = '';
-              continue;
-            }
-
-            // Robust JSON parse with partial-data recovery
-            const candidate = partialData + raw;
+      for await (const raw of readProviderSse(response.body as any, armIdleTimeout)) {
+            if (!raw.trim()) continue;
+            if (raw.trim() === '[DONE]') { completed = true; break; }
             let data: any;
             try {
-              data = JSON.parse(candidate);
-              partialData = ''; // reset on success
+              data = JSON.parse(raw);
             } catch {
-              // Accumulate if it looks like a partial JSON object/array
-              if (candidate.trim().startsWith('{') || candidate.trim().startsWith('[')) {
-                partialData = candidate;
-                continue;
-              }
-              // Not recoverable — skip and reset
-              partialData = '';
-              continue;
+              throw new Error('PROVIDER_STREAM_INVALID_JSON');
             }
 
             if (data?.error) {
               throw new Error(`OpenRouter API Error: ${data.error.message || JSON.stringify(data.error)}`);
             }
             model = data?.model || model;
+            if (data?.choices?.[0]?.finish_reason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED: completion token limit reached.');
             const delta = data?.choices?.[0]?.delta;
             const text = delta?.content || data?.choices?.[0]?.text || '';
             if (text) {
@@ -344,9 +323,8 @@ export class OpenRouterService {
                   : this.estimateUsdCost(model, promptTokens, completionTokens),
               };
             }
-          }
-        }
       }
+      if (!completed) throw new Error('PROVIDER_STREAM_INTERRUPTED: terminal marker missing.');
       // Emit any accumulated tool calls once the stream is done.
       if (toolCalls.hasCalls()) {
         const finalized = toolCalls.finalize();

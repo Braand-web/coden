@@ -2534,6 +2534,11 @@ async function requestProjectGeneration(
     ? consumeAgentStream(response, event => {
       const id = messageHandleId(card || null);
       if (id && event.channel === 'chat') conversationApi?.applyChatEvent(id, event);
+      if (event.channel === 'workspace' && event.payload.type === 'run_acknowledged') {
+        activeHarnessThreadId = String(event.payload.threadId || '');
+        activeHarnessTurnId = String(event.payload.turnId || '');
+        lastAgentRunId = String(event.payload.runId || '');
+      }
     })
     : response.json());
   if (!payload) throw new Error('Generation returned an empty response.');
@@ -5854,6 +5859,13 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     const hasNeedsFix = Boolean(responsePayload.needs_fix);
     const rawText = String(responsePayload.summary || responsePayload.text || responsePayload.message || '').trim();
     const finalText = safeAssistantDisplayText(rawText, speaksFrench);
+    if (!finalText && responsePayload.pipeline === 'multi_agent' && Array.isArray(responsePayload.files)) {
+      // Narration is independent of execution. Preserve the real preview and
+      // existing streamed prose when only the final model recap failed.
+      clearMessageShimmer(status);
+      finishLiveRun(status);
+      return;
+    }
     if (!finalText) throw new Error('The selected AI model did not return a usable final summary.');
 
     clearMessageShimmer(status);

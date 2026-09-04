@@ -30,8 +30,8 @@ export function createAgentEventStream(res: Response, runId: string) {
       endText();
       send({ channel: 'workspace', payload: { type: 'result', result: { ...payload, status_code: status } } });
       const answer = [payload.summary, payload.text, payload.message].find(value => typeof value === 'string' && value.trim());
-      if (answer) { chat({ type: 'text_delta', delta: answer }); endText(); }
-      chat(status >= 400 || payload.success === false
+      if (answer && payload.assistant_source === 'model' && !payload.assistant_streamed) { chat({ type: 'text_delta', delta: answer }); endText(); }
+      chat(status === 499 ? {type:'run_finished',reason:'cancelled'} : status >= 400 || payload.success === false
         ? { type: 'run_failed', message: String(payload.error || payload.message || 'La génération nécessite une correction. Les résultats disponibles sont conservés.') }
         : { type: 'run_finished', reason: 'completed' });
       cleanup(); res.end();

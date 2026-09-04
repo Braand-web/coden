@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
 import { ProviderGateway } from './src/services/provider-gateway.ts';
+import { applyStarter, STARTERS } from './src/services/sandbox/starters.ts';
 import { runMultiAgentPipeline } from './src/services/multi-agent-pipeline.ts';
 import { blendedCost } from './src/services/model-selection.ts';
 import { CodenAgentHarness } from './src/services/agent-harness/harness.ts';
@@ -125,10 +126,7 @@ try {
       userId: 'user-1',
       prompt: 'change the counter to start at 1',
       route: 'small_edit',
-      existingFiles: [
-        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
-        { path: 'src/App.tsx', content: COUNTER_APP },
-      ],
+      existingFiles: applyStarter(STARTERS['react-vite'], [{path:'src/App.tsx',content:COUNTER_APP}]).files,
       userPlan: 'free',
     }).catch(async (error) => { await cleanup('pipeline-small-edit'); throw error; });
     await cleanup('pipeline-small-edit');
@@ -181,10 +179,7 @@ try {
       userId: 'user-1',
       prompt: 'change something',
       route: 'small_edit',
-      existingFiles: [
-        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
-        { path: 'src/App.tsx', content: COUNTER_APP },
-      ],
+      existingFiles: applyStarter(STARTERS['react-vite'], [{path:'src/App.tsx',content:COUNTER_APP}]).files,
       userPlan: 'free',
       harnessContext: { harness, threadId, turnId },
     });
@@ -220,10 +215,7 @@ try {
       userId: 'user-1',
       prompt: 'bump the counter',
       route: 'small_edit',
-      existingFiles: [
-        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
-        { path: 'src/App.tsx', content: COUNTER_APP },
-      ],
+      existingFiles: applyStarter(STARTERS['react-vite'], [{path:'src/App.tsx',content:COUNTER_APP}]).files,
       userPlan: 'enterprise',
       credits: 99_999,
     });
@@ -240,10 +232,7 @@ try {
       userId: 'user-1',
       prompt: 'build a whole new dashboard',
       route: 'large_change',
-      existingFiles: [
-        { path: 'package.json', content: JSON.stringify({ name: 'app', private: true, scripts: { dev: 'vite' }, dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' }, devDependencies: { vite: '^5.0.0' } }) },
-        { path: 'src/App.tsx', content: COUNTER_APP },
-      ],
+      existingFiles: applyStarter(STARTERS['react-vite'], [{path:'src/App.tsx',content:COUNTER_APP}]).files,
       userPlan: 'enterprise',
       credits: 99_999,
     });

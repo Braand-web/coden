@@ -33,7 +33,7 @@ export type ValidationProblem = {
 export type ValidationReport = {
   ok: boolean;
   problems: ValidationProblem[];
-  ran: { devServer: boolean; typecheck: boolean; build: boolean };
+  ran: { devServer: boolean; typecheck: boolean; build: boolean; browser?: boolean };
   durationMs: number;
 };
 
@@ -161,7 +161,7 @@ export async function validateProject(
     // surfaces here before any check runs, which makes it the cheapest signal
     // available and often the only one that names the real cause.
     problems.push(...parseRuntimeOutput(
-      sandbox.getLogs(150).map(entry => entry.line).join('\n'),
+      sandbox.getLogs(150).filter(entry => status.state !== 'running' || !entry.at || entry.at >= startedAt).map(entry => entry.line).join('\n'),
       status.state === 'running' ? 'runtime' : 'dev_server',
     ));
   }
@@ -171,10 +171,20 @@ export async function validateProject(
   // most needed, so stopping here would withhold the best evidence at the
   // moment it matters most.
 
+  let hasTypecheck = false;
   if (await sandbox.hasFile('package.json')) {
-    const typecheck = await sandbox.runCommand('npm', ['run', 'typecheck', '--if-present'], {
+    try {
+      const pkg = JSON.parse(await sandbox.readProjectFile('package.json'));
+      hasTypecheck = typeof pkg.scripts?.typecheck === 'string' && !!pkg.scripts.typecheck.trim();
+    } catch {
+      problems.push({ source:'typecheck',severity:'error',message:'package.json could not be parsed.' });
+      return done();
+    }
+  }
+  if (hasTypecheck) {
+    const typecheck = await sandbox.runCommand('npm', ['run', 'typecheck'], {
       timeoutMs: options.typecheckTimeoutMs ?? 120_000,
-    }).catch(() => null);
+    }).catch(() => ({ code: -1, output: 'The typecheck process could not be started or timed out.' }));
     if (typecheck) {
       ran.typecheck = true;
       if (typecheck.code !== 0) {
@@ -192,9 +202,9 @@ export async function validateProject(
   }
 
   if (!options.skipBuild) {
-    const build = await sandbox.runCommand('npm', ['run', 'build', '--if-present'], {
+    const build = await sandbox.runCommand('npm', ['run', 'build'], {
       timeoutMs: options.buildTimeoutMs ?? 180_000,
-    }).catch(() => null);
+    }).catch(() => ({ code: -1, output: 'The build process could not be started or timed out.' }));
     if (build) {
       ran.build = true;
       if (build.code !== 0) {

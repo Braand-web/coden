@@ -27,7 +27,7 @@ assert.match(route, /if \(process\.env\.CODEN_MULTI_AGENT_PIPELINE === '1' && pi
 
 // -- it runs before the ~1200 lines of legacy branching, not after ----------
 const pipelineBranch = route.indexOf('const pipelineRoute = resolvePipelineRoute(');
-const decisionPhase = route.indexOf('const decisionPhase = decision.intent');
+const decisionPhase = route.indexOf('const skillResolution = resolveCodenSkill(');
 const generateFilesCall = route.indexOf('await generateFilesWithAi(');
 assert.ok(pipelineBranch > 0 && decisionPhase > 0 && generateFilesCall > 0, 'all three anchors must be findable');
 assert.ok(pipelineBranch < decisionPhase, 'the new branch must be checked before the legacy decisionPhase/skill/reliability machinery runs');
@@ -45,7 +45,7 @@ assert.match(pipelineCall, /harnessContext:/, 'the harness context already prepa
  * through with no return. A branch that could do neither would either hang
  * the request or silently drop the fallback the plan requires.
  */
-const startedBlock = route.slice(route.indexOf('if (outcome.started) {'), route.indexOf("console.warn('[coden:multi_agent_pipeline_fallback]'"));
+const startedBlock = route.slice(route.indexOf('if (outcome.started) {'), route.indexOf("console.warn('[coden:multi_agent_sandbox_failed]'"));
 assert.match(startedBlock, /return respondJson\(200, \{/, 'a started pipeline must end the request with a complete response');
 assert.match(startedBlock, /success: outcome\.ok,\s*\n\s*needs_fix: !outcome\.ok,/, 'success and needs_fix must be the honest inverse of the reviewer\'s own verdict');
 assert.match(startedBlock, /live_url: outcome\.liveUrl/, 'the live sandbox URL must reach the client exactly like the legacy path\'s');
@@ -58,8 +58,9 @@ assert.match(startedBlock, /summary: summarizePipelineOutcome\(/, 'the response 
 // The two failure exits (sandbox never started; anything else threw) must
 // both be logged and neither may return — falling through to the legacy
 // path is the whole point of the fallback.
-const fallbackRegion = route.slice(route.indexOf("console.warn('[coden:multi_agent_pipeline_fallback]'"), route.indexOf('const decisionPhase = decision.intent'));
-assert.doesNotMatch(fallbackRegion, /return respondJson|return res\./, 'the fallback paths must not return: they must fall through to the legacy branching below');
+const fallbackRegion = route.slice(route.indexOf("console.warn('[coden:multi_agent_sandbox_failed]'"), decisionPhase);
+assert.match(fallbackRegion, /return respondJson\(503/, 'sandbox failure must terminate explicitly, not silently regenerate');
+assert.match(fallbackRegion, /return respondJson\(502/, 'execution failure must preserve partial work and report the error');
 assert.match(fallbackRegion, /console\.warn\('\[coden:multi_agent_pipeline_failed\]'/, 'an unexpected failure must be logged, not silently swallowed');
 
 // -- intents that never write code must never enter the branch at all -------

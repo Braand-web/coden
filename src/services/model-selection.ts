@@ -6,11 +6,10 @@
  * disagree — and they did: 'Balanced' preferred a model that the Auto path of
  * the same complexity ranked fourth. Changing policy meant finding every list.
  *
- * The rule here is one sentence: **take the cheapest model that is still good
- * enough for this task.** Not the best model, not a vote between several — the
- * cheapest one that clears the bar. A model is only reached when every cheaper
- * one has been rejected for a stated reason, so an expensive choice is always
- * explainable.
+ * Prefer the specialist assigned to the task when eligible, then consider the
+ * remaining Auto catalogue in cost order. Every candidate must satisfy the
+ * capability, context, plan and budget gates. Historical manual selections
+ * do not enlarge the Auto pool.
  *
  * Cost comes from the catalogue's real per-million prices. Competence comes
  * from a bar per task and complexity. Both are data; this file is the policy
@@ -19,6 +18,8 @@
 
 import {
   AI_MODEL_CAPABILITIES,
+  AUTO_MODEL_IDS,
+  AUTO_MODEL_ROLES,
   AI_MODEL_PLAN_ACCESS,
   DEFAULT_PROVIDER_MODEL_ID,
   MODEL_ACTION_CREDIT_FLOORS,
@@ -92,7 +93,7 @@ const TASK_BAR: Record<TaskKind, { dimension: keyof typeof DIMENSIONS; floor: Mo
   classification: { dimension: 'reasoning', floor: 'low' },
   conversation: { dimension: 'reasoning', floor: 'medium' },
   summary: { dimension: 'reasoning', floor: 'low' },
-  planning: { dimension: 'reasoning', floor: 'high' },
+  planning: { dimension: 'reasoning', floor: 'medium' },
   code_generation: { dimension: 'code', floor: 'high' },
   code_edit: { dimension: 'code', floor: 'medium' },
   debug: { dimension: 'code', floor: 'high' },
@@ -166,7 +167,13 @@ export function selectModel(request: SelectionRequest): SelectionResult {
   const dimensionKey = DIMENSIONS[bar.dimension];
   const rejected: SelectionResult['rejected'] = [];
 
-  for (const modelId of MODELS_BY_COST) {
+  const preferred = request.needs?.vision ? AUTO_MODEL_ROLES.visual
+    : ['classification','conversation','summary'].includes(request.task) ? AUTO_MODEL_ROLES.router
+    : ['planning','architecture','security'].includes(request.task) ? AUTO_MODEL_ROLES.lead
+    : request.task === 'review' ? AUTO_MODEL_ROLES.senior
+    : complexity === 'simple' ? AUTO_MODEL_ROLES.worker : AUTO_MODEL_ROLES.builder;
+  const candidates = [preferred, ...MODELS_BY_COST.filter(id => (AUTO_MODEL_IDS as readonly string[]).includes(id) && id !== preferred)];
+  for (const modelId of candidates) {
     const caps = AI_MODEL_CAPABILITIES[modelId];
 
     if (!planAllows(plan, modelId)) {
@@ -191,6 +198,7 @@ export function selectModel(request: SelectionRequest): SelectionResult {
     if (request.needs?.audio && !caps.supportsAudio) { rejected.push({ modelId, because: 'no audio support' }); continue; }
     if (request.needs?.video && !caps.supportsVideo) { rejected.push({ modelId, because: 'no video support' }); continue; }
     if (request.needs?.tools && !caps.supportsToolCalling) { rejected.push({ modelId, because: 'no tool calling' }); continue; }
+    if (request.needs?.longContext && !caps.supportsLongContext) { rejected.push({ modelId, because: 'no long context support' }); continue; }
     if (request.needs?.structuredOutput && !caps.supportsStructuredOutput) { rejected.push({ modelId, because: 'no structured output' }); continue; }
     if (request.estimatedInputTokens && request.estimatedInputTokens > caps.maxContextTokens) {
       rejected.push({ modelId, because: `context window ${caps.maxContextTokens} is smaller than the ${request.estimatedInputTokens} tokens required` });
@@ -199,21 +207,15 @@ export function selectModel(request: SelectionRequest): SelectionResult {
 
     return {
       modelId,
-      reason: `cheapest model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
+      reason: `role-compatible model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
       rejected,
       estimatedUsdPerMillionBlended: Number(blendedCost(modelId).toFixed(3)),
     };
   }
 
-  // Nothing cleared the bar. Falling back to the default is honest about it
-  // rather than throwing: a run that cannot start helps nobody, and the reason
-  // travels with the result so the gap is visible in the logs.
-  return {
-    modelId: DEFAULT_PROVIDER_MODEL_ID,
-    reason: `no model cleared ${request.task}/${complexity} under the current plan and credits; using the default`,
-    rejected,
-    estimatedUsdPerMillionBlended: Number(blendedCost(DEFAULT_PROVIDER_MODEL_ID).toFixed(3)),
-  };
+  // No eligible candidate: surface the constraint instead of silently using
+  // a model that lacks a required capability or exceeds the user's access.
+  throw Object.assign(new Error(`No eligible model satisfies ${request.task}/${complexity}.`), { diagnosticCode:'MODEL_CAPABILITY_UNAVAILABLE', rejected });
 }
 
 function strengthName(rank: number): ModelStrength {

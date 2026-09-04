@@ -1,5 +1,6 @@
 import { 
   AI_ALLOWED_MODELS, 
+  AUTO_MODEL_IDS,
   AI_MODEL_PLAN_ACCESS, 
   AI_MODEL_CAPABILITIES, 
   AI_MODEL_TIERS, 
@@ -107,7 +108,7 @@ export class ModelRouter {
     // first model good enough for the task, so a mode is now nothing more than
     // a floor on complexity.
     let selectedModel: AllowedModelId;
-    const preferredModel = context.preferredModels?.find(modelId => affordableModels.includes(modelId));
+    const preferredModel = context.preferredModels?.find(modelId => affordableModels.includes(modelId) && (AUTO_MODEL_IDS as readonly string[]).includes(modelId));
 
     if (context.mode === 'Custom' || (context.mode === 'Auto' && preferredModel)) {
       selectedModel = preferredModel || DEFAULT_PROVIDER_MODEL_ID;
@@ -122,6 +123,7 @@ export class ModelRouter {
           vision: context.requiredCapabilities?.vision,
           tools: context.requiredCapabilities?.tools,
           structuredOutput: context.requiredCapabilities?.structuredOutput,
+          longContext: context.requiredCapabilities?.longContext,
         },
       });
       this.lastDecision = decision;
@@ -130,9 +132,7 @@ export class ModelRouter {
 
     // Double check compatibility filtering
     if (!capableModels.includes(selectedModel)) {
-       selectedModel = capableModels.includes(DEFAULT_PROVIDER_MODEL_ID)
-        ? DEFAULT_PROVIDER_MODEL_ID
-        : capableModels[0] as AllowedModelId;
+       throw new Error('MODEL_CAPABILITY_UNAVAILABLE: selected model does not meet every required capability.');
     }
 
     validateAllowedModel(selectedModel);

@@ -64,9 +64,9 @@ export class ProviderGateway {
   }
 
   resolveAutoModel(policy: 'economy' | 'balanced' | 'premium' | 'auto' = 'auto'): AllowedModelId {
-    if (policy === 'premium') return 'openai/gpt-5.6-sol-pro';
-    if (policy === 'economy') return 'openai/gpt-5.6-luna-pro';
-    return DEFAULT_PROVIDER_MODEL_ID;
+    if (policy === 'premium') return 'openai/gpt-5.6-sol';
+    if (policy === 'balanced') return 'openai/gpt-5.6-terra';
+    return 'openai/gpt-5.6-luna';
   }
 
   async chat(modelId: string, messages: ChatMessage[], options: {
@@ -117,17 +117,6 @@ export class ProviderGateway {
         } catch (error: any) {
           lastError = error;
           const classified = this.classifyError(error, candidate);
-          if (classified.diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG' && candidateRuntimeConfig) {
-            try {
-              this.noteRetry(candidate);
-              const result = await this.chatWithProvider(candidate, messages, options.timeoutMs || 45_000, undefined, options.signal);
-              this.noteMetricSuccess(candidate, Date.now() - startedAt);
-              this.noteSuccess(candidate);
-              return result;
-            } catch (degradedError: any) {
-              lastError = degradedError;
-            }
-          }
           this.noteFailure(candidate, classified.retryable);
           this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
           if (!classified.retryable) {
@@ -190,20 +179,6 @@ export class ProviderGateway {
         }
         lastError = error;
         const classified = this.classifyError(error, candidate);
-        if (!yieldedAnyEvent && classified.diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG' && candidateRuntimeConfig) {
-          try {
-            this.noteRetry(candidate);
-            for await (const event of this.streamWithProvider(candidate, messages, options.timeoutMs || 90_000, undefined, options.signal)) {
-              yieldedAnyEvent = true;
-              yield event;
-            }
-            this.noteMetricSuccess(candidate, Date.now() - startedAt);
-            this.noteSuccess(candidate);
-            return;
-          } catch (degradedError: any) {
-            lastError = degradedError;
-          }
-        }
         this.noteFailure(candidate, classified.retryable);
         this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
         if (yieldedAnyEvent || !classified.retryable) throw classified;
@@ -320,19 +295,6 @@ export class ProviderGateway {
       } catch (error: any) {
         lastError = error;
         let classified = this.classifyError(error, candidate);
-        if (classified.diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG' && candidateRuntimeConfig) {
-          try {
-            this.noteRetry(candidate);
-            const result = await collect(candidate, undefined);
-            options.validateResult?.(result);
-            this.noteMetricSuccess(candidate, Date.now() - startedAt);
-            this.noteSuccess(candidate);
-            return result;
-          } catch (degradedError: any) {
-            lastError = degradedError;
-            classified = this.classifyError(degradedError, candidate);
-          }
-        }
         this.noteFailure(candidate, classified.retryable);
         this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
         if (!classified.retryable) throw classified;
@@ -553,11 +515,10 @@ export class ProviderGateway {
       });
     }
     if (status === 400 || status === 422) {
-      // A rejected *option* is recoverable by dropping the option, which the
-      // caller already knows how to do; a rejected request is not.
+      // Keep required capabilities intact. A retry must not silently drop them.
       if (/unsupported|not supported|response_format|tool_choice|json_schema|reasoning/i.test(error.body)) {
-        return new ProviderGatewayError('The selected model rejected an advanced runtime option. Coden will retry with a simpler compatible request.', {
-          diagnosticCode: 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG', statusCode: 502, retryable: true, modelId,
+        return new ProviderGatewayError('The selected model rejected a required runtime option. The request was stopped without removing capabilities.', {
+          diagnosticCode: 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG', statusCode: 502, retryable: false, modelId,
         });
       }
       return new ProviderGatewayError(`The AI provider rejected the request format.${detail}`, {
@@ -617,6 +578,9 @@ export class ProviderGateway {
     // A status code is a fact. Reading it beats inferring it from prose.
     if (error instanceof ProviderHttpError) return this.classifyHttpStatus(error, modelId);
 
+    if (/^MODEL_(?:UNAVAILABLE|CATALOG_UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)$/.test(String(error?.diagnosticCode || ''))) {
+      return new ProviderGatewayError(error.message, { diagnosticCode:error.diagnosticCode, statusCode:503, retryable:false, modelId });
+    }
     if (String(error?.diagnosticCode || '') === 'MODEL_OUTPUT_PARSE_FAILED') {
       return new ProviderGatewayError('The selected AI model returned an unusable project artifact.', {
         diagnosticCode: 'MODEL_OUTPUT_PARSE_FAILED',
@@ -686,10 +650,10 @@ export class ProviderGateway {
       });
     }
     if (/unsupported parameter|unsupported.*response_format|tool_choice|tools|reasoning|json_schema/i.test(message)) {
-      return new ProviderGatewayError('The selected model rejected an advanced runtime option. Coden will retry with a simpler compatible request.', {
+      return new ProviderGatewayError('The selected model rejected a required runtime option. The request was stopped without removing capabilities.', {
         diagnosticCode: 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG',
         statusCode: 502,
-        retryable: true,
+        retryable: false,
         modelId,
       });
     }

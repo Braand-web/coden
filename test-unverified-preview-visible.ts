@@ -59,7 +59,7 @@ assert.match(styles, /\.preview-trust-badge::before \{/, 'and a shape, so it doe
 // payload there. Without asking, a sandbox left running from an earlier run
 // stays invisible and the reader gets the saved rendering instead of the app.
 assert.match(builder, /async function resumeLivePreview\(\)/, 'reopening a project must look for a running sandbox');
-assert.match(builder, /void resumeLivePreview\(\);/, 'and actually call it on load');
+assert.match(builder, /await resumeLivePreview\(\);/, 'and actually await it on load before selecting a fallback');
 const resume = builder.slice(builder.indexOf('async function resumeLivePreview'), builder.indexOf('/** Forget the live preview'));
 assert.match(resume, /sandbox\/status/, 'by asking the status route');
 assert.match(resume, /status\?\.state !== 'running'/, 'and only when a server is actually up');

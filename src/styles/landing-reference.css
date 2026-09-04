@@ -1,0 +1,67 @@
+
+  html, body { margin:0; padding:0; background:#0e1116; }
+  * { box-sizing:border-box; }
+  body { -webkit-font-smoothing:antialiased; }
+  a { color:#8fb7ff; text-decoration:none; }
+  a:hover { color:#bbd4ff; }
+  ::selection { background:rgba(79,140,255,.3); }
+  textarea { font-family:inherit; }
+  @keyframes cdnRise { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+  @keyframes cdnGlow { 0%,100% { opacity:.5; transform:scale(.9); } 50% { opacity:1; transform:scale(1.1); } }
+  @keyframes cdnMarquee { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+  @keyframes cdnCardIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:none; } }
+  .cdn-marquee:hover .cdn-track { animation-play-state:paused; }
+  @media (max-width:900px) { .cdn-nav, .cdn-signin { display:none !important; } }
+  @media (max-width:760px) { .cdn-span2 { grid-column:auto !important; } }
+  @media (max-width:560px) { .cdn-pill { border-radius:16px !important; } }
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
+
+.cdn-interaction-1:hover{color:#ffffff}
+.cdn-interaction-2:hover{color:#f8fafc}
+.cdn-interaction-3:hover{color:#f8fafc}
+.cdn-interaction-4:hover{color:#f8fafc}
+.cdn-interaction-5:hover{color:#f8fafc}
+.cdn-interaction-6:hover{color:#f8fafc}
+.cdn-interaction-7:hover{background:#6b9bff;color:#08111f;transform:translateY(-1px)}
+.cdn-interaction-8:hover{background:rgba(14,17,22,.66);color:#ffffff}
+.cdn-interaction-9:focus-within{box-shadow:0 0 0 4px #8fb7ff, 0 18px 48px rgba(0,0,0,.55)}
+.cdn-interaction-10:hover{background:rgba(79,140,255,.14);color:#f8fafc}
+.cdn-interaction-11:hover{color:#f8fafc}
+.cdn-interaction-12:hover{background:#6b9bff;transform:translateY(-1px)}
+.cdn-interaction-13:hover{background:rgba(14,17,22,.7);color:#ffffff;transform:translateY(-1px)}
+.cdn-interaction-14:hover{background:rgba(14,17,22,.7);color:#ffffff;transform:translateY(-1px)}
+.cdn-interaction-15:hover{background:rgba(14,17,22,.7);color:#ffffff;transform:translateY(-1px)}
+.cdn-interaction-16:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-17:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-18:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-19:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-20:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-21:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-22:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-23:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-24:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-25:hover{border-color:#3a4a60;background:#1b2230;color:#f8fafc}
+.cdn-interaction-26:hover{transform:translateY(-4px)}
+.cdn-interaction-27:hover{background:#6b9bff;color:#08111f;transform:translateY(-1px)}
+.cdn-interaction-28:hover{transform:translateY(-2px);border-color:#3a4a60}
+.cdn-interaction-29:hover{border-color:#3a4a60;background:#1b2230;color:#f8fafc}
+.cdn-interaction-30:hover{background:#1b2230}
+.cdn-interaction-31:hover{background:rgba(79,140,255,.14);color:#f8fafc}
+.cdn-interaction-32:hover{background:#6b9bff;transform:translateY(-1px)}
+.cdn-interaction-33:hover{color:#f8fafc}
+.cdn-interaction-34:hover{color:#f8fafc}
+.cdn-interaction-35:hover{color:#f8fafc}
+.cdn-interaction-36:hover{color:#f8fafc}
+.cdn-interaction-37:hover{color:#f8fafc}
+.cdn-interaction-38:hover{color:#f8fafc}
+.cdn-interaction-39:hover{color:#f8fafc}
+.cdn-interaction-40:hover{color:#f8fafc}
+.cdn-interaction-41:hover{color:#f8fafc}
+.cdn-interaction-42:hover{color:#f8fafc}
+.cdn-interaction-43:hover{color:#f8fafc}
+.cdn-interaction-44:hover{color:#f8fafc}
+.cdn-interaction-45:hover{color:#f8fafc}
+.cdn-interaction-46:hover{color:#f8fafc}
+.cdn-interaction-47:hover{color:#f8fafc;border-color:#3a4a60}
+.cdn-interaction-48:hover{color:#f8fafc;border-color:#3a4a60}
+.cdn-interaction-49:hover{color:#f8fafc;border-color:#3a4a60}

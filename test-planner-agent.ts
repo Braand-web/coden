@@ -142,8 +142,8 @@ assert.ok(!source.includes('ProjectSandbox'), 'the planner must not import the s
   await runPlannerAgent({ gateway, prompt: 'add dark mode', existingFiles: [], plan: 'enterprise', credits: 9999 });
   assert.notEqual(provider.calls[0].modelId, cheapestOverall,
     'the globally cheapest model (Gemini, reasoning: medium) must not be picked for a task with a high reasoning floor');
-  assert.equal(provider.calls[0].modelId, cheapestCapableForPlanning,
-    'even on the richest plan, planning must take the cheapest model that actually clears its reasoning bar — not the most expensive one it could afford');
+  assert.equal(provider.calls[0].modelId, 'openai/gpt-5.6-sol',
+    'when eligible, the lead role handles planning; unavailable premium access stays gated');
 }
 
 console.log('planner agent tests passed');

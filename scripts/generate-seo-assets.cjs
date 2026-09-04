@@ -573,10 +573,10 @@ function injectHeadMeta(page) {
       {
         '@context': 'https://schema.org',
         '@type': 'FAQPage',
-        mainEntity: [
-          { '@type': 'Question', name: 'What is Coden?', acceptedAnswer: { '@type': 'Answer', text: 'Coden helps you turn an idea into a working web app, preview it, improve it, and publish it after verification.' } },
-          { '@type': 'Question', name: 'Can Coden generate SEO-ready apps?', acceptedAnswer: { '@type': 'Answer', text: 'Coden can help structure generated apps with semantic pages and metadata, then you can inspect and verify the result before publishing.' } },
-        ],
+        mainEntity: Array.from(html.matchAll(/<details class="cdn-faq"[^>]*><summary>([^<]+)[\s\S]*?<\/summary><p>([^<]+)<\/p><\/details>/g), match => ({
+          '@type': 'Question', name: match[1].trim(),
+          acceptedAnswer: { '@type': 'Answer', text: match[2].trim() },
+        })),
       },
     ]
     : [{
