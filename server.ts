@@ -4275,6 +4275,56 @@ function runtimeActionForIntent(intent: AgentIntent) {
   return intent === 'clarification_required' ? 'clarify' : intent === 'debug_fix' ? 'debug' : intent === 'deploy_assist' ? 'confirm' : intent === 'credits_required' || intent === 'external_keys_required' ? 'clarify' : intent;
 }
 
+/**
+ * Complete a router answer whose intent is sound but whose scaffolding is not.
+ *
+ * The router asks for a strict `json_schema`, and only an OpenAI-compatible
+ * adapter actually receives one: the Anthropic and Gemini adapters are sent
+ * `{type:'json_object'}`, and the router runs with `allowFallback: true`, so a
+ * degraded primary silently hands the decision to a model that was never given
+ * the schema. Its answer is then judged against it, and one missing field —
+ * a blank `reason`, an absent `objective` — discarded the whole decision.
+ *
+ * That is what took production down: the intent itself was fine, the run fell
+ * back to `conversation`, and a request to build an application was answered
+ * with a sentence. So the model keeps ownership of the one judgement only it
+ * can make — the intent — and every supporting field it left out is filled
+ * from the server's own deterministic reading of the same prompt. Nothing is
+ * invented: `fallback` is the local classifier's decision for this request.
+ */
+function completeIntentRouterOutput(value: unknown, fallback: IntentDecision, prompt: string): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const raw = { ...(value as Record<string, any>) };
+  const text = (candidate: unknown, replacement: string) =>
+    typeof candidate === 'string' && candidate.trim() ? candidate : replacement;
+
+  raw.confidence = typeof raw.confidence === 'number' && Number.isFinite(raw.confidence)
+    ? Math.min(1, Math.max(0, raw.confidence))
+    : 0.5;
+  raw.reason = text(raw.reason, fallback.reason || 'The router answered without a reason.');
+  raw.user_visible_reason = text(raw.user_visible_reason, fallback.userVisibleReason || raw.reason);
+  raw.normalized_prompt = text(raw.normalized_prompt, prompt);
+  if (!Array.isArray(raw.required_capabilities || raw.requiredCapabilities)) raw.required_capabilities = [];
+
+  const objective = raw.objective && typeof raw.objective === 'object' ? { ...raw.objective } : {};
+  objective.goal = text(objective.goal, fallback.modelObjective?.goal || raw.normalized_prompt || raw.reason);
+  const scope = objective.scope && typeof objective.scope === 'object' ? { ...objective.scope } : {};
+  scope.included = Array.isArray(scope.included) ? scope.included : [];
+  scope.excluded = Array.isArray(scope.excluded) ? scope.excluded : [];
+  objective.scope = scope;
+  for (const key of ['constraints', 'assumptions', 'acceptanceCriteria']) {
+    if (!Array.isArray(objective[key])) objective[key] = [];
+  }
+  if (!['low', 'medium', 'high', 'critical'].includes(objective.risk)) objective.risk = 'medium';
+  raw.objective = objective;
+
+  // A clarification is the one field that cannot be invented: asking a
+  // question the model did not ask would put words in its mouth. It stays
+  // exactly as answered, and the caller still rejects the decision when a
+  // clarification intent arrives without one.
+  return raw;
+}
+
 function isIntentRouterStructuredOutput(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const allowedIntents: AgentIntent[] = ['conversation', 'clarification_required', 'plan', 'build', 'edit', 'debug_fix', 'verify', 'deploy_assist', 'external_keys_required', 'credits_required'];
@@ -4431,7 +4481,10 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
   let routerFailureCause = '';
   const rawDecision = await parseOrRepairStructuredObject(
     result.text,
-    isIntentRouterStructuredOutput,
+    // Completed before it is judged: a model that was never handed the schema
+    // still gets its intent used, instead of the run silently becoming a
+    // conversation because a supporting field was missing.
+    (value): value is Record<string, unknown> => isIntentRouterStructuredOutput(completeIntentRouterOutput(value, fallback, input.prompt)),
     async invalidText => {
       const repaired = await providerGateway.chat(routerModel, [
         {
@@ -4472,7 +4525,9 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     });
     return null;
   });
-  const aiDecision = buildDecisionFromAi(rawDecision, fallback);
+  // The same completion the check above accepted, so what is judged and what
+  // is used are one object rather than two readings of it.
+  const aiDecision = buildDecisionFromAi(rawDecision ? completeIntentRouterOutput(rawDecision, fallback, input.prompt) : null, fallback);
   if (aiDecision) return guardAiDecisionWithUnderstanding(aiDecision, input, fallback);
   if (!routerFailureCause) {
     routerFailureCause = rawDecision
