@@ -165,8 +165,21 @@ export function getAIModelCapabilityProfile(modelId: AllowedModelId): AIModelCap
   const isFrontier = caps.reasoningLevel === 'frontier' || caps.codeLevel === 'frontier';
   const isHigh = caps.reasoningLevel === 'high' || caps.codeLevel === 'high';
 
-  // ✅ Properly sized maxTokens per model tier — frontier models can generate large apps
-  const maxTokens = Math.min(caps.maxOutputTokens, isFrontier ? 32_000 : isHigh ? 16_000 : caps.speed === 'fast' ? 8_000 : 12_000);
+  /*
+   * Output room, sized against what the model can actually produce.
+   *
+   * The tiers were set well below every model in the catalogue: 16k for a
+   * model advertising 128k, 32k for one advertising 128k — between 75% and 87%
+   * of the advertised output capacity went unused on every model. A single
+   * large component, a migration or a dense page is what gets truncated by
+   * that, and truncation is not a soft failure: the file is written half
+   * finished and the next round has to discover why it does not compile.
+   *
+   * Still tiered rather than maxed out, because output is billed and a
+   * conversational reply has no use for 128k. Every value stays bounded by
+   * what the provider advertises.
+   */
+  const maxTokens = Math.min(caps.maxOutputTokens, isFrontier ? 64_000 : isHigh ? 32_000 : caps.speed === 'fast' ? 16_000 : 24_000);
 
   // ✅ Temperature tuned per model personality
   // - Frontier reasoning models: lower temperature for precision

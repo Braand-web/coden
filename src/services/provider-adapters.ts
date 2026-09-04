@@ -53,8 +53,31 @@ function openAiCompatibleResponseFormat(runtime: AIModelRuntimeConfig) {
 export function buildProviderRequestConfig(runtime: AIModelRuntimeConfig): ProviderRequestConfig {
   const adapter = runtime.profile.adapter;
 
-  // Temperature safety: reasoning/thinking models often require temperature=1.0
-  const safeTemperature = runtime.thinking?.enabled && adapter !== 'gemini'
+  /*
+   * The temperature the task asked for, not a blanket 1.0.
+   *
+   * This forced 1.0 on every request with thinking enabled, which is every
+   * code task — so a coder loop whose runtime deliberately computes 0.1 for
+   * precision was run at maximum randomness instead. The comment it carried
+   * ("reasoning models often require temperature=1.0") was true when it was
+   * written and is no longer this layer's problem to solve:
+   * `enforceModelCapabilities` reads OpenRouter's advertised parameters and
+   * strips `temperature` for any model that does not accept it — which is
+   * exactly what production logs on every luna call:
+   *
+   *   [coden:provider_parameter_omitted] { parameter: 'temperature',
+   *     reason: 'not advertised by OpenRouter' }
+   *
+   * So an OpenAI-compatible model that requires 1.0 no longer receives a
+   * temperature at all, and one that accepts a temperature gets the one the
+   * task chose.
+   *
+   * Anthropic is the exception, and a real one: its API rejects a request that
+   * sets `temperature` alongside extended thinking. That constraint is the
+   * provider's, not a guess, so it is kept — narrowed to the adapter that
+   * actually imposes it instead of applied to every model in the catalogue.
+   */
+  const safeTemperature = adapter === 'anthropic' && runtime.thinking?.enabled
     ? 1.0
     : runtime.temperature;
 

@@ -31,7 +31,7 @@ import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched } from './sandbox/starters.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
 import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
-import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
+import { buildAIModelRuntimeConfig, getAIModelCapabilityProfile } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
 import type { CodenAgentHarness } from './agent-harness/harness.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
@@ -163,6 +163,21 @@ export function settleDefinitionOfDoneFromReport(input: {
   return verdicts;
 }
 
+/**
+ * How large the transcript may grow before its older tool results are digested.
+ *
+ * Four characters to the token is the usual approximation; a quarter of the
+ * window leaves ample room for the system prompt, the instruction and the
+ * answer being generated. The floor keeps small-window models behaving as they
+ * did, and the ceiling keeps a single request from becoming arbitrarily
+ * expensive on a model advertising a million tokens.
+ */
+function compactionThresholdChars(modelId: AllowedModelId): number {
+  const contextTokens = getAIModelCapabilityProfile(modelId).limits.contextTokens;
+  if (!Number.isFinite(contextTokens) || contextTokens <= 0) return 240_000;
+  return Math.max(240_000, Math.min(600_000, Math.floor(contextTokens * 4 * 0.25)));
+}
+
 /** The plan's file list and rationale, as round one's instruction. */
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
@@ -194,9 +209,10 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     // The coder turn streams in production, and its deadline is the model's
     // own — a frontier model gets the frontier allowance, not a constant
     // written for whichever model happened to be default the day this was
-    // added. Passing no `timeoutMs` is what lets the profile decide.
+    // added. Passing neither `timeoutMs` nor `maxTokens` is what lets the
+    // profile decide: 16k was below every model in the catalogue, and it is
+    // the coder that most needs the room.
     stream: true,
-    maxTokens: 16_000,
   }));
   const runtimeConfig = runtimeFor(input.modelId);
 
@@ -246,6 +262,14 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       maxToolCalls,
       // One clock for the whole run, not one per round.
       deadline: input.deadline,
+      // The transcript is digested against this model's own window, not a
+      // constant. A fixed 240k characters is roughly 60k tokens — a quarter of
+      // the smallest window in the catalogue and a sixteenth of the largest —
+      // so a model with a million tokens of context was having its history
+      // compacted long before it needed to be, losing detail it could have
+      // kept. A quarter of the window, with a ceiling so a single request
+      // cannot become arbitrarily expensive.
+      budget: { compactAboveChars: compactionThresholdChars(input.modelId) },
       onCompacted: info => console.info('[coden:tool_loop_compacted]', { chars: info.chars }),
       signal: input.signal,
       onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,

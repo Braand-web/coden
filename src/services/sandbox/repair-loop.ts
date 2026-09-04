@@ -96,6 +96,25 @@ export type CoderLoopEvent = RepairEvent;
  * higher ceiling from turning a hopeless run into a long hopeless run.
  */
 const DEFAULT_MAX_ROUNDS = 8;
+
+/**
+ * How many rounds in a row may fail to reduce the error count.
+ *
+ * The rule was one: a single round that did not lower the number ended the
+ * run. Its reasoning — the model saw these errors and did not fix them, so it
+ * will not fix them next time — holds only while the input is identical, and
+ * it stops being true the moment the model is told its last attempt did not
+ * help. It is also a poor description of debugging. Fixing one fault
+ * routinely uncovers another, a refactor holds the count flat while making the
+ * code correct, and a genuine dead end looks the same on round one as a
+ * problem that needed two passes.
+ *
+ * So a stalled round now costs patience rather than the whole run, the model
+ * is told plainly that the last attempt changed nothing, and a run that is
+ * truly stuck still ends quickly — after this many in a row, or when the run's
+ * shared deadline arrives, whichever comes first.
+ */
+const DEFAULT_MAX_STALLED_ROUNDS = 3;
 const DEFAULT_MAX_TOOL_CALLS = 40;
 
 function countErrors(report: ValidationReport): number {
@@ -119,6 +138,8 @@ export async function runCoderLoop(input: {
   initialInstruction?: string;
   maxRounds?: number;
   maxToolCallsPerRound?: number;
+  /** Consecutive rounds allowed without reducing the error count. */
+  maxStalledRounds?: number;
   onEvent?: (event: RepairEvent) => void;
   /** Validation already run by the caller, so the first round costs nothing extra. */
   initialReport?: ValidationReport;
@@ -135,6 +156,8 @@ export async function runCoderLoop(input: {
   const emit = input.onEvent || (() => {});
   const maxRounds = input.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const maxToolCalls = input.maxToolCallsPerRound ?? DEFAULT_MAX_TOOL_CALLS;
+  const maxStalledRounds = Math.max(1, input.maxStalledRounds ?? DEFAULT_MAX_STALLED_ROUNDS);
+  let stalledRounds = 0;
   const rounds: RepairRound[] = [];
 
   let report = input.initialReport ?? await validateProject(input.sandbox, { skipBuild: true });
@@ -182,7 +205,18 @@ export async function runCoderLoop(input: {
     // either mode, is "here is what the toolchain still does not like" — the
     // one instruction shape a repair has ever had.
     const isBuildRound = mode === 'build' && round === 1;
-    const instruction = (isBuildRound ? input.initialInstruction! : buildRepairInstruction(report)) + (steering ? `\n\nAdditional user instructions to apply now:\n${steering}` : '');
+    /*
+     * A stalled round changes what the model is told, not just how many are
+     * left. Sending the identical error list again is what made "it will not
+     * fix them next time" true; saying the last attempt did not help is new
+     * information, and asking for a different approach is the point of another
+     * round at all.
+     */
+    const stallNotice = stalledRounds > 0
+      ? `\n\nYour previous ${stalledRounds === 1 ? 'attempt' : `${stalledRounds} attempts`} did not reduce these errors. Do not repeat the same edit. Read the failing file and its imports before changing anything, and fix the cause rather than the symptom.`
+      : '';
+    const instruction = (isBuildRound ? input.initialInstruction! : buildRepairInstruction(report) + stallNotice)
+      + (steering ? `\n\nAdditional user instructions to apply now:\n${steering}` : '');
 
     await input.turn({
       instruction,
@@ -213,12 +247,12 @@ export async function runCoderLoop(input: {
 
     if (report.ok) return finish('fixed');
     // Fewer errors is progress even without a clean result — the next round
-    // gets a shorter list. The same count or worse means the round taught the
-    // model nothing, and another one will teach it the same. Not for a
-    // build's first round: `errorsBefore` there is the empty scaffold's error
-    // count, not an earlier attempt at this task, so it is not a baseline
-    // this round's result can meaningfully be judged against.
-    if (!isBuildRound && errorsAfter >= errorsBefore) return finish('no_progress');
+    // gets a shorter list. Not judged on a build's first round: `errorsBefore`
+    // there is the empty scaffold's error count, not an earlier attempt at
+    // this task, so it is not a baseline this round can be measured against.
+    if (isBuildRound) continue;
+    if (errorsAfter < errorsBefore) stalledRounds = 0;
+    else if ((stalledRounds += 1) >= maxStalledRounds) return finish('no_progress');
   }
 
   return finish('round_limit');

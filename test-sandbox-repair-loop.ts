@@ -78,15 +78,43 @@ try {
   {
     const sandbox = await freshSandbox('repair-stalls');
     sandboxes.push(sandbox);
+    /*
+     * A round that changes nothing costs patience, not the whole run.
+     *
+     * This used to stop on the first flat round, and the reasoning — the model
+     * saw these errors and did not fix them, so another round will teach it
+     * the same — only holds while the input is identical. It stops being true
+     * once the model is told its last attempt did not help, and it describes
+     * debugging badly: fixing one fault uncovers another, and a refactor holds
+     * the count flat while making the code correct.
+     *
+     * A run that is genuinely stuck must still end quickly, so patience is
+     * small and bounded.
+     */
     let turns = 0;
     const outcome = await runRepairLoop({
       sandbox,
-      maxRounds: 3,
+      maxRounds: 12,
+      maxStalledRounds: 3,
       turn: async () => { turns += 1; return { toolCalls: 0 }; },
     });
     assert.equal(outcome.ok, false);
     assert.equal(outcome.stoppedBecause, 'no_progress');
-    assert.equal(turns, 1, 'a round that changed nothing must not be repeated');
+    assert.equal(turns, 3, 'a hopeless run ends on its patience, well before the round ceiling');
+  }
+
+  // One flat round is not a dead end.
+  {
+    const sandbox = await freshSandbox('repair-recovers');
+    sandboxes.push(sandbox);
+    let turns = 0;
+    const outcome = await runRepairLoop({
+      sandbox,
+      maxRounds: 6,
+      maxStalledRounds: 3,
+      turn: async () => { turns += 1; return { toolCalls: 0 }; },
+    });
+    assert.ok(turns > 1, 'the loop must be allowed a second attempt after a flat round');
   }
 
   // -- the tool budget is enforced here, not trusted to the model ---------

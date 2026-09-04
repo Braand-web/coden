@@ -117,7 +117,7 @@ try {
     assert.ok(outcome.rounds[0].errorsAfter > outcome.rounds[0].errorsBefore, 'round one is exactly the case where errors go up, by construction of this fixture');
   }
 
-  // -- but round two onward keeps the real no-progress rule ----------------
+  // -- but round two onward is measured, on the same patience as repair ----
   {
     const sandbox = await freshScaffold('coder-loop-second-round-still-guarded');
     sandboxes.push(sandbox);
@@ -126,19 +126,22 @@ try {
       sandbox,
       mode: 'build',
       initialInstruction: 'Use zustand for state.',
-      maxRounds: 3,
+      maxRounds: 12,
+      maxStalledRounds: 3,
       turn: async () => {
         turns += 1;
         if (turns === 1) await sandbox.writeFiles([{ path: 'src/App.tsx', content: BROKEN_APP }]);
         // Every repair round after the first does nothing — the model is
-        // stuck. This must still stop the loop, exactly as plain repair does.
+        // stuck. The loop must still give up, exactly as plain repair does.
         return { toolCalls: turns === 1 ? 1 : 0 };
       },
     });
 
     assert.equal(outcome.ok, false);
     assert.equal(outcome.stoppedBecause, 'no_progress');
-    assert.equal(turns, 2, 'the no-progress rule must still fire on the first *repair* round, round two');
+    // Round one builds and is exempt; rounds two to four are the repair rounds
+    // that stall, and the third of them spends the patience.
+    assert.equal(turns, 4, 'a stuck build gives up on its patience, not at the round ceiling');
   }
 
   // -- repair mode is unchanged: the compatibility shim behaves identically -
