@@ -4393,8 +4393,34 @@ function buildDecisionFromAi(raw: any, fallback: IntentDecision): IntentDecision
   };
 }
 
+/**
+ * The runtime action a router intent is validated as.
+ *
+ * Two of the ten intents had no mapping and fell through to their own name,
+ * and neither name is a runtime action: `ACTIONS` is
+ * `answer, clarify, plan, build, edit, debug, confirm`. So
+ * `validateModelDecision` threw "unsupported action" for every `conversation`
+ * and every `verify` — the decision was discarded however good it was, and the
+ * request degraded to the local fallback, which asks a question instead of
+ * answering.
+ *
+ * `conversation` is the most common intent in the product, so this rejected
+ * most of the traffic that does not write files. Production, 19:56: the model
+ * returned `{"intent":"conversation","confidence":0.96,...}` with every field
+ * present and a sound reason, and it was thrown away as
+ * `GENERATION_FAILED: The model JSON did not match the required contract`.
+ * Asking Coden how to improve an application, or anything about a project
+ * already generated, could not work.
+ *
+ * Both answer the user in prose rather than changing files, and neither owes a
+ * clarification question, so `answer` is what they are.
+ */
 function runtimeActionForIntent(intent: AgentIntent) {
-  return intent === 'clarification_required' ? 'clarify' : intent === 'debug_fix' ? 'debug' : intent === 'deploy_assist' ? 'confirm' : intent === 'credits_required' || intent === 'external_keys_required' ? 'clarify' : intent;
+  if (intent === 'clarification_required' || intent === 'credits_required' || intent === 'external_keys_required') return 'clarify';
+  if (intent === 'debug_fix') return 'debug';
+  if (intent === 'deploy_assist') return 'confirm';
+  if (intent === 'conversation' || intent === 'verify') return 'answer';
+  return intent;
 }
 
 /**
@@ -9766,14 +9792,30 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       text: content,
     });
   } catch (error: any) {
+    /*
+     * The conversation's own failure, in the user's language and never empty.
+     *
+     * `diagnoseProviderError` produces a message for a log, and its default
+     * branch passes the exception's text through `redactSecrets` — which can
+     * leave nothing a person can read. The client then falls back to its own
+     * generic sentence, which is what production showed at 19:56 on a 502:
+     * "The request could not be completed", with no code and no request id.
+     */
     const diagnostic = diagnoseProviderError(error);
-    return res.status(diagnostic.status).json({
+    console.error('[coden:assistant_chat_failed]', {
+      request_id: requestId,
+      diagnostic_code: diagnostic.diagnostic_code,
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+    const publicMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, isLikelyFrenchPrompt(basePrompt) ? 'fr' : 'en');
+    return res.status(diagnostic.status >= 400 ? diagnostic.status : 502).json({
       success: false,
-      error: diagnostic.message,
-      message: diagnostic.message,
+      error: publicMessage,
+      message: publicMessage,
       diagnostic_code: diagnostic.diagnostic_code,
       request_id: requestId,
       suggested_action: diagnostic.suggested_action,
+      recoverable: true,
     });
   }
 });
