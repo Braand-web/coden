@@ -28,7 +28,7 @@ import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } f
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { runLlmToolLoop } from './llm-tool-loop.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
-import { selectStarter, applyStarter } from './sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched } from './sandbox/starters.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
 import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
 import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
@@ -255,6 +255,10 @@ export async function runMultiAgentPipeline(input: {
   const activity = (frLabel: string, enLabel: string) =>
     input.onChatEvent?.({ type: 'activity', label: fr ? frLabel : enLabel });
 
+  // Chosen before planning, not after: the plan has to be written for the
+  // scaffold the sandbox will actually start from.
+  const starter = input.route === 'new_project' ? selectStarter(input.prompt) : null;
+
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
@@ -266,6 +270,7 @@ export async function runMultiAgentPipeline(input: {
       gateway: input.gateway,
       prompt: input.prompt,
       existingFiles: input.existingFiles,
+      scaffold: starter ? describeStarter(starter) : undefined,
       plan: input.userPlan,
       credits: input.credits,
       signal: input.signal,
@@ -274,8 +279,8 @@ export async function runMultiAgentPipeline(input: {
     input.onChatEvent?.({ type:'text_end' });
   }
 
-  const launchFiles = input.route === 'new_project'
-    ? applyStarter(selectStarter(input.prompt), []).files
+  const launchFiles = starter
+    ? applyStarter(starter, []).files
     : input.existingFiles.map(file => ({ path: file.path, content: file.content || '' }));
 
   const launch = await launchProjectPreview({
@@ -297,7 +302,19 @@ export async function runMultiAgentPipeline(input: {
 
   const sandbox = sandboxRegistry.get(input.projectId);
   const modelId = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits }).modelId;
-  const initialInstruction = plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt);
+  /*
+   * Round one is told what it is building on, not only what to build.
+   *
+   * The coder receives the plan's file list and nothing else, so when the plan
+   * named `src/calculator.js` it wrote `src/calculator.js` — into a React app
+   * that imports `src/App.tsx` and never loads it. Both halves of that failure
+   * are now addressed: the planner is briefed above, and the instruction
+   * itself carries the scaffold's own rules for the coder that follows it.
+   */
+  const initialInstruction = [
+    plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt),
+    ...(starter ? ['', describeStarter(starter), `The application must be reachable from ${starter.entryPath}: replace its placeholder and import everything else from there. Code in a file ${starter.entryPath} does not import is never loaded.`] : []),
+  ].join('\n');
 
   // Failure to persist a checkpoint is explicit; never claim a resumable run
   // when its durable state was not recorded.
@@ -359,13 +376,39 @@ export async function runMultiAgentPipeline(input: {
     signal:input.signal,
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal);
-      if (input.route === 'new_project') {
+      if (starter) {
         const baseline = new Map(launchFiles.map(file => [file.path,file.content]));
         const files = await readAllFiles(sandbox);
         const changed = files.some(file => !/^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(file.path) && baseline.get(file.path) !== file.content);
         if (!changed) {
           preview.ok=false;
           preview.problems.push({source:'runtime',severity:'error',message:'The application is still the starter scaffold. Implement the requested functionality with file tools before claiming completion.'});
+        } else if (isStarterEntryUntouched(files, starter)) {
+          /*
+           * "Something changed" was never the question.
+           *
+           * The check above passes as soon as any file differs, and a model
+           * that writes `src/calculator.js`, `src/style.css` and `src/main.js`
+           * satisfies it — while leaving `src/App.tsx` at its placeholder. But
+           * `index.html` loads `src/main.tsx`, which renders `App`, so the
+           * running application is still the scaffold's "Building…" and not
+           * one line the model wrote is ever loaded.
+           *
+           * Production shows this on eleven of the last twelve generations,
+           * seven of them recorded as `verified`. It is the preview that never
+           * fills in, and it passed every check because the placeholder does
+           * render: it is not blank, it raises no runtime error, and the build
+           * succeeds. Only the entry file's own content tells the truth.
+           *
+           * Reported as a repair problem rather than a hard failure, so the
+           * loop gets its rounds to put the application where it is rendered.
+           */
+          preview.ok=false;
+          preview.problems.push({
+            source:'runtime',
+            severity:'error',
+            message:`${starter.entryPath} is still the scaffold placeholder rendering "Building…", so none of the application is loaded. Write the requested application into ${starter.entryPath} (and the components it imports); code placed in files that ${starter.entryPath} does not import never runs.`,
+          });
         }
       }
       return preview;

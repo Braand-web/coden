@@ -164,12 +164,43 @@ export function listCodenSkills(): CodenSkill[] {
   return CODEN_SKILLS.map(skill => ({ ...skill, intents: [...skill.intents], capabilities: [...skill.capabilities], allowedTools: [...skill.allowedTools], budget: { ...skill.budget } }));
 }
 
+/** A token matches a word, not a fragment of one. */
+function mentions(haystack: string, token: string): boolean {
+  return new RegExp(`(?:^|[^a-z0-9_])${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[^a-z0-9_]|$)`, 'i').test(haystack);
+}
+
+/** Skills that may change files, and the intents that ask them to. */
+const WRITING_SKILLS = CODEN_SKILLS.filter(skill => skill.allowedTools.includes('write_file'));
+const WRITING_INTENTS = new Set(WRITING_SKILLS.flatMap(skill => skill.intents.map(intent => intent.toLowerCase())));
+
+/**
+ * Which skill governs this run.
+ *
+ * Two rules, and the second exists because production broke without it.
+ *
+ * A token matches a word. It used to match any substring, and `'build'`
+ * contains `'ui'` — one of the review skill's intent tokens. Both skills
+ * scored 4, the tie broke on PRIORITY where `build` sits last and `review`
+ * fifth, and every build came back `matched_review` at 87% confidence: 33 of
+ * 46 recorded runs, the product's main path, handed a read-only skill with one
+ * repair retry instead of three and `requiresVerification: false`.
+ *
+ * And a run that must write files cannot be given a skill that cannot. That is
+ * a category error no amount of prompt wording should be able to cause: asking
+ * to *build* a login screen mentions authentication, but it is still a build,
+ * not a security audit. The specialist bonuses below stay exactly as they
+ * were — they decide between read-only skills, which is what they were written
+ * for — they simply no longer get to answer a question about writing.
+ */
 export function resolveCodenSkill(input: CodenSkillResolutionInput): CodenSkillResolution {
+  const intent = String(input.intent || '').toLowerCase().trim();
   const haystack = `${input.intent || ''} ${input.requestedMode || ''} ${input.prompt || ''}`.toLowerCase();
   const critical = CRITICAL_ACTION_PATTERN.test(haystack);
-  const candidates = CODEN_SKILLS.map(skill => ({
+  const eligible = WRITING_INTENTS.has(intent) ? WRITING_SKILLS : CODEN_SKILLS;
+  const candidates = eligible.map(skill => ({
     skill,
-    score: skill.intents.reduce((score, token) => score + (haystack.includes(token.toLowerCase()) ? (input.intent?.toLowerCase().includes(token.toLowerCase()) ? 4 : 2) : 0), 0)
+    score: (skill.intents.some(token => token.toLowerCase() === intent) ? 4 : 0)
+      + skill.intents.reduce((score, token) => score + (mentions(haystack, token.toLowerCase()) ? 2 : 0), 0)
       + (skill.id === 'security' && /\b(security|secure|secret|permission|rls|vulnerability)\b/i.test(haystack) ? 6 : 0)
       + (skill.id === 'debug' && /\b(debug|bug|error|broken|repair|fix)\b/i.test(haystack) ? 5 : 0)
       + (skill.id === 'release' && /\b(publish|deploy|production|rollback|domain)\b/i.test(haystack) ? 5 : 0),

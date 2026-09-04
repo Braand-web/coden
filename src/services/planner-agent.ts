@@ -96,17 +96,34 @@ function buildPlannerSystemPrompt(): string {
   ].join('\n\n');
 }
 
-function describeExistingFiles(files: Array<{ path: string }>): string {
+/**
+ * What the planner is working on top of.
+ *
+ * For a new project this used to say "This is a new project. Nothing exists
+ * yet." — which was false, and expensively so. The sandbox is launched with a
+ * full React + Vite + Tailwind scaffold: `index.html` loads `src/main.tsx`,
+ * which renders `src/App.tsx`. A planner told the project is empty plans for
+ * an empty project, and production shows exactly what that produces: a
+ * calculator planned as `src/calculator.js`, `src/main.js` and
+ * `src/style.css` — a plain-JavaScript layout, dropped into a React app that
+ * imports none of it, with `src/App.tsx` left at its placeholder. The build
+ * succeeded, the preview rendered "Building…", and the run was verified.
+ *
+ * The scaffold briefing already existed (`describeStarter`); nothing passed it
+ * here.
+ */
+function describeExistingFiles(files: Array<{ path: string }>, scaffold?: string): string {
+  if (scaffold) return scaffold;
   if (!files.length) return 'This is a new project. Nothing exists yet.';
   const paths = files.map(file => file.path);
   return `Existing project files (${paths.length}):\n${paths.slice(0, 200).join('\n')}${paths.length > 200 ? `\n... and ${paths.length - 200} more` : ''}`;
 }
 
-function buildPlannerUserMessage(prompt: string, existingFiles: Array<{ path: string }>): string {
+function buildPlannerUserMessage(prompt: string, existingFiles: Array<{ path: string }>, scaffold?: string): string {
   return [
     `Request: ${String(prompt || '').trim()}`,
     '',
-    describeExistingFiles(existingFiles),
+    describeExistingFiles(existingFiles, scaffold),
   ].join('\n');
 }
 
@@ -114,6 +131,12 @@ export type PlannerAgentInput = {
   gateway: ProviderGateway;
   prompt: string;
   existingFiles: Array<{ path: string; content?: string }>;
+  /**
+   * The scaffold the sandbox will start from, as `describeStarter` renders it.
+   * Supplied for a new project, where "the files that exist" are the
+   * scaffold's rather than the user's.
+   */
+  scaffold?: string;
   plan: UserPlan | string;
   credits?: number;
   signal?: AbortSignal;
@@ -122,7 +145,7 @@ export type PlannerAgentInput = {
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPlan & { risks: string[] }> {
   const modelId = selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
   const systemPrompt = buildPlannerSystemPrompt();
-  const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles);
+  const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold);
   const runtimeConfig = buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true}));
 
   const result = await input.gateway.chat(modelId, [

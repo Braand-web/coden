@@ -27,6 +27,15 @@ export type Starter = {
   description: string;
   /** What the model must not rewrite, because the scaffold owns it. */
   reservedPaths: readonly string[];
+  /**
+   * The one file the scaffold ships as a placeholder for the model to replace.
+   *
+   * It is what `src/main.tsx` renders, so until it is replaced the running
+   * application is the scaffold saying "Building…" — whatever else was written
+   * alongside it. Naming it here lets verification check that claim instead of
+   * trusting it.
+   */
+  entryPath: string;
   files: readonly SandboxFile[];
 };
 
@@ -412,6 +421,7 @@ export const STARTERS: Record<StarterId, Starter> = {
     title: 'React + Vite + Tailwind',
     description: 'A typed React application with Tailwind, an error boundary and a typecheck script.',
     reservedPaths: RESERVED,
+    entryPath: 'src/App.tsx',
     files: [{ path: 'package.json', content: packageJson('app') }, ...BASE_FILES, { path: 'src/vite-env.d.ts', content: '/// <reference types="vite/client" />\n' }],
   },
   'react-supabase': {
@@ -419,6 +429,7 @@ export const STARTERS: Record<StarterId, Starter> = {
     title: 'React + Vite + Tailwind + Supabase',
     description: 'The React starter with a configured Supabase browser client and typed environment.',
     reservedPaths: [...RESERVED, 'src/lib/supabase.ts'],
+    entryPath: 'src/App.tsx',
     files: [
       { path: 'package.json', content: packageJson('app', { '@supabase/supabase-js': VERSIONS.supabase }) },
       ...BASE_FILES,
@@ -427,6 +438,26 @@ export const STARTERS: Record<StarterId, Starter> = {
     ],
   },
 };
+
+/** The placeholder body, so a caller can tell "untouched" from "rewritten". */
+export const STARTER_ENTRY_PLACEHOLDER = APP_PLACEHOLDER;
+
+/**
+ * Is this project still the scaffold, whatever else it contains?
+ *
+ * Production said yes for eleven of the last twelve generations, seven of
+ * which were nevertheless recorded as `verified`: the coder wrote its own
+ * files — `src/calculator.js`, `src/style.css`, `src/main.js` — and left
+ * `src/App.tsx` at its 194-byte placeholder, so `index.html` → `src/main.tsx`
+ * → `App` still rendered "Building…" and nothing the model wrote was ever
+ * loaded. That is the preview that never fills in.
+ */
+export function isStarterEntryUntouched(files: readonly { path: string; content?: string }[], starter: Starter): boolean {
+  const normalize = (path: string) => path.replace(/^\.\//, '').replace(/\\/g, '/');
+  const entry = files.find(file => normalize(file.path) === starter.entryPath);
+  if (!entry) return false;
+  return String(entry.content || '').trim() === STARTER_ENTRY_PLACEHOLDER.trim();
+}
 
 /**
  * Which scaffold a prompt asks for.
@@ -488,6 +519,8 @@ export function describeStarter(starter: Starter): string {
     ...starter.reservedPaths.map(path => `- ${path}`),
     'Tailwind, TypeScript and an error boundary are already configured.',
     "Import application code with the '@/' alias, which points at src/.",
-    'Write the application itself: src/App.tsx, components, pages, hooks and state.',
+    `index.html loads src/main.tsx, which renders ${starter.entryPath}. ${starter.entryPath} currently holds a placeholder that renders "Building…"; replacing it is what makes the application appear.`,
+    `Write the application itself in ${starter.entryPath} and in the components, pages, hooks and state it imports. A file ${starter.entryPath} does not import is never loaded, whatever it contains.`,
+    'This is a React + TypeScript project. Write .tsx/.ts, not standalone .js entry points.',
   ].join('\n');
 }
