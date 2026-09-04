@@ -23,3 +23,35 @@ it('does not invoke providers after cancellation', async () => {
   await expect(runLlmToolLoop({ gateway: { chat } as any, modelId: 'test', messages: [], handlers: {}, signal: controller.signal })).rejects.toThrow();
   expect(chat).not.toHaveBeenCalled();
 });
+
+/*
+ * A spent tool budget ends the loop; it does not fail the run.
+ *
+ * This threw `TOOL_BUDGET_EXCEEDED`, and since the coder loop passes its own
+ * per-round budget here, a real build spent it in round one: the throw left
+ * the turn, the round and the pipeline, and the route answered the user with
+ * that bare string instead of an application.
+ */
+it('stops at the tool ceiling and returns the work, instead of failing the run', async () => {
+  let calls = 0;
+  const chat = vi.fn(async () => ({
+    text: '',
+    tool_calls: [{ id: `c${++calls}`, function: { name: 'write_file', arguments: '{"path":"src/App.tsx"}' } }],
+    usage: {},
+    cost_usd: 0,
+  }));
+
+  const result = await runLlmToolLoop({
+    gateway: { chat } as any,
+    modelId: 'test',
+    messages: [],
+    handlers: { write_file: async () => ({ ok: true }) },
+    maxToolCalls: 2,
+    maxSteps: 6,
+  });
+
+  expect(result.toolExecutions).toHaveLength(2);
+  expect(result.toolExecutions.every(execution => execution.ok)).toBe(true);
+  // The tool results the round did produce must survive for the caller.
+  expect(result.messages.some(message => message.role === 'tool')).toBe(true);
+});

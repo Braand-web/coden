@@ -121,7 +121,25 @@ export async function runLlmToolLoop(input: {
     for (const call of result.tool_calls) {
       input.signal?.throwIfAborted();
       const handler = input.handlers[call.function.name];
-      if (toolExecutions.length >= (input.maxToolCalls ?? 48)) throw new Error('TOOL_BUDGET_EXCEEDED');
+      /*
+       * The tool ceiling ends the loop; it does not fail the run.
+       *
+       * Throwing here killed generation outright: the coder loop passes its
+       * own per-round budget as `maxToolCalls`, and a real build spends that
+       * within the first round — read a few files, write a few, install a
+       * dependency. The throw escaped the turn, the round and the pipeline,
+       * and the route answered 502 with the bare string `TOOL_BUDGET_EXCEEDED`.
+       *
+       * A spent budget is a stopping condition, not an error, and this loop
+       * already has one: running out of `maxSteps` falls out of the loop and
+       * returns what the run produced. This does the same, so the caller
+       * still gets its messages and executions, and `runCoderLoop` goes on to
+       * validate the files that were written and open the next round.
+       */
+      if (toolExecutions.length >= (input.maxToolCalls ?? 48)) {
+        input.onToolsCompleted?.();
+        return { result, messages, toolExecutions };
+      }
       let args: Record<string, unknown>;
       try { args = parseToolArguments(call.function.arguments); }
       catch (error) {

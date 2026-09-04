@@ -203,6 +203,15 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // A turn that throws produced nothing this round; `runCoderLoop`'s own
       // no-progress rule is what decides whether that is worth continuing
       // from, not this adapter guessing at a retry.
+      //
+      // The catch is the half that makes that true. Without it a throw from
+      // one round — a provider dropping mid-call, a tool budget spent — left
+      // the coder loop, the pipeline and the route, and the user got a bare
+      // error code instead of the files the round had already written. A
+      // cancelled run is the one exception: it must keep propagating, because
+      // the caller asked for it.
+    }).catch((error: any) => {
+      if (input.signal?.aborted) throw error;
     });
     return { toolCalls };
   };
