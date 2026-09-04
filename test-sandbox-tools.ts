@@ -16,7 +16,7 @@ import { rm } from 'node:fs/promises';
 
 process.env.CODEN_SANDBOX_ROOT = path.join(os.tmpdir(), `coden-tools-test-${process.pid}`);
 
-const { createSandboxTools, SANDBOX_TOOL_SCHEMAS } = await import('./src/services/sandbox/sandbox-tools.ts');
+const { createSandboxTools, SANDBOX_TOOL_SCHEMAS, isPersistentPreviewCommand } = await import('./src/services/sandbox/sandbox-tools.ts');
 const { sandboxRegistry } = await import('./src/services/sandbox/sandbox-registry.ts');
 
 const PROJECT = 'tools-project';
@@ -100,6 +100,21 @@ try {
   // which tool is.
   const sneaky = await tools.call('run_command', { command: 'npm', args: ['install', 'left-pad'] });
   assert.equal(sneaky.ok, false);
+  for (const command of [
+    { command: 'npm', args: ['run', 'dev'] },
+    { command: 'npm', args: ['start'] },
+    { command: 'pnpm', args: ['preview'] },
+    { command: 'yarn', args: ['run', 'serve'] },
+    { command: 'bun', args: ['run', 'start'] },
+    { command: 'vite', args: [] },
+    { command: 'npx', args: ['vite', 'preview'] },
+    { command: 'bunx', args: ['vite'] },
+  ]) {
+    const persistent = await tools.call('run_command', command);
+    assert.equal(persistent.ok, false, `${command.command} ${command.args.join(' ')} must not occupy a finite check slot until timeout`);
+    assert.match(String((persistent as any).hint || ''), /existing dev server/i);
+  }
+  assert.equal(isPersistentPreviewCommand('vite', ['build']), false, 'a finite Vite build remains available');
   assert.match(String((sneaky as any).hint), /install_package/);
 
   // A package name is validated before npm sees it.

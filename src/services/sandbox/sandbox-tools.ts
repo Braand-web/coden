@@ -88,7 +88,7 @@ export const SANDBOX_TOOL_SCHEMAS = [
   },
   {
     name: 'run_command',
-    description: 'Run a project script, such as typecheck or build. Use it to check work rather than to assert that it is correct.',
+    description: 'Run a finite project check such as typecheck, test, or build. Never start a dev, start, serve, or preview process: Coden owns the live server and verifies it after the turn.',
     parameters: {
       type: 'object',
       properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } },
@@ -111,6 +111,26 @@ export type SandboxToolName = (typeof SANDBOX_TOOL_SCHEMAS)[number]['name'];
 
 /** A package name npm will accept, and nothing that is really a flag or a URL. */
 const PACKAGE_NAME = /^(?:@[a-z0-9-*~][a-z0-9-*._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(?:@[\w.^~>=<|| -]+)?$/i;
+
+const PERSISTENT_SCRIPTS = new Set(['dev', 'start', 'preview', 'serve']);
+
+/**
+ * A check tool must always return. Starting a second preview server here used
+ * to hold the agent loop until its three-minute command timeout while the
+ * actual Coden-managed preview remained on "Building…".
+ */
+export function isPersistentPreviewCommand(command: string, args: readonly string[] = []): boolean {
+  const binary = String(command || '').trim().toLowerCase();
+  const argv = args.map(arg => String(arg || '').trim().toLowerCase()).filter(Boolean);
+
+  if (binary === 'vite') return argv[0] !== 'build';
+  if ((binary === 'npx' || binary === 'bunx') && argv[0] === 'vite') return argv[1] !== 'build';
+
+  if (!['npm', 'pnpm', 'yarn', 'bun'].includes(binary)) return false;
+  if (PERSISTENT_SCRIPTS.has(argv[0] || '')) return true;
+  if (argv[0] === 'run' || argv[0] === 'run-script') return PERSISTENT_SCRIPTS.has(argv[1] || '');
+  return false;
+}
 
 export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void } = {}) {
   const sandbox: ProjectSandbox = sandboxRegistry.get(projectId);
@@ -219,6 +239,9 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
 
     async run_command({ command, args }: { command: string; args?: string[] }) {
       const argv = Array.isArray(args) ? args.map(String) : [];
+      if (isPersistentPreviewCommand(command, argv)) {
+        return fail('Long-running preview commands are managed by Coden and cannot run as checks.', 'Use get_logs to inspect the existing dev server. Coden starts and verifies the preview automatically after this turn.');
+      }
       const decision = decideCommand(String(command), argv);
       if (decision.verdict !== 'allowed') {
         return fail(`Refused: ${decision.reason}`, 'Use install_package to add a dependency.');

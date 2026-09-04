@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { publicRuntimeErrorMessage } from './src/services/ai-model-runtime.ts';
 
-const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+// Keep source assertions portable across Git's LF/CRLF checkout setting.
+const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 /*
  * What production showed, and what must never come back.

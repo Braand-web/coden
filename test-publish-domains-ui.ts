@@ -75,6 +75,12 @@ assert.ok(/\.cdn-dom__input:focus-visible/.test(css), 'the domain field needs a 
 assert.ok(/domainBusy === `verify:\$\{domain\.id\}`/.test(builder), 'verification must show as in flight');
 assert.ok(/\$\{verifying \? 'disabled' : ''\}/.test(builder), 'an in-flight action must not be clickable again');
 
+// The compact summary counts only findings that need attention. Production
+// previously displayed "À revoir 5" for three passing checks and two notes.
+assert.ok(/const issueCount = failCount \+ warnCount/.test(builder), 'the summary count must represent actual issues');
+assert.ok(/const visibleCheckCount = issueCount \|\| passCount/.test(builder), 'a clean result may show its passed-check count');
+assert.ok(!builder.includes("return 'Ready to publish'"), 'the French Builder must not switch to English in this panel');
+
 // The panel never guesses the outcome — it re-reads the list the server owns.
 assert.ok(/await loadProjectDomains\(\);\s*\n\s*renderPublishPanel/.test(builder), 'the list must be re-read after every action');
 

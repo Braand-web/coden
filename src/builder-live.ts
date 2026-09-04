@@ -3185,13 +3185,13 @@ function ensureToolbar() {
 }
 
 function publishPrimaryLabel(status: PublishStatusPayload | null) {
-  if (!status?.can_publish) return 'Build first';
-  if (status.state === 'published' || status.state === 'changes_unpublished') return 'Update';
-  return 'Publish';
+  if (!status?.can_publish) return 'Vérifier d’abord';
+  if (status.state === 'published' || status.state === 'changes_unpublished') return 'Mettre à jour';
+  return 'Publier';
 }
 
 function formatPublishDate(value: string | null | undefined) {
-  if (!value) return 'Never';
+  if (!value) return 'Jamais';
   try {
     return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
   } catch {
@@ -3202,14 +3202,15 @@ function formatPublishDate(value: string | null | undefined) {
 let publishPanelMode: 'main' | 'security' | 'domain' = 'main';
 
 function publishPanelTitle(status: PublishStatusPayload | null) {
-  if (!status) return 'Publishing';
-  if (status.state === 'published' || status.state === 'changes_unpublished') return 'Published';
-  if (status.state === 'ready_to_publish') return 'Ready to publish';
-  return 'Publish';
+  if (!status) return 'Publication';
+  if (status.state === 'published') return 'Publié';
+  if (status.state === 'changes_unpublished') return 'Mise à jour disponible';
+  if (status.state === 'ready_to_publish') return 'Prêt à publier';
+  return 'Publication indisponible';
 }
 
 function formatPublishUrl(url: string) {
-  if (!url) return 'Not published yet';
+  if (!url) return 'Pas encore publié';
   try {
     const parsed = new URL(url);
     return `${parsed.host}${parsed.pathname === '/' ? '' : parsed.pathname}`;
@@ -3417,10 +3418,11 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const checks = status?.checks || [];
   const title = publishPanelTitle(status);
   const primaryLabel = isPublishing ? 'Publication…' : publishPrimaryLabel(status);
-  const checkCount = checks.length;
   const passCount = checks.filter(check => check.status === 'pass').length;
   const warnCount = checks.filter(check => check.status === 'warn').length;
   const failCount = checks.filter(check => check.status === 'fail').length;
+  const issueCount = failCount + warnCount;
+  const visibleCheckCount = issueCount || passCount;
   const canPublish = Boolean(status?.can_publish && !isPublishing);
 
   const securityRows = checks.map(check => {
@@ -3473,8 +3475,8 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         <button type="button" class="cdn-pub__primary" data-publish-action="publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
         <div class="cdn-pub__links">
           <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
-            ${failCount ? 'Problèmes' : warnCount ? 'À revoir' : 'Contrôles'}
-            <span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${checkCount || passCount}</span>
+            ${failCount ? 'Problèmes' : warnCount ? 'À vérifier' : 'Contrôles'}
+            <span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${visibleCheckCount}</span>
           </button>
           <button type="button" class="cdn-pub__link" data-publish-action="domain" ${status ? '' : 'disabled'}>Domaine</button>
           <button type="button" class="cdn-pub__link cdn-pub__link--go" data-publish-action="open" ${canOpen ? '' : 'disabled'}>Ouvrir ↗</button>
@@ -3543,7 +3545,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
 
 async function openPublishPanel() {
   if (!currentProjectId) {
-    appendMessage('system', 'Create or open a project before publishing.');
+    appendMessage('system', 'Créez ou ouvrez un projet avant de le publier.');
     return;
   }
   publishPanelMode = 'main';
@@ -3552,7 +3554,7 @@ async function openPublishPanel() {
     const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}/publish/status`);
     renderPublishPanel(payload);
   } catch (error) {
-    renderPublishPanel(null, false, error instanceof Error ? error.message : 'Unable to load publish status.');
+    renderPublishPanel(null, false, error instanceof Error ? error.message : 'Impossible de charger l’état de publication.');
   }
 }
 
@@ -3611,7 +3613,7 @@ async function publishCurrentProject(previousPayload: PublishApiPayload | null) 
     });
     renderPublishPanel(payload);
   } catch (error) {
-    renderPublishPanel(previousPayload, false, error instanceof Error ? error.message : 'Publish failed.');
+    renderPublishPanel(previousPayload, false, error instanceof Error ? error.message : 'La publication a échoué.');
   }
 }
 

@@ -3109,39 +3109,39 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
     checks: [
       {
         key: 'files',
-        label: 'Project files',
+        label: 'Fichiers du projet',
         status: hasFiles ? 'pass' : 'fail',
-        detail: hasFiles ? `${files.length} files ready` : 'Generate the app before publishing.',
+        detail: hasFiles ? `${files.length} fichier${files.length > 1 ? 's' : ''} prêt${files.length > 1 ? 's' : ''}` : 'Générez l’application avant de la publier.',
       },
       {
         key: 'preview',
-        label: 'Preview',
+        label: 'Aperçu',
         status: previewReady ? 'pass' : 'fail',
-        detail: previewReady ? 'Preview is ready to snapshot.' : 'Run Build until the preview is ready.',
+        detail: previewReady ? 'L’aperçu vérifié est prêt.' : 'Relancez la génération jusqu’à obtenir un aperçu vérifié.',
       },
       {
         key: 'security',
-        label: 'Security',
+        label: 'Sécurité',
         status: securityBlocking.length ? 'fail' : securityWarnings.length ? 'warn' : 'pass',
         detail: securityBlocking.length
-          ? `${securityBlocking.length} blocking security issue${securityBlocking.length > 1 ? 's' : ''} must be fixed before publish.`
+          ? `${securityBlocking.length} problème${securityBlocking.length > 1 ? 's' : ''} de sécurité bloquant${securityBlocking.length > 1 ? 's' : ''} à corriger avant publication.`
           : securityWarnings.length
-            ? `${securityWarnings.length} security note${securityWarnings.length > 1 ? 's' : ''} saved for review.`
-            : 'No blocking security issue detected.',
+            ? `${securityWarnings.length} remarque${securityWarnings.length > 1 ? 's' : ''} de sécurité à vérifier.`
+            : 'Aucun problème de sécurité bloquant détecté.',
       },
       {
         key: 'domain',
-        label: 'Live URL',
+        label: 'Adresse publique',
         status: customDomain ? 'pass' : 'warn',
-        detail: customDomain ? `Custom domain: ${customDomain}` : `Default Coden URL: ${publicUrl}`,
+        detail: customDomain ? `Domaine personnalisé : ${customDomain}` : `Adresse Coden par défaut : ${publicUrl}`,
       },
       {
         key: 'badge',
-        label: 'Coden badge',
+        label: 'Signature Coden',
         status: isFreePlanKey(plan) ? 'warn' : 'pass',
         detail: isFreePlanKey(plan)
-          ? 'Free plan publishes include a small Built with Coden badge.'
-          : 'Paid plan: no Coden badge required.',
+          ? 'Le plan gratuit ajoute une petite signature « Créé avec Coden ».'
+          : 'Aucune signature Coden requise avec ce plan.',
       },
     ],
   };
