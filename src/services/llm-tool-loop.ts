@@ -1,6 +1,7 @@
 import type { ChatCompletionResult, ChatMessage, ToolCall } from './openrouter-service.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
+import { createNarrationFilter } from './narration-filter.ts';
 import { getAgentToolDefinition, toolNeedsApproval } from './agent-tools.ts';
 
 export type LlmToolHandler = (args: Record<string, unknown>) => Promise<unknown> | unknown;
@@ -74,6 +75,11 @@ export async function runLlmToolLoop(input: {
   sensitiveTools?: Record<string, { needsApproval: boolean; reason?: string }>;
   timeoutMs?: number;
   maxSteps?: number;
+  signal?: AbortSignal;
+  onTextDelta?: (delta: string) => void;
+  onTextEnd?: () => void;
+  onToolsStarted?: () => void;
+  onToolsCompleted?: () => void;
 }): Promise<LlmToolLoopResult> {
   const messages = [...input.messages];
   const toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }> = [];
@@ -82,12 +88,25 @@ export async function runLlmToolLoop(input: {
   let result: ChatCompletionResult | null = null;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    result = await input.gateway.chat(input.modelId, messages, {
+    input.signal?.throwIfAborted();
+    const filter = createNarrationFilter();
+    let seen = 0;
+    const options = {
       maxAttempts: 1,
       timeoutMs: input.timeoutMs,
       runtimeConfig: input.runtimeConfig,
       runtimeConfigForModel,
-    });
+      signal: input.signal,
+    };
+    result = input.onTextDelta ? await input.gateway.streamingCompletion(input.modelId, messages, {
+      ...options,
+      allowFallback: false,
+      onChunk: accumulated => {
+        const delta = filter(accumulated.slice(seen)); seen = accumulated.length;
+        if (delta) input.onTextDelta?.(delta);
+      },
+    }) : await input.gateway.chat(input.modelId, messages, options);
+    input.onTextEnd?.();
     if (!result.tool_calls?.length) return { result, messages, toolExecutions };
 
     messages.push({
@@ -96,7 +115,9 @@ export async function runLlmToolLoop(input: {
       tool_calls: result.tool_calls,
     });
 
+    input.onToolsStarted?.();
     for (const call of result.tool_calls) {
+      input.signal?.throwIfAborted();
       const handler = input.handlers[call.function.name];
       const args = parseToolArguments(call.function.arguments);
       let output: unknown;
@@ -145,6 +166,7 @@ export async function runLlmToolLoop(input: {
         content: safeToolResult(output),
       });
     }
+    input.onToolsCompleted?.();
   }
 
   if (!result) throw new Error('The model tool loop did not produce a response.');

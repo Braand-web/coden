@@ -49,7 +49,7 @@ function redirectToAuth() {
   window.location.href = `/auth.html?redirect=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`;
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: RequestInit = {}, readResponse?: (response: Response) => Promise<T>): Promise<T> {
   if (isLocalPreviewEnabled()) {
     const previewResult = getLocalPreviewApiResult(path, options.method || 'GET');
     if (previewResult.handled) {
@@ -78,11 +78,13 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   });
 
   let response = await fetch(`${API_BASE_URL}${path}`, buildRequest(verified.session.access_token));
+  if (response.ok && readResponse) return readResponse(response);
   let payload = await response.json().catch(() => ({}));
   if (!response.ok && isAuthSessionUnavailable(payload, response.status)) {
     verified = await refreshVerifiedSession();
     if (verified?.session?.access_token) {
       response = await fetch(`${API_BASE_URL}${path}`, buildRequest(verified.session.access_token));
+      if (response.ok && readResponse) return readResponse(response);
       payload = await response.json().catch(() => ({}));
     }
   }

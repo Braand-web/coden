@@ -6,6 +6,7 @@ import './styles/publish-panel.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
+import { consumeAgentStream } from './lib/agent-chat-protocol';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -2522,12 +2523,19 @@ async function requestProjectGeneration(
   projectId: string,
   requestBody: Record<string, unknown>,
   signal?: AbortSignal,
+  card?: HTMLElement | null,
 ): Promise<any> {
   const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
     method: 'POST',
+    headers: { Accept: 'text/event-stream' },
     body: JSON.stringify(requestBody),
     signal,
-  });
+  }, response => response.headers.get('content-type')?.includes('text/event-stream')
+    ? consumeAgentStream(response, event => {
+      const id = messageHandleId(card || null);
+      if (id && event.channel === 'chat') conversationApi?.applyChatEvent(id, event);
+    })
+    : response.json());
   if (!payload) throw new Error('Generation returned an empty response.');
   return payload;
 }
@@ -5755,14 +5763,13 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       setEmptyPreviewState('working', speaksFrench ? 'Generation en cours' : 'Generating');
     }
 
-    // One request, and its payload refreshes files and preview atomically.
-    // Nothing reports progress in between until the replacement live transport
-    // lands; the run's own result is still the authority either way.
+    // One generation request: chat events update the conversation while the
+    // authoritative terminal payload refreshes files and preview atomically.
     activeHarnessThreadId = '';
     activeHarnessTurnId = '';
     lastAgentRunId = '';
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
-    let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal);
+    let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal, status);
     if (payload?.runId) lastAgentRunId = String(payload.runId);
     if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
     if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);

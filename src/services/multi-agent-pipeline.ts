@@ -134,7 +134,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; signal?: AbortSignal }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -147,9 +147,25 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
 
   return async ({ instruction, tools, call, maxToolCalls }) => {
     let toolCalls = 0;
+    const knownPaths = new Set(await input.sandbox.listFiles());
+    const touched = new Map<import('../lib/agent-chat-protocol.ts').FileAction, Set<string>>();
     const handlers = Object.fromEntries(tools.map(tool => [
       tool.name,
-      async (args: Record<string, unknown>) => { toolCalls += 1; return call(tool.name, args); },
+      async (args: Record<string, unknown>) => {
+        input.signal?.throwIfAborted();
+        toolCalls += 1;
+        const result = await call(tool.name, args);
+        if ((result as any)?.ok === true && typeof args.path === 'string') {
+          const action = ({ read_file: 'read', write_file: knownPaths.has(args.path) ? 'edit' : 'create', edit_file: 'edit', delete_file: 'delete' } as Record<string, import('../lib/agent-chat-protocol.ts').FileAction>)[tool.name];
+          if (action) {
+            if (!touched.has(action)) touched.set(action, new Set());
+            touched.get(action)!.add(args.path);
+            if (action === 'delete') knownPaths.delete(args.path);
+            else if (action === 'create' || action === 'edit') knownPaths.add(args.path);
+          }
+        }
+        return result;
+      },
     ]));
     await runLlmToolLoop({
       gateway: input.gateway,
@@ -157,7 +173,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it.',
+          content: 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results.',
         },
         { role: 'user', content: instruction },
       ],
@@ -170,10 +186,21 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       runtimeConfigForModel: runtimeFor,
       timeoutMs: 60_000,
       maxSteps: Math.min(6, maxToolCalls),
+      signal: input.signal,
+      onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,
+      onTextEnd: () => input.onChatEvent?.({ type: 'text_end' }),
+      onToolsStarted: () => input.onChatEvent?.({ type: 'activity', label: 'Exécution des actions sur le projet' }),
+      onToolsCompleted: () => {
+        for (const [action, paths] of touched) {
+          input.onChatEvent?.({ type: 'files_touched', action, paths: [...paths] });
+          input.onChatEvent?.({ type: 'activity', label: 'Analyse des résultats des actions' });
+        }
+        touched.clear();
+      },
       // A turn that throws produced nothing this round; `runCoderLoop`'s own
       // no-progress rule is what decides whether that is worth continuing
       // from, not this adapter guessing at a retry.
-    }).catch(() => {});
+    }).catch(error => { if (input.signal?.aborted) throw error; });
     return { toolCalls };
   };
 }
@@ -190,9 +217,13 @@ export async function runMultiAgentPipeline(input: {
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
+  onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void;
+  signal?: AbortSignal;
 }): Promise<MultiAgentPipelineOutcome> {
   let plan: BuildPlan | undefined;
+  input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
+    input.onChatEvent?.({ type: 'activity', label: 'Préparation du plan de votre application' });
     // Before the sandbox exists, deliberately: planning needs no filesystem,
     // and paying the sandbox's cost for a plan that turns out unusable would
     // be the exact waste this ordering avoids.
@@ -255,7 +286,7 @@ export async function runMultiAgentPipeline(input: {
     sandbox,
     mode: 'build',
     initialInstruction,
-    turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox }),
+    turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox, onChatEvent: input.onChatEvent, signal: input.signal }),
     onEvent,
   });
 

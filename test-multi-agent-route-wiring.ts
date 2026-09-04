@@ -34,7 +34,7 @@ assert.ok(pipelineBranch < decisionPhase, 'the new branch must be checked before
 assert.ok(pipelineBranch < generateFilesCall, 'and before the old blob generator is ever called');
 
 // -- the pipeline call itself carries what the new modules need -------------
-const pipelineCall = route.slice(route.indexOf('const outcome = await runMultiAgentPipeline({'), route.indexOf('const outcome = await runMultiAgentPipeline({') + 900);
+const pipelineCall = route.slice(route.indexOf('const outcome = await runMultiAgentPipeline({'), route.indexOf('if (outcome.started) {'));
 assert.match(pipelineCall, /gateway: providerGateway/, 'must reuse the one provider gateway, not a second client');
 assert.match(pipelineCall, /route: pipelineRoute/);
 assert.match(pipelineCall, /existingFiles/);

@@ -15,6 +15,9 @@ import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
+import { AgentMessage } from './components/agent/agent-message';
+import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState } from './components/agent/agent-parts';
+import type { AgentEnvelope } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
 import "./styles/agent-surface.css";
 
@@ -56,6 +59,7 @@ type SourceEntry = { id: string; url: string; title?: string };
 type AttachmentEntry = { id: string; name: string; url?: string; mediaType?: string; size?: number };
 
 type LiveRunState = {
+  chat?: AgentMessageState;
   status: "active" | "done" | "failed" | "cancelled";
   intentText: string;
   activeText: string;
@@ -90,6 +94,7 @@ export type CodenConversationApi = {
   setFlow: (id: string, flow: unknown) => void;
   startLiveRun: (id: string, meta?: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string }) => void;
   finishLiveRun: (id: string, summary?: string) => void;
+  applyChatEvent: (id: string, event: AgentEnvelope) => void;
   failLiveRun: (id: string, message: string, status?: 'failed' | 'cancelled' | 'incomplete') => void;
   removeMessage: (id: string) => void;
   addAction: (id: string, label: string, onClick: () => void) => void;
@@ -386,6 +391,16 @@ function createStore() {
         ensureLiveRun(message, meta);
       });
     },
+    applyChatEvent(id, event) {
+      if (event.channel !== 'chat') return;
+      mutate(() => {
+        const message = find(id);
+        if (!message) return;
+        const run = ensureLiveRun(message);
+        run.chat = reduceAgentMessage(run.chat || { ...EMPTY_MESSAGE, parts: [], runId: event.runId }, event.payload, event.seq);
+        message.working = run.chat.status === 'streaming';
+      });
+    },
     finishLiveRun(id, summary = "") {
       mutate(() => {
         const message = find(id);
@@ -403,6 +418,7 @@ function createStore() {
         if (!message) return;
         const run = ensureLiveRun(message);
         run.status = status === 'cancelled' ? 'cancelled' : 'failed';
+        if (run.chat?.status === 'streaming') run.chat = reduceAgentMessage(run.chat, status === 'cancelled' ? { type: 'run_finished', reason: 'cancelled' } : { type: 'run_failed', message: summary });
         run.summary = summary;
         run.activeText = '';
         addLine(run, summary, 'failed');
@@ -875,7 +891,7 @@ function MessageView({ message }: { message: CodenConversationMessage }) {
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
-          {message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
+          {message.liveRun?.chat ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} /> : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
           {message.actions?.length ? (
             <div className="coden-chat-actions">
               {message.actions.map((action) => (

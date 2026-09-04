@@ -1,5 +1,6 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
+import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
@@ -11258,7 +11259,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   });
 
   const frenchActivity = isLikelyFrenchPrompt(prompt);
-  const respondJson = async (status: number, payload: any) => res.status(status).json(payload);
+  const eventStream = req.headers.accept?.includes('text/event-stream')
+    ? createAgentEventStream(res, harnessContext?.turn.id || requestId) : null;
+  const respondJson = async (status: number, payload: any) => {
+    if (eventStream) { eventStream.finish(payload, status); return res; }
+    return res.status(status).json(payload);
+  };
+  eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
+  eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Analyse de votre demande' : 'Analyzing your request' });
 
   // The decision call can take noticeable time on a live provider. Emit the
   // first real activity before awaiting it so a connected Builder never looks
@@ -11327,6 +11335,16 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         existingFiles,
         userPlan: routingPlan,
         credits: routingCredits,
+        onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
+        signal: generationAbortController.signal,
+        onSandboxEvent: event => {
+          eventStream?.workspace({ ...event });
+          eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Préparation de l’environnement de preview' : 'Preparing the preview environment' });
+        },
+        onCoderEvent: event => {
+          eventStream?.workspace({ ...event });
+          if (event.type === 'repair_round_started') eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Construction et vérification de votre application' : 'Building and checking your application' });
+        },
         harnessContext: harnessContext
           ? { harness: harnessContext.harness, threadId: harnessContext.thread.id, turnId: harnessContext.turn.id }
           : undefined,
@@ -11393,12 +11411,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       // the proven legacy path below answers the request instead of failing
       // it outright.
       console.warn('[coden:multi_agent_pipeline_fallback]', { project: project.id, reason: outcome.startError });
+      eventStream?.chat({ type: 'activity', label: frenchActivity ? 'La sandbox est indisponible. Reprise avec le générateur de fichiers.' : 'Sandbox unavailable. Continuing with the file generator.' });
     } catch (error: any) {
       // Same fallback, for a failure this branch cannot characterize (a
       // planner that could not produce a valid plan, a provider outage): the
       // legacy path can still answer the request even though this one could
       // not.
+      if (generationAbortController.signal.aborted) {
+        eventStream?.finish({ success: false, error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' }, 499);
+        return;
+      }
       console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Le moteur principal a rencontré une erreur. Reprise avec le générateur de fichiers.' : 'The primary engine encountered an error. Continuing with the file generator.' });
     }
   }
 
@@ -11621,6 +11645,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
+    eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Génération des fichiers de votre application' : 'Generating your application files' });
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
@@ -12198,7 +12223,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           : null,
         fact_ledger: factLedger,
       };
-      return res.json(finalPayload);
+      return respondJson(200, finalPayload);
     }
     const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? sanitizeSuggestedProjectName(generation.appName, prompt)
@@ -12251,6 +12276,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       throw new Error(`The model response contradicted verified facts: ${finalContradictions.join(', ')}`);
     }
 
+    eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Enregistrement des fichiers et du résultat des vérifications' : 'Saving files and verification results' });
     await saveProject(updatedProject, finalFiles);
 
     /*
@@ -12366,7 +12392,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     };
     // The last step closes on the run's real outcome: a project that still
     // needs fixes is not "ready", and saying so is the point of the machine.
-    return res.json(finalPayload);
+    return respondJson(200, finalPayload);
   } catch (error: any) {
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
@@ -12385,7 +12411,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       diagnostic_code: diagnostic.diagnostic_code,
       suggested_action: diagnostic.suggested_action,
     });
-    res.status(diagnostic.status).json({
+    return respondJson(diagnostic.status, {
       success: false,
       error: diagnostic.message,
       message: diagnostic.message,
