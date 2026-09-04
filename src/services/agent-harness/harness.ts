@@ -188,6 +188,30 @@ export class CodenAgentHarness {
   }
 
   /**
+   * Record what the run actually spent.
+   *
+   * `budgetUsed` read `toolCalls: 0, repairAttempts: 0, credits: 0` on all 56
+   * recorded turns, because the only writer was `recordTool` — a path the
+   * coder loop does not take, since it spends its calls inside
+   * `runLlmToolLoop`, which knows nothing about a harness. So the budget could
+   * not be enforced, and the cost of a run could not be read back afterwards.
+   *
+   * Reported by the caller that holds the real counters, and added to what is
+   * already there rather than replacing it, so a run that reports twice — once
+   * per coder round — accumulates instead of overwriting.
+   */
+  async recordSpend(turnId: string, spend: { toolCalls?: number; repairAttempts?: number; credits?: number }) {
+    const turn = await this.requiredTurn(turnId);
+    const budgetUsed = {
+      ...turn.budgetUsed,
+      toolCalls: turn.budgetUsed.toolCalls + Math.max(0, Math.round(spend.toolCalls || 0)),
+      repairAttempts: turn.budgetUsed.repairAttempts + Math.max(0, Math.round(spend.repairAttempts || 0)),
+      credits: turn.budgetUsed.credits + Math.max(0, spend.credits || 0),
+    };
+    return this.store.updateTurn(turnId, { budgetUsed });
+  }
+
+  /**
    * Close the run's own criteria against what was actually observed.
    *
    * `buildDefinitionOfDone` writes them at the start of every turn — the

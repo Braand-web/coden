@@ -13,11 +13,93 @@ export type ToolApprovalRequest = {
   call: ToolCall;
 };
 
+/**
+ * What a run may spend, in resources rather than iterations.
+ *
+ * The loop used to stop at `min(8, maxSteps || 4)` model turns and a fixed
+ * tool ceiling, and the coder loop layered three rounds of twelve calls on top
+ * — about thirty-six tool calls for a whole application. That is a budget for
+ * a minute of work, and the recorded runs show it: a median build finished in
+ * 65 seconds because it was not allowed to do more.
+ *
+ * Iterations are the wrong unit. What actually has to be bounded is the
+ * user's time and money, so those are what is counted, and the loop runs until
+ * one of them is genuinely spent. `maxSteps` and `maxToolCalls` stay as
+ * backstops against a model that loops forever without progressing; they are
+ * no longer the thing that ends a normal run.
+ */
+export type AgentLoopBudget = {
+  maxSteps: number;
+  maxToolCalls: number;
+  maxDurationMs: number;
+  /**
+   * Transcript size, in characters, above which the oldest tool results are
+   * digested. A long run dies on the context window otherwise — which is the
+   * reason the ceilings were low in the first place.
+   */
+  compactAboveChars: number;
+};
+
+export const DEFAULT_AGENT_LOOP_BUDGET: AgentLoopBudget = {
+  maxSteps: 60,
+  maxToolCalls: 200,
+  maxDurationMs: 12 * 60_000,
+  compactAboveChars: 240_000,
+};
+
+/** What the run actually spent, and what ended it. */
+export type AgentLoopSpend = {
+  steps: number;
+  toolCalls: number;
+  elapsedMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  costUsd: number;
+  compactions: number;
+  stoppedBecause: 'answered' | 'step_budget' | 'tool_budget' | 'time_budget';
+};
+
 export type LlmToolLoopResult = {
   result: ChatCompletionResult;
   messages: ChatMessage[];
   toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }>;
+  spend: AgentLoopSpend;
 };
+
+/**
+ * Shrink the transcript without breaking it.
+ *
+ * Only tool results are digested, and no message is ever removed. Dropping a
+ * message would be the obvious way to save more, and it is the one that breaks
+ * the request: an assistant message carrying `tool_calls` and the `tool`
+ * messages answering it are a matched pair, and a provider rejects either half
+ * without the other. Tool output is also where the size actually is — a single
+ * file read is worth more characters than every assistant turn combined.
+ *
+ * The most recent exchanges are left intact, because that is what the model is
+ * reasoning about right now; the older ones keep a head and a tail so a path,
+ * an error message or a status stays readable.
+ */
+export function compactTranscript(messages: ChatMessage[], keepRecent = 8, maxKeptChars = 600): ChatMessage[] {
+  const cutoff = Math.max(0, messages.length - keepRecent);
+  return messages.map((message, index) => {
+    if (index >= cutoff || message.role !== 'tool') return message;
+    const content = String(message.content ?? '');
+    if (content.length <= maxKeptChars) return message;
+    const head = content.slice(0, Math.floor(maxKeptChars * 0.7));
+    const tail = content.slice(-Math.floor(maxKeptChars * 0.2));
+    return {
+      ...message,
+      content: `${head}\n…[${content.length - head.length - tail.length} characters of this earlier result were compacted]…\n${tail}`,
+    };
+  });
+}
+
+function transcriptSize(messages: ChatMessage[]): number {
+  let total = 0;
+  for (const message of messages) total += String(message.content ?? '').length + 32;
+  return total;
+}
 
 function safeToolResult(value: unknown) {
   const serialized = JSON.stringify(value ?? null);
@@ -77,20 +159,78 @@ export async function runLlmToolLoop(input: {
   timeoutMs?: number;
   maxSteps?: number;
   maxToolCalls?: number;
+  /** Resource budget for this loop. Anything omitted takes the default. */
+  budget?: Partial<AgentLoopBudget>;
+  /**
+   * An absolute moment this run must not pass, shared across every call.
+   *
+   * `maxDurationMs` bounds one invocation, and the coder loop invokes this
+   * once per round — so eight rounds of a twelve-minute budget is ninety-six
+   * minutes, which is not a budget at all. A caller that spans several rounds
+   * computes the deadline once and passes it to all of them.
+   */
+  deadline?: number;
+  /** Called when the transcript is digested, so a caller can report it. */
+  onCompacted?: (info: { chars: number }) => void;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void;
   onTextEnd?: () => void;
   onToolsStarted?: () => void;
   onToolsCompleted?: () => void;
 }): Promise<LlmToolLoopResult> {
-  const messages = [...input.messages];
+  let messages = [...input.messages];
   const toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }> = [];
-  const maxSteps = Math.max(1, Math.min(8, input.maxSteps || 4));
+  const budget: AgentLoopBudget = { ...DEFAULT_AGENT_LOOP_BUDGET, ...input.budget };
+  // The older per-call arguments still win where a caller sets them, so no
+  // existing caller changes behaviour by upgrading.
+  const maxSteps = Math.max(1, input.maxSteps ?? budget.maxSteps);
+  const maxToolCalls = Math.max(1, input.maxToolCalls ?? budget.maxToolCalls);
+  const startedAt = Date.now();
+  const deadline = Math.min(
+    startedAt + budget.maxDurationMs,
+    Number.isFinite(input.deadline) ? (input.deadline as number) : Number.POSITIVE_INFINITY,
+  );
   const runtimeConfigForModel = keepCallerTools(input.runtimeConfigForModel, input.runtimeConfig);
   let result: ChatCompletionResult | null = null;
+  let compactions = 0;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let costUsd = 0;
+  let steps = 0;
+  let stoppedBecause: AgentLoopSpend['stoppedBecause'] = 'answered';
+  const spend = (): AgentLoopSpend => ({
+    steps,
+    toolCalls: toolExecutions.length,
+    elapsedMs: Date.now() - startedAt,
+    promptTokens,
+    completionTokens,
+    costUsd,
+    compactions,
+    stoppedBecause,
+  });
 
   for (let step = 0; step < maxSteps; step += 1) {
     input.signal?.throwIfAborted();
+    if (Date.now() >= deadline) { stoppedBecause = 'time_budget'; break; }
+    steps = step + 1;
+
+    // Compacted before the call, not after: the request about to be sent is
+    // what has to fit.
+    const size = transcriptSize(messages);
+    if (size > budget.compactAboveChars) {
+      const compacted = compactTranscript(messages);
+      const reclaimed = size - transcriptSize(compacted);
+      // A transcript can be over the threshold and still have nothing old
+      // enough to digest — a handful of very large recent results, which must
+      // be kept whole. Counting that as a compaction would report work that
+      // did not happen, and hide the fact that the run is near its limit with
+      // no room left to reclaim.
+      if (reclaimed > 0) {
+        messages = compacted;
+        compactions += 1;
+        input.onCompacted?.({ chars: reclaimed });
+      }
+    }
     const filter = createNarrationFilter();
     let seen = 0;
     const options = {
@@ -109,7 +249,10 @@ export async function runLlmToolLoop(input: {
       },
     }) : await input.gateway.chat(input.modelId, messages, options);
     input.onTextEnd?.();
-    if (!result.tool_calls?.length) return { result, messages, toolExecutions };
+    promptTokens += result.usage?.prompt_tokens || 0;
+    completionTokens += result.usage?.completion_tokens || 0;
+    costUsd += result.cost_usd || 0;
+    if (!result.tool_calls?.length) return { result, messages, toolExecutions, spend: spend() };
 
     messages.push({
       role: 'assistant',
@@ -136,9 +279,15 @@ export async function runLlmToolLoop(input: {
        * still gets its messages and executions, and `runCoderLoop` goes on to
        * validate the files that were written and open the next round.
        */
-      if (toolExecutions.length >= (input.maxToolCalls ?? 48)) {
+      if (toolExecutions.length >= maxToolCalls) {
+        stoppedBecause = 'tool_budget';
         input.onToolsCompleted?.();
-        return { result, messages, toolExecutions };
+        return { result, messages, toolExecutions, spend: spend() };
+      }
+      if (Date.now() >= deadline) {
+        stoppedBecause = 'time_budget';
+        input.onToolsCompleted?.();
+        return { result, messages, toolExecutions, spend: spend() };
       }
       let args: Record<string, unknown>;
       try { args = parseToolArguments(call.function.arguments); }
@@ -197,6 +346,25 @@ export async function runLlmToolLoop(input: {
     input.onToolsCompleted?.();
   }
 
-  if (!result) throw new Error('The model tool loop did not produce a response.');
-  return { result, messages, toolExecutions };
+  /*
+   * Out of time before the first call is an outcome, not a crash.
+   *
+   * A later coder round inherits the run's shared deadline, and if the earlier
+   * rounds spent it this loop stops before calling anything. Throwing there
+   * sent a bare "did not produce a response" up through the round, the
+   * pipeline and the route — the same shape of failure as a spent tool budget
+   * once did. It reports an empty answer instead, and `stoppedBecause` says
+   * why, so the caller keeps the files the earlier rounds wrote.
+   */
+  if (!result) {
+    if (stoppedBecause !== 'time_budget') throw new Error('The model tool loop did not produce a response.');
+    return {
+      result: { text: '', model: input.modelId, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }, cost_usd: 0 },
+      messages,
+      toolExecutions,
+      spend: spend(),
+    };
+  }
+  if (stoppedBecause === 'answered') stoppedBecause = 'step_budget';
+  return { result, messages, toolExecutions, spend: spend() };
 }

@@ -26,7 +26,7 @@ import { resolvePipelineRoute, taskKindForRoute, buildEditInstruction, type Pipe
 import { selectModel } from './model-selection.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
-import { runLlmToolLoop } from './llm-tool-loop.ts';
+import { runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched } from './sandbox/starters.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
@@ -185,7 +185,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; signal?: AbortSignal }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void; deadline: number; signal?: AbortSignal }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -222,7 +222,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         return result;
       },
     ]));
-    await runLlmToolLoop({
+    const loop = await runLlmToolLoop({
       gateway: input.gateway,
       modelId: input.modelId,
       messages: [
@@ -239,8 +239,14 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         toolChoice: 'auto',
       } as any,
       runtimeConfigForModel: runtimeFor,
-      maxSteps: Math.min(6, maxToolCalls),
+      // One model turn per two tool calls is the shape a real build takes:
+      // read, read, write, check, write again. Capping turns at six meant a
+      // round could not use the calls it had been given.
+      maxSteps: Math.max(6, Math.min(24, maxToolCalls)),
       maxToolCalls,
+      // One clock for the whole run, not one per round.
+      deadline: input.deadline,
+      onCompacted: info => console.info('[coden:tool_loop_compacted]', { chars: info.chars }),
       signal: input.signal,
       onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,
       onTextEnd: () => input.onChatEvent?.({ type: 'text_end' }),
@@ -266,7 +272,11 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // the caller asked for it.
     }).catch((error: any) => {
       if (input.signal?.aborted) throw error;
+      return null;
     });
+    // The round's real cost, taken from the loop's own counters rather than
+    // inferred: this is the number it actually stopped on.
+    if (loop) input.onSpend?.(loop.spend);
     return { toolCalls };
   };
 }
@@ -280,6 +290,8 @@ export async function runMultiAgentPipeline(input: {
   existingFiles: Array<{ path: string; content?: string }>;
   userPlan: UserPlan | string;
   credits?: number;
+  /** How long the whole run may take, shared by every coder round. */
+  runDeadlineMs?: number;
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
@@ -397,6 +409,17 @@ export async function runMultiAgentPipeline(input: {
     });
   };
 
+  // What this run has spent so far, accumulated across rounds.
+  const spent = { toolCalls: 0, repairAttempts: 0, credits: 0 };
+  /*
+   * One deadline for the whole run.
+   *
+   * The route already aborts a generation at fifteen minutes; this sits just
+   * inside it so the run ends on its own terms — reporting what it did and
+   * keeping the files it wrote — rather than being cut off mid-call.
+   */
+  const runDeadline = Date.now() + (input.runDeadlineMs ?? 11 * 60_000);
+
   let repairOutcome: RepairOutcome;
   try { repairOutcome = await runCoderLoop({
     sandbox,
@@ -408,6 +431,15 @@ export async function runMultiAgentPipeline(input: {
       sandbox,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
+      deadline: runDeadline,
+      onSpend: roundSpend => {
+        spent.toolCalls += roundSpend.toolCalls;
+        spent.repairAttempts += 1;
+        spent.credits += roundSpend.costUsd;
+        // Written per round rather than once at the end: a run that is
+        // cancelled or crashes still leaves what it had already spent.
+        if (ctx) void ctx.harness.recordSpend(ctx.turnId, { toolCalls: roundSpend.toolCalls, repairAttempts: 1, credits: roundSpend.costUsd }).catch(() => null);
+      },
       signal: input.signal,
     }),
     onEvent: event => {

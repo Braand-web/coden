@@ -80,8 +80,23 @@ export type CoderLoopOutcome = RepairOutcome;
 export type CoderLoopTurn = RepairTurn;
 export type CoderLoopEvent = RepairEvent;
 
-const DEFAULT_MAX_ROUNDS = 3;
-const DEFAULT_MAX_TOOL_CALLS = 12;
+/*
+ * How much work one run is allowed to be.
+ *
+ * Three rounds of twelve calls is about thirty-six tool calls for an entire
+ * application, and the recorded runs show exactly that shape: a median build
+ * finishing in 65 seconds, because it was not permitted to do more. Reading
+ * four files, writing six and installing a dependency spends the round.
+ *
+ * The ceilings are raised and, more importantly, they are no longer what ends
+ * a normal run — a wall clock is. `runLlmToolLoop` counts elapsed time and
+ * stops on it, so these remain what they should always have been: backstops
+ * against a model that loops without progressing, not the budget itself. The
+ * loop also stops early on its own no-progress rule, which is what keeps the
+ * higher ceiling from turning a hopeless run into a long hopeless run.
+ */
+const DEFAULT_MAX_ROUNDS = 8;
+const DEFAULT_MAX_TOOL_CALLS = 40;
 
 function countErrors(report: ValidationReport): number {
   return report.problems.filter(problem => problem.severity === 'error').length;
