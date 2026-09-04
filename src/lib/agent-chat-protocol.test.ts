@@ -37,6 +37,29 @@ describe('agent streaming protocol', () => {
     expect(reduceAgentMessage(failed, { type: 'activity', label: 'late' }, 3)).toBe(failed);
     expect(reduceAgentMessage(partial, { type: 'run_finished', reason: 'cancelled' }, 2).status).toBe('cancelled');
   });
+  /*
+   * The thinking line only animates while `thinking` holds a label, and only
+   * `activity` sets one. Nothing emitted `activity`, so the shimmer had no
+   * text and went silent on the first token — for the whole of the install,
+   * the tool calls and the verification.
+   */
+  it('re-enters thinking with a label whenever a new phase starts', () => {
+    const started = reduceAgentMessage(EMPTY_MESSAGE, { type: 'run_started', messageId: 'm1' }, 1);
+    expect(started.thinking).toBe(true);
+
+    const planning = reduceAgentMessage(started, { type: 'activity', label: 'Coden prépare le plan…' }, 2);
+    expect(planning).toMatchObject({ thinking: true, activity: 'Coden prépare le plan…' });
+
+    // Prose replaces the line: the run is saying something concrete.
+    const speaking = reduceAgentMessage(planning, { type: 'text_delta', delta: 'Je crée la page.' }, 3);
+    expect(speaking).toMatchObject({ thinking: false, activity: null });
+
+    // Tools now run, which is the longest silence of a step.
+    const working = reduceAgentMessage(speaking, { type: 'activity', label: 'Coden applique les changements…' }, 4);
+    expect(working).toMatchObject({ thinking: true, activity: 'Coden applique les changements…' });
+    expect(working.parts.at(-1)).toMatchObject({ type: 'text', text: 'Je crée la page.', done: true });
+  });
+
   it('filters split code fences but preserves prose and inline code', () => {
     const filter = createNarrationFilter();
     expect(['Je lis `App`.', '\n``', '`tsx\nsecret code', '\n```', '\nTerminé.'].map(filter).join('')).toBe('Je lis `App`.\n\nTerminé.');

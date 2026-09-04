@@ -30,9 +30,11 @@ type ScriptedResponse = { text: string; toolCall?: { name: string; args: Record<
  * own call order is what determines which response answers which step,
  * exactly as the real provider would see one call at a time.
  *
- * Every call — the planner's one-shot plan and each of the coder loop's
- * tool-calling steps — goes through `chat`, in the order the pipeline makes
- * them.
+ * Both transports are served from the one script and cursor. The planner's
+ * one-shot plan goes through `chat`; the coder loop goes through
+ * `streamingCompletion` — which consumes `streamChat` — as soon as the run
+ * has somewhere to send its prose, which in production it always does. A
+ * double that only answered `chat` left the real path untested.
  */
 function scriptedProvider(script: ScriptedResponse[]) {
   const chatCalls: Array<{ modelId: string }> = [];
@@ -57,6 +59,19 @@ function scriptedProvider(script: ScriptedResponse[]) {
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
           cost_usd: 0,
         };
+      },
+      async *streamChat(modelId: string) {
+        chatCalls.push({ modelId });
+        const { step, callIndex } = nextStep();
+        if (step.text) yield { type: 'token' as const, text: step.text, model: modelId };
+        if (step.toolCall) {
+          yield {
+            type: 'tool_calls' as const,
+            tool_calls: [{ id: `call_${callIndex}`, type: 'function' as const, function: { name: step.toolCall.name, arguments: JSON.stringify(step.toolCall.args) } }],
+            model: modelId,
+          };
+        }
+        yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0, model: modelId };
       },
     } as any,
   };
@@ -91,6 +106,7 @@ try {
       { text: 'Done.' }, // coder step 2: no tool call, ends the round
     ]);
     const gateway = new ProviderGateway(provider.service);
+    const chatEvents: Array<{ type: string; label?: string }> = [];
     const outcome = await runMultiAgentPipeline({
       gateway,
       projectId: 'pipeline-new-project',
@@ -99,8 +115,21 @@ try {
       route: 'new_project',
       existingFiles: [],
       userPlan: 'pro',
+      onChatEvent: event => chatEvents.push(event as any),
     });
     await cleanup('pipeline-new-project');
+
+    /*
+     * The thinking line animates only while an `activity` label is set, and
+     * only the run can set one. Nothing emitted `activity`, so the shimmer had
+     * no text at all and the interface went still through the install, the
+     * tool calls and the verification — the longest parts of a build.
+     */
+    const activities = chatEvents.filter(event => event.type === 'activity').map(event => event.label);
+    assert.ok(activities.length > 0, 'the run must report what it is doing, or the thinking line has nothing to show');
+    assert.ok(activities.every(label => typeof label === 'string' && label.trim().length > 0), 'every activity must carry a real label');
+    assert.ok(activities.some(label => /plan/i.test(label!)), 'planning is a phase the user waits through, so it must be reported');
+    assert.ok(activities.some(label => /construit|building/i.test(label!)), 'so is the build round itself');
 
     assert.equal(outcome.started, true);
     assert.ok(outcome.started);

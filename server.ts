@@ -4454,6 +4454,22 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
   // apart from a bad answer. The cause is kept and re-thrown with the failure.
   ).catch((error: any) => {
     routerFailureCause = normalizeProviderError(error) || String(error?.message || error || '');
+    /*
+     * What the router actually answered, when it answered something.
+     *
+     * "The model JSON did not match the required contract" names the check
+     * that failed and nothing about why: the object parsed, so some field is
+     * wrong or missing, and the log gave no way to tell which. In production
+     * that turned every routing failure into the same unreadable line while
+     * every request quietly degraded to `conversation`. The answer is the
+     * evidence, so it is recorded — redacted and truncated, since it is model
+     * output and only its shape is needed.
+     */
+    console.warn('[coden:intent_router_rejected]', {
+      model: routerModel,
+      cause: routerFailureCause,
+      answer: redactSecrets(String(result?.text || '').slice(0, 600), '[redacted]'),
+    });
     return null;
   });
   const aiDecision = buildDecisionFromAi(rawDecision, fallback);

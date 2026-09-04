@@ -1,6 +1,29 @@
-.coden-agent-message { display:grid; gap:16px; width:100%; min-width:0; color:var(--text,#ededed); }
-.coden-agent-message .coden-response { font-size:15.5px; line-height:1.78; text-wrap:pretty; }
-.coden-thinking-line { font-size:15.5px; min-height:24px; }
+.coden-agent-message { display:grid; gap:10px; width:100%; min-width:0; color:var(--text,#ededed); }
+.coden-agent-message .coden-response { font-size:14px; line-height:1.62; text-wrap:pretty; }
+.coden-thinking-line { font-size:14px; min-height:22px; }
+
+/*
+ * A reply is a chat message, not a document.
+ *
+ * The shared markdown styles size headings for a page — 24px with 26px of
+ * space above — so a model answering in `## sections` turned a two-sentence
+ * explanation into something that towered over the conversation. Inside a
+ * message a heading is a bold line, barely above the body it introduces.
+ * Scoped here so the same renderer keeps its document sizing everywhere else.
+ */
+.coden-agent-message .coden-response h1,
+.coden-agent-message .coden-response h2,
+.coden-agent-message .coden-response h3,
+.coden-agent-message .coden-response h4 { margin:14px 0 6px; font-size:14px; font-weight:650; line-height:1.4; letter-spacing:0; }
+.coden-agent-message .coden-response h1 { font-size:15px; }
+.coden-agent-message .coden-response > *:first-child { margin-top:0; }
+.coden-agent-message .coden-response p { margin:0 0 8px; }
+.coden-agent-message .coden-response > p:last-child { margin-bottom:0; }
+.coden-agent-message .coden-response ul,
+.coden-agent-message .coden-response ol { gap:4px; margin:8px 0 10px; padding-left:20px; }
+.coden-agent-message .coden-response pre { font-size:12.5px; }
+.coden-agent-message .coden-response blockquote { margin:10px 0; }
+.coden-agent-message .coden-response hr { margin:14px 0; }
 .coden-tool-line { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-muted,#8a8a8a); font-size:14.5px; }
 .coden-tool-line svg,.coden-tool-line>span:first-of-type { flex-shrink:0; }
 .coden-tool-paths { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px/1.6 ui-monospace,monospace; }

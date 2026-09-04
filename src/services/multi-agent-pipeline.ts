@@ -137,7 +137,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; signal?: AbortSignal }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; signal?: AbortSignal }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -194,6 +194,10 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       signal: input.signal,
       onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,
       onTextEnd: () => input.onChatEvent?.({ type: 'text_end' }),
+      // The model has finished explaining and the tools now run: reading,
+      // writing, installing. Without this the interface went still for the
+      // longest part of each step, right after saying what it was about to do.
+      onToolsStarted: () => input.onChatEvent?.({ type: 'activity', label: input.activityLabel }),
       onToolsCompleted: () => {
         for (const [action, paths] of touched) {
           input.onChatEvent?.({ type: 'files_touched', action, paths: [...paths] });
@@ -233,9 +237,26 @@ export async function runMultiAgentPipeline(input: {
   signal?: AbortSignal;
   onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
 }): Promise<MultiAgentPipelineOutcome> {
+  /*
+   * What the run is doing right now, for the thinking line.
+   *
+   * `activity` is the only event that gives that line a label, and nothing
+   * emitted it: the reducer left `activity` at null, so the shimmer never had
+   * text to animate, and `thinking` went false on the first token and never
+   * came back — leaving the longest stretches of a build (install, tools,
+   * verification) with nothing moving at all.
+   *
+   * Every label below sits at a boundary the run genuinely just crossed, so
+   * this reports work rather than performing it.
+   */
+  const fr = speaksFrench(input.prompt);
+  const activity = (frLabel: string, enLabel: string) =>
+    input.onChatEvent?.({ type: 'activity', label: fr ? frLabel : enLabel });
+
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
+    activity('Coden prépare le plan…', 'Coden is preparing the plan…');
     // Before the sandbox exists, deliberately: planning needs no filesystem,
     // and paying the sandbox's cost for a plan that turns out unusable would
     // be the exact waste this ordering avoids.
@@ -259,7 +280,13 @@ export async function runMultiAgentPipeline(input: {
     projectId: input.projectId,
     userId: input.userId,
     files: launchFiles,
-    onEvent: input.onSandboxEvent,
+    onEvent: event => {
+      input.onSandboxEvent?.(event);
+      // The launch reports its own stages; each is a real one, and install is
+      // the longest silence in a run.
+      if (event.type === 'sandbox_installing') activity('Coden installe les dépendances…', 'Coden is installing dependencies…');
+      else if (event.type === 'sandbox_starting') activity('Coden démarre l’aperçu…', 'Coden is starting the preview…');
+    },
   });
 
   if (!launch.ok) {
@@ -308,8 +335,25 @@ export async function runMultiAgentPipeline(input: {
     sandbox,
     mode: 'build',
     initialInstruction,
-    turn: buildToolLoopTurn({ gateway: input.gateway, modelId, sandbox, onChatEvent: input.onChatEvent, signal: input.signal }),
-    onEvent:input.onCoderEvent,
+    turn: buildToolLoopTurn({
+      gateway: input.gateway,
+      modelId,
+      sandbox,
+      onChatEvent: input.onChatEvent,
+      activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
+      signal: input.signal,
+    }),
+    onEvent: event => {
+      input.onCoderEvent?.(event);
+      // Round one writes the application; every later round is fixing what
+      // the project's own toolchain still rejects.
+      if (event.type === 'repair_round_started') {
+        if (event.round === 1) activity('Coden construit l’application…', 'Coden is building the application…');
+        else activity('Coden corrige les erreurs détectées…', 'Coden is fixing the detected errors…');
+      } else if (event.type === 'repair_round_finished') {
+        activity('Coden vérifie le résultat…', 'Coden is verifying the result…');
+      }
+    },
     signal:input.signal,
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal);
