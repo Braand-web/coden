@@ -22,8 +22,39 @@ describe('OpenRouter-only capability contract', () => {
     await Promise.all([catalog.get('test'),catalog.get('test')]); expect(request).toHaveBeenCalledTimes(1);
     await expect(catalog.get('astra')).rejects.toMatchObject({diagnosticCode:'MODEL_UNAVAILABLE'});
   });
-  it('fails closed on catalog outage', async () => {
+  it('fails closed on catalog outage when nothing was ever known', async () => {
     const catalog=new OpenRouterCapabilities(vi.fn(async()=>new Response('',{status:503})) as any);
+    await expect(catalog.get('test')).rejects.toMatchObject({diagnosticCode:'MODEL_CATALOG_UNAVAILABLE'});
+  });
+  /*
+   * Every provider call passes through this catalog, so throwing on a failed
+   * refresh made an OpenRouter blip a total product outage — while a good
+   * catalog sat in memory, discarded for being five minutes old. Capabilities
+   * change on the order of weeks. Serving the one we have beats serving none.
+   */
+  it('keeps serving the last known catalog when a refresh fails', async () => {
+    let fail=false;
+    const request=vi.fn(async()=>fail?new Response('',{status:503}):new Response(JSON.stringify({data:[model]}))) as any;
+    const catalog=new OpenRouterCapabilities(request,0);
+    expect((await catalog.get('test')).id).toBe('test');
+    fail=true;
+    expect((await catalog.get('test')).id).toBe('test');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+  it('does not retry a catalog that is down on every single request', async () => {
+    const request=vi.fn(async()=>new Response(JSON.stringify({data:[model]}))) as any;
+    const catalog=new OpenRouterCapabilities(request,0);
+    await catalog.get('test');
+    request.mockImplementation(async()=>new Response('',{status:503}));
+    await catalog.get('test'); await catalog.get('test'); await catalog.get('test');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+  it('stops serving a catalog that has gone stale beyond its grace', async () => {
+    let fail=false;
+    const request=vi.fn(async()=>fail?new Response('',{status:503}):new Response(JSON.stringify({data:[model]}))) as any;
+    const catalog=new OpenRouterCapabilities(request,0,0);
+    await catalog.get('test');
+    fail=true;
     await expect(catalog.get('test')).rejects.toMatchObject({diagnosticCode:'MODEL_CATALOG_UNAVAILABLE'});
   });
   it('routes by role and refuses a task that cannot meet its capability constraints', () => {

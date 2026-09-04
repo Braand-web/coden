@@ -13,21 +13,46 @@ export class CapabilityError extends Error {
 export class OpenRouterCapabilities {
   private models = new Map<string, CatalogModel>();
   private expires = 0;
+  private staleUntil = 0;
+  private retryAfter = 0;
   private pending?: Promise<void>;
   private readonly request: typeof fetch;
   private readonly ttlMs: number;
-  constructor(request: typeof fetch = fetch, ttlMs = 300_000) { this.request=request; this.ttlMs=ttlMs; }
+  private readonly staleMs: number;
+  constructor(request: typeof fetch = fetch, ttlMs = 300_000, staleMs = 24 * 3_600_000) { this.request=request; this.ttlMs=ttlMs; this.staleMs=staleMs; }
+
+  /**
+   * Every provider call in the product passes through here, so a catalog
+   * outage used to be a total outage: the fetch failed, `MODEL_CATALOG_
+   * UNAVAILABLE` was thrown, and nobody could generate anything — while a
+   * perfectly good catalog sat in memory, discarded for being five minutes
+   * old. Model capabilities change on the order of weeks; five minutes of
+   * freshness is not worth the whole service.
+   *
+   * A catalog we already hold is served past its refresh deadline for as long
+   * as `staleMs`, and the failing refresh is not retried on every single
+   * request while the catalog is down. Failing closed remains the rule for the
+   * one case where it is the only honest answer: we have never had a catalog,
+   * so nothing is known about the model being called.
+   */
   async get(id: string, signal?: AbortSignal): Promise<CatalogModel> {
     signal?.throwIfAborted();
-    if (Date.now() >= this.expires) {
+    const now = Date.now();
+    if (now >= this.expires && now >= this.retryAfter) {
       this.pending ??= this.refresh().finally(() => { this.pending = undefined; });
-      await this.pending;
+      try {
+        await this.pending;
+      } catch (error) {
+        if (!this.models.size || Date.now() >= this.staleUntil) throw error;
+        console.warn('[coden:model_catalog_stale]', { reason: 'refresh_failed', models: this.models.size });
+      }
     }
     signal?.throwIfAborted();
     const model = this.models.get(id);
     if (!model) throw new CapabilityError('MODEL_UNAVAILABLE', `Model ${id} is absent from the OpenRouter catalog.`);
     return model;
   }
+
   private async refresh() {
     try {
       const response = await this.request('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(10_000) });
@@ -38,7 +63,11 @@ export class OpenRouterCapabilities {
       if (!models.length) throw new Error('Invalid catalog');
       this.models = new Map(models.map(m => [m.id, m]));
       this.expires = Date.now() + this.ttlMs;
+      this.staleUntil = Date.now() + this.staleMs;
+      this.retryAfter = 0;
     } catch {
+      // Hammering a catalog that is down turns one outage into two.
+      this.retryAfter = Date.now() + 30_000;
       throw new CapabilityError('MODEL_CATALOG_UNAVAILABLE', 'OpenRouter capabilities could not be verified. Retry when the catalog is available.');
     }
   }

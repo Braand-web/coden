@@ -63,6 +63,7 @@ import {
   buildAIModelRuntimeConfig,
   getAllAIModelCapabilityProfiles,
   getAIModelCapabilityProfile,
+  publicRuntimeErrorMessage,
   type AIWorkflowTask,
 } from './src/services/ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
@@ -1352,6 +1353,61 @@ let persistentAgentHarness: CodenAgentHarness | null = null;
 const activeHarnessTurnControllers = new Map<string, AbortController>();
 const activeHarnessAgentRunIds = new Map<string, string>();
 
+/*
+ * When this process started, and how long a turn it does not own may still be
+ * given the benefit of the doubt.
+ *
+ * A run lives entirely inside one request in one process: its abort controller
+ * is in `activeHarnessTurnControllers` and dies with the process. So a turn
+ * still marked `running` that began before this process booted has no owner
+ * anywhere — the process that owned it is gone. That is a fact, not a timeout,
+ * and it is what a deploy or a crash leaves behind.
+ *
+ * Production had five agent runs and three turns stranded that way, three of
+ * them on the same day, each with `updated_at` still equal to `created_at`:
+ * inserted, never finalized, never reaped. Until this, they were only cleared
+ * by a 20-minute ceiling, and only if the same user came back to the same
+ * thread — so the project answered every new request with the raw string
+ * `HARNESS_RUN_ACTIVE` for twenty minutes, and the stranded turn stayed
+ * `running` for days.
+ *
+ * The ceiling stays as the second rule, for a turn that began after boot and
+ * whose request is no longer registered here.
+ */
+const PROCESS_BOOTED_AT = Date.now();
+const ORPHANED_TURN_CEILING_MS = 20 * 60_000;
+
+/*
+ * The one refusal that is not a failure: a run really is still going.
+ *
+ * It used to be a bare `Error('HARNESS_RUN_ACTIVE: ...')`, and the route
+ * answered 409 with `error.message`, so the user read the diagnostic code
+ * itself, in English, inside a French interface. It is a typed error now so
+ * the boundary can say what happened in the user's language and still hand
+ * the client the code it needs to offer the right action.
+ */
+class HarnessRunActiveError extends Error {
+  readonly diagnosticCode = 'HARNESS_RUN_ACTIVE';
+  readonly suggestedAction = 'steer_or_cancel_active_run';
+  constructor() {
+    super('HARNESS_RUN_ACTIVE: a run is already in progress on this project.');
+    this.name = 'HarnessRunActiveError';
+  }
+  publicMessage(french: boolean) {
+    return french
+      ? 'Une génération est déjà en cours sur ce projet. Attendez qu’elle se termine, envoyez-lui une instruction, ou arrêtez-la avant d’en lancer une autre.'
+      : 'A run is already in progress on this project. Wait for it, send it an instruction, or stop it before starting another.';
+  }
+}
+
+function isOrphanedHarnessTurn(turn: { id: string; startedAt?: string | null; createdAt: string }) {
+  if (activeHarnessTurnControllers.has(turn.id)) return false;
+  const startedAt = Date.parse(turn.startedAt || turn.createdAt);
+  if (!Number.isFinite(startedAt)) return false;
+  if (startedAt < PROCESS_BOOTED_AT) return true;
+  return Date.now() - startedAt > ORPHANED_TURN_CEILING_MS;
+}
+
 function getPersistentAgentHarness() {
   if (!persistentAgentHarness) {
     const client = getSupabase();
@@ -1393,11 +1449,10 @@ async function prepareAgentHarnessContext(input: {
         clientMessageId: input.clientMessageId,
       });
       if (activeTurn && !['completed','failed','cancelled','blocked'].includes(activeTurn.status)) {
-        const age = Date.now() - Date.parse(activeTurn.startedAt || activeTurn.createdAt);
-        if (Number.isFinite(age) && age > 20 * 60_000 && !activeHarnessTurnControllers.has(activeTurn.id)) {
+        if (isOrphanedHarnessTurn(activeTurn)) {
           await harness.transitionTurn(activeTurn.id,'failed',{diagnostic_code:'RUN_INTERRUPTED',recoverable:true});
         } else if (activeTurn.idempotencyKey !== expectedKey) {
-          throw new Error('HARNESS_RUN_ACTIVE: send an instruction to the current run or cancel it first.');
+          throw new HarnessRunActiveError();
         }
       }
     }
@@ -1469,6 +1524,73 @@ async function resolveAgentHarnessThread(threadId: string) {
   }
   const thread = await inMemoryAgentHarness.store.getThread(threadId);
   return thread ? { harness: inMemoryAgentHarness, thread } : null;
+}
+
+/**
+ * Close every run this process finds already in flight at boot.
+ *
+ * A run lives inside one request in one process. Nothing survives a restart —
+ * not the abort controller, not the sandbox, not the provider call — so a row
+ * still marked `running` when a fresh process starts belongs to a process that
+ * no longer exists. It will never finish, never fail, and never be finished by
+ * anyone: nothing swept these tables, so a deploy or a crash left the row
+ * exactly as inserted.
+ *
+ * Production carried five such `agent_runs` and three such `agent_turns`,
+ * `updated_at` still equal to `created_at`, the oldest stranded for five days.
+ * The user's project kept a run that was going nowhere.
+ *
+ * Marked `failed` with `RUN_INTERRUPTED` and `recoverable`, which is what they
+ * are: the work stopped where the process did, and the files written before
+ * that point were already saved.
+ */
+async function reapInterruptedAgentRuns() {
+  const client = getSupabase();
+  if (!client) return { runs: 0, turns: 0 };
+  const finishedAt = new Date().toISOString();
+  let runs = 0;
+  let turns = 0;
+
+  const runUpdate = await client
+    .from('agent_runs')
+    .update({
+      status: 'failed',
+      diagnostic_code: 'RUN_INTERRUPTED',
+      suggested_action: 'retry',
+      updated_at: finishedAt,
+      completed_at: finishedAt,
+    })
+    .in('status', ['running', 'queued'])
+    .select('id');
+  if (runUpdate.error) {
+    if (!isMissingAgentV2TableError(runUpdate.error)) throw runUpdate.error;
+  } else {
+    runs = runUpdate.data?.length || 0;
+  }
+
+  const turnUpdate = await client
+    .from('agent_turns')
+    .update({ status: 'failed', updated_at: finishedAt, completed_at: finishedAt })
+    // `waiting_for_user` is deliberately left alone: it is a run that asked a
+    // question and is resumable by answering it, not one that died mid-flight.
+    .in('status', ['queued', 'running', 'verifying'])
+    .select('id');
+  if (turnUpdate.error) {
+    if (!isMissingAgentHarnessSchemaError(turnUpdate.error)) throw turnUpdate.error;
+  } else {
+    turns = turnUpdate.data?.length || 0;
+  }
+
+  // An item left running under a reaped turn would keep its own spinner.
+  const itemUpdate = await client
+    .from('agent_items')
+    .update({ status: 'failed', updated_at: finishedAt, completed_at: finishedAt })
+    .in('status', ['pending', 'running'])
+    .select('id');
+  if (itemUpdate.error && !isMissingAgentHarnessSchemaError(itemUpdate.error)) throw itemUpdate.error;
+
+  if (runs || turns) console.log('[coden:interrupted_runs_reaped]', { runs, turns });
+  return { runs, turns };
 }
 
 async function ensureAgentHarnessSchema() {
@@ -11318,7 +11440,22 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('[coden:harness_start_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
-    return res.status(409).json({ success: false, error: error?.message || 'The agent mission could not start.', diagnostic_code: 'HARNESS_START_FAILED', request_id: requestId });
+    // Never the exception's own text: it is written for this log, not for the
+    // person who asked for an application.
+    const french = isLikelyFrenchPrompt(prompt);
+    const active = error instanceof HarnessRunActiveError;
+    return res.status(409).json({
+      success: false,
+      error: active
+        ? error.publicMessage(french)
+        : french
+          ? 'La génération n’a pas pu démarrer. Réessayez dans un instant.'
+          : 'The run could not be started. Try again in a moment.',
+      diagnostic_code: active ? error.diagnosticCode : 'HARNESS_START_FAILED',
+      suggested_action: active ? error.suggestedAction : 'retry',
+      recoverable: true,
+      request_id: requestId,
+    });
   }
 
   const generationAbortController = new AbortController();
@@ -11528,15 +11665,41 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }
 
       // Keep the failed runtime explicit; never disguise it as a file-only success.
+      // The reason is an npm/runtime string written for this log. It says
+      // nothing useful to the person who asked for an application.
       console.warn('[coden:multi_agent_sandbox_failed]', { project: project.id, reason: outcome.startError });
-      return respondJson(503, { success:false, error:outcome.startError, diagnostic_code:'SANDBOX_START_FAILED', recoverable:true });
+      return respondJson(503, {
+        success: false,
+        error: frenchActivity
+          ? 'L’environnement d’exécution n’a pas pu démarrer. Votre projet est intact : réessayez dans un instant.'
+          : 'The execution environment could not start. Your project is untouched: try again in a moment.',
+        diagnostic_code: 'SANDBOX_START_FAILED',
+        suggested_action: 'retry',
+        recoverable: true,
+      });
     } catch (error: any) {
       // Partial files are retained by onSnapshot; surface the failure for recovery.
       if (generationAbortController.signal.aborted) {
         return respondJson(499,{ success: false, diagnostic_code:'RUN_INTERRUPTED', error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' });
       }
       console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      return respondJson(502, { success:false, error:redactSecrets(error?.message || 'Execution failed', '[redacted]'), diagnostic_code:error?.diagnosticCode || 'AGENT_EXECUTION_FAILED', recoverable:true });
+      /*
+       * The log gets the cause; the user gets a sentence.
+       *
+       * This line used to answer with `error.message` verbatim, which is how
+       * `TOOL_BUDGET_EXCEEDED` came to be printed across a user's
+       * conversation. The code still travels in `diagnostic_code`, where the
+       * client can act on it, and the message is now written for the person
+       * waiting — in the language they asked in.
+       */
+      const diagnosticCode = String(error?.diagnosticCode || 'AGENT_EXECUTION_FAILED');
+      return respondJson(502, {
+        success: false,
+        error: publicRuntimeErrorMessage(diagnosticCode, frenchActivity ? 'fr' : 'en'),
+        diagnostic_code: diagnosticCode,
+        suggested_action: 'retry_or_use_auto',
+        recoverable: true,
+      });
     }
   }
 
@@ -11674,10 +11837,29 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       agentText = await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
       content = agentText.text;
     } catch (error: any) {
-      const message = normalizeProviderError(error);
+      /*
+       * A failure that says nothing is the worst kind.
+       *
+       * The diagnosis was already computed here and written to `agent_runs` —
+       * and then dropped from the response, so the harness recorded
+       * `turn.failed { diagnostic_code: null }`, the client had nothing to
+       * classify, and the user got one bare sentence with no way forward.
+       * Production shows exactly that on 2026-09-04 at 14:53.
+       *
+       * The status was 200 as well, so any handler reading the HTTP code
+       * alone counted a failed run as a success.
+       */
       const diagnostic = diagnoseProviderError(error);
       await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: diagnostic.diagnostic_code, suggested_action: diagnostic.suggested_action });
-      return respondJson(message.includes('not configured') ? 503 : 200, { success: false, error: message, message });
+      const message = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
+      return respondJson(diagnostic.status >= 400 ? diagnostic.status : 502, {
+        success: false,
+        error: message,
+        message,
+        diagnostic_code: diagnostic.diagnostic_code,
+        suggested_action: diagnostic.suggested_action,
+        recoverable: true,
+      });
     }
     await saveProjectMessage({
       organization_id: project.organization_id,
@@ -14846,6 +15028,9 @@ const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  });
+  void reapInterruptedAgentRuns().catch((error: any) => {
+    console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
 
   registerJobHandler('workflow_run', async (job, onProgress) => {

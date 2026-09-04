@@ -109,7 +109,7 @@ export class ProviderGateway {
         const startedAt = Date.now();
         this.noteRequest(candidate);
         try {
-          const result = await this.chatWithProvider(candidate, messages, options.timeoutMs || 45_000, candidateRuntimeConfig, options.signal);
+          const result = await this.chatWithProvider(candidate, messages, resolveTimeoutMs(options.timeoutMs, candidateRuntimeConfig, 45_000), candidateRuntimeConfig, options.signal);
           options.validateResult?.(result);
           this.noteMetricSuccess(candidate, Date.now() - startedAt);
           this.noteSuccess(candidate);
@@ -234,7 +234,7 @@ export class ProviderGateway {
       for await (const event of this.streamWithProvider(
         candidate,
         messages,
-        options.timeoutMs || 90_000,
+        resolveTimeoutMs(options.timeoutMs, runtimeConfig, 90_000),
         runtimeConfig,
         options.signal,
       )) {
@@ -373,7 +373,7 @@ export class ProviderGateway {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       let started = false;
       try {
-        for await (const event of this.streamWithProvider(candidate, messages, options.timeoutMs || 90_000, runtimeConfig, options.signal)) {
+        for await (const event of this.streamWithProvider(candidate, messages, resolveTimeoutMs(options.timeoutMs, runtimeConfig, 90_000), runtimeConfig, options.signal)) {
           if (!started) { started = true; markStarted(); }
           yield event;
         }
@@ -687,4 +687,26 @@ export class ProviderGateway {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * How long to wait for this model, in order of who knows best.
+ *
+ * A caller that named a deadline owns it. Otherwise the model's own runtime
+ * profile decides, because it is the only party here that knows whether it is
+ * answering with a fast model or a deliberate one. The constant is the last
+ * resort, for a call made without any runtime config at all.
+ *
+ * Production spent five and a half minutes reaching that wall: every caller
+ * hardcoded a single number — 45s in the planner, 60s in the coder loop — and
+ * applied it to whichever model the router had picked. Thirteen of the
+ * twenty-two recorded run failures were PROVIDER_TIMEOUT, none of them on the
+ * fast model, while successful runs on the deliberate one ran past 300s. The
+ * profile had prescribed 120–180s for those models all along; nothing read it.
+ */
+function resolveTimeoutMs(explicit: number | undefined, runtimeConfig: ProviderRequestConfig | undefined, fallback: number) {
+  if (Number.isFinite(explicit) && (explicit as number) > 0) return explicit as number;
+  const fromModel = runtimeConfig?.timeoutMs;
+  if (Number.isFinite(fromModel) && (fromModel as number) > 0) return fromModel as number;
+  return fallback;
 }

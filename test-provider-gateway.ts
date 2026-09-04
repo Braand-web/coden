@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { ProviderGateway, ProviderGatewayError } from './src/services/provider-gateway.ts';
 import { resolveOpenRouterApiKey, type ChatMessage } from './src/services/openrouter-service.ts';
 import { resolveAnthropicApiKey, resolveDirectAnthropicModelId } from './src/services/anthropic-service.ts';
+import { ProviderHttpError } from './src/services/provider-errors.ts';
 
 const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
@@ -293,3 +294,97 @@ class FakeAnthropic {
 }
 
 console.log('test-provider-gateway passed');
+
+/*
+ * The model's own deadline must reach the provider.
+ *
+ * `buildAIModelRuntimeConfig` derives a timeout from the model's speed — 45s
+ * for a fast one, up to 240s for a streaming frontier model — and that number
+ * used to die in `buildProviderRequestConfig`, which carried no field for it.
+ * Every caller then supplied a constant instead: 45s in the planner, 60s in
+ * the coder loop, whatever model the router had picked.
+ *
+ * Production paid for it. Thirteen of the twenty-two recorded run failures
+ * were PROVIDER_TIMEOUT, every one of them on a deliberate or balanced model
+ * and none on the fast one, while successful runs on that same deliberate
+ * model averaged 301s and reached 546s. The user waited five and a half
+ * minutes — one attempt and its fallbacks, each hitting the same wall — to be
+ * told the provider had not answered.
+ */
+{
+  class TimeoutRecorder extends FakeOpenRouter {
+    timeouts: (number | undefined)[] = [];
+    async chat(modelId: string, _messages?: ChatMessage[], _attempts?: number, timeout?: number, runtimeConfig?: any) {
+      this.timeouts.push(timeout);
+      return super.chat(modelId, _messages, _attempts, timeout, runtimeConfig);
+    }
+    async *streamChat(modelId: string, _messages?: ChatMessage[], timeout?: number): AsyncGenerator<any> {
+      this.timeouts.push(timeout);
+      yield { type: 'token' as const, text: 'ok', model: modelId };
+    }
+  }
+
+  const fake = new TimeoutRecorder();
+  const gateway = new ProviderGateway(fake as any);
+  const runtimeConfig = { adapter: 'openrouter' as const, timeoutMs: 180_000 };
+
+  await gateway.chat('openai/gpt-5.6-luna', messages, { allowFallback: false, runtimeConfig });
+  assert.equal(fake.timeouts.at(-1), 180_000, "chat must wait as long as the model's own profile says, not 45s.");
+
+  await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, { allowFallback: false, runtimeConfig });
+  assert.equal(fake.timeouts.at(-1), 180_000, "a streamed completion must use the model's own deadline, not 90s.");
+
+  for await (const _event of gateway.streamChat('openai/gpt-5.6-luna', messages, { allowFallback: false, runtimeConfig })) { /* drain */ }
+  assert.equal(fake.timeouts.at(-1), 180_000, "streamChat must use the model's own deadline too.");
+
+  // A caller that named a deadline still owns it.
+  await gateway.chat('openai/gpt-5.6-luna', messages, { allowFallback: false, runtimeConfig, timeoutMs: 5_000 });
+  assert.equal(fake.timeouts.at(-1), 5_000, 'an explicit caller deadline must win over the profile.');
+
+  // And a call made without any runtime config keeps the old constant.
+  await gateway.chat('openai/gpt-5.6-luna', messages, { allowFallback: false });
+  assert.equal(fake.timeouts.at(-1), 45_000, 'with no runtime config the documented default must still apply.');
+}
+
+/*
+ * A fallback model answers on its own clock.
+ *
+ * Recovery routes to a different model, so reusing the primary's deadline
+ * would give a slow recovery model the fast model's allowance — the same
+ * mistake one level down, and precisely the case where it hurts most.
+ */
+{
+  class TimeoutRecorder extends FakeOpenRouter {
+    timeouts: (number | undefined)[] = [];
+    async chat(modelId: string, _messages?: ChatMessage[], _attempts?: number, timeout?: number, runtimeConfig?: any) {
+      this.timeouts.push(timeout);
+      return super.chat(modelId, _messages, _attempts, timeout, runtimeConfig);
+    }
+  }
+  const fake = new TimeoutRecorder();
+  fake.failures.push(new ProviderHttpError('OpenRouter', 503, 'temporarily unavailable'));
+  const gateway = new ProviderGateway(fake as any);
+  await gateway.chat('openai/gpt-5.6-luna', messages, {
+    maxAttempts: 1,
+    allowFallback: true,
+    runtimeConfigForModel: modelId => ({
+      adapter: 'openrouter' as const,
+      timeoutMs: modelId === 'openai/gpt-5.6-luna' ? 45_000 : 180_000,
+    }),
+  });
+  assert.deepEqual(fake.timeouts, [45_000, 180_000], 'each candidate must be given its own model timeout.');
+}
+
+/*
+ * And no caller may quietly reintroduce a constant on the two paths that
+ * carry a whole build: the planner and the coder loop.
+ */
+{
+  for (const file of ['src/services/planner-agent.ts', 'src/services/multi-agent-pipeline.ts']) {
+    assert.doesNotMatch(
+      fs.readFileSync(new URL(file, import.meta.url), 'utf8'),
+      /timeoutMs:\s*\d/,
+      `${file} must let the model's runtime profile set the deadline.`,
+    );
+  }
+}

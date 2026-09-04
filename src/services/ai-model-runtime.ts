@@ -477,15 +477,55 @@ export function buildAIModelRuntimeConfig(input: {
   };
 }
 
-export function publicRuntimeErrorMessage(diagnosticCode: string) {
-  if (/QUOTA|BILLING/i.test(diagnosticCode)) {
-    return 'Ce modèle manque temporairement de quota. Coden conserve le run : réessayez ou choisissez un autre modèle.';
+/**
+ * What a failed run says to the person waiting for it.
+ *
+ * Technical causes belong in the log; the interface gets a sentence that says
+ * what happened and what is left to do. Production had shipped the raw cause
+ * instead — a run ended with `TOOL_BUDGET_EXCEEDED` written across the
+ * conversation — which reads as a crash even when the work was recoverable.
+ *
+ * Every branch is matched on the diagnostic code rather than the message, so
+ * a new failure inside a known family stays readable without being renamed.
+ */
+export function publicRuntimeErrorMessage(diagnosticCode: string, locale: 'fr' | 'en' = 'fr') {
+  const fr = locale === 'fr';
+  if (/QUOTA|BILLING|CREDIT/i.test(diagnosticCode)) {
+    return fr
+      ? 'Ce modèle manque temporairement de quota. Le travail est conservé : réessayez ou choisissez un autre modèle.'
+      : 'This model is temporarily out of quota. Your work is kept: retry, or choose another model.';
+  }
+  if (/TRUNCATED|OUTPUT_LIMIT/i.test(diagnosticCode)) {
+    return fr
+      ? 'La réponse du modèle a été coupée avant la fin. Ce qui a déjà été écrit est conservé : relancez pour terminer.'
+      : 'The model’s answer was cut off before it finished. What it already wrote is kept: run it again to finish.';
+  }
+  if (/STREAM_INTERRUPTED|STREAM_TRUNCATED|CANCELLED|INTERRUPTED/i.test(diagnosticCode)) {
+    return fr
+      ? 'La connexion avec le modèle s’est interrompue en cours de réponse. Rien n’est perdu : relancez.'
+      : 'The connection to the model dropped mid-answer. Nothing is lost: run it again.';
+  }
+  if (/CATALOG/i.test(diagnosticCode)) {
+    return fr
+      ? 'La liste des modèles disponibles n’a pas pu être vérifiée. Réessayez dans un instant.'
+      : 'The list of available models could not be verified. Try again in a moment.';
   }
   if (/TIMEOUT|UNAVAILABLE|CIRCUIT/i.test(diagnosticCode)) {
-    return 'Ce modèle est temporairement indisponible. Coden ne changera pas de modèle sans votre accord.';
+    return fr
+      ? 'Ce modèle est temporairement indisponible. Aucun changement de modèle ne sera fait sans votre accord.'
+      : 'This model is temporarily unavailable. No model will be switched without your agreement.';
   }
-  if (/BAD_REQUEST|UNSUPPORTED/i.test(diagnosticCode)) {
-    return 'Ce modèle a refusé la configuration demandée. Le run est arrêté sans résultat simulé.';
+  if (/BAD_REQUEST|UNSUPPORTED|CAPABILITY|MODALITY/i.test(diagnosticCode)) {
+    return fr
+      ? 'Ce modèle a refusé la configuration demandée. Le run s’arrête sans résultat inventé.'
+      : 'This model refused the requested configuration. The run stops rather than inventing a result.';
   }
-  return "Le modèle IA a rencontré un problème. Coden conserve les données reçues et permet un nouvel essai explicite.";
+  if (/BUDGET|TOOL/i.test(diagnosticCode)) {
+    return fr
+      ? 'Le run a atteint sa limite d’outils pour cette étape. Ce qui a été écrit est conservé : relancez pour continuer.'
+      : 'The run reached its tool limit for this step. What was written is kept: run it again to continue.';
+  }
+  return fr
+    ? 'Le modèle a rencontré un problème. Les données reçues sont conservées et vous pouvez relancer.'
+    : 'The model hit a problem. What came back is kept, and you can run it again.';
 }

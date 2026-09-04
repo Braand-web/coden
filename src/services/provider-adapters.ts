@@ -4,6 +4,17 @@ export type ProviderRequestConfig = {
   adapter: AIModelRuntimeConfig['profile']['adapter'];
   temperature?: number;
   maxTokens?: number;
+  /**
+   * How long this particular model may take to answer.
+   *
+   * `buildAIModelRuntimeConfig` already derives it from the model's own speed
+   * — 45s for a fast one, up to 240s for a streaming frontier model — and that
+   * number used to stop here, because this config carried no field for it.
+   * Every caller then invented its own constant, and the coder loop gave a
+   * frontier model 60s. It is a transport concern, not a payload one:
+   * `toOpenRouterChatPayloadExtras` never copies it into the request body.
+   */
+  timeoutMs?: number;
   responseFormat?: Record<string, unknown>;
   tools?: Record<string, unknown>[];
   toolChoice?: 'auto' | 'none';
@@ -51,6 +62,7 @@ export function buildProviderRequestConfig(runtime: AIModelRuntimeConfig): Provi
     adapter,
     temperature: safeTemperature,
     maxTokens: runtime.maxTokens,
+    timeoutMs: runtime.timeoutMs,
     metadata: {
       task: runtime.task,
       model_id: runtime.profile.id,

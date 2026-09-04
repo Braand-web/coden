@@ -143,8 +143,11 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     task: 'debug',
     preferStructuredOutput: false,
     allowTools: true,
-    stream: false,
-    timeoutMs: 60_000,
+    // The coder turn streams in production, and its deadline is the model's
+    // own — a frontier model gets the frontier allowance, not a constant
+    // written for whichever model happened to be default the day this was
+    // added. Passing no `timeoutMs` is what lets the profile decide.
+    stream: true,
     maxTokens: 16_000,
   }));
   const runtimeConfig = runtimeFor(input.modelId);
@@ -188,7 +191,6 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         toolChoice: 'auto',
       } as any,
       runtimeConfigForModel: runtimeFor,
-      timeoutMs: 60_000,
       maxSteps: Math.min(6, maxToolCalls),
       maxToolCalls,
       signal: input.signal,

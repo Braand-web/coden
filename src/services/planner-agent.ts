@@ -128,13 +128,13 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPl
   const result = await input.gateway.chat(modelId, [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
-  ], { maxAttempts: 2, timeoutMs: 45_000, signal: input.signal, runtimeConfig });
+  ], { maxAttempts: 2, signal: input.signal, runtimeConfig });
 
   const parsed = await parseOrRepairStructuredObject(result.text, isBuildPlan, async invalidText => {
     const repaired = await input.gateway.chat(modelId, [
       { role: 'system', content: `${systemPrompt}\n\nRepair the invalid plan below. Return one valid JSON object only, matching the required contract.` },
       { role: 'user', content: String(invalidText || '').slice(0, 8_000) },
-    ], { maxAttempts: 1, timeoutMs: 45_000, signal: input.signal, runtimeConfig });
+    ], { maxAttempts: 1, signal: input.signal, runtimeConfig });
     return repaired.text;
   });
 
