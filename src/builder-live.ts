@@ -2539,6 +2539,14 @@ async function requestProjectGeneration(
         activeHarnessTurnId = String(event.payload.turnId || '');
         lastAgentRunId = String(event.payload.runId || '');
       }
+      if (event.channel === 'workspace' && event.payload.type === 'preview_ready'
+        && projectId === currentProjectId && event.payload.projectId === projectId && !signal?.aborted) {
+        const url = new URL(String(event.payload.url || ''), window.location.origin);
+        if (url.origin === window.location.origin && url.pathname.startsWith('/preview/')) {
+          activateBuilderView('preview');
+          setLivePreview(url.href);
+        }
+      }
     })
     : response.json());
   if (!payload) throw new Error('Generation returned an empty response.');
@@ -2866,10 +2874,14 @@ async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: Gener
 function setLivePreview(url: string) {
   const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
   if (!frame || !url) return;
+  const target = new URL(url, window.location.origin).href;
+  // preview_ready and the final result refer to the same running app. Do not
+  // reload it twice or discard an interaction made while the recap streamed.
+  if (livePreviewUrl && frame.src === target && !frame.hasAttribute('srcdoc')) return;
   previewRevision++;
   if (webContainerTeardown) { webContainerTeardown(); webContainerTeardown = null; }
   webContainerUrl = '';
-  livePreviewUrl = url;
+  livePreviewUrl = target;
   currentPreviewStatus = 'live';
   emptyPreviewMode = 'ready';
   emptyPreviewLabel = '';
@@ -2880,7 +2892,7 @@ function setLivePreview(url: string) {
   // srcdoc wins over src while it is set, so it has to go before the
   // navigation or the iframe keeps showing the document it already had.
   frame.removeAttribute('srcdoc');
-  frame.src = url;
+  frame.src = target;
   syncProjectReadinessClass();
   syncPreviewToolbarControls();
 }
@@ -5780,6 +5792,8 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     };
 
     if (requestedMode === 'build' || requestedMode === 'fix' || requestedMode === 'auto') {
+      // Invalidate any browser-runtime boot started from the old file snapshot.
+      previewRevision++;
       generationTouchesPreview = true;
       activeGenerationTouchesPreview = true;
       activateBuilderView('preview');
@@ -5903,7 +5917,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     }
 
     if (Array.isArray(responsePayload.errors) && responsePayload.errors.length) showFixBugBox(responsePayload.errors);
-    if (generationTouchesPreview && !previewHtml) setEmptyPreviewState('idle', 'Preview non vérifiée');
+    if (generationTouchesPreview && !previewHtml && !liveUrl) setEmptyPreviewState('idle', 'Preview non vérifiée');
     return;
   } catch (error) {
     // The stream reader can surface cancellation as an incomplete stream

@@ -51,9 +51,10 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       const result = await page.evaluate(() => {
         const root = document.querySelector('#root,#app') || document.body;
         const box = root.getBoundingClientRect();
-        return { visible:box.width > 0 && box.height > 0 && getComputedStyle(root).visibility !== 'hidden', overflow:document.documentElement.scrollWidth > innerWidth + 4, overlay:!!document.querySelector('vite-error-overlay') };
+        return { visible:box.width > 0 && box.height > 0 && getComputedStyle(root).visibility !== 'hidden', overflow:document.documentElement.scrollWidth > innerWidth + 4, overlay:!!document.querySelector('vite-error-overlay'), scaffold:/^Building[.\u2026\s]*$/i.test((root.textContent || '').trim()) };
       });
       if (!result.visible || result.overlay) fail(`Preview is blank or displays a build overlay at ${width}px.`);
+      if (result.scaffold) fail('Preview still renders the Building scaffold. Implement the requested application in its actual entrypoint; a compiling placeholder is not a completed application.');
       if (result.overflow) fail(`Horizontal overflow at ${width}px.`);
     }
     report.ran.browser = true;

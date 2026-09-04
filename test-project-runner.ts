@@ -6,13 +6,17 @@ import {
 } from './src/services/project-runner.ts';
 
 const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="description" content="Demo app"></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script><main><h1>Demo</h1><button>Save</button></main></body></html>';
+// This unit fixture audits a compiled HTML document, not unserved TSX sources.
+const compiledHtml = goodHtml
+  .replace('<div id="root"></div><script type="module" src="/src/main.tsx"></script>', '')
+  .replace('</main>', '<p>Ready to save a complete demonstration record.</p></main>');
 
 {
   const runner = new HybridProjectRunner({ executeScripts: false });
   const result = await runner.run({
     runId: 'run_good',
     projectId: 'project_good',
-    previewHtml: goodHtml,
+    previewHtml: compiledHtml,
     files: [
       { path: 'index.html', language: 'html', content: goodHtml },
       { path: 'package.json', language: 'json', content: JSON.stringify({ scripts: { build: 'vite build', lint: 'tsc --noEmit' } }) },
@@ -30,7 +34,7 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
     ],
   });
 
-  assert.equal(result.status, 'passed');
+  assert.equal(result.status, 'passed', JSON.stringify(result.checks.filter(check => check.status === 'failed')));
   assert.ok(result.checks.some(check => check.check_type === 'script_build_safe' && check.status === 'passed'));
   assert.ok(result.checks.some(check => check.check_type === 'script_build_exec' && check.status === 'skipped'));
   assert.ok(result.checks.some(check => check.check_type === 'vite_main_present' && check.status === 'passed'));
@@ -45,7 +49,7 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
   const result = await runner.run({
     runId: 'run_local_express_fullstack',
     projectId: 'project_local_express_fullstack',
-    previewHtml: goodHtml,
+    previewHtml: compiledHtml,
     prompt: 'Create a full-stack Vite React app with an Express API and in-memory preview persistence, without external services.',
     files: [
       { path: 'index.html', content: goodHtml },
@@ -90,7 +94,7 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
   const result = await runner.run({
     runId: 'run_tailwind_responsive',
     projectId: 'project_tailwind_responsive',
-    previewHtml: goodHtml,
+    previewHtml: compiledHtml,
     files: [
       { path: 'index.html', language: 'html', content: goodHtml },
       { path: 'package.json', language: 'json', content: JSON.stringify({ scripts: { build: 'vite build' } }) },
@@ -131,7 +135,7 @@ const goodHtml = '<!doctype html><html><head><title>Demo</title><meta name="desc
   const result = await runner.run({
     runId: 'run_fake_backend',
     projectId: 'project_fake_backend',
-    previewHtml: goodHtml,
+    previewHtml: compiledHtml,
     prompt: 'create a private CRM with database customers and authenticated client records',
     files: [
       { path: 'index.html', language: 'html', content: goodHtml },
