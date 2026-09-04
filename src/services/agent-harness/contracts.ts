@@ -52,6 +52,7 @@ export type HarnessEventType =
   | 'turn.failed'
   | 'turn.cancelled'
   | 'turn.blocked'
+  | 'turn.definition_of_done'
   | 'item.created'
   | 'item.started'
   | 'item.delta'

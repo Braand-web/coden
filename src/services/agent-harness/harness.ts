@@ -187,6 +187,44 @@ export class CodenAgentHarness {
     return item;
   }
 
+  /**
+   * Close the run's own criteria against what was actually observed.
+   *
+   * `buildDefinitionOfDone` writes them at the start of every turn — the
+   * behaviour is implemented, the project builds, the preview renders, the
+   * browser journey completes — and until now nothing ever marked one. All 56
+   * recorded turns finished with every criterion still `pending`, including
+   * the ones that completed successfully. A definition of done that is never
+   * settled is a checklist nobody ticks: it cannot gate anything, and it tells
+   * the user nothing about what was really verified.
+   *
+   * `verdicts` carries only the criteria the caller has evidence for. One it
+   * says nothing about stays `pending`, which is the honest answer for a check
+   * that did not run — never `passed`.
+   */
+  async settleDefinitionOfDone(turnId: string, verdicts: Record<string, { status: 'passed' | 'failed' | 'blocked'; evidence?: string }>) {
+    const turn = await this.requiredTurn(turnId);
+    if (!turn.definitionOfDone.length) return turn;
+    const definitionOfDone = turn.definitionOfDone.map(criterion => {
+      const verdict = verdicts[criterion.id];
+      if (!verdict) return criterion;
+      return { ...criterion, status: verdict.status, ...(verdict.evidence ? { evidence: verdict.evidence.slice(0, 400) } : {}) };
+    });
+    const next = await this.store.updateTurn(turnId, { definitionOfDone });
+    await this.store.appendEvent({
+      threadId: turn.threadId,
+      turnId,
+      type: 'turn.definition_of_done',
+      visibility: 'public',
+      payload: {
+        passed: definitionOfDone.filter(item => item.status === 'passed').map(item => item.id),
+        failed: definitionOfDone.filter(item => item.status === 'failed').map(item => item.id),
+        pending: definitionOfDone.filter(item => item.status === 'pending').map(item => item.id),
+      },
+    });
+    return next;
+  }
+
   async completeSubagent(itemId: string, summary: string, artifacts: string[] = []) {
     const item = await this.requiredItem(itemId);
     await this.store.appendEvent({ threadId: item.threadId, turnId: item.turnId, itemId, type: 'subagent.completed', visibility: 'technical', payload: { summary, artifacts } });

@@ -115,6 +115,54 @@ export function summarizePipelineOutcome(input: {
     : `Change applied. ${diffRecap}`;
 }
 
+/**
+ * What the run's own criteria can honestly be marked from.
+ *
+ * `buildDefinitionOfDone` writes them at the start of every turn and nothing
+ * has ever settled one: all 56 recorded turns finished with every criterion
+ * `pending`, successful ones included. This maps the verification report onto
+ * the criteria it actually speaks to.
+ *
+ * A criterion the report says nothing about is left out, so it stays
+ * `pending`. That is the honest value for a check that did not run — a
+ * criterion is never marked passed because nothing contradicted it. Nothing
+ * here proves `responsive`, `backend_health`, `database` or `production`, so
+ * none of them is claimed.
+ */
+export function settleDefinitionOfDoneFromReport(input: {
+  ok: boolean;
+  ran: { devServer: boolean; typecheck: boolean; build: boolean; browser?: boolean };
+  problems: Array<{ source: string; severity: string; message: string }>;
+}): Record<string, { status: 'passed' | 'failed'; evidence?: string }> {
+  const errors = input.problems.filter(problem => problem.severity === 'error');
+  const firstOf = (predicate: (problem: { source: string; message: string }) => boolean) =>
+    errors.find(predicate)?.message;
+  const verdict = (failure: string | undefined) => (failure
+    ? { status: 'failed' as const, evidence: failure }
+    : { status: 'passed' as const });
+
+  const verdicts: Record<string, { status: 'passed' | 'failed'; evidence?: string }> = {};
+
+  // The whole verification is what says the request was met — and since the
+  // entry file must no longer be the scaffold placeholder for it to pass, this
+  // is now a claim with something behind it.
+  verdicts.requested_behavior = input.ok
+    ? { status: 'passed' }
+    : { status: 'failed', evidence: firstOf(() => true) || 'Verification did not pass.' };
+
+  if (input.ran.build || input.ran.typecheck) {
+    verdicts.build = verdict(firstOf(problem => problem.source === 'build' || problem.source === 'typecheck'));
+  }
+  if (input.ran.devServer) {
+    verdicts.preview = verdict(firstOf(problem => /PREVIEW_NOT_RUNNING|preview|placeholder|scaffold/i.test(problem.message)));
+  }
+  if (input.ran.browser) {
+    verdicts.browser_smoke = verdict(firstOf(problem => problem.source === 'runtime' || problem.source === 'browser'));
+    verdicts.console = verdict(firstOf(problem => problem.source === 'runtime'));
+  }
+  return verdicts;
+}
+
 /** The plan's file list and rationale, as round one's instruction. */
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
@@ -424,6 +472,16 @@ export async function runMultiAgentPipeline(input: {
     await input.onSnapshot?.(await readAllFiles(sandbox));
     if (ctx && coderItem) await ctx.harness.transitionItem(coderItem.id, input.signal?.aborted ? 'cancelled' : 'failed', { reason:'execution_interrupted' });
     throw error;
+  }
+
+  if (ctx) {
+    // The turn's criteria are settled from the report, not from the fact that
+    // the run reached this line.
+    await ctx.harness.settleDefinitionOfDone(ctx.turnId, settleDefinitionOfDoneFromReport({
+      ok: repairOutcome.ok,
+      ran: repairOutcome.finalReport.ran,
+      problems: repairOutcome.finalReport.problems,
+    })).catch(() => null);
   }
 
   if (ctx && coderItem) {
