@@ -388,3 +388,55 @@ console.log('test-provider-gateway passed');
     );
   }
 }
+
+/*
+ * A model that cannot do the work hands over to one that can.
+ *
+ * `retryable` answers "try this model again", and the loop used it to answer a
+ * second question it does not fit: "try another model". So a capability the
+ * model does not advertise threw immediately and the configured fallback was
+ * never reached. Production failed a request that way at 16:37, in seven
+ * seconds, having written nothing.
+ */
+{
+  class CapabilityFailure extends Error {
+    diagnosticCode = 'MODEL_CAPABILITY_UNAVAILABLE';
+  }
+  const fake = new FakeOpenRouter();
+  fake.failures.push(new CapabilityFailure('primary does not advertise tools'));
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 2, allowFallback: true });
+  assert.equal(result.text, 'ok', 'the fallback must answer');
+  assert.equal(fake.calls.length, 2, 'the incapable model is tried once, then handed over — not retried');
+  assert.notEqual(fake.calls[1], fake.calls[0], 'and handed to a different model');
+}
+
+// Pinned to one model, the same failure is still the answer the user needs.
+{
+  class CapabilityFailure extends Error {
+    diagnosticCode = 'MODEL_MODALITY_UNAVAILABLE';
+  }
+  const fake = new FakeOpenRouter();
+  fake.failures.push(new CapabilityFailure('cannot accept image input'));
+  const gateway = new ProviderGateway(fake as any);
+  await assert.rejects(
+    () => gateway.chat('openai/gpt-5.6-luna', messages, { maxAttempts: 2, allowFallback: false }),
+    (error: any) => error.diagnosticCode === 'MODEL_MODALITY_UNAVAILABLE',
+  );
+  assert.equal(fake.calls.length, 1, 'and it is not retried against itself');
+}
+
+/*
+ * Reasoning is a quality setting, not a contract. Refusing a whole run because
+ * a model will not take it sacrifices the answer for a nicety; tools and
+ * response_format stay fatal, because a coder with no tools cannot write a
+ * file and a caller parsing JSON cannot use prose.
+ */
+{
+  const { enforceModelCapabilities } = await import('./src/services/openrouter-capabilities.ts');
+  const model = { id: 'm', context_length: 100_000, supported_parameters: ['tools'], top_provider: {} } as any;
+  const payload = enforceModelCapabilities(model, { tools: [{}], reasoning: { effort: 'high' }, max_tokens: 100 });
+  assert.equal(payload.reasoning, undefined, 'unadvertised reasoning is dropped, not fatal');
+  assert.deepEqual(payload.tools, [{}], 'and what the request needs survives');
+  assert.throws(() => enforceModelCapabilities({ ...model, supported_parameters: [] }, { tools: [{}] }), /tools/);
+}

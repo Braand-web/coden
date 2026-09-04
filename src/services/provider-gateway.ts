@@ -119,6 +119,9 @@ export class ProviderGateway {
           const classified = this.classifyError(error, candidate);
           this.noteFailure(candidate, classified.retryable);
           this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
+          // A model that cannot do this at all is not worth another attempt —
+          // and is exactly what a different model is for.
+          if (isModelSpecificFailure(classified.diagnosticCode)) break;
           if (!classified.retryable) {
             throw classified;
           }
@@ -687,6 +690,25 @@ export class ProviderGateway {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Failures that belong to one model rather than to the request.
+ *
+ * `retryable` answers "try this model again", and the loop used it to answer a
+ * second question it does not fit: "try another model". So a model that does
+ * not advertise a capability, or cannot accept a modality, or caps its output
+ * below what was asked, threw immediately and the configured fallback — which
+ * may well support all three — was never reached. Production failed a request
+ * that way at 16:37, in seven seconds, having written nothing.
+ *
+ * Retrying the same model is still pointless here, so these break to the next
+ * candidate instead. With no fallback configured the error is raised as
+ * before, which is correct: a pinned model that cannot do the work is an
+ * answer the user needs.
+ */
+function isModelSpecificFailure(diagnosticCode: string): boolean {
+  return /^MODEL_(?:UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)$/.test(diagnosticCode);
 }
 
 /**

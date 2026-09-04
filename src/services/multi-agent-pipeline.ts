@@ -178,6 +178,26 @@ function compactionThresholdChars(modelId: AllowedModelId): number {
   return Math.max(240_000, Math.min(600_000, Math.floor(contextTokens * 4 * 0.25)));
 }
 
+/**
+ * How much work each kind of request is worth.
+ *
+ * Raising the ceilings gave every route the budget of a full build, and
+ * production showed the cost immediately: a request to change one visible
+ * subtitle spent nine minutes without completing a round, because a model with
+ * twenty-four turns and forty tool calls available will use them. A one-line
+ * edit that needs a second round has already misunderstood something, and a
+ * third will not recover it.
+ *
+ * A new project keeps the full budget — that is the run the old ceilings were
+ * starving. The deadline is per route as well, since the wall clock is what
+ * actually ends a run.
+ */
+function budgetForRoute(route: PipelineRoute): { maxRounds: number; maxToolCallsPerRound: number; maxStalledRounds: number; runDeadlineMs: number } {
+  if (route === 'small_edit') return { maxRounds: 3, maxToolCallsPerRound: 14, maxStalledRounds: 2, runDeadlineMs: 3 * 60_000 };
+  if (route === 'large_change') return { maxRounds: 6, maxToolCallsPerRound: 30, maxStalledRounds: 3, runDeadlineMs: 8 * 60_000 };
+  return { maxRounds: 8, maxToolCallsPerRound: 40, maxStalledRounds: 3, runDeadlineMs: 11 * 60_000 };
+}
+
 /** The plan's file list and rationale, as round one's instruction. */
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
@@ -442,13 +462,17 @@ export async function runMultiAgentPipeline(input: {
    * inside it so the run ends on its own terms — reporting what it did and
    * keeping the files it wrote — rather than being cut off mid-call.
    */
-  const runDeadline = Date.now() + (input.runDeadlineMs ?? 11 * 60_000);
+  const routeBudget = budgetForRoute(input.route);
+  const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
 
   let repairOutcome: RepairOutcome;
   try { repairOutcome = await runCoderLoop({
     sandbox,
     mode: 'build',
     initialInstruction,
+    maxRounds: routeBudget.maxRounds,
+    maxToolCallsPerRound: routeBudget.maxToolCallsPerRound,
+    maxStalledRounds: routeBudget.maxStalledRounds,
     turn: buildToolLoopTurn({
       gateway: input.gateway,
       modelId,

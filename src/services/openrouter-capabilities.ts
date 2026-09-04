@@ -76,10 +76,28 @@ export class OpenRouterCapabilities {
 export function enforceModelCapabilities(model: CatalogModel, payload: Record<string, any>) {
   const supported = new Set(model.supported_parameters);
   const body: Record<string, any> = { ...payload, provider: { require_parameters: true } };
-  for (const parameter of ['tools', 'response_format', 'reasoning']) {
+  /*
+   * Refuse only what the request cannot do without.
+   *
+   * `tools` and `response_format` are contracts: a coder loop with no tools
+   * cannot write a file, and a caller parsing JSON cannot use prose. Failing
+   * there is right.
+   *
+   * `reasoning` is not a contract, it is a quality setting — and treating it
+   * like one cost a whole run. Production failed a request at 16:37 with
+   * `MODEL_CAPABILITY_UNAVAILABLE` after seven seconds, having written
+   * nothing, because a model did not advertise a parameter the answer never
+   * depended on. It is dropped and logged now, exactly as `temperature`
+   * already is a few lines below.
+   */
+  for (const parameter of ['tools', 'response_format']) {
     if (body[parameter] !== undefined && !supported.has(parameter)) {
       throw new CapabilityError('MODEL_CAPABILITY_UNAVAILABLE', `${model.id} does not advertise ${parameter} support.`);
     }
+  }
+  if (body.reasoning !== undefined && !supported.has('reasoning')) {
+    console.info('[coden:provider_parameter_omitted]', { model: model.id, parameter: 'reasoning', reason: 'not advertised by OpenRouter' });
+    delete body.reasoning;
   }
   // Automatic choice is implicit when this parameter is not advertised (Fable).
   if (!supported.has('tool_choice') && body.tool_choice === 'auto') delete body.tool_choice;
