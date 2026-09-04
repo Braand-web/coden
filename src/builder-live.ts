@@ -2803,6 +2803,7 @@ let webContainerBootInFlight = false;
 /** The dev server URL for this project, while its sandbox is up. */
 let livePreviewUrl = '';
 let liveStartInFlight = false;
+let previewRevision = 0;
 
 function requiresLiveRuntimePreview(files: GeneratedFile[]) {
   try {
@@ -2818,6 +2819,7 @@ function requiresLiveRuntimePreview(files: GeneratedFile[]) {
 
 async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: GeneratedFile[]) {
   if (webContainerBootInFlight) return false;
+  const revision = previewRevision;
   try {
     const mod = await import('./services/webcontainer-runner.ts');
     if (!mod.webContainerPreviewEnabled() || !mod.webContainersSupported()) return false;
@@ -2828,6 +2830,10 @@ async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: Gener
     const result = await mod.bootCodenWebContainer({
       files: files.map(f => ({ path: f.path, content: f.content })),
     });
+    if (revision !== previewRevision) {
+      if (result.ok) result.teardown();
+      return false;
+    }
     if (result.ok) {
       webContainerUrl = result.url;
       webContainerTeardown = result.teardown;
@@ -2855,6 +2861,9 @@ async function tryBootWebContainerPreview(frame: HTMLIFrameElement, files: Gener
 function setLivePreview(url: string) {
   const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
   if (!frame || !url) return;
+  previewRevision++;
+  if (webContainerTeardown) { webContainerTeardown(); webContainerTeardown = null; }
+  webContainerUrl = '';
   livePreviewUrl = url;
   currentPreviewStatus = 'live';
   emptyPreviewMode = 'ready';
@@ -2880,19 +2889,24 @@ function setLivePreview(url: string) {
  * application.
  */
 async function resumeLivePreview() {
-  if (!currentProjectId) return;
+  if (!currentProjectId) return false;
+  const projectId = currentProjectId;
+  const revision = previewRevision;
   try {
     const status = await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/sandbox/status`) as { preview_url?: string; state?: string } | null;
     const url = String(status?.preview_url || '').trim();
     // Nothing running: the reader is looking at a saved rendering, and the way
     // back to the application itself is the start control.
-    if (!url || status?.state !== 'running') { syncLivePreviewStartControl(); return; }
+    if (projectId !== currentProjectId || revision !== previewRevision) return false;
+    if (!url || status?.state !== 'running') { syncLivePreviewStartControl(); return false; }
     activateBuilderView('preview');
     setLivePreview(url);
+    return true;
   } catch {
     // The live sandbox is optional. A server without it answers 503, and that
     // is a configuration fact rather than something to report to the user.
   }
+  return false;
 }
 
 /**
@@ -2955,6 +2969,7 @@ function syncLivePreviewStartControl() {
 
 /** Forget the live preview when its sandbox is gone. */
 function clearLivePreview() {
+  previewRevision++;
   livePreviewUrl = '';
   // The server is gone, so starting one is the thing to offer again.
   syncLivePreviewStartControl();
@@ -2976,6 +2991,8 @@ function clearLivePreview() {
  * still in flight, which has a loader of its own.
  */
 function setPreview(html: string, status = 'unknown') {
+  previewRevision++;
+  livePreviewUrl = '';
   const normalizedStatus = String(status || '').trim().toLowerCase() || 'idle';
   const stillWorking = normalizedStatus === 'building';
   if (stillWorking || !isUsablePreviewHtml(html)) {
@@ -3004,7 +3021,9 @@ function setPreview(html: string, status = 'unknown') {
     // WebContainer real-build preview (flag gated). When the boot succeeds, the
     // iframe shows the live Vite dev server (preview == production). On any
     // failure or when the flag is off, we fall back to the Babel preview html.
+    const revision = previewRevision;
     void tryBootWebContainerPreview(frame, currentFiles).then(booted => {
+      if (revision !== previewRevision) return;
       if (booted) return;
       if (requiresLiveRuntimePreview(currentFiles)) {
         currentPreviewHtml = '';
@@ -4848,18 +4867,17 @@ async function loadProject() {
     if (currentProjectId) await flushPendingPromptAttachments();
     renderFiles(payload.files || []);
     applyWorkspaceState(payload.workspace_state || null);
-    if (payload.preview?.html && payload.preview.status !== 'idle' && isUsablePreviewHtml(payload.preview.html)) {
+    // Resolve the server runtime before starting a competing browser runtime.
+    const resumedLive = await resumeLivePreview();
+    if (resumedLive) {
+      // Keep the running application; no background WebContainer may replace it.
+    } else if (payload.preview?.html && payload.preview.status !== 'idle' && isUsablePreviewHtml(payload.preview.html)) {
       setPreview(payload.preview.html, payload.preview.status);
     } else {
       currentPreviewHtml = '';
       setEmptyPreviewState('idle');
     }
-    // A sandbox that is still up from an earlier run should be what the reader
-    // sees on reopening the project, not the rendering saved beside it. Asked
-    // after the static preview so the panel is never empty while this answers,
-    // and silent on failure: a project with no sandbox is the normal case, not
-    // an error worth a message.
-    void resumeLivePreview();
+    // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
     restoreMessages(payload);
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);

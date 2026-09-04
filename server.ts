@@ -13803,6 +13803,9 @@ function requireLiveSandbox(res: any): boolean {
 }
 
 app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
+  // Error documents must also be embeddable inside the isolated Builder.
+  res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   if (!LIVE_SANDBOX_ENABLED) return res.status(503).json({ error: 'live_sandbox_disabled' });
   const token = req.params[0];
   const grant = readPreviewToken(token);

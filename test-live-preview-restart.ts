@@ -49,7 +49,7 @@ assert.match(sync, /!isGenerating/, 'not offered during a generation, which star
 assert.match(sync, /currentBuilderView === 'preview'/, 'and not over the code or database tabs');
 
 // It has to follow the state rather than be set once.
-assert.match(builder, /syncPreviewToolbarControls\(\) \{\n  syncLivePreviewStartControl\(\);/,
+assert.match(builder, /syncPreviewToolbarControls\(\) \{\r?\n  syncLivePreviewStartControl\(\);/,
   'the control must follow every change the preview toolbar already follows');
 const clear = builder.slice(builder.indexOf('function clearLivePreview'), builder.indexOf('function clearLivePreview') + 400);
 assert.match(clear, /syncLivePreviewStartControl\(\)/, 'losing the server must bring the offer back');
@@ -58,7 +58,10 @@ assert.match(busy, /syncLivePreviewStartControl\(\)/, 'and a generation starting
 
 // Reopening a project with nothing running is the case this exists for.
 const resume = builder.slice(builder.indexOf('async function resumeLivePreview'), builder.indexOf('/** Forget the live preview'));
-assert.match(resume, /syncLivePreviewStartControl\(\); return;/, 'a project whose sandbox is gone must be offered the start control');
+assert.match(resume, /syncLivePreviewStartControl\(\); return false;/, 'a project whose sandbox is gone must be offered the start control');
+assert.match(builder, /const resumedLive = await resumeLivePreview\(\)/, 'resolve the live server before choosing a fallback runtime');
+assert.match(builder, /if \(revision !== previewRevision\) \{\s*if \(result.ok\) result.teardown\(\)/, 'a stale browser runtime must be disposed, not replace a newer server preview');
+assert.match(builder, /if \(revision !== previewRevision\) return;\s*if \(booted\) return;/, 'a stale fallback may not overwrite the live iframe with srcdoc');
 
 // And it has to be visible and operable, not merely defined.
 assert.match(markup, /id="btn-live-preview-start"/, 'the button must exist in the page');

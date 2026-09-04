@@ -79,13 +79,20 @@ export function proxyHttp(
       // We are the ones deciding who may embed it, not the sandbox.
       delete headers['x-frame-options'];
       delete headers['content-security-policy'];
+      // COEP is recursive, even for same-origin frames. The isolated Builder
+      // cannot embed a document with the default unsafe-none policy: Chromium
+      // replaces an otherwise healthy HTTP 200 app with its refused frame page.
+      headers['cross-origin-embedder-policy'] = 'credentialless';
+      headers['cross-origin-resource-policy'] = 'same-origin';
+      headers['content-security-policy'] = "frame-ancestors 'self'";
+      res.removeHeader('X-Frame-Options');
       res.writeHead(upstreamRes.statusCode || 502, headers);
       upstreamRes.pipe(res);
     },
   );
   upstream.on('error', error => {
     if (res.headersSent) { res.destroy(); return; }
-    res.writeHead(502, { 'content-type': 'application/json' });
+    res.writeHead(502, { 'content-type': 'application/json', 'cross-origin-embedder-policy': 'credentialless' });
     // The dev server being down is a state the interface has to show, not an
     // opaque failure, so the reason travels with the status.
     res.end(JSON.stringify({ error: 'preview_unavailable', message: String((error as any)?.message || error) }));

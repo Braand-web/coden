@@ -84,7 +84,10 @@ try {
 
   // -- the iframe must not be blocked -----------------------------------
   assert.equal(page.headers.get('x-frame-options'), null, 'X-Frame-Options must not reach the browser');
-  assert.equal(page.headers.get('content-security-policy'), null, 'a dev server CSP must not decide who embeds the preview');
+  assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'self'", 'only the Builder origin may embed the preview');
+  assert.equal(page.headers.get('cross-origin-embedder-policy'), 'credentialless', 'preview documents must match the isolated Builder COEP');
+  assert.equal(page.headers.get('cross-origin-resource-policy'), 'same-origin');
+  assert.equal(asset.headers.get('cross-origin-embedder-policy'), 'credentialless', 'assets preserve the embedding policy too');
   assert.equal(page.headers.get('x-dev-server'), 'yes', 'other headers still pass through');
 
   // -- hot module reload -------------------------------------------------
