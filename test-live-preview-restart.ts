@@ -60,6 +60,10 @@ assert.match(busy, /syncLivePreviewStartControl\(\)/, 'and a generation starting
 const resume = builder.slice(builder.indexOf('async function resumeLivePreview'), builder.indexOf('/** Forget the live preview'));
 assert.match(resume, /syncLivePreviewStartControl\(\); return false;/, 'a project whose sandbox is gone must be offered the start control');
 assert.match(builder, /const resumedLive = await resumeLivePreview\(\)/, 'resolve the live server before choosing a fallback runtime');
+assert.match(builder, /event\.payload\.type === 'preview_ready'/, 'a verified live preview must arrive before the closing model recap');
+assert.match(builder, /url\.pathname\.startsWith\('\/preview\/'\)/, 'only the authenticated same-origin preview proxy may control the iframe');
+assert.match(builder, /if \(livePreviewUrl && frame\.src === target/, 'the terminal result must not reload the preview that preview_ready already displayed');
+assert.match(builder, /!previewHtml && !liveUrl/, 'a live preview must not be replaced by the no-preview placeholder at completion');
 assert.match(builder, /if \(revision !== previewRevision\) \{\s*if \(result.ok\) result.teardown\(\)/, 'a stale browser runtime must be disposed, not replace a newer server preview');
 assert.match(builder, /if \(revision !== previewRevision\) return;\s*if \(booted\) return;/, 'a stale fallback may not overwrite the live iframe with srcdoc');
 

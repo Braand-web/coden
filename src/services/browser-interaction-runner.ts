@@ -115,7 +115,7 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
      */
     await page.route('**/*', (route: any) => (
       route.request().resourceType() === 'document'
-        ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html })
+        ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html.replace(/<head(\s[^>]*)?>/i, match => `${match}<link rel="icon" href="data:,">`) })
         : route.continue()
     ));
     await page.goto(PREVIEW_ORIGIN, { waitUntil: 'domcontentloaded', timeout: timeoutMs });

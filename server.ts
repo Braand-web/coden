@@ -11495,6 +11495,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const eventStream = req.headers.accept?.includes('text/event-stream')
     ? createAgentEventStream(res, harnessContext?.turn.id || requestId) : null;
   const respondJson = async (status: number, payload: any) => {
+    // The real application must be visible before the model writes its recap.
+    // This URL comes from the verified sandbox, not from model-authored prose.
+    if (status < 400 && payload.success === true && payload.preview?.live_url) {
+      eventStream?.workspace({ type:'preview_ready', projectId:project.id, url:payload.preview.live_url, status:payload.preview.status });
+    }
     if (status < 400 && payload.pipeline === 'multi_agent') {
       try {
         let seen = 0;
