@@ -1,4 +1,3 @@
-import type { CodenStreamEvent } from '../../lib/stream-protocol.ts';
 import {
   canTransitionItem,
   canTransitionTurn,
@@ -233,22 +232,6 @@ export class CodenAgentHarness {
     if (approved) await this.transitionTurn(turn.id, 'running', { resumedAfterApproval: true });
     else await this.transitionTurn(turn.id, 'cancelled', { reason: 'approval_declined' });
     return { approved };
-  }
-
-  async recordPublicStreamEvent(input: { threadId: string; turnId: string; itemId?: string; event: CodenStreamEvent }) {
-    return this.store.appendEvent({
-      threadId: input.threadId,
-      turnId: input.turnId,
-      itemId: input.itemId,
-      type: 'public.stream',
-      visibility: 'public',
-      payload: { event: input.event },
-    });
-  }
-
-  async replayPublicEvents(threadId: string, afterSequence = 0, limit = 1_000) {
-    const events = await this.store.listEvents(threadId, afterSequence, limit);
-    return events.filter(event => event.visibility === 'public');
   }
 
   async cancelTurn(turnId: string, userId: string, reason = 'cancelled_by_user') {

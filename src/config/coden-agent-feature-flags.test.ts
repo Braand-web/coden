@@ -4,7 +4,7 @@ import { CODEN_AGENT_FEATURE_FLAG_NAMES, readCodenAgentFeatureFlags } from './co
 describe('Coden Agent OS feature flags', () => {
   it('enables the complete local rollout by default', () => {
     expect(Object.values(readCodenAgentFeatureFlags({})).every(Boolean)).toBe(true);
-    expect(CODEN_AGENT_FEATURE_FLAG_NAMES).toHaveLength(13);
+    expect(CODEN_AGENT_FEATURE_FLAG_NAMES).toHaveLength(11);
   });
 
   it('accepts explicit disable values without affecting other capabilities', () => {
@@ -18,7 +18,6 @@ describe('Coden Agent OS feature flags', () => {
     expect(flags.userSteering).toBe(false);
     expect(flags.deploymentAdapters).toBe(false);
     expect(flags.universalManifest).toBe(true);
-    expect(flags.responseStreamV2).toBe(true);
   });
 });
 

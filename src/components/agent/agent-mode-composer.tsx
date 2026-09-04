@@ -4,7 +4,7 @@ import { ChevronDown, Check, ShieldCheck, WandSparkles, ListChecks } from 'lucid
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { EASE_OUT, SPRING_PRESS } from '../../lib/ease';
 import { cn } from '../../lib/utils';
-import { modeLabel, normalizeAgentMode, type AgentMode } from '../../services/agent-run-contract';
+import { modeLabel, normalizeAgentMode, type AgentMode } from '../../services/agent-mode';
 import '../../styles/agent-conversation.css';
 
 type AgentModeComposerProps = {

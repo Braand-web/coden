@@ -43,18 +43,6 @@ import {
 } from './src/services/coden-workflows.ts';
 import { parseOrRepairStructuredObject } from './src/services/structured-output.ts';
 import {
-  createCodenStreamEmitter,
-  serializeCodenStreamEvent,
-  CODEN_STREAM_PROTOCOL_VERSION,
-  CODEN_SSE_HEADERS,
-  CODEN_SSE_HEARTBEAT,
-  CODEN_SSE_HEARTBEAT_INTERVAL_MS,
-  type CodenAgentPublicPhase,
-  type CodenStreamEvent,
-  type CodenStreamEmitter,
-  type CodenStreamMilestone,
-} from './src/lib/stream-protocol.ts';
-import {
   CodenAgentHarness,
   InMemoryAgentHarnessStore,
   SupabaseAgentHarnessStore,
@@ -70,21 +58,6 @@ import {
   redactMessageParts,
 } from './src/lib/chat-message-parts.ts';
 
-/**
- * Maps a legacy generation step name to a Coden Stream v2 milestone so the
- * new typed client renders a clean timeline. Unknown steps fold into the
- * closest active phase rather than inventing new milestones.
- */
-function mapLegacyStepToMilestone(step?: string): CodenStreamMilestone {
-  const value = String(step || '').toLowerCase();
-  if (/run_started|context_loaded|routing|understand|intent/.test(value)) return 'understanding';
-  if (/index|codebase|inspect|load/.test(value)) return 'inspecting';
-  if (/plan|decompos|blueprint/.test(value)) return 'planning';
-  if (/runner|check|eval|quality|verify|test|visual/.test(value)) return 'checking';
-  if (/fix|patch|retest|recover|repair/.test(value)) return 'fixing';
-  if (/preview_ready|done|memory_updated|complete/.test(value)) return 'preview_ready';
-  return 'generating';
-}
 import {
   buildAIModelRuntimeConfig,
   getAllAIModelCapabilityProfiles,
@@ -1474,46 +1447,6 @@ async function prepareAgentHarnessContext(input: {
   return createWithHarness(inMemoryAgentHarness);
 }
 
-function createHarnessStreamObserver(context: ActiveAgentHarnessContext | null) {
-  let terminal = false;
-  let assistantCompleted = false;
-  return async (event: CodenStreamEvent) => {
-    if (!context) return;
-    await context.harness.recordPublicStreamEvent({
-      threadId: context.thread.id,
-      turnId: context.turn.id,
-      itemId: context.assistantItemId,
-      event,
-    });
-    if (event.type === 'assistant_message_completed' && !assistantCompleted) {
-      assistantCompleted = true;
-      await context.harness.transitionItem(context.assistantItemId, 'completed', { messageId: event.messageId || null });
-      return;
-    }
-    if (terminal) return;
-    if (event.type === 'cancelled') {
-      terminal = true;
-      await context.harness.cancelTurn(context.turn.id, context.turn.userId, event.message || 'cancelled');
-      return;
-    }
-    if (event.type === 'blocked') {
-      terminal = true;
-      if (!assistantCompleted) await context.harness.transitionItem(context.assistantItemId, 'blocked', { code: event.code || null });
-      await context.harness.transitionTurn(context.turn.id, 'blocked', { code: event.code || null, message: event.message });
-      return;
-    }
-    if (event.type === 'done') {
-      terminal = true;
-      const payload = (event.payload || {}) as any;
-      const failed = payload?.success === false || Number(payload?.status_code || 200) >= 400;
-      if (!assistantCompleted) await context.harness.transitionItem(context.assistantItemId, failed ? 'failed' : 'completed', { terminal: true });
-      await context.harness.transitionTurn(context.turn.id, failed ? 'failed' : 'completed', {
-        requestId: event.runId || null,
-        statusCode: payload?.status_code || 200,
-      });
-    }
-  };
-}
 
 async function resolveAgentHarnessThread(threadId: string) {
   const persistent = getPersistentAgentHarness();
@@ -5000,119 +4933,6 @@ async function createAgentTextResponse(input: {
   }
 }
 
-async function streamAgentTextResponse(input: {
-  project: GeneratedProject;
-  prompt: string;
-  files: GeneratedFile[];
-  decision: IntentDecision;
-  modelId?: unknown;
-  userCredits?: number;
-  plan?: string;
-  researchContext?: string;
-  allowLocalFallback?: boolean;
-  signal?: AbortSignal;
-  onToken?: (chunk: string, meta: { index: number; model: string }) => Promise<void> | void;
-  visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
-  /** Closing recap for a finished run: routing and build policy no longer apply. */
-  finalizer?: boolean;
-}): Promise<{ text: string; model: string; cost_usd: number; streamed: boolean }> {
-  const { project, prompt, files, decision, researchContext, onToken } = input;
-  const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
-  if (!hasLiveAiProvider()) {
-    throw new Error('No AI provider is configured. Add OPENROUTER_API_KEY on Railway to enable live AI responses.');
-  }
-
-  const selectedModel = (await resolveAgentProviderModel({
-    modelId: input.modelId,
-    project,
-    prompt,
-    decision,
-    files,
-    userCredits: input.userCredits,
-    plan: input.plan,
-  })).model;
-  validateAllowedModel(selectedModel);
-  assertAgentModelCapabilities(selectedModel, { streaming: true, structuredOutput: true, toolCalling: Boolean((decision as any).executionContract?.can_mutate_files) });
-  const textResponseTimeoutMs = decision.intent === 'plan'
-    ? 30_000
-    : decision.intent === 'deploy_assist'
-      ? 14_000
-      : 12_000;
-  const runtimeOptions = createProviderRuntimeOptions({
-    model: selectedModel,
-    prompt,
-    decision,
-    files,
-    stream: true,
-    timeoutMs: textResponseTimeoutMs,
-    hasVisionInput: Boolean(input.visionInputs?.length),
-  });
-  let text = '';
-  let model: string = selectedModel;
-  let cost_usd = 0;
-  let index = 0;
-  let streamed = false;
-  const shouldForwardLiveTokens = decision.intent !== 'plan' && !executionContract?.can_mutate_files;
-
-  try {
-    for await (const event of providerGateway.streamChat(
-      selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
-      {
-        timeoutMs: runtimeOptions.runtime.timeoutMs,
-        runtimeConfig: runtimeOptions.providerConfig,
-        runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
-        // Stream fallback is safe only before the gateway has yielded a token;
-        // ProviderGateway enforces that invariant.
-        allowFallback: Boolean(input.allowLocalFallback),
-        signal: input.signal,
-      },
-    )) {
-      if (event.type === 'token') {
-        const chunk = event.text || '';
-        if (!chunk) continue;
-        text += chunk;
-        model = event.model || model;
-        if (shouldForwardLiveTokens) {
-          streamed = true;
-          await onToken?.(chunk, { index, model });
-          index += 1;
-        }
-      } else if (event.type === 'usage') {
-        model = event.model || model;
-        cost_usd = Number(event.cost_usd || 0);
-      }
-    }
-
-    if (!text.trim()) throw new Error('The selected AI model returned an empty response.');
-    const sanitized = sanitizeAssistantOutput({
-      text: text.trim(),
-      prompt,
-      contract: executionContract,
-      intent: decision.intent,
-    });
-    return { text: sanitized, model, cost_usd, streamed };
-  } catch (error) {
-    throw error;
-  }
-}
-
-function chunkTextForPublicStream(text: string, targetSize = 28) {
-  const value = String(text || '');
-  if (!value) return [];
-  const chunks: string[] = [];
-  let buffer = '';
-  for (const part of value.split(/(\s+)/)) {
-    if (buffer && buffer.length + part.length > targetSize) {
-      chunks.push(buffer);
-      buffer = part;
-    } else {
-      buffer += part;
-    }
-  }
-  if (buffer) chunks.push(buffer);
-  return chunks;
-}
 
 function detectExternalApiRequirements(prompt: string): ExternalApiRequirement[] {
   const lower = prompt.toLowerCase();
@@ -6260,11 +6080,7 @@ async function generateFilesWithAi(input: {
   skillBudget?: CodenSkillBudget;
   signal?: AbortSignal;
   allowModelFallback?: boolean;
-  onEvent?: (
-    event:
-      | { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }
-      | GenerationProgressEvent,
-  ) => void;
+  onEvent?: (event: { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
 }): Promise<{ files: GeneratedFile[]; summary: string; appName: string; model: string; cost_usd: number }> {
   const hasLiveKey = hasLiveAiProvider();
   if (!hasLiveKey) {
@@ -6532,7 +6348,6 @@ async function generateFilesWithAi(input: {
       // Generated source remains atomic, but the provider response is consumed
       // as a private stream so large artifacts cannot time out while waiting
       // for one monolithic JSON response. Nothing is applied until validation.
-      const progressScanner = new GenerationProgressScanner();
       result = await providerGateway.streamingCompletion(selectedModel, [
         {
           role: 'system',
@@ -6581,17 +6396,7 @@ async function generateFilesWithAi(input: {
           }
           : undefined,
         signal: input.signal,
-        // Generation is the longest blocking step of a run. The model already
-        // streams, so report file progress as it arrives instead of leaving a
-        // single "building" label up for the whole of it. Display only: the
-        // applied files still come from the validated parse below.
-        onChunk: input.onEvent
-          ? accumulated => {
-            for (const event of progressScanner.push(accumulated)) input.onEvent?.(event);
-          }
-          : undefined,
       });
-      for (const event of progressScanner.finish()) input.onEvent?.(event);
       totalCostUsd += result.cost_usd;
     } catch (streamErr: any) {
       // A failed request is terminal for this run. Starting a second model
@@ -9758,320 +9563,13 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   }
 });
 
-// POST /assistant/chat/stream
-// Same conversation contract as /assistant/chat, but delivered as Coden Stream
-// v2 so the UI can render one natural assistant message token-by-token while
-// preserving the final message atomically.
-app.post('/api/assistant/chat/stream', async (req: any, res: any) => {
-  const requestId = `chat_${randomUUID()}`;
-  const authUser = requireAuthenticatedUser(req, res, requestId);
-  if (!authUser) return;
-  const userId = String(authUser.id);
-  const basePrompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
-  if (!basePrompt) {
-    return res.status(400).json({
-      success: false,
-      error: 'Prompt is required.',
-      message: 'Prompt is required.',
-      diagnostic_code: 'PROMPT_REQUIRED',
-      request_id: requestId,
-      suggested_action: 'write_message',
-    });
-  }
-  const attachmentRecords = resolveAssistantAttachments(userId, req.body?.attachmentIds);
-  const attachmentContext = assistantAttachmentContext(attachmentRecords);
-  const prompt = attachmentContext ? `${basePrompt}\n\nVerified user attachments:\n${attachmentContext}` : basePrompt;
-  if (!enforceRateLimit(`assistant_chat:${userId}`, 30, 60_000)) {
-    return res.status(429).json({
-      success: false,
-      error: 'Too many messages. Please wait a moment.',
-      message: 'Too many messages. Please wait a moment.',
-      diagnostic_code: 'RATE_LIMITED',
-      request_id: requestId,
-      suggested_action: 'retry_later',
-    });
-  }
-
-  const selectedModel = normalizeModelSelectionId(req.body?.modelId || 'auto');
-  const requestedMode = normalizeRequestedMode(req.body?.requestedMode || req.body?.mode);
-  const requestedProjectId = String(req.body?.projectId || '').trim();
-  const now = new Date().toISOString();
-  let project: GeneratedProject = {
-    id: 'assistant',
-    owner_id: userId,
-    organization_id: userId,
-    created_by: userId,
-    name: 'Coden',
-    slug: 'coden-assistant',
-    status: 'assistant',
-    preview_status: 'idle',
-    created_at: now,
-    updated_at: now,
-  };
-  let files: GeneratedFile[] = [];
-  let canPersistConversation = false;
-
-  if (isUuid(requestedProjectId)) {
-    const loadedProject = await loadProject(requestedProjectId, userId).catch(() => null);
-    if (loadedProject && hasProjectCapability(req, 'view', loadedProject)) {
-      project = loadedProject;
-      files = await loadProjectFiles(project.id).catch(() => []);
-      canPersistConversation = true;
-    }
-  }
-
-  const history = Array.isArray(req.body?.messages)
-    ? req.body.messages
-      .filter((message: any) => (message?.role === 'user' || message?.role === 'assistant') && messageTextFromParts(message?.parts, message?.content || '').trim())
-      .slice(-10)
-      .map((message: any) => `${message.role === 'assistant' ? 'Coden' : 'User'}: ${redactSecrets(messageTextFromParts(message?.parts, message?.content || '')).slice(0, 1200)}`)
-      .join('\n')
-    : '';
-  const promptWithHistory = history
-    ? `${prompt}\n\nRecent conversation context, for continuity only:\n${history}`
-    : prompt;
-  let decision: IntentDecision;
-  try {
-    decision = await resolveAgentDecision({
-      prompt,
-      requestedMode,
-      hasFiles: files.length > 0,
-      lastPlan: undefined,
-      recentHistory: Array.isArray(req.body?.messages)
-        ? req.body.messages.filter((message: any) => message?.role === 'user' || message?.role === 'assistant').slice(-10)
-        : [],
-    });
-  } catch (error: any) {
-    return res.status(503).json({ success: false, error: 'The selected AI model could not resolve this request.', message: diagnoseProviderError(error).message, diagnostic_code: 'AGENT_DECISION_UNAVAILABLE', request_id: requestId });
-  }
-  if (decision.requiresFileChanges || decision.requiresPreviewRebuild) {
-    return res.status(409).json({ success: false, error: 'This request requires a project run in the Builder.', message: 'This request requires a project run in the Builder.', diagnostic_code: 'PROJECT_RUN_REQUIRED', requires_project: true, requested_mode: requestedMode, resolved_action: decision.intent, request_id: requestId });
-  }
-
-  const helpers = getOptionalDbHelpers('assistant_chat_stream');
-  const wallet = await getWalletWithFallback(helpers, userId);
-  const estimate = estimateActionCost(prompt, decision, selectedModel);
-  if (wallet < estimate.finalCredits) {
-    return res.status(402).json({
-      ...publicCreditGateResponse(),
-      request_id: requestId,
-    });
-  }
-
-  let chatHarnessContext: ActiveAgentHarnessContext | null = null;
-  if (canPersistConversation) {
-    try {
-      chatHarnessContext = await prepareAgentHarnessContext({
-        project,
-        userId,
-        prompt,
-        requestedMode,
-        requestId,
-        clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
-      });
-    } catch (error: any) {
-      return res.status(409).json({
-        success: false,
-        error: error?.message || 'The agent mission could not start.',
-        diagnostic_code: 'HARNESS_START_FAILED',
-        request_id: requestId,
-      });
-    }
-  }
-
-  Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
-  if (chatHarnessContext) {
-    res.setHeader('X-Coden-Thread-Id', chatHarnessContext.thread.id);
-    res.setHeader('X-Coden-Turn-Id', chatHarnessContext.turn.id);
-  }
-  res.flushHeaders?.();
-
-  let streamAborted = false;
-  const chatAbortController = new AbortController();
-  res.on('close', () => {
-    if (res.writableEnded) return;
-    streamAborted = true;
-    chatAbortController.abort('client_disconnected');
-    if (chatHarnessContext) {
-      void chatHarnessContext.harness.cancelTurn(chatHarnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
-    }
-  });
-
-  const stream = createCodenStreamEmitter((chunk: string) => {
-    if (!streamAborted && !res.writableEnded) {
-      res.write(chunk);
-      (res as any).flush?.();
-    }
-  }, 0, requestId, {
-    threadId: chatHarnessContext?.thread.id,
-    turnId: chatHarnessContext?.turn.id,
-    itemId: chatHarnessContext?.assistantItemId,
-    onEvent: createHarnessStreamObserver(chatHarnessContext),
-    onObserverError: (error) => console.error('[coden:harness_chat_event_persistence_failed]', {
-      requestId,
-      message: redactSecrets((error as any)?.message || String(error), '[redacted]'),
-    }),
-  });
-  const resolvedAction = decision.intent === 'clarification_required'
-    ? 'clarify'
-    : decision.intent === 'debug_fix'
-      ? 'debug'
-      : decision.intent === 'deploy_assist'
-        ? 'confirm'
-        : decision.intent === 'credits_required' || decision.intent === 'external_keys_required'
-          ? 'blocked'
-          : decision.intent;
-  stream.emit('mode_requested', { mode: requestedMode });
-  stream.emit('mode_resolved', { mode: decision.requestedMode, action: resolvedAction, confidence: decision.confidence });
-  stream.emit('activity_changed', {
-    phase: requestedMode === 'research' ? 'researching' : requestedMode === 'plan' ? 'planning' : 'understanding',
-    message: isLikelyFrenchPrompt(prompt)
-      ? (requestedMode === 'research' ? 'Coden recherche les informations utiles…' : requestedMode === 'plan' ? 'Coden prépare le plan…' : 'Coden analyse votre demande…')
-      : (requestedMode === 'research' ? 'Coden is researching the relevant information…' : requestedMode === 'plan' ? 'Coden is preparing the plan…' : 'Coden is analyzing your request…'),
-    active: true,
-  });
-  if (decision.modelObjective) {
-    stream.emit('understanding', {
-      summary: decision.modelObjective.goal,
-      requirements: [...decision.modelObjective.scope.included, ...decision.modelObjective.acceptanceCriteria].slice(0, 12),
-      confidence: decision.confidence,
-    });
-    if (decision.intent === 'plan' || requestedMode === 'plan') {
-      const planItems = [
-        ...decision.modelObjective.scope.included,
-        ...decision.modelObjective.acceptanceCriteria,
-      ].filter(Boolean).slice(0, 12);
-      stream.emit('plan', {
-        planId: `plan_${requestId}`,
-        title: decision.modelObjective.goal,
-        objective: decision.modelObjective.goal,
-        steps: (planItems.length ? planItems : ['Clarifier les étapes avec le contexte disponible.']).map((title, index) => ({
-          id: `step_${index + 1}`,
-          title,
-          kind: 'task' as const,
-        })),
-        files: [],
-        risks: decision.modelObjective.scope.excluded,
-        acceptanceCriteria: decision.modelObjective.acceptanceCriteria,
-      });
-    }
-
-  }
-  if (decision.clarification) {
-    stream.emit('clarification', { question: decision.clarification.question, options: decision.clarification.choices });
-  }
-  const heartbeat = setInterval(() => {
-    if (!streamAborted && !res.writableEnded) stream.heartbeat();
-  }, CODEN_SSE_HEARTBEAT_INTERVAL_MS);
-
-  const clientMessageId = sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140) || `msg_${randomUUID()}`;
-  const assistantMessageId = sanitizeWorkspaceText(req.body?.assistantMessageId || '').slice(0, 140) || `msg_${randomUUID()}`;
-
-  try {
-    if (canPersistConversation) {
-      await saveProjectMessage({
-        ai_message_id: clientMessageId,
-        organization_id: project.organization_id,
-        project_id: project.id,
-        user_id: userId,
-        role: 'user',
-        content: prompt,
-        parts: messagePartsFromContent(prompt),
-        intent: 'conversation',
-        requested_mode: requestedMode,
-        metadata: { request_id: requestId, source: 'assistant_chat_stream' },
-      }).catch(() => null);
-    }
-
-    const agentText = await streamAgentTextResponse({
-      project,
-      prompt: promptWithHistory,
-      files,
-      decision,
-      modelId: selectedModel,
-      userCredits: wallet,
-      allowLocalFallback: selectedModel === 'auto',
-      signal: chatAbortController.signal,
-      visionInputs: attachmentRecords
-        .filter(record => record.mimeType.startsWith('image/'))
-        .map(record => ({ url: record.dataUrl, detail: 'auto' as const })),
-      onToken: (chunk) => {
-        if (!streamAborted) stream.emit('assistant_delta', { text: chunk });
-      },
-    });
-
-    if (streamAborted) return;
-    const content = redactSecrets(agentText.text || '').trim();
-    if (!content) throw new Error('The selected AI model returned an empty response.');
-    if (!agentText.streamed) {
-      for (const chunk of chunkTextForPublicStream(content, 32)) {
-        if (streamAborted) return;
-        stream.emit('assistant_delta', { text: chunk });
-      }
-    }
-
-    if (canPersistConversation) {
-      await saveProjectMessage({
-        ai_message_id: assistantMessageId,
-        organization_id: project.organization_id,
-        project_id: project.id,
-        user_id: userId,
-        role: 'assistant',
-        content,
-        parts: messagePartsFromContent(content),
-        intent: 'conversation',
-        requested_mode: requestedMode,
-        metadata: {
-          request_id: requestId,
-          model: agentText.model,
-          streamed: agentText.streamed,
-          source: 'assistant_chat_stream',
-        },
-      }).catch(() => null);
-    }
-
-    const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
-    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`);
-    stream.emit('assistant_message_completed', { messageId: assistantMessageId });
-    stream.emit('done', {
-      payload: {
-        success: true,
-        request_id: requestId,
-        text: content,
-        assistant_message_id: assistantMessageId,
-      },
-    });
-  } catch (error: any) {
-    const diagnostic = diagnoseProviderError(error);
-    if (!streamAborted) {
-      stream.emit('error', {
-        message: diagnostic.message,
-        recoverable: diagnostic.status >= 500 || diagnostic.status === 429,
-        diagnostic_code: diagnostic.diagnostic_code,
-      });
-      stream.emit('done', {
-        payload: {
-          success: false,
-          request_id: requestId,
-          message: diagnostic.message,
-          diagnostic_code: diagnostic.diagnostic_code,
-          suggested_action: diagnostic.suggested_action,
-        },
-      });
-    }
-  } finally {
-    clearInterval(heartbeat);
-    await stream.flush();
-    if (!res.writableEnded) res.end();
-  }
-});
 
 // POST /api/chat
 // Compatibility endpoint for AI Elements-style chat clients. It reuses Coden's
-// existing streamed conversation route so the app keeps one source of truth for
-// auth, persistence, cancellation, credits, and provider fallback.
+// conversation route so the app keeps one source of truth for auth,
+// persistence, cancellation, credits, and provider fallback.
 app.post('/api/chat', (req: any, res: any) => {
-  req.url = '/api/assistant/chat/stream';
+  req.url = '/api/assistant/chat';
   (app as any).handle(req, res);
 });
 
@@ -11687,7 +11185,6 @@ app.post('/api/import/prepare', async (req: any, res: any) => {
 });
 
 app.post('/api/projects/:id/generate', async (req: any, res: any) => {
-  const isStream = req.query.stream === 'true';
   const requestId = `req_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
@@ -11730,26 +11227,20 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
   let harnessContext: ActiveAgentHarnessContext | null = null;
-  if (isStream) {
-    try {
-      harnessContext = await prepareAgentHarnessContext({
-        project,
-        userId,
-        prompt,
-        requestedMode,
-        requestId,
-        clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
-      });
-    } catch (error: any) {
-      console.error('[coden:harness_start_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
-      return res.status(409).json({ success: false, error: error?.message || 'The agent mission could not start.', diagnostic_code: 'HARNESS_START_FAILED', request_id: requestId });
-    }
+  try {
+    harnessContext = await prepareAgentHarnessContext({
+      project,
+      userId,
+      prompt,
+      requestedMode,
+      requestId,
+      clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
+    });
+  } catch (error: any) {
+    console.error('[coden:harness_start_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+    return res.status(409).json({ success: false, error: error?.message || 'The agent mission could not start.', diagnostic_code: 'HARNESS_START_FAILED', request_id: requestId });
   }
 
-  // The public SSE remains wire-compatible with Stream v2 while every event
-  // is now owned and persisted by the V3 Thread -> Turn -> Item harness.
-  let streamV2: CodenStreamEmitter | null = null;
-  let streamAborted = false;
   const generationAbortController = new AbortController();
   if (harnessContext) {
     activeHarnessTurnControllers.set(harnessContext.turn.id, generationAbortController);
@@ -11757,124 +11248,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     res.once('finish', releaseHarnessController);
     res.once('close', releaseHarnessController);
   }
-  if (isStream) {
-    Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
-    streamV2 = createCodenStreamEmitter((chunk: string) => {
-      if (streamAborted || res.writableEnded) return;
-      try {
-        res.write(chunk);
-        // Flush each public event through compression/proxy middleware so the
-        // real activity shimmer appears while the provider is still working.
-        (res as any).flush?.();
-      } catch { /* client closed */ }
-    }, 0, requestId, {
-      threadId: harnessContext?.thread.id,
-      turnId: harnessContext?.turn.id,
-      itemId: harnessContext?.assistantItemId,
-      onEvent: createHarnessStreamObserver(harnessContext),
-      onObserverError: (error) => console.error('[coden:harness_event_persistence_failed]', {
-        requestId,
-        message: redactSecrets((error as any)?.message || String(error), '[redacted]'),
-      }),
-    });
+  // A client that hangs up mid-run should not leave the run burning credits.
+  res.on('close', () => {
+    if (res.writableEnded) return;
+    generationAbortController.abort();
     if (harnessContext) {
-      res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
-      res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
+      void harnessContext.harness.cancelTurn(harnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
     }
-    // Heartbeat every 15s to prevent proxy timeouts (Railway, nginx, Vercel all close idle SSE after ~30s)
-    const heartbeat = setInterval(() => {
-      try { streamV2?.heartbeat(); } catch { clearInterval(heartbeat); }
-    }, CODEN_SSE_HEARTBEAT_INTERVAL_MS);
-    res.on('close', () => {
-      streamAborted = true;
-      generationAbortController.abort();
-      clearInterval(heartbeat);
-      if (harnessContext && !res.writableEnded) {
-        void harnessContext.harness.cancelTurn(harnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
-      }
-    });
-    // Flush headers right away so the client starts reading the stream immediately.
-    res.flushHeaders?.();
-  }
+  });
 
   const frenchActivity = isLikelyFrenchPrompt(prompt);
-  // The run's own steps, each with a real state. Before this the user saw four
-  // fixed labels for a run lasting minutes, so a build and a stall looked the
-  // same. The tracker owns the transitions; the route only says where it is.
-  const phases = new GenerationPhaseTracker(
-    (phase, state, label) => {
-      if (isStream && streamV2 && !streamAborted) streamV2.emit('phase', { phase, state, label });
-    },
-    frenchActivity ? 'fr' : 'en',
-  );
-
-  // Stream-aware terminal response. In SSE mode every final/early return MUST be
-  // delivered as a `done` event: a raw res.json() after the event-stream headers
-  // leaves the client SSE parser without any `data:` line, which surfaces as
-  // "Generation failed or empty response".
-  const respondJson = async (status: number, payload: any) => {
-    // Every early return in this route goes through here, so this is the one
-    // place that can guarantee no step is left spinning when the run stops —
-    // a credit gate, a permission refusal or a provider outage all close the
-    // machine honestly instead of leaving the last step mid-flight.
-    phases.finish(status < 400 && payload?.success !== false ? 'done' : 'failed');
-    if (isStream) {
-      if (!res.writableEnded) {
-        // Exactly one typed v2 terminal event for this request.
-        streamV2?.emit('done', { payload: { status_code: status, ...payload } });
-        await streamV2?.flush();
-        res.end();
-      }
-      return;
-    }
-    return res.status(status).json(payload);
-  };
-  const emitActivity = (phase: CodenAgentPublicPhase, fr: string, en: string, active = true) => {
-    if (isStream && streamV2 && !streamAborted) {
-      streamV2.emit('activity_changed', { phase, message: frenchActivity ? fr : en, active });
-    }
-  };
-  let publicProgressSequence = 0;
-  let lastPublicProgress = '';
-  const emitProgress = (
-    phase: CodenAgentPublicPhase,
-    fr: string,
-    en: string,
-    evidence: string[] = [],
-    nextFr?: string,
-    nextEn?: string,
-  ) => {
-    if (!isStream || !streamV2 || streamAborted) return;
-    const content = frenchActivity ? fr : en;
-    if (!content.trim() || content === lastPublicProgress) return;
-    lastPublicProgress = content;
-    publicProgressSequence += 1;
-    streamV2.emit('assistant_progress', {
-      messageId: `${requestId}:progress:${publicProgressSequence}`,
-      phase,
-      content,
-      evidence: evidence.slice(0, 6),
-      nextAction: frenchActivity ? nextFr : nextEn,
-    });
-  };
+  const respondJson = async (status: number, payload: any) => res.status(status).json(payload);
 
   // The decision call can take noticeable time on a live provider. Emit the
   // first real activity before awaiting it so a connected Builder never looks
   // frozen while Coden is already analysing the request.
-  emitActivity(
-    'understanding',
-    'Coden analyse votre demande…',
-    'Coden is analyzing your request…',
-  );
 
-  phases.start('understand');
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
   const recentHistory = await getRecentDecisionHistory(project.id, 6);
   let initialDecision: IntentDecision;
-  phases.start('decide');
   try {
     initialDecision = await resolveAgentDecision({
       prompt: agentPrompt,
@@ -11885,14 +11280,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
-    phases.fail('decide');
-    if (isStream) {
-      streamV2?.emit('error', {
-        message: diagnostic.message,
-        recoverable: diagnostic.status >= 500 || diagnostic.status === 429,
-        diagnostic_code: diagnostic.diagnostic_code,
-      });
-    }
     return respondJson(diagnostic.status, {
       success: false,
       needs_fix: true,
@@ -11930,12 +11317,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
       const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
 
-      emitActivity(
-        pipelineRoute === 'small_edit' ? 'building' : 'planning',
-        pipelineRoute === 'small_edit' ? 'Coden modifie le fichier concerné…' : 'Coden prépare le plan…',
-        pipelineRoute === 'small_edit' ? 'Coden is editing the affected file…' : 'Coden is preparing the plan…',
-      );
-      phases.start('plan');
 
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
@@ -11949,26 +11330,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         harnessContext: harnessContext
           ? { harness: harnessContext.harness, threadId: harnessContext.thread.id, turnId: harnessContext.turn.id }
           : undefined,
-        onSandboxEvent: event => {
-          if (!isStream || !streamV2 || streamAborted) return;
-          const { type, ...rest } = event as any;
-          streamV2.emit('sandbox', { stage: type, ...rest });
-        },
-        onCoderEvent: event => {
-          if (!isStream || !streamV2 || streamAborted) return;
-          // The model's own prose streams as real assistant text, not as a
-          // technical sandbox event — the same channel `/api/assistant/chat/stream`
-          // already uses, so the client needs no new event type to render it.
-          if ((event as any).type === 'token') {
-            streamV2.emit('assistant_delta', { text: (event as any).text });
-            return;
-          }
-          streamV2.emit('sandbox', { stage: 'coder', ...(event as any) });
-        },
       });
 
       if (outcome.started) {
-        phases.start('build');
         const pipelineFiles = outcome.files as GeneratedFile[];
         // The blob path renames the project from a fresh `appName` guess the
         // model invents every run; this pipeline's plan carries no such
@@ -11996,7 +11360,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           ok: outcome.ok,
         }).catch(() => null);
 
-        phases.finish(outcome.ok ? 'done' : 'failed');
         return respondJson(200, {
           success: outcome.ok,
           needs_fix: !outcome.ok,
@@ -12047,37 +11410,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         ? 'fixing'
         : 'understanding';
   if (decisionPhase !== 'understanding') {
-    emitActivity(
-      decisionPhase,
-      decisionPhase === 'planning'
-        ? 'Coden prépare le plan…'
-        : decisionPhase === 'inspecting'
-          ? 'Coden inspecte le projet…'
-          : 'Coden reproduit le problème…',
-      decisionPhase === 'planning'
-        ? 'Coden is preparing the plan…'
-        : decisionPhase === 'inspecting'
-          ? 'Coden is inspecting the project…'
-          : 'Coden is reproducing the issue…',
-    );
   }
   const publicGoal = String(decision.modelObjective?.goal || decision.userVisibleReason || '').trim().slice(0, 240);
-  emitProgress(
-    decisionPhase,
-    publicGoal
-      ? `J’ai compris l’objectif : ${publicGoal}`
-      : `J’ai analysé la demande et identifié le parcours à exécuter.`,
-    publicGoal
-      ? `I understood the objective: ${publicGoal}`
-      : `I analyzed the request and identified the workflow to execute.`,
-    ['decision:resolved', `project_files:${existingFiles.length}`],
-    existingFiles.length
-      ? `Je vérifie maintenant les ${existingFiles.length} fichiers existants avant toute modification.`
-      : `Je prépare maintenant la structure minimale nécessaire.`,
-    existingFiles.length
-      ? `I am now checking the ${existingFiles.length} existing files before making changes.`
-      : `I am now preparing the minimum required structure.`,
-  );
   const skillResolution = resolveCodenSkill({
     prompt: agentPrompt,
     intent: decision.intent,
@@ -12087,23 +11421,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   });
   const skill = skillResolution.skill;
   const skillBudget = getCodenSkillBudget(skill, String((project as any).plan || (project as any).plan_key || 'free'));
-  if (isStream && streamV2) {
-    streamV2.emit('skill_resolved', {
-      skill_id: skill.id,
-      skill_version: skill.version,
-      budget: skillBudget,
-      reason: skillResolution.reason,
-    });
-    streamV2.emit('skill_started', { skill_id: skill.id, skill_version: skill.version });
-  }
   const explicitConfirmation = req.body?.confirmed === true || req.body?.approvalGranted === true || req.body?.confirmation === 'confirmed';
   if (skillResolution.requiresConfirmation && isCriticalCodenAction(agentPrompt) && !explicitConfirmation) {
-    if (isStream && streamV2) {
-      streamV2.emit('approval_requested', {
-        action: skill.id,
-        summary: 'This action can change publication, production data, secrets, billing or another irreversible surface. Confirm explicitly to continue.',
-      });
-    }
     return respondJson(409, {
       success: false,
       error: 'Explicit confirmation is required before this action can run.',
@@ -12293,14 +11612,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           nextAction: 'plan_only',
         };
         executionPlan = (await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' })).text;
-        emitProgress(
-          'planning',
-          'Le plan d’exécution est prêt et tient compte du projet existant.',
-          'The execution plan is ready and accounts for the existing project.',
-          [`existing_files:${existingFiles.length}`, 'plan:generated'],
-          'Je passe à l’implémentation, puis je vérifierai la preview réelle.',
-          'I am moving to implementation, then I will verify the real preview.',
-        );
       } catch (error) {
         throw error;
       }
@@ -12310,8 +11621,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
-    phases.start('build');
-    emitActivity('building', 'Coden construit l’application…', 'Coden is building the application…');
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
@@ -12327,26 +11636,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skillBudget,
       signal: generationAbortController.signal,
       allowModelFallback: requestedModelSelection === 'auto',
-      onEvent: event => {
-        // A provider fallback is internal routing. The core contract forbids
-        // exposing it, and the user cannot act on it — it stays in the
-        // technical event log, not in the shimmer.
-        if (event.type === 'model_fallback') return;
-        // Surface each generated file as the model writes it, so the longest
-        // step of the run stops looking like a single frozen label.
-        if (!isStream || !streamV2 || streamAborted) return;
-        // Only start/done are rendered by the run store; file_delta has no
-        // reducer case, so emitting it would add SSE and event-log traffic for
-        // nothing visible.
-        if (event.type === 'file_start') {
-          streamV2.emit('file_start', { path: event.path, index: event.index });
-          // Report the file the model is actually writing rather than repeating
-          // one fixed sentence for the whole of the longest step.
-          emitActivity('building', writingFileNarration(event.path, 'fr'), writingFileNarration(event.path, 'en'));
-        } else if (event.type === 'file_done') {
-          streamV2.emit('file_done', { path: event.path, bytes: event.bytes });
-        }
-      },
       // ✅ Pass recent history for conflict detection
       recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
     });
@@ -12366,32 +11655,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     files = ensureModernFrontendProject(files, generationProjectName, prompt, project.id);
     const projectForRun: GeneratedProject = { ...project, name: generationProjectName, prompt };
 
-    emitProgress(
-      'building',
-      `${generation.files.length} fichier${generation.files.length > 1 ? 's ont' : ' a'} été généré${generation.files.length > 1 ? 's' : ''} ou mis à jour dans le snapshot de travail.`,
-      `${generation.files.length} file${generation.files.length === 1 ? ' has' : 's have'} been generated or updated in the working snapshot.`,
-      [`generated_files:${generation.files.length}`, `snapshot_files:${files.length}`],
-      'Je démarre maintenant la preview et les contrôles de runtime.',
-      'I am now starting the preview and runtime checks.',
-    );
 
-    phases.start('verify');
-    emitActivity('checking_preview', 'Coden prépare et vérifie la preview…', 'Coden is preparing and checking the preview…');
     let pipeline = runPreviewPipeline(projectForRun, files);
     let finalFiles = files;
     let autoFix = null as any;
     if (pipeline.status === 'failed') {
-      emitProgress(
-        'fixing',
-        `La première preview a révélé ${pipeline.errors.length} problème${pipeline.errors.length > 1 ? 's' : ''} bloquant${pipeline.errors.length > 1 ? 's' : ''}. Aucun résultat prêt ne sera annoncé avant correction.`,
-        `The first preview revealed ${pipeline.errors.length} blocking issue${pipeline.errors.length === 1 ? '' : 's'}. No ready result will be announced before repair.`,
-        pipeline.errors.slice(0, 4).map((error, index) => `preview_error:${index + 1}:${error.file || 'runtime'}`),
-        'Je corrige les causes observées puis je relance exactement le même pipeline.',
-        'I am fixing the observed causes and will rerun the exact same pipeline.',
-      );
-      phases.fail('verify');
-      phases.start('fix');
-      emitActivity('fixing', repairNarration(pipeline.errors, 'fr'), repairNarration(pipeline.errors, 'en'));
       await Promise.all(pipeline.errors.map(error => saveBuildError(project, error)));
       for (let attempt = 1; attempt <= skillBudget.maxRetries && pipeline.status === 'failed'; attempt += 1) {
         const fix = applyAutoFix(projectForRun, finalFiles, pipeline.errors);
@@ -12463,19 +11731,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         platformType: uiPolicy.appType,
       }).filter(isBlockingVerificationFailure);
     }
-    phases.start('verify');
-    emitActivity('testing', 'Coden lance les vérifications finales…', 'Coden is running the final checks…');
-    emitProgress(
-      'testing',
-      pipeline.status === 'ready'
-        ? 'La preview démarre correctement. Je vérifie maintenant le build, les interactions principales et les erreurs bloquantes.'
-        : 'La preview reste incomplète. Je lance les vérifications finales pour identifier précisément les blocages restants.',
-      pipeline.status === 'ready'
-        ? 'The preview starts correctly. I am now checking the build, primary interactions, and blocking errors.'
-        : 'The preview is still incomplete. I am running the final checks to identify the remaining blockers precisely.',
-      [`preview_pipeline:${pipeline.status}`],
-    );
-    if (isStream && streamV2 && !streamAborted) streamV2.emit('verification_started', {});
     let finalGate = await finalReliabilityAutoFix({
       project: projectForRun,
       userId,
@@ -12507,7 +11762,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       skillBudget.maxRetries > 0 &&
       !generationAbortController.signal.aborted
     ) {
-      phases.fail('verify');
       // The runner captured the compiler output and nothing read it, so every
       // repair was a second full generation. When the build named files, aim at
       // them instead — that pass is what timed out at six minutes.
@@ -12519,12 +11773,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         : finalGate.reliabilitySummary.blocking;
       // The spine carries the stage; the shimmer carries the live detail. Giving
       // both the same sentence showed the user the same line twice.
-      phases.start('fix');
-      emitActivity(
-        'fixing',
-        repairNarration(repairIssues, 'fr'),
-        repairNarration(repairIssues, 'en'),
-      );
       const repairBlockers = finalGate.reliabilitySummary.blocking.slice(0, 12).map(item => ({
         key: item.key,
         file: item.file || null,
@@ -12634,14 +11882,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const strictRuntimeVerified = pipeline.status === 'ready'
       && reliabilitySummary.status === 'passed'
       && !runnerSkipped;
-    // The verification outcome is now known. Close the repair step only if the
-    // run actually entered one, then report the final verification result — a
-    // reopen, because after a repair the gate really did run again.
-    if (phases.has('fix')) phases.done('fix');
-    phases.start('verify');
-    if (strictRuntimeVerified) phases.done('verify');
-    else phases.fail('verify');
-    phases.start('recap');
     const factLedger = createFactLedger(agentRunId || requestId);
     if (finalFiles.length) {
       finalFiles.forEach(file => appendVerifiedFact(factLedger, {
@@ -12692,26 +11932,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     finalizeFactLedger(factLedger, strictRuntimeVerified ? 'complete' : 'failed');
     await saveAgentVerifications(project, userId, agentRunId, verificationChecks);
-    if (isStream && streamV2 && !streamAborted) streamV2.emit('verification_completed', {
-      status: reliabilitySummary.status === 'passed' ? 'pass' : reliabilitySummary.status === 'failed' ? 'fail' : 'incomplete',
-      checks: verificationChecks.length,
-    });
-    emitProgress(
-      'checking_preview',
-      reliabilitySummary.status === 'passed'
-        ? `Les ${verificationChecks.length} contrôles sont terminés et aucun blocage critique ne subsiste.`
-        : `Les contrôles sont terminés, mais ${reliabilitySummary.blocking?.length || 1} blocage${(reliabilitySummary.blocking?.length || 1) > 1 ? 's restent' : ' reste'} à résoudre.`,
-      reliabilitySummary.status === 'passed'
-        ? `All ${verificationChecks.length} checks are complete and no critical blocker remains.`
-        : `The checks are complete, but ${reliabilitySummary.blocking?.length || 1} blocker${(reliabilitySummary.blocking?.length || 1) === 1 ? ' remains' : 's remain'}.`,
-      [`verification:${reliabilitySummary.status}`, `checks:${verificationChecks.length}`],
-      reliabilitySummary.status === 'passed'
-        ? 'Je prépare le récapitulatif final à partir des preuves vérifiées.'
-        : 'Je sauvegarde un état récupérable et j’explique précisément la prochaine action.',
-      reliabilitySummary.status === 'passed'
-        ? 'I am preparing the final summary from verified evidence.'
-        : 'I am saving a recoverable state and will explain the exact next action.',
-    );
     /*
      * The application comes up before the verdict is written, not after.
      *
@@ -12748,13 +11968,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           projectId: project.id,
           userId,
           files: scaffolded.files,
-          onEvent: event => {
-            if (!isStream || !streamV2 || streamAborted) return;
-            // The launch events carry their own discriminator; the wire event
-            // keeps it as `stage` so one event type covers the whole pipeline.
-            const { type, ...rest } = event as any;
-            streamV2.emit('sandbox', { stage: type, ...rest });
-          },
         });
         /*
          * The verdict that counts.
@@ -12805,10 +12018,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
               sandboxRepair = await runRepairLoop({
                 sandbox,
                 initialReport: sandboxValidation,
-                onEvent: event => {
-                  if (!isStream || !streamV2 || streamAborted) return;
-                  streamV2.emit('sandbox', { stage: 'sandbox_repair', ...(event as any) });
-                },
                 turn: async ({ instruction, tools, call, maxToolCalls }) => {
                   let toolCalls = 0;
                   const handlers = Object.fromEntries(tools.map(tool => [
@@ -12989,15 +12198,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           : null,
         fact_ledger: factLedger,
       };
-      phases.finish('done');
-      if (isStream) {
-        streamV2?.emit('assistant_delta', { text: summary });
-        streamV2?.emit('assistant_message_completed', {});
-        streamV2?.emit('done', { payload: finalPayload });
-        return res.end();
-      } else {
-        return res.json(finalPayload);
-      }
+      return res.json(finalPayload);
     }
     const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? sanitizeSuggestedProjectName(generation.appName, prompt)
@@ -13165,19 +12366,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     };
     // The last step closes on the run's real outcome: a project that still
     // needs fixes is not "ready", and saying so is the point of the machine.
-    phases.finish(verificationPassed ? 'done' : 'failed');
-    if (isStream) {
-      streamV2?.emit('assistant_delta', { text: finalSummary });
-      streamV2?.emit('assistant_message_completed', {});
-      streamV2?.emit('done', { payload: finalPayload });
-      return res.end();
-    } else {
-      return res.json(finalPayload);
-    }
+    return res.json(finalPayload);
   } catch (error: any) {
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
-    phases.finish('failed');
     await helpers.addLedger(userId, 'refund', cost.finalCredits, await helpers.getWallet(userId), `Generation failed: ${error.message}`, refId);
     await helpers.addAudit({
       user_id: userId,
@@ -13193,33 +12385,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       diagnostic_code: diagnostic.diagnostic_code,
       suggested_action: diagnostic.suggested_action,
     });
-    if (isStream) {
-      streamV2?.emit('error', {
-        message: diagnostic.message,
-        recoverable: diagnostic.status >= 500 || diagnostic.status === 429,
-        diagnostic_code: diagnostic.diagnostic_code,
-      });
-      streamV2?.emit('done', {
-        payload: {
-          success: false,
-          error: diagnostic.message,
-          message: diagnostic.message,
-          diagnostic_code: diagnostic.diagnostic_code,
-          request_id: requestId,
-          suggested_action: diagnostic.suggested_action,
-        },
-      });
-      return res.end();
-    } else {
-      res.status(diagnostic.status).json({
-        success: false,
-        error: diagnostic.message,
-        message: diagnostic.message,
-        diagnostic_code: diagnostic.diagnostic_code,
-        request_id: requestId,
-        suggested_action: diagnostic.suggested_action,
-      });
-    }
+    res.status(diagnostic.status).json({
+      success: false,
+      error: diagnostic.message,
+      message: diagnostic.message,
+      diagnostic_code: diagnostic.diagnostic_code,
+      request_id: requestId,
+      suggested_action: diagnostic.suggested_action,
+    });
   }
 });
 
@@ -13367,52 +12540,6 @@ app.get('/api/projects/:id/agent/threads/:threadId', async (req: any, res: any) 
   }
   const activeTurn = resolved.thread.activeTurnId ? await resolved.harness.store.getTurn(resolved.thread.activeTurnId) : null;
   return res.json({ success: true, harness_version: 'coden-harness/v3', thread: resolved.thread, active_turn: activeTurn });
-});
-
-app.get('/api/projects/:id/agent/threads/:threadId/events', async (req: any, res: any) => {
-  const userId = getUserOrgId(req);
-  const project = await loadProject(req.params.id, userId);
-  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  const resolved = await resolveAgentHarnessThread(req.params.threadId);
-  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
-    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
-  }
-  const after = Math.max(0, Number(req.headers['last-event-id'] || req.query?.after || 0));
-  const requestedTurnId = String(req.query?.turnId || '').trim();
-  const limit = Math.max(1, Math.min(Number(req.query?.limit || 1_000), 2_000));
-  const loadStreamEvents = async (afterStreamSequence: number) => {
-    const storedEvents = await resolved.harness.replayPublicEvents(resolved.thread.id, 0, 2_000);
-    return storedEvents
-      .filter(stored => stored.type === 'public.stream' && (!requestedTurnId || stored.turnId === requestedTurnId))
-      .map(stored => (stored.payload as any)?.event as CodenStreamEvent | undefined)
-      .filter((event): event is CodenStreamEvent => event !== undefined)
-      .filter(event => Number(event.sequence || event.id || 0) > afterStreamSequence)
-      .slice(0, limit);
-  };
-  const events = await loadStreamEvents(after);
-  const wantsSse = String(req.query?.format || '').toLowerCase() === 'sse' || String(req.headers.accept || '').includes('text/event-stream');
-  if (!wantsSse) return res.json({ success: true, harness_version: 'coden-harness/v3', thread_id: resolved.thread.id, events });
-
-  Object.entries(CODEN_SSE_HEADERS).forEach(([key, value]) => res.setHeader(key, value));
-  res.setHeader('X-Coden-Thread-Id', resolved.thread.id);
-  res.flushHeaders?.();
-  let cursor = after;
-  let terminal = false;
-  const deadline = Date.now() + 20_000;
-  while (!res.writableEnded && Date.now() < deadline && !terminal) {
-    const batch = cursor === after ? events : await loadStreamEvents(cursor);
-    for (const event of batch) {
-      const sequence = Number(event.sequence || event.id || 0);
-      if (sequence <= cursor) continue;
-      res.write(serializeCodenStreamEvent(event));
-      cursor = sequence;
-      terminal = ['done', 'cancelled', 'blocked'].includes(event.type);
-    }
-    if (terminal) break;
-    res.write(CODEN_SSE_HEARTBEAT);
-    await new Promise(resolve => setTimeout(resolve, 750));
-  }
-  return res.end();
 });
 
 app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions', async (req: any, res: any) => {
@@ -14575,41 +13702,10 @@ app.use((error: any, req: any, res: any, next: any) => {
     streaming: isEventStreamResponse(res),
   });
 
-  // A streaming response flushes its headers before doing any work, so for a
-  // failed generation `headersSent` is the normal case, not an edge one. This
-  // used to `return next(error)` immediately — before the log line above —
-  // which meant two things at once: Express destroyed the socket, so the client
-  // saw the stream open and die with no terminal event and no message, and the
-  // failure never reached the server log either. A generation that threw
-  // anywhere outside its own try was invisible from both ends.
-  if (res.headersSent) {
-    if (isEventStreamResponse(res) && !res.writableEnded) {
-      try {
-        res.write(serializeCodenStreamEvent({
-          v: CODEN_STREAM_PROTOCOL_VERSION,
-          runId: requestId,
-          id: Number.MAX_SAFE_INTEGER - 1,
-          sequence: Number.MAX_SAFE_INTEGER - 1,
-          ts: Date.now(),
-          type: 'error',
-          message: publicMessage,
-          recoverable: status >= 500 || status === 429,
-          diagnostic_code: diagnosticCode,
-        } as any));
-        res.write(serializeCodenStreamEvent({
-          v: CODEN_STREAM_PROTOCOL_VERSION,
-          runId: requestId,
-          id: Number.MAX_SAFE_INTEGER,
-          sequence: Number.MAX_SAFE_INTEGER,
-          ts: Date.now(),
-          type: 'done',
-          payload: { status_code: status >= 400 && status < 600 ? status : 500, success: false, diagnostic_code: diagnosticCode, request_id: requestId },
-        } as any));
-      } catch { /* the client is already gone; ending is still correct */ }
-      return res.end();
-    }
-    return next(error);
-  }
+  // Headers already sent means a response is mid-flight (the job event stream
+  // is the one that flushes early): there is no body left to replace, so the
+  // log line above is the whole record and Express owns the socket from here.
+  if (res.headersSent) return next(error);
 
   if (req.path?.startsWith('/api')) {
     return res.status(status >= 400 && status < 600 ? status : 500).json({
@@ -14725,10 +13821,8 @@ import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
-import { GenerationPhaseTracker } from './src/services/generation-phases.ts';
 import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
-import { GenerationProgressScanner, type GenerationProgressEvent } from './src/services/generation-stream-progress.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter } from './src/services/sandbox/starters.ts';

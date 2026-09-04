@@ -59,17 +59,13 @@ assert.equal((await store.getTurn(first.turn.id))?.status, 'running');
 const publish = await harness.startTool({ turnId: first.turn.id, role: 'orchestrator', toolName: 'deployment.publish', approvalGranted: true });
 await harness.completeTool(publish.id, { deploymentId: 'deployment_1' });
 
-await harness.recordPublicStreamEvent({
-  threadId: thread.id,
-  turnId: first.turn.id,
-  event: {
-    v: 'coden-stream-v2', runId: first.turn.id, id: 1, sequence: 1, ts: Date.now(), type: 'activity_changed',
-    phase: 'building', message: 'Coden construit l’application…', active: true,
-  },
-});
-const replay = await harness.replayPublicEvents(thread.id);
-assert.ok(replay.some(event => event.type === 'public.stream'));
-assert.deepEqual(replay.map(event => event.sequence), [...replay.map(event => event.sequence)].sort((a, b) => a - b));
+// The log is a sequence, not a bag: a replay that arrives out of order
+// replays a different run. This used to be asserted through the public stream
+// event API, which went with the streaming; the ordering guarantee it was
+// really checking belongs to every event the harness records.
+const logged = await store.listEvents(thread.id);
+assert.ok(logged.length > 0, 'the run so far must have left a trail');
+assert.deepEqual(logged.map(event => event.sequence), [...logged.map(event => event.sequence)].sort((a, b) => a - b));
 
 await harness.saveCheckpoint(first.turn.id, { phase: 'testing', artifactHash: 'sha256:artifact' });
 await harness.transitionTurn(first.turn.id, 'verifying');

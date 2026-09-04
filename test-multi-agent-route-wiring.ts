@@ -40,11 +40,6 @@ assert.match(pipelineCall, /route: pipelineRoute/);
 assert.match(pipelineCall, /existingFiles/);
 assert.match(pipelineCall, /harnessContext:/, 'the harness context already prepared for this request must be threaded through, not re-created');
 
-// -- the coder loop's own prose streams live, not just the final summary ----
-const onCoderEventBlock = route.slice(route.indexOf('onCoderEvent: event =>'), route.indexOf('onCoderEvent: event =>') + 500);
-assert.match(onCoderEventBlock, /event as any\)\.type === 'token'/, 'a token event must be told apart from the technical sandbox events');
-assert.match(onCoderEventBlock, /streamV2\.emit\('assistant_delta', \{ text: \(event as any\)\.text \}\)/, 'a token event must reach the client on the same assistant_delta channel chat already streams on');
-
 /**
  * Every exit is exactly one of: a complete terminal response, or a fall
  * through with no return. A branch that could do neither would either hang

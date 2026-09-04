@@ -63,66 +63,6 @@ function keepCallerTools(
   };
 }
 
-/**
- * One model turn, streamed token-by-token when `onToken` is given.
- *
- * Reused unmodified when `onToken` is absent: the exact `gateway.chat(...)`
- * call every existing caller (and every test's duck-typed `{ chat() {} }`
- * stand-in gateway) already relies on. Only a caller that actually wants
- * live tokens pays for `streamChat`, and only such a caller's gateway needs
- * to implement it — real `ProviderGateway` instances always do.
- *
- * `StreamChatEvent`'s `'token'` carries the delta itself, not an
- * accumulated buffer (confirmed against `ProviderGateway.streamingCompletion`'s
- * own `text += event.text` accumulation) — so each event forwards straight
- * to `onToken` with no diffing needed.
- */
-async function runOneChatStep(input: {
-  gateway: ProviderGateway;
-  modelId: string;
-  messages: ChatMessage[];
-  runtimeConfig?: ProviderRequestConfig;
-  runtimeConfigForModel?: (modelId: any) => ProviderRequestConfig | undefined;
-  timeoutMs?: number;
-  onToken?: (text: string) => void;
-}): Promise<ChatCompletionResult> {
-  if (!input.onToken) {
-    return input.gateway.chat(input.modelId, input.messages, {
-      maxAttempts: 1,
-      timeoutMs: input.timeoutMs,
-      runtimeConfig: input.runtimeConfig,
-      runtimeConfigForModel: input.runtimeConfigForModel,
-    });
-  }
-
-  let text = '';
-  let model = input.modelId;
-  let usage: ChatCompletionResult['usage'] = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-  let costUsd = 0;
-  let toolCalls: ChatCompletionResult['tool_calls'];
-
-  for await (const event of input.gateway.streamChat(input.modelId, input.messages, {
-    timeoutMs: input.timeoutMs,
-    runtimeConfig: input.runtimeConfig,
-    runtimeConfigForModel: input.runtimeConfigForModel,
-  })) {
-    model = event.model || model;
-    if (event.type === 'token') {
-      text += event.text;
-      try { input.onToken(event.text); } catch { /* a display concern must never break a run */ }
-    }
-    if (event.type === 'usage') {
-      usage = event.usage;
-      costUsd = event.cost_usd;
-    }
-    if (event.type === 'tool_calls') {
-      toolCalls = event.tool_calls as ChatCompletionResult['tool_calls'];
-    }
-  }
-
-  return { text, model, tool_calls: toolCalls, usage, cost_usd: costUsd };
-}
-
 export async function runLlmToolLoop(input: {
   gateway: ProviderGateway;
   modelId: string;
@@ -134,8 +74,6 @@ export async function runLlmToolLoop(input: {
   sensitiveTools?: Record<string, { needsApproval: boolean; reason?: string }>;
   timeoutMs?: number;
   maxSteps?: number;
-  /** Called with each text fragment as it streams in, for the current step only. */
-  onToken?: (text: string) => void;
 }): Promise<LlmToolLoopResult> {
   const messages = [...input.messages];
   const toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }> = [];
@@ -144,14 +82,11 @@ export async function runLlmToolLoop(input: {
   let result: ChatCompletionResult | null = null;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    result = await runOneChatStep({
-      gateway: input.gateway,
-      modelId: input.modelId,
-      messages,
+    result = await input.gateway.chat(input.modelId, messages, {
+      maxAttempts: 1,
+      timeoutMs: input.timeoutMs,
       runtimeConfig: input.runtimeConfig,
       runtimeConfigForModel,
-      timeoutMs: input.timeoutMs,
-      onToken: input.onToken,
     });
     if (!result.tool_calls?.length) return { result, messages, toolExecutions };
 

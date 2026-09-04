@@ -1,7 +1,5 @@
 export const CODEN_AGENT_FEATURE_FLAG_NAMES = [
   'CODEN_CONVERSATION_UI_V2',
-  'CODEN_REAL_ACTIVITY_SHIMMER',
-  'CODEN_RESPONSE_STREAM_V2',
   'CODEN_ADVANCED_MODES',
   'CODEN_UNIVERSAL_MANIFEST',
   'CODEN_PREVIEW_ADAPTERS',
@@ -18,8 +16,6 @@ export type CodenAgentFeatureFlagName = typeof CODEN_AGENT_FEATURE_FLAG_NAMES[nu
 
 export type CodenAgentFeatureFlags = {
   conversationUiV2: boolean;
-  realActivityShimmer: boolean;
-  responseStreamV2: boolean;
   advancedModes: boolean;
   universalManifest: boolean;
   previewAdapters: boolean;
@@ -43,8 +39,6 @@ export function readCodenAgentFeatureFlags(
 ): CodenAgentFeatureFlags {
   return {
     conversationUiV2: readBooleanFlag(env, 'CODEN_CONVERSATION_UI_V2'),
-    realActivityShimmer: readBooleanFlag(env, 'CODEN_REAL_ACTIVITY_SHIMMER'),
-    responseStreamV2: readBooleanFlag(env, 'CODEN_RESPONSE_STREAM_V2'),
     advancedModes: readBooleanFlag(env, 'CODEN_ADVANCED_MODES'),
     universalManifest: readBooleanFlag(env, 'CODEN_UNIVERSAL_MANIFEST'),
     previewAdapters: readBooleanFlag(env, 'CODEN_PREVIEW_ADAPTERS'),

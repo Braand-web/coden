@@ -15,10 +15,7 @@ import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
-import type { CodenStreamEvent } from "./lib/stream-protocol";
-import { applyAgentStreamEvent, createAgentRunViewModel, type AgentRunViewModel } from "./services/agent-run-store";
-import type { AgentMode } from "./services/agent-run-contract";
-import { AgentRunPanel } from "./components/agent/agent-run-panel";
+import type { AgentMode } from "./services/agent-mode";
 import "./styles/agent-surface.css";
 
 hljs.registerLanguage("bash", bash);
@@ -71,7 +68,6 @@ type LiveRunState = {
   skillId?: string;
   skillVersion?: string;
   lines: LiveRunLine[];
-  view?: AgentRunViewModel;
 };
 
 export type CodenConversationMessage = {
@@ -93,8 +89,6 @@ export type CodenConversationApi = {
   setBlock: (id: string, block: unknown | null) => void;
   setFlow: (id: string, flow: unknown) => void;
   startLiveRun: (id: string, meta?: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string }) => void;
-  applyStreamEvent: (id: string, event: CodenStreamEvent) => void;
-  appendAssistantDelta: (id: string, text: string) => void;
   finishLiveRun: (id: string, summary?: string) => void;
   failLiveRun: (id: string, message: string, status?: 'failed' | 'cancelled' | 'incomplete') => void;
   removeMessage: (id: string) => void;
@@ -239,19 +233,6 @@ function cloneMessages(messages: CodenConversationMessage[]) {
       ? {
         ...message.liveRun,
         lines: [...message.liveRun.lines],
-        view: message.liveRun.view
-          ? {
-            ...message.liveRun.view,
-            activities: message.liveRun.view.activities.map((item) => ({ ...item })),
-            files: [...message.liveRun.view.files],
-            checks: message.liveRun.view.checks.map((item) => ({ ...item })),
-            warnings: [...message.liveRun.view.warnings],
-            progressNotes: message.liveRun.view.progressNotes.map((note) => ({ ...note, evidence: [...note.evidence] })),
-            objective: message.liveRun.view.objective ? { ...message.liveRun.view.objective } : undefined,
-            plan: message.liveRun.view.plan ? { ...message.liveRun.view.plan, steps: message.liveRun.view.plan.steps.map((step) => ({ ...step })) } : undefined,
-            verification: message.liveRun.view.verification ? { ...message.liveRun.view.verification, checks: message.liveRun.view.verification.checks.map((item) => ({ ...item })) } : undefined,
-          }
-          : undefined,
       }
       : undefined,
   }));
@@ -277,59 +258,6 @@ function createStore() {
 
   const find = (id: string) => messages.find((message) => message.id === id);
 
-  // ── Smooth streaming text reveal ─────────────────────────────────────────
-  // Network deltas arrive in bursts; revealing them character-by-character on
-  // animation frames keeps the assistant text flowing instead of jumping.
-  // The reveal speed adapts to the backlog so the UI never lags the model,
-  // and any authoritative full-content update flushes the buffer instantly.
-  const pendingDeltas = new Map<string, string>();
-  let drainRaf = 0;
-  const prefersReducedMotion = () =>
-    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const drainPendingDeltas = () => {
-    drainRaf = 0;
-    if (!pendingDeltas.size) return;
-    const instant = prefersReducedMotion();
-    for (const [id, pending] of pendingDeltas) {
-      const message = find(id);
-      if (!message) {
-        pendingDeltas.delete(id);
-        continue;
-      }
-      // Network deltas are already the model's units of meaning. Flush them in
-      // animation-frame batches instead of simulating a typewriter effect.
-      const step = instant ? pending.length : Math.min(pending.length, 4096);
-      message.content += pending.slice(0, step);
-      const rest = pending.slice(step);
-      if (rest) pendingDeltas.set(id, rest);
-      else pendingDeltas.delete(id);
-    }
-    notify();
-    if (pendingDeltas.size) drainRaf = window.requestAnimationFrame(drainPendingDeltas);
-  };
-
-  const scheduleDrain = () => {
-    if (!drainRaf) drainRaf = window.requestAnimationFrame(drainPendingDeltas);
-  };
-
-  const enqueueAssistantDelta = (message: CodenConversationMessage, text: string) => {
-    // First token after a "thinking" placeholder: drop the shimmer label so
-    // the streamed text takes over cleanly without flashing the label.
-    if (message.working && message.content && !pendingDeltas.has(message.id)) {
-      message.content = "";
-    }
-    message.working = false;
-    pendingDeltas.set(message.id, (pendingDeltas.get(message.id) || "") + text);
-    scheduleDrain();
-  };
-
-  // A full-content update (final commit, block, parts…) is authoritative:
-  // discard any not-yet-revealed streamed text for that message.
-  const flushPendingDeltas = (id: string) => {
-    pendingDeltas.delete(id);
-  };
-
   const ensureLiveRun = (message: CodenConversationMessage, meta: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string } = {}): LiveRunState => {
     if (!message.liveRun) {
       message.liveRun = {
@@ -343,13 +271,6 @@ function createStore() {
         attachments: [],
         startedAt: Date.now(),
         lines: [],
-        view: createAgentRunViewModel({
-          runId: meta.runId || `${message.id}:run`,
-          prompt: meta.intent || '',
-          requestedMode: meta.mode || 'auto',
-          status: 'submitting',
-          model: meta.model || 'unknown',
-        }),
       };
     }
     if (meta.intent) message.liveRun.intentText = meta.intent;
@@ -395,7 +316,6 @@ function createStore() {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        flushPendingDeltas(id);
         message.content = content;
         if (content) message.working = false;
       });
@@ -405,16 +325,10 @@ function createStore() {
         const message = find(id);
         if (!message) return;
         const text = textFromParts(parts, content);
-        if (text) flushPendingDeltas(id);
         if (text) message.content = text;
         if (message.liveRun && text) {
           message.liveRun.summary = text;
           message.liveRun.status = message.liveRun.status === "failed" ? "failed" : "done";
-          if (message.liveRun.view) {
-            message.liveRun.view.assistantText = text;
-            message.liveRun.view.hasFinal = true;
-            if (message.liveRun.view.status !== 'failed' && message.liveRun.view.status !== 'needs_fix') message.liveRun.view.status = 'completed';
-          }
         }
         message.working = false;
       });
@@ -423,19 +337,8 @@ function createStore() {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        const run = ensureLiveRun(message, { activeText: label });
-        // The shimmer draws `view.publicActivity`; writing only `activeText`
-        // put the label somewhere nothing reads, so the panel stayed blank
-        // between the user pressing send and the first server phase event —
-        // exactly the window where a reader most needs to see that something
-        // started.
-        //
-        // Sequence 0 is what makes this safe: every server event carries a
-        // higher sequence, so the first real phase replaces this without a
-        // race, and this can never overwrite one that has already arrived.
-        if (run.view && (run.view.publicActivity?.sequence ?? -1) < 0) {
-          run.view.publicActivity = { phase: 'understanding', message: label, active: true, sequence: 0 };
-        }
+        ensureLiveRun(message, { activeText: label });
+        message.working = true;
       });
     },
     clearWorking(id) {
@@ -443,12 +346,6 @@ function createStore() {
         const message = find(id);
         if (!message) return;
         message.working = false;
-        // The shimmer is a claim that work is happening. Leaving it animating
-        // after the run ended is the interface lying about the backend, which
-        // is the whole failure mode this rework exists to remove.
-        if (message.liveRun?.view?.publicActivity) {
-          message.liveRun.view.publicActivity = { ...message.liveRun.view.publicActivity, active: false };
-        }
       });
     },
     setBlock(id, block) {
@@ -456,10 +353,7 @@ function createStore() {
         const message = find(id);
         if (!message || !block) return;
         const text = textFromBlock(block);
-        if (text) {
-          flushPendingDeltas(id);
-          message.content = text;
-        }
+        if (text) message.content = text;
       });
     },
     setFlow(id, flow) {
@@ -492,208 +386,6 @@ function createStore() {
         ensureLiveRun(message, meta);
       });
     },
-    applyStreamEvent(id, event) {
-      mutate(() => {
-        const message = find(id);
-        if (!message) return;
-        const run = ensureLiveRun(message);
-        if (run.view) run.view = applyAgentStreamEvent(run.view, event);
-        switch (event.type) {
-          case "status":
-            run.activeText = event.message;
-            break;
-          case "milestone":
-            if (event.label) {
-              run.activeText = event.label;
-              addLine(run, event.label, event.state === "active" ? "active" : "done");
-            }
-            break;
-          case "phase":
-            if (event.label) {
-              run.activeText = event.label;
-              addLine(run, event.label, event.state === "failed" ? "failed" : event.state === "active" ? "active" : "done");
-            }
-            break;
-          case "understanding":
-            run.intentText = event.summary;
-            run.activeText = event.summary;
-            addLine(run, event.summary, "active");
-            break;
-          case "assumption":
-            run.activeText = event.text;
-            addLine(run, event.text, "active");
-            break;
-          case "clarification":
-            run.activeText = event.question;
-            addLine(run, event.question, "active");
-            break;
-          case "plan":
-            event.steps.slice(0, 5).forEach((step) => addLine(run, step.title || step.id, "muted"));
-            break;
-          case "plan_step":
-            addLine(run, event.stepId, event.state === "failed" ? "failed" : event.state === "active" ? "active" : "done");
-            break;
-          case "assistant_delta":
-            run.assistantText += event.text;
-            enqueueAssistantDelta(message, event.text);
-            break;
-          case "activity_changed":
-            run.activeText = event.message;
-            message.working = event.active;
-            break;
-          case "assistant_progress":
-            run.activeText = event.nextAction || event.content;
-            message.working = false;
-            break;
-          case "assistant_message_completed":
-            message.working = false;
-            break;
-          case "decision_required":
-            message.working = false;
-            break;
-          case "preview_ready":
-          case "deployment_ready":
-            message.working = false;
-            break;
-          case "cancelled":
-            run.status = "cancelled";
-            message.working = false;
-            break;
-          case "blocked":
-            run.status = "failed";
-            run.summary = event.message;
-            message.working = false;
-            break;
-          case "file_start":
-            run.activeText = event.path;
-            addLine(run, run.activeText, "active");
-            break;
-          case "file_delta":
-            run.activeText = event.path;
-            break;
-          case "file_done":
-            addLine(run, event.path, "done");
-            break;
-          case "check":
-            addLine(
-              run,
-              `${humanCheckName(event.name)} ${humanCheckStatus(event.status)}${event.detail ? ` - ${event.detail}` : ""}`,
-              liveLineStatusForCheck(event.status),
-            );
-            break;
-          case "warning":
-            addLine(run, event.message, "failed");
-            break;
-          case "error":
-            run.status = event.recoverable ? "failed" : "failed";
-            run.summary = event.message;
-            addLine(run, event.message, "failed");
-            message.working = false;
-            break;
-          case "done":
-            run.status = run.status === "failed" ? "failed" : "done";
-            message.working = false;
-            break;
-          case "tool_call": {
-            const existing = run.tools.find((t) => t.id === event.callId);
-            if (existing) {
-              existing.input = event.input ?? existing.input;
-              existing.status = event.state || "input-available";
-            } else {
-              run.tools.push({
-                id: event.callId,
-                name: event.name,
-                input: event.input,
-                status: event.state || "input-available",
-              });
-            }
-            addLine(run, `Outil: ${event.name}`, "active");
-            break;
-          }
-          case "tool_result": {
-            const entry = run.tools.find((t) => t.id === event.callId);
-            const outputText = typeof event.output === "string" ? event.output : event.output != null ? JSON.stringify(event.output, null, 2) : undefined;
-            if (entry) {
-              entry.status = event.error ? "output-error" : "output-available";
-              entry.output = outputText;
-              entry.error = event.error;
-            } else {
-              run.tools.push({
-                id: event.callId,
-                name: event.name || "tool",
-                status: event.error ? "output-error" : "output-available",
-                output: outputText,
-                error: event.error,
-              });
-            }
-            addLine(run, `Outil ${event.error ? "echec" : "OK"}: ${event.name || event.callId}`, event.error ? "failed" : "done");
-            break;
-          }
-          case "source":
-            if (!run.sources.find((s) => s.url === event.url)) {
-              run.sources.push({ id: nanoid(), url: event.url, title: event.title });
-            }
-            break;
-          case "citation":
-            if (!run.sources.find((s) => s.url === event.url)) {
-              run.sources.push({ id: nanoid(), url: event.url, title: event.title });
-            }
-            break;
-          case "attachment":
-            run.attachments.push({
-              id: nanoid(),
-              name: event.name,
-              url: event.url,
-              mediaType: event.mediaType,
-              size: event.size,
-            });
-            break;
-          case "skill_resolved":
-            run.skillId = event.skill_id;
-            run.skillVersion = event.skill_version;
-            run.activeText = `Skill ${event.skill_id} sélectionné.`;
-            addLine(run, run.activeText, "active");
-            break;
-          case "skill_started":
-            run.skillId = event.skill_id;
-            run.skillVersion = event.skill_version;
-            run.activeText = `Skill ${event.skill_id} actif.`;
-            addLine(run, run.activeText, "active");
-            break;
-          case "skill_budget_exhausted":
-            run.activeText = `Budget du skill ${event.skill_id} atteint.`;
-            addLine(run, run.activeText, "failed");
-            break;
-          case "approval_requested":
-            run.activeText = event.summary;
-            addLine(run, event.summary, "active");
-            break;
-          case "verification_started":
-            run.activeText = "Coden vérifie le résultat réel.";
-            addLine(run, run.activeText, "active");
-            break;
-          case "verification_completed":
-            run.activeText = event.status === "pass" ? "Vérification terminée." : "Vérification incomplète.";
-            addLine(run, run.activeText, event.status === "pass" ? "done" : "failed");
-            break;
-          default:
-            break;
-        }
-      });
-    },
-    appendAssistantDelta(id, text) {
-      if (!text) return;
-      mutate(() => {
-        const message = find(id);
-        if (!message) return;
-        if (message.liveRun) message.liveRun.assistantText += text;
-        if (message.liveRun?.view) {
-          message.liveRun.view.assistantText += text;
-          if (['submitting', 'understanding', 'planning'].includes(message.liveRun.view.status)) message.liveRun.view.status = 'executing';
-        }
-        enqueueAssistantDelta(message, text);
-      });
-    },
     finishLiveRun(id, summary = "") {
       mutate(() => {
         const message = find(id);
@@ -701,36 +393,25 @@ function createStore() {
         const run = ensureLiveRun(message);
         run.status = run.status === "failed" ? "failed" : "done";
         run.summary = summary || run.summary;
-        if (run.view) {
-          run.view.hasFinal = Boolean(summary || run.view.assistantText);
-          if (run.view.status !== 'failed' && run.view.status !== 'needs_fix') run.view.status = 'completed';
-        }
         message.working = false;
-        if (!message.content && !pendingDeltas.has(id) && run.summary) message.content = run.summary;
+        if (!message.content && run.summary) message.content = run.summary;
       });
     },
     failLiveRun(id, summary, status = 'failed') {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        flushPendingDeltas(id);
         const run = ensureLiveRun(message);
         run.status = status === 'cancelled' ? 'cancelled' : 'failed';
         run.summary = summary;
         run.activeText = '';
         addLine(run, summary, 'failed');
-        if (run.view) {
-          run.view.status = status;
-          run.view.hasFinal = false;
-          run.view.warnings = [...run.view.warnings, summary];
-        }
         message.content = summary;
         message.working = false;
       });
     },
     removeMessage(id) {
       mutate(() => {
-        flushPendingDeltas(id);
         messages = messages.filter((message) => message.id !== id);
       });
     },
@@ -744,7 +425,6 @@ function createStore() {
     },
     clear() {
       mutate(() => {
-        pendingDeltas.clear();
         messages = [];
       });
     },
@@ -1171,29 +851,6 @@ function RichResponse({ content }: { content: string }) {
 function MessageView({ message }: { message: CodenConversationMessage }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-  const run = message.liveRun;
-
-  if (isAssistant && run?.view) {
-    const retryAction = message.actions?.find((action) => /r[ée]essayer|retry/i.test(action.label));
-    const buildPlanAction = message.actions?.find((action) => /construire.*plan|build.*plan|planifier la construction/i.test(action.label));
-    return (
-      <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-        <AgentRunPanel
-          view={run.view}
-          streamText={message.content}
-          onRetry={retryAction?.onClick}
-          onBuildPlan={buildPlanAction?.onClick}
-        />
-        {message.actions?.length ? (
-          <div className="coden-chat-actions">
-            {message.actions.map((action) => (
-              <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
 
   if (isUser) {
     return (

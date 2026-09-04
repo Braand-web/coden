@@ -144,49 +144,6 @@ assert.equal(approved.toolExecutions[0].approvalRequired, true);
 assert.equal(approved.toolExecutions[0].approved, true);
 
 /**
- * Streaming: `onToken` is the only thing that changes call shape — a gateway
- * with no `streamChat` (every test fake above) must keep working exactly as
- * before, and a gateway that does implement it must deliver the same final
- * result as the buffered path on the same underlying script, plus every
- * token fragment in order.
- */
-const streamedTokens: string[] = [];
-const streamingGateway = {
-  async *streamChat(_modelId: string, messages: ChatMessage[]) {
-    if (messages.length === 1) {
-      yield { type: 'token' as const, text: 'Inspecting ', model: 'openai/gpt-5.6-luna-pro' };
-      yield { type: 'token' as const, text: 'the file...', model: 'openai/gpt-5.6-luna-pro' };
-      yield {
-        type: 'tool_calls' as const,
-        tool_calls: [{ id: 'tool_1', type: 'function' as const, function: { name: 'inspect_project_files', arguments: '{"paths":["src/App.tsx"]}' } }],
-        model: 'openai/gpt-5.6-luna-pro',
-      };
-      yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0.001, model: 'openai/gpt-5.6-luna-pro' };
-      return;
-    }
-    yield { type: 'token' as const, text: 'I inspected ', model: 'openai/gpt-5.6-luna-pro' };
-    yield { type: 'token' as const, text: 'the file and can continue.', model: 'openai/gpt-5.6-luna-pro' };
-    yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0.001, model: 'openai/gpt-5.6-luna-pro' };
-  },
-} as any;
-
-const streamed = await runLlmToolLoop({
-  gateway: streamingGateway,
-  modelId: 'openai/gpt-5.6-luna-pro',
-  messages: [{ role: 'user', content: 'Inspect the app.' }],
-  handlers: {
-    inspect_project_files: ({ paths }) => ({ paths, content: 'export default function App() {}' }),
-  },
-  onToken: text => { streamedTokens.push(text); },
-});
-
-assert.equal(streamed.result.text, 'I inspected the file and can continue.', 'streamed final text must match the buffered path on the same underlying script');
-assert.equal(streamed.toolExecutions.length, 1);
-assert.equal(streamed.toolExecutions[0].ok, true);
-assert.deepEqual(streamedTokens, ['Inspecting ', 'the file...', 'I inspected ', 'the file and can continue.'], 'every fragment must arrive, in order, across both model steps');
-assert.equal(streamedTokens.join(''), 'Inspecting the file...I inspected the file and can continue.', 'concatenated fragments must reconstruct the streamed step\'s own text exactly');
-
-/**
  * The tools backing `handlers` must survive per-model config resolution.
  *
  * `ProviderGateway` resolves `runtimeConfigForModel?.(candidate) ||
@@ -213,14 +170,9 @@ assert.equal(streamedTokens.join(''), 'Inspecting the file...I inspected the fil
       record(runtimeConfig);
       return { text: 'done', model: modelId, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0 };
     },
-    async *streamChat(modelId: string, _messages: ChatMessage[], _timeoutMs: number, runtimeConfig: any) {
-      record(runtimeConfig);
-      yield { type: 'token' as const, text: 'done', model: modelId };
-      yield { type: 'usage' as const, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0, model: modelId };
-    },
   } as any;
 
-  const call = (onToken?: (text: string) => void) => runLlmToolLoop({
+  const call = () => runLlmToolLoop({
     gateway: new ProviderGateway(service),
     modelId: 'openai/gpt-5.6-luna-pro',
     messages: [{ role: 'user', content: 'Build the counter app.' }],
@@ -229,16 +181,14 @@ assert.equal(streamedTokens.join(''), 'Inspecting the file...I inspected the fil
     // The shape every real caller passes: a per-model config carrying its own
     // generic tools, which must shape the request without replacing the tools.
     runtimeConfigForModel: () => ({ tools: advisoryTools, toolChoice: 'auto', temperature: 0.2 }) as any,
-    onToken,
   });
 
   await call();
-  await call(() => {});
 
   assert.deepEqual(
     toolsPerCall,
-    [['write_file'], ['write_file']],
-    'the caller\'s tools must reach the provider on both the buffered and the streamed path, not the per-model config\'s',
+    [['write_file']],
+    'the caller\'s tools must reach the provider, not the per-model config\'s',
   );
 }
 

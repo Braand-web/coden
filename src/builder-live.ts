@@ -6,8 +6,6 @@ import './styles/publish-panel.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
-import { CodenStreamHttpError, CodenStreamIncompleteError, openCodenStream } from './lib/stream-client';
-import { isCodenStreamEvent } from './lib/stream-protocol';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -28,7 +26,7 @@ import { redactSecretPayload, redactSecrets } from './services/secret-redaction'
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
 import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
-import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-run-contract';
+import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-mode';
 
 initThemeController();
 import {
@@ -296,7 +294,6 @@ let activeHarnessThreadId = '';
 let activeHarnessTurnId = '';
 let activeGenerationTouchesPreview = false;
 let activeAbort: AbortController | null = null;
-let activeStreamHandle: { cancel: () => void } | null = null;
 let stopRequested = false;
 let selectedChatMode: ChatMode = 'auto';
 let activeWorkshop: StudioWorkshop = 'chat';
@@ -2072,26 +2069,6 @@ function clearMessageShimmer(card: HTMLElement | null) {
   card.removeAttribute('aria-busy');
 }
 
-/**
- * Assistant text as it arrives.
- *
- * Deltas go to the React island, which owns the streamed response; this exists
- * for the path where the island is not mounted, and there the card simply
- * shows what has arrived so far rather than discarding it. It used to discard
- * it: the function was an empty stub, so a run whose island failed to mount
- * streamed its entire answer into nothing.
- */
-function appendToMessageShimmer(card: HTMLElement | null, text: string) {
-  if (!card || !text) return;
-  const id = messageHandleId(card);
-  if (id && conversationApi) {
-    conversationApi.appendAssistantDelta(id, text);
-    return;
-  }
-  const paragraph = card.querySelector('.msg-body-paragraph');
-  if (paragraph) paragraph.textContent = `${paragraph.textContent || ''}${text}`;
-}
-
 function completeMessageShimmer(card: HTMLElement | null, label = 'Completed') {
   if (!card) return;
   const id = messageHandleId(card);
@@ -2510,58 +2487,28 @@ function safeAssistantDisplayText(value: unknown, _speaksFrench = false) {
   return text.replace(/\n\s*[-*]\s*$/gm, '').trim();
 }
 
-async function streamSimpleConversation(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<boolean> {
-  const session = await getVerifiedSession({ allowRefresh: true });
-  const accessToken = session?.session?.access_token;
-  if (!accessToken) throw new Error('An authenticated session is required to request a real AI response.');
+async function requestSimpleConversation(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<boolean> {
   const messageId = messageHandleId(card);
-  let streamedText = '';
-  let finalPayload: any = null;
-  const stream = openCodenStream({
-    url: `${API_BASE_URL}/api/assistant/chat/stream`,
-    init: {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        prompt,
-        requestedMode,
-        modelId: selectedModel(),
-        projectId: currentProjectId || undefined,
-        messages: recentConversationForAssistant(prompt),
-        clientMessageId: messageId ? `${messageId}_user` : undefined,
-        assistantMessageId: messageId || undefined,
-      }),
-    },
+  const payload = await apiFetch<any>('/api/assistant/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt,
+      requestedMode,
+      modelId: selectedModel(),
+      projectId: currentProjectId || undefined,
+      messages: recentConversationForAssistant(prompt),
+      clientMessageId: messageId ? `${messageId}_user` : undefined,
+      assistantMessageId: messageId || undefined,
+    }),
     signal: activeAbort?.signal,
-    resumeRequest: currentProjectId ? ({ threadId, turnId }) => ({
-      url: `${API_BASE_URL}/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(threadId)}/events?format=sse${turnId ? `&turnId=${encodeURIComponent(turnId)}` : ''}`,
-      init: { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
-    }) : undefined,
-    onEvent: (type, data) => {
-      if (data?.runId) lastAgentRunId = String(data.runId);
-      if (data?.threadId) activeHarnessThreadId = String(data.threadId);
-      if (data?.turnId) activeHarnessTurnId = String(data.turnId);
-      const id = messageId;
-      if (id && conversationApi && isCodenStreamEvent(data)) conversationApi.applyStreamEvent(id, data);
-      if (type === 'assistant_delta') {
-        const delta = String(data?.text || data?.content || '');
-        if (!delta) return;
-        streamedText += delta;
-        if (!id || !conversationApi) updateMessage(card, streamedText);
-      } else if (type === 'done') {
-        finalPayload = data?.payload || data;
-      }
-    },
-    maxRetries: currentProjectId ? 4 : 0,
   });
-  activeStreamHandle = stream;
-  try {
-    await stream.done;
-  } finally {
-    if (activeStreamHandle === stream) activeStreamHandle = null;
-  }
-  if (finalPayload?.success === false) throw new Error(finalPayload.message || finalPayload.error || 'Assistant response failed.');
-  const content = String(finalPayload?.text || streamedText || '').trim();
+
+  if (payload?.runId) lastAgentRunId = String(payload.runId);
+  if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
+  if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
+  if (payload?.success === false) throw new Error(payload.message || payload.error || 'Assistant response failed.');
+
+  const content = String(payload?.text || '').trim();
   if (!content) throw new Error('The selected AI model returned an empty response.');
   const safeContent = safeAssistantDisplayText(content, speaksFrench);
   if (!safeContent) throw new Error('The selected AI model returned a response that failed the output safety checks.');
@@ -2571,62 +2518,27 @@ async function streamSimpleConversation(card: HTMLElement | null, prompt: string
   return true;
 }
 
-async function streamProjectGeneration(
+async function requestProjectGeneration(
   projectId: string,
   requestBody: Record<string, unknown>,
-  onEvent: (type: string, data: any) => void,
   signal?: AbortSignal,
 ): Promise<any> {
-  // Compatibility fallback contract: /api/projects/${encodeURIComponent(currentProjectId)}/generate
-  const session = await getVerifiedSession({ allowRefresh: true });
-  const accessToken = session?.session?.access_token;
-  if (!accessToken) throw new Error('An authenticated session is required to start a real generation run.');
-
-  let finalPayload: any = null;
-  let streamObserved = false;
-  const stream = openCodenStream({
-    url: `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/generate?stream=true`,
-    init: {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(requestBody),
-    },
+  const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
+    method: 'POST',
+    body: JSON.stringify(requestBody),
     signal,
-    resumeRequest: ({ threadId, turnId }) => ({
-      url: `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/agent/threads/${encodeURIComponent(threadId)}/events?format=sse${turnId ? `&turnId=${encodeURIComponent(turnId)}` : ''}`,
-      init: { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
-    }),
-    onConnected: () => { streamObserved = true; },
-    onEvent: (type, data) => {
-      streamObserved = true;
-      if (type === 'done') finalPayload = data?.payload || data;
-      onEvent(type, data);
-    },
-    maxRetries: 4,
   });
-  activeStreamHandle = stream;
-  try {
-    await stream.done;
-  } catch (error) {
-    if (signal?.aborted || stream.isCancelled()) throw new DOMException('The generation was cancelled.', 'AbortError');
-    if (!finalPayload && !streamObserved && error instanceof CodenStreamHttpError && [404, 405, 501].includes(error.status)) {
-      throw new Error('The Coden Stream v2 endpoint is unavailable. Retry the same run or choose another model.');
-    }
-    throw error;
-  } finally {
-    if (activeStreamHandle === stream) activeStreamHandle = null;
-  }
-  if (!finalPayload) throw new CodenStreamIncompleteError();
-  return finalPayload;
+  if (!payload) throw new Error('Generation returned an empty response.');
+  return payload;
 }
 
 async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto') {
   setBusy(true);
   startLiveRun(card, { mode: requestedMode, model: selectedModel(), intent: prompt });
   try {
-    // There is one production transport: the selected model's SSE stream.
-    // A failed stream must remain an honest failure, never a hidden second run.
-    await streamSimpleConversation(card, prompt, speaksFrench, requestedMode);
+    // One request, one answer. A failed request stays an honest failure,
+    // never a hidden second run.
+    await requestSimpleConversation(card, prompt, speaksFrench, requestedMode);
   } catch (error) {
     const message = error instanceof Error && error.message.trim()
       ? error.message.trim()
@@ -2634,8 +2546,8 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
     updateMessage(card, message);
   } finally {
     setBusy(false);
-    // Safety net: if the stream ended, was cancelled, or failed before any
-    // assistant_delta arrived, ensure the thinking shimmer never sticks.
+    // Safety net: if the request was cancelled or failed before any answer
+    // arrived, the thinking indicator must never stick.
     clearMessageShimmer(card);
   }
 }
@@ -5843,39 +5755,17 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       setEmptyPreviewState('working', speaksFrench ? 'Generation en cours' : 'Generating');
     }
 
-    // Stream generation events into the React Response surface, then use the
-    // authoritative done payload to refresh files and preview atomically.
+    // One request, and its payload refreshes files and preview atomically.
+    // Nothing reports progress in between until the replacement live transport
+    // lands; the run's own result is still the authority either way.
     activeHarnessThreadId = '';
     activeHarnessTurnId = '';
     lastAgentRunId = '';
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
-    let payload: any = await streamProjectGeneration(currentProjectId, requestBody, (type, data) => {
-      // The preview appears while the run is still going, not after it. This
-      // is the difference between watching an application be built and
-      // watching a spinner that ends in one.
-      if (type === 'sandbox') {
-        if (data?.stage === 'preview_ready' && data?.url) {
-          generationTouchesPreview = true;
-          activeGenerationTouchesPreview = true;
-          activateBuilderView('preview');
-          setLivePreview(String(data.url));
-        } else if (data?.stage === 'sandbox_failed') {
-          // The sandbox is gone; anything showing must not claim otherwise.
-          clearLivePreview();
-          setEmptyPreviewState('idle', speaksFrench ? 'L’aperçu n’a pas démarré' : 'The preview did not start');
-        }
-      }
-      if (data?.runId) lastAgentRunId = String(data.runId);
-      if (data?.threadId) activeHarnessThreadId = String(data.threadId);
-      if (data?.turnId) activeHarnessTurnId = String(data.turnId);
-      const id = messageHandleId(status);
-      if (id && conversationApi && isCodenStreamEvent(data)) {
-        conversationApi.applyStreamEvent(id, data);
-      } else if (type === 'assistant_delta') {
-        const delta = String(data?.text || data?.content || '');
-        if (id && conversationApi && delta) conversationApi.appendAssistantDelta(id, delta);
-      }
-    }, activeAbort?.signal);
+    let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal);
+    if (payload?.runId) lastAgentRunId = String(payload.runId);
+    if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
+    if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
     {
       const statusCode = Number(payload?.status_code || 200);
       // A recoverable draft deliberately returns success:false + needs_fix so
@@ -6003,7 +5893,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       if (generationTouchesPreview) setEmptyPreviewState('idle', stopRequested ? 'Generation stopped' : 'Build cancelled');
     } else {
       const errorText = error instanceof Error ? error.message : 'Generation failed.';
-      const runStatus = error instanceof CodenStreamIncompleteError ? 'incomplete' : 'failed';
+      const runStatus = 'failed';
       clearMessageShimmer(status);
       if (useAgentFlow) {
         flowStatus = 'failed';
@@ -6027,7 +5917,6 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     clearMessageShimmer(status);
     setBusy(false);
     activeAbort = null;
-    activeStreamHandle = null;
     stopRequested = false;
     activeGenerationTouchesPreview = false;
   }
@@ -6037,7 +5926,6 @@ async function cancelBuild() {
   if (!isGenerating) return;
   stopRequested = true;
   activeAbort?.abort();
-  activeStreamHandle?.cancel();
   if (currentProjectId) {
     if (activeHarnessThreadId && activeHarnessTurnId) {
       await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/cancel`, {
