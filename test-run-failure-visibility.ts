@@ -80,4 +80,51 @@ assert.doesNotMatch(
   'the diagnostic code must not be thrown as the user-facing text again',
 );
 
+/*
+ * An internal error is not a billing problem.
+ *
+ * Model routing was wrapped in a catch that answered every exception with
+ * `publicCreditGateResponse()` — a provider outage, an unverifiable catalog, a
+ * routing bug — so the user was told to upgrade. It logged nothing, carried no
+ * diagnostic code and returned HTTP 200. Production shows the result on
+ * 2026-09-04 at 16:09: a run that failed in seven seconds, recorded as
+ * `turn.failed { diagnostic_code: null }`, with no server log to explain it,
+ * on an account holding 27 credits.
+ */
+{
+  const routing = server.slice(server.indexOf('modelRouting = await resolveAgentProviderModel('));
+  const handler = routing.slice(0, routing.indexOf('const effectiveModelSelection'));
+  assert.match(handler, /console\.error\('\[coden:model_routing_failed\]'/, 'a routing failure must leave a trace');
+  assert.match(handler, /diagnoseProviderError\(error\)/, 'and be diagnosed for what it is');
+  assert.match(handler, /diagnostic_code: diagnostic\.diagnostic_code/, 'and report that diagnosis');
+  assert.match(handler, /insufficientCredits/, 'only a genuine credit refusal may claim credits');
+  assert.doesNotMatch(
+    handler,
+    /return respondJson\(200, \{\s*\.\.\.publicCreditGateResponse\(\)/,
+    'an arbitrary exception must not be answered as "upgrade required"',
+  );
+}
+
+// A credit refusal names itself, in the user's language, with a real status.
+{
+  const gate = server.slice(server.indexOf('function publicCreditGateResponse('), server.indexOf('function countLineDiffStats('));
+  assert.match(gate, /diagnostic_code: 'CREDITS_REQUIRED'/, 'a credit refusal must carry its code');
+  assert.doesNotMatch(gate, /error: 'UpgradeRequired'/, 'a diagnostic code is not a message to a user');
+  assert.doesNotMatch(gate, /message: 'Upgrade required'/, 'nor is an English fragment, in a French product');
+  assert.match(gate, /crédits/, 'the French wording is what most requests get');
+  assert.match(gate, /french/, 'and English is available for an English request');
+  // Never HTTP 200 for a refusal.
+  assert.doesNotMatch(server, /respondJson\(200, publicCreditGateResponse\(/, 'a refusal must not answer with a success status');
+  assert.doesNotMatch(server, /respondJson\(200, \{\s*\.\.\.publicCreditGateResponse\(\),?\s*\}\)/, 'nor spread into one');
+}
+
+// A run that wrote files but did not verify is a failure the harness can name.
+{
+  assert.match(
+    server,
+    /diagnostic_code: 'VERIFICATION_INCOMPLETE'/,
+    'an unverified pipeline result must not be recorded as a failure with no cause',
+  );
+}
+
 console.log('run failure visibility tests passed');

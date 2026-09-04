@@ -5372,12 +5372,25 @@ function sanitizeAiUsageRow(row: any) {
   };
 }
 
-function publicCreditGateResponse() {
+/**
+ * What a genuine credit refusal says.
+ *
+ * `error` used to be the bare string `UpgradeRequired` and `message` was
+ * `Upgrade required` — a code and an English sentence shown inside a French
+ * interface — and neither carried a `diagnostic_code`, so the harness recorded
+ * `turn.failed { diagnostic_code: null }` and the client had nothing to act on.
+ */
+function publicCreditGateResponse(french = true) {
   return {
     success: false,
     event: 'credits_insufficient',
-    error: 'UpgradeRequired',
-    message: 'Upgrade required',
+    error: french
+      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
+      : 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.',
+    message: french
+      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
+      : 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.',
+    diagnostic_code: 'CREDITS_REQUIRED',
     action: 'upgrade_required',
     suggested_action: 'use_auto',
   };
@@ -11638,6 +11651,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         return respondJson(200, {
           success: outcome.ok,
           needs_fix: !outcome.ok,
+          // A run that wrote files but did not verify is still a failure the
+          // harness has to be able to name; without this it recorded
+          // `turn.failed { diagnostic_code: null }`.
+          ...(outcome.ok ? {} : {
+            diagnostic_code: 'VERIFICATION_INCOMPLETE',
+            suggested_action: 'retry_or_use_auto',
+            recoverable: true,
+          }),
           intent: decision,
           project: updatedProject,
           files: pipelineFiles,
@@ -11769,9 +11790,35 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       userCredits: walletForRouting,
     });
   } catch (error: any) {
-    return respondJson(200, {
-      ...publicCreditGateResponse(),
-      message: error?.message || 'This action is unavailable with the current plan or credit balance.',
+    /*
+     * Model routing failing is not the user running out of credits.
+     *
+     * Every exception here — a provider outage, an unverifiable catalog, a
+     * routing bug — was answered with `publicCreditGateResponse()`, so the
+     * person was told to upgrade. It logged nothing, carried no diagnostic
+     * code, and returned HTTP 200, which is why production shows
+     * `turn.failed { diagnostic_code: null }` with no matching server log and
+     * why a run could end in seven seconds with nothing to explain it. The
+     * account that hit it on 2026-09-04 at 16:09 had 27 credits.
+     *
+     * A genuine credit refusal is raised as one, and is recognised as one
+     * below. Everything else is diagnosed for what it is.
+     */
+    const insufficientCredits = String(error?.diagnosticCode || '') === 'CREDITS_REQUIRED'
+      || /insufficient credit|not enough credit|credit balance|upgrade required/i.test(String(error?.message || ''));
+    // The run row does not exist yet at this point; the harness turn is
+    // finalized from this payload's own diagnostic_code by `respondJson`.
+    if (insufficientCredits) return respondJson(402, publicCreditGateResponse(frenchActivity));
+    console.error('[coden:model_routing_failed]', { requestId, project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+    const diagnostic = diagnoseProviderError(error);
+    const routingMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
+    return respondJson(diagnostic.status >= 400 ? diagnostic.status : 502, {
+      success: false,
+      error: routingMessage,
+      message: routingMessage,
+      diagnostic_code: diagnostic.diagnostic_code,
+      suggested_action: diagnostic.suggested_action,
+      recoverable: true,
     });
   }
   const effectiveModelSelection = modelRouting.model;
@@ -11829,7 +11876,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const wallet = cost.finalCredits > 0 ? walletForRouting : Number.POSITIVE_INFINITY;
     if (wallet < cost.finalCredits) {
       await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: 'use_auto' });
-      return respondJson(200, publicCreditGateResponse());
+      return respondJson(402, publicCreditGateResponse(frenchActivity));
     }
     let agentText: any;
     let content = '';
@@ -11904,9 +11951,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   if (wallet < cost.finalCredits) {
     await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: 'use_auto' });
-    return respondJson(200, {
-      ...publicCreditGateResponse(),
-    });
+    return respondJson(402, publicCreditGateResponse(frenchActivity));
   }
 
   const refId = `gen_${randomUUID()}`;
