@@ -32,6 +32,13 @@ type PlaywrightModule = {
 
 const CONTROL_SELECTOR = 'button, [role="button"], input, select, textarea, a[href]';
 
+/**
+ * The origin the audited preview is served from. It resolves to nothing — the
+ * document is fulfilled by a route, never fetched — but it has to be a real
+ * https origin so the page gets storage, cookies and a same-origin document.
+ */
+const PREVIEW_ORIGIN = 'https://preview.coden.local/';
+
 type BrowserControlProbe = {
   index: number;
   tag: string;
@@ -83,7 +90,35 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
       if (message.type?.() === 'error') runtimeErrors.push(redactError(message.text?.() || 'Console error'));
     });
 
-    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    /*
+     * The preview must be served from a real origin, not pasted into a blank one.
+     *
+     * `page.setContent` leaves the document on `about:blank`, which has an
+     * opaque origin, and Chromium denies storage to an opaque origin. So any
+     * generated app that touches `localStorage` — a to-do list, a notes app,
+     * a theme toggle, most small web apps — threw on its first line:
+     *
+     *   SecurityError: Failed to read the 'localStorage' property from
+     *   'Window': Access is denied for this document.
+     *
+     * That is this runner's error, not the application's, and it was recorded
+     * against the application: 33 `browser_no_runtime_errors` failures, and
+     * with the throw happening before React could mount, 14 blank previews,
+     * 16 blank mobile previews and 36 build scores of 0/100. The repair loop
+     * then spent its rounds hunting a bug that was not in the code, and the
+     * user was shown a working app as broken.
+     *
+     * Serving the same HTML over a routed navigation gives the document a
+     * normal https origin, so storage behaves as it will for the real user.
+     * Only the document request is fulfilled; anything the page loads for
+     * itself still goes out as before.
+     */
+    await page.route('**/*', (route: any) => (
+      route.request().resourceType() === 'document'
+        ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html })
+        : route.continue()
+    ));
+    await page.goto(PREVIEW_ORIGIN, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await page.waitForLoadState('networkidle', { timeout: Math.min(timeoutMs, 4_000) }).catch(() => null);
 
     const before = await page.evaluate(() => ({
