@@ -107,6 +107,40 @@ create table if not exists public.usage_events (
   created_at timestamptz not null default now()
 );
 
+-- `usage_events` predates V4 in this project. Extend it in place so its
+-- historical rows remain queryable while the V4 metering contract gets the
+-- fields it needs. Legacy rows intentionally keep a null account_id.
+alter table public.usage_events add column if not exists account_id uuid references public.billing_accounts(id) on delete set null;
+alter table public.usage_events add column if not exists workspace_id uuid;
+alter table public.usage_events add column if not exists run_id text;
+alter table public.usage_events add column if not exists category text not null default 'legacy';
+alter table public.usage_events add column if not exists resource text not null default 'legacy';
+alter table public.usage_events add column if not exists provider text not null default 'legacy';
+alter table public.usage_events add column if not exists model text;
+alter table public.usage_events add column if not exists quantity numeric(24, 8) not null default 1;
+alter table public.usage_events add column if not exists unit text not null default 'event';
+alter table public.usage_events add column if not exists provider_cost_usd numeric(18, 10) not null default 0;
+alter table public.usage_events add column if not exists allocated_platform_cost_usd numeric(18, 10) not null default 0;
+alter table public.usage_events add column if not exists complete_cost_usd numeric(18, 10) not null default 0;
+alter table public.usage_events add column if not exists price_version_id text;
+alter table public.usage_events add column if not exists idempotency_key text;
+alter table public.usage_events add column if not exists provider_payload jsonb not null default '{}'::jsonb;
+alter table public.usage_events add column if not exists occurred_at timestamptz not null default now();
+
+update public.usage_events
+set model = coalesce(model, model_used),
+    category = case when category = 'legacy' then coalesce(action_type, 'legacy') else category end,
+    resource = case when resource = 'legacy' then coalesce(action_type, 'legacy') else resource end,
+    quantity = case when quantity = 1 and cost_credits is not null then greatest(cost_credits, 1) else quantity end,
+    provider_cost_usd = case when provider_cost_usd = 0 then coalesce(cost_usd, 0) else provider_cost_usd end,
+    complete_cost_usd = case when complete_cost_usd = 0 then coalesce(cost_usd, 0) else complete_cost_usd end,
+    occurred_at = coalesce(occurred_at, created_at)
+where account_id is null;
+
+create unique index if not exists idx_usage_events_idempotency
+  on public.usage_events (idempotency_key)
+  where idempotency_key is not null;
+
 create table if not exists public.usage_reservations (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references public.billing_accounts(id) on delete cascade,
