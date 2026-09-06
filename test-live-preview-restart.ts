@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 
 const builder = readFileSync('./src/builder-live.ts', 'utf8');
 const markup = readFileSync('./builder.html', 'utf8');
+assert.match(markup, /topbarPreviewTools\.appendChild\(livePreviewStart\)/, 'the restart action must move out of the hidden legacy sub-navigation with the other preview controls');
 
 // The action exists and asks the route that actually starts a server.
 assert.match(builder, /async function startLivePreview\(\)/, 'a stopped application must be startable from the interface');

@@ -15,6 +15,8 @@
  * Job lifecycle: pending → processing → completed | failed | cancelled
  */
 
+import { requireDatabaseResult } from './database-result.ts';
+
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
 export type JobPriority = 'critical' | 'high' | 'normal' | 'low';
 
@@ -113,9 +115,8 @@ export async function enqueueJob(input: {
 
   // Persist to Supabase
   if (queue.supabase) {
-    await queue.supabase.from('agent_jobs').insert(job).catch((err: any) => {
-      console.warn('[coden:job_queue_persist_failed]', { jobId, message: err?.message });
-    });
+    // Never acknowledge a durable job that the worker cannot retrieve.
+    await requireDatabaseResult(queue.supabase.from('agent_jobs').insert(job), 'enqueue job');
   } else {
     // Fallback: in-memory execution (no persistence, but still async)
     queueMicrotask(() => executeJobInProcess(job));
@@ -223,12 +224,12 @@ async function executeJobInProcess(job: CodenJob): Promise<void> {
   const onProgress = (step: string, message: string) => {
     // Progress events are written to agent_job_events table for SSE polling
     if (queue.supabase) {
-      queue.supabase.from('agent_job_events').insert({
+      void Promise.resolve(queue.supabase.from('agent_job_events').insert({
         job_id: job.id,
         step,
         message,
         created_at: new Date().toISOString(),
-      }).catch(() => null);
+      })).catch(() => null);
     }
   };
 
@@ -239,9 +240,9 @@ async function executeJobInProcess(job: CodenJob): Promise<void> {
     const attempts = job.attempts + 1;
     if (attempts < job.max_attempts) {
       // Retry: back to pending with incremented attempts
-      await queue.supabase?.from('agent_jobs')
+      await Promise.resolve(queue.supabase?.from('agent_jobs')
         .update({ status: 'pending', attempts, error: err?.message })
-        .eq('id', job.id)
+        .eq('id', job.id))
         .catch(() => null);
     } else {
       await updateJobStatus(job.id, 'failed', undefined, err?.message);
@@ -265,7 +266,7 @@ async function updateJobStatus(
     ...(result ? { result } : {}),
     ...(error ? { error: error.slice(0, 500) } : {}),
   };
-  await queue.supabase.from('agent_jobs').update(update).eq('id', jobId).catch(() => null);
+  await Promise.resolve(queue.supabase.from('agent_jobs').update(update).eq('id', jobId)).catch(() => null);
 }
 
 // ─── Generate job handler (wraps the main generation pipeline) ────────────────

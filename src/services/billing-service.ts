@@ -750,7 +750,7 @@ export class StripeService {
 
       // A positive balance after a top-up must lift any metering suspension.
       if (updated > 0) {
-        await this.supabase.rpc('reactivate_cloud_wallet', { org_id: organizationId }).catch((error: any) => {
+        await Promise.resolve(this.supabase.rpc('reactivate_cloud_wallet', { org_id: organizationId })).catch((error: any) => {
           console.warn(`[coden:cloud_wallet_reactivate_skipped] ${error?.message || error}`);
         });
       }

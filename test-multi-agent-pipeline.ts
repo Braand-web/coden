@@ -160,7 +160,7 @@ try {
     }).catch(async (error) => { await cleanup('pipeline-small-edit'); throw error; });
     await cleanup('pipeline-small-edit');
 
-    assert.equal(outcome.started, true);
+    assert.equal(outcome.started, true, JSON.stringify(outcome));
     assert.ok(outcome.started);
     assert.equal(outcome.plan, undefined, 'a small edit must not invoke the planner at all');
     assert.equal(provider.chatCalls.length, 2, 'no planner call means the script starts directly on the coder\'s steps');

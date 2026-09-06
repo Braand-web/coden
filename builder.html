@@ -5113,6 +5113,7 @@
       const historyShortcut = document.getElementById("builder-history-shortcut");
       const collapseSidebarButton = document.querySelector(".collapse-sidebar-arrow");
       const previewToolbarControls = document.querySelector(".preview-toolbar-controls");
+      const livePreviewStart = document.getElementById("btn-live-preview-start");
 
       if (topbarCenter && subNavTabs) {
         if (historyShortcut) topbarCenter.appendChild(historyShortcut);
@@ -5120,6 +5121,7 @@
         topbarCenter.appendChild(subNavTabs);
       }
       if (topbarPreviewTools) {
+        if (livePreviewStart) topbarPreviewTools.appendChild(livePreviewStart);
         if (previewToolbarControls) topbarPreviewTools.appendChild(previewToolbarControls);
       }
 

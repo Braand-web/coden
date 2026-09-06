@@ -143,12 +143,11 @@ export function settleDefinitionOfDoneFromReport(input: {
 
   const verdicts: Record<string, { status: 'passed' | 'failed'; evidence?: string }> = {};
 
-  // The whole verification is what says the request was met — and since the
-  // entry file must no longer be the scaffold placeholder for it to pass, this
-  // is now a claim with something behind it.
-  verdicts.requested_behavior = input.ok
-    ? { status: 'passed' }
-    : { status: 'failed', evidence: firstOf(() => true) || 'Verification did not pass.' };
+  // Compilation and a rendered page do not prove the requested interactions.
+  // Leave behaviour pending until a dedicated functional check supplies proof.
+  if (!input.ok) {
+    verdicts.requested_behavior = { status: 'failed', evidence: firstOf(() => true) || 'Verification did not pass.' };
+  }
 
   if (input.ran.build || input.ran.typecheck) {
     verdicts.build = verdict(firstOf(problem => problem.source === 'build' || problem.source === 'typecheck'));

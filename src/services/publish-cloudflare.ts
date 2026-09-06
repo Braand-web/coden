@@ -21,6 +21,8 @@ import {
   publishProjectToCloudflareWorkers,
   removeCloudflareWorker,
 } from './publish-cloudflare-workers.ts';
+
+export { cloudflareWorkerNameForSlug, rollbackCloudflareWorkerDeployment } from './publish-cloudflare-workers.ts';
 import type { GeneratedAppRuntime } from './generated-app-runtime.ts';
 import {
   codenHostForSlug,

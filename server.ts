@@ -1,5 +1,6 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
+import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
@@ -14221,6 +14222,8 @@ import {
   getCustomDomainStatus,
   removePublication,
   projectSlugToCfName,
+  cloudflareWorkerNameForSlug,
+  rollbackCloudflareWorkerDeployment,
   verifyCloudflareDeployment,
 } from './src/services/publish-cloudflare.ts';
 import { buildStaticSource } from './src/services/build-runner.ts';
@@ -14240,8 +14243,8 @@ import { runMultiAgentPipeline, resolvePipelineRoute, summarizePipelineOutcome }
 import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
-async function readGeneratedRuntimeContract(project: GeneratedProject) {
-  const files = await loadProjectFiles(project.id);
+async function readGeneratedRuntimeContract(project: GeneratedProject, sourceFiles?: GeneratedFile[]) {
+  const files = sourceFiles || await loadProjectFiles(project.id);
   const manifestEntry = files.find(file => file.path.replace(/\\/g, '/') === 'coden/app-manifest.json');
   let manifest: any = null;
   if (manifestEntry) {
@@ -14294,7 +14297,7 @@ function promptWithPendingAgentInstructions(prompt: string, runId: string) {
 async function persistGeneratedRuntimeContract(project: GeneratedProject, manifest: any, sourceRunId?: string) {
   const client = getSupabase();
   if (!client) return;
-  await client.from('project_runtime_profiles').upsert({
+  await requireDatabaseResult(client.from('project_runtime_profiles').upsert({
     project_id: project.id,
     organization_id: project.organization_id,
     profile: manifest.profile,
@@ -14303,10 +14306,10 @@ async function persistGeneratedRuntimeContract(project: GeneratedProject, manife
     backend: manifest.backend,
     manifest,
     updated_at: new Date().toISOString(),
-  }, { onConflict: 'project_id' }).catch((error: any) => {
+  }, { onConflict: 'project_id' }), 'save runtime profile').catch((error: any) => {
     if (!isSchemaShapeError(error)) console.warn('[coden:runtime_profile_persist_skipped]', { message: error?.message });
   });
-  await client.from('generated_app_manifests').insert({
+  await requireDatabaseResult(client.from('generated_app_manifests').insert({
     project_id: project.id,
     organization_id: project.organization_id,
     profile: manifest.profile,
@@ -14315,7 +14318,7 @@ async function persistGeneratedRuntimeContract(project: GeneratedProject, manife
     backend: manifest.backend,
     manifest,
     source_run_id: sourceRunId || null,
-  }).catch((error: any) => {
+  }), 'save generated manifest').catch((error: any) => {
     if (!isSchemaShapeError(error)) console.warn('[coden:generated_manifest_persist_skipped]', { message: error?.message });
   });
 }
@@ -14398,7 +14401,7 @@ app.post('/api/projects/:id/build', requireAuthWithTemporaryGeneration, async (r
       output_directory: contract.manifest.outputDirectory,
       started_at: new Date().toISOString(),
     };
-    if (client) await client.from('deployment_builds').upsert(buildRow, { onConflict: 'project_id,build_id' }).catch(() => null);
+    if (client) await Promise.resolve(client.from('deployment_builds').upsert(buildRow, { onConflict: 'project_id,build_id' })).catch(() => null);
     await persistGeneratedRuntimeContract(project, contract.manifest);
     const workDir = path.join('/tmp', 'coden-builds', `${String(project.slug || project.id).replace(/[^a-z0-9-]/gi, '-')}-${randomUUID()}`);
     let distReady = false;
@@ -14414,11 +14417,11 @@ app.post('/api/projects/:id/build', requireAuthWithTemporaryGeneration, async (r
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
-    if (client) await client.from('deployment_builds').update({ status: 'passed', completed_at: new Date().toISOString() }).eq('project_id', project.id).eq('build_id', buildId).catch(() => null);
+    if (client) await Promise.resolve(client.from('deployment_builds').update({ status: 'passed', completed_at: new Date().toISOString() }).eq('project_id', project.id).eq('build_id', buildId)).catch(() => null);
     return res.json({ success: true, build_id: buildId, status: 'passed', profile: contract.manifest.profile, output_directory: contract.manifest.outputDirectory, dist_ready: distReady });
   } catch (error: any) {
     const client = getSupabase();
-    if (client) await client.from('deployment_builds').update({ status: 'failed', error: String(error?.message || 'Build failed').slice(0, 1000), completed_at: new Date().toISOString() }).eq('build_id', buildId).catch(() => null);
+    if (client) await Promise.resolve(client.from('deployment_builds').update({ status: 'failed', error: String(error?.message || 'Build failed').slice(0, 1000), completed_at: new Date().toISOString() }).eq('build_id', buildId)).catch(() => null);
     return res.status(500).json({ success: false, build_id: buildId, status: 'failed', error: error?.message || 'Build failed.' });
   }
 });
@@ -14521,9 +14524,13 @@ async function verifyProjectPreviewWithRealBuild(project: GeneratedProject, file
   };
 }
 
+const activePublishOperations = new Map<string, string>();
+
 async function publishCloudflareProjectForRequest(req: any, res: any) {
   const requestId = `pub_${randomUUID()}`;
   const projectId = String(req.params.id || '');
+  let publishLockKey = '';
+  let publishLockToken = '';
   try {
     const auth = getRequiredAuth(req);
     if (!enforceRateLimit(`publish:${auth.userId}`, 6, 60_000)) {
@@ -14565,12 +14572,27 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
         publish: publishStatus,
       });
     }
+    publishLockKey = projectId;
+    // Lock ownership belongs to this HTTP execution, never a replayable client key.
+    publishLockToken = requestId;
+    const activeToken = activePublishOperations.get(publishLockKey);
+    if (activeToken) {
+      return res.status(409).json({
+        success: false,
+        error: 'Une publication de ce projet est déjà en cours.',
+        message: 'Une publication de ce projet est déjà en cours.',
+        diagnostic_code: 'PUBLISH_IN_PROGRESS',
+        request_id: requestId,
+        suggested_action: 'wait_for_active_publish',
+      });
+    }
+    activePublishOperations.set(publishLockKey, publishLockToken);
     const slug = String(project.slug || project.id).toLowerCase();
     const files = extractStaticFiles(project, context.files);
     if (!Object.keys(files).length) {
       return res.status(400).json({ success: false, error: 'No generated files to publish.', request_id: requestId });
     }
-    const contract = await readGeneratedRuntimeContract(project);
+    const contract = await readGeneratedRuntimeContract(project, context.files);
     if (contract.validation.length) {
       return res.status(422).json({ success: false, error: 'Generated app manifest is invalid.', validation: contract.validation, manifest: contract.manifest, request_id: requestId });
     }
@@ -14639,9 +14661,11 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
       created_at: createdAt,
     };
 
+    // Record the provider result before updating the mutable publication pointer.
+    await saveDeploymentRecord(deploy);
     const client = getSupabase();
     if (client) {
-      await client.from('publications').upsert([{
+      await requireDatabaseResult(client.from('publications').upsert([{
         project_id: project.id,
         slug,
         cf_pages_project: result.cfName,
@@ -14650,9 +14674,8 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
         last_deployment_id: result.deploymentId,
         published_at: createdAt,
         status: 'ready',
-      }], { onConflict: 'project_id' });
+      }], { onConflict: 'project_id' }), 'save publication');
     }
-    await saveDeploymentRecord(deploy);
     const nextStatus = buildPublishStatus({ ...context, latestDeployment: deploy });
     return res.json({
       success: true,
@@ -14670,6 +14693,10 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
       request_id: requestId,
       suggested_action: diagnostic.suggested_action,
     });
+  } finally {
+    if (publishLockKey && activePublishOperations.get(publishLockKey) === publishLockToken) {
+      activePublishOperations.delete(publishLockKey);
+    }
   }
 }
 
@@ -14704,33 +14731,75 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   const client = requireSupabase('Deployment rollback');
   const { data: target, error } = await client.from('deployments').select('*').eq('project_id', project.id).eq('id', req.params.deploymentId).maybeSingle();
   if (error || !target || !isPublishedDeploymentReady(target)) return res.status(404).json({ success: false, error: 'A ready rollback deployment was not found.' });
+  if (target.provider !== 'cloudflare-workers' || !target.provider_deployment_id) {
+    return res.status(409).json({
+      success: false,
+      error: 'This historical deployment cannot be restored automatically on its original provider.',
+      diagnostic_code: 'ROLLBACK_PROVIDER_UNSUPPORTED',
+    });
+  }
   const healthUrl = String(target.deployment_url || target.public_url || '');
-  if (!/^https:\/\//i.test(healthUrl)) return res.status(409).json({ success: false, error: 'The target deployment has no immutable HTTPS artifact URL.' });
-  const health = await fetch(healthUrl, { method: 'GET', redirect: 'follow' }).catch(() => null);
-  if (!health?.ok) return res.status(409).json({ success: false, error: 'The rollback artifact is no longer reachable.' });
+  if (!/^https:\/\//i.test(healthUrl)) return res.status(409).json({ success: false, error: 'The target deployment has no HTTPS production URL.' });
+  // The URL is mutable: a broken current release must not prevent restoration.
+  const rollbackLockToken = `rollback_${randomUUID()}`;
+  if (activePublishOperations.has(project.id)) {
+    return res.status(409).json({ success: false, diagnostic_code: 'PUBLISH_IN_PROGRESS', error: 'A deployment operation is already running for this project.' });
+  }
+  activePublishOperations.set(project.id, rollbackLockToken);
+  try {
+  const workerName = cloudflareWorkerNameForSlug(String(project.slug || project.id));
+  let providerRollback: Awaited<ReturnType<typeof rollbackCloudflareWorkerDeployment>>;
+  try {
+    providerRollback = await rollbackCloudflareWorkerDeployment(workerName, String(target.provider_deployment_id));
+  } catch (rollbackError: any) {
+    return res.status(502).json({
+      success: false,
+      error: rollbackError?.message || 'Cloudflare could not restore the selected deployment.',
+      diagnostic_code: 'ROLLBACK_PROVIDER_FAILED',
+    });
+  }
+  const productionHealth = await verifyCloudflareDeployment({
+    provider: 'cloudflare-workers', runtime: 'static-assets', cfName: workerName,
+    subdomain: codenHostForSlug(String(project.slug || project.id)),
+    defaultUrl: healthUrl, codenUrl: healthUrl, deploymentUrl: healthUrl,
+    deploymentId: providerRollback.deploymentId,
+  }, ['/']);
   const rollback = {
     ...target,
     id: randomUUID(),
-    status: 'ready',
+    status: productionHealth.verified ? 'ready' : 'failed',
+    provider_deployment_id: providerRollback.deploymentId,
     created_at: new Date().toISOString(),
     commit_hash: target.commit_hash || null,
     branch: target.branch || 'main',
   };
   delete (rollback as any).updated_at;
   await saveDeploymentRecord(rollback);
-  await client.from('publications').update({
-    last_deployment_id: target.provider_deployment_id,
+  await requireDatabaseResult(client.from('publications').update({
+    last_deployment_id: providerRollback.deploymentId,
     default_url: target.deployment_url,
-    status: 'ready',
+    status: rollback.status,
     published_at: rollback.created_at,
-  }).eq('project_id', project.id).catch(() => null);
+  }).eq('project_id', project.id), 'save rollback publication');
+  if (!productionHealth.verified) {
+    return res.status(502).json({
+      success: false,
+      error: 'Cloudflare restored the selected version, but the production healthcheck failed.',
+      diagnostic_code: 'ROLLBACK_HEALTHCHECK_FAILED',
+      provider_deployment_id: providerRollback.deploymentId,
+    });
+  }
   const domain = await getPrimaryCustomDomain(project.id);
   return res.json({
     success: true,
     rollback_of: target.id,
     deployment: sanitizeDeploymentForUser(rollback, getPublishPublicUrl(project, domain), domain),
     artifact_hash: rollback.commit_hash,
+    provider_deployment_id: providerRollback.deploymentId,
   });
+  } finally {
+    if (activePublishOperations.get(project.id) === rollbackLockToken) activePublishOperations.delete(project.id);
+  }
 });
 
 app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, res: any) => {
@@ -14752,7 +14821,7 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
         custom_domain: domain,
         custom_domain_status: 'pending',
       }).eq('project_id', project.id);
-      await client.from('deployment_domains').upsert({
+      await Promise.resolve(client.from('deployment_domains').upsert({
         project_id: project.id,
         organization_id: project.organization_id,
         provider: contract.manifest.runtime === 'cloudflare-workers' || process.env.CODEN_STATIC_HOSTING_PROVIDER !== 'cloudflare-pages'
@@ -14762,7 +14831,7 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
         domain_type: 'custom',
         status: 'pending',
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'project_id,hostname' }).catch((error: any) => {
+      }, { onConflict: 'project_id,hostname' })).catch((error: any) => {
         if (!isSchemaShapeError(error)) console.warn('[coden:deployment_domain_persist_skipped]', { message: error?.message });
       });
     }
@@ -14790,11 +14859,11 @@ app.get('/api/projects/:id/publish-cf/domain/verify', requireAuth, async (req: a
       await client.from('publications').update({
         custom_domain_status: status.status,
       }).eq('project_id', project.id).eq('custom_domain', domain);
-      await client.from('deployment_domains').update({
+      await Promise.resolve(client.from('deployment_domains').update({
         status: status.status,
         certificate_status: status.certificate_status || null,
         updated_at: new Date().toISOString(),
-      }).eq('project_id', project.id).eq('hostname', domain).catch((error: any) => {
+      }).eq('project_id', project.id).eq('hostname', domain)).catch((error: any) => {
         if (!isSchemaShapeError(error)) console.warn('[coden:deployment_domain_status_skipped]', { message: error?.message });
       });
     }
@@ -14819,7 +14888,7 @@ app.delete('/api/projects/:id/publish-cf', requireAuth, async (req: any, res: an
     const client = getSupabase();
     if (client) {
       await client.from('publications').delete().eq('project_id', project.id);
-      await client.from('deployment_domains').update({ status: 'removed', updated_at: new Date().toISOString() }).eq('project_id', project.id).catch(() => null);
+      await Promise.resolve(client.from('deployment_domains').update({ status: 'removed', updated_at: new Date().toISOString() }).eq('project_id', project.id)).catch(() => null);
     }
     res.json({ ok: true });
   } catch (e: any) {

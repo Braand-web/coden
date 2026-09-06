@@ -2942,6 +2942,7 @@ async function resumeLivePreview() {
  */
 async function startLivePreview() {
   if (!currentProjectId || liveStartInFlight) return;
+  const projectId = currentProjectId;
   const button = document.getElementById('btn-live-preview-start') as HTMLButtonElement | null;
   const label = document.getElementById('btn-live-preview-start-label');
   const idleText = label?.textContent || '';
@@ -2949,10 +2950,11 @@ async function startLivePreview() {
   if (button) button.disabled = true;
   if (label) label.textContent = 'Démarrage…';
   try {
-    const response = await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/sandbox/start`, { method: 'POST' }) as
+    const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}/sandbox/start`, { method: 'POST' }) as
       { preview_url?: string; state?: string; message?: string } | null;
     const url = String(response?.preview_url || '').trim();
     if (!url) throw new Error(response?.message || 'Le serveur de développement n’a pas démarré.');
+    if (currentProjectId !== projectId) return;
     activateBuilderView('preview');
     setLivePreview(url);
     showTransientNotice('Aperçu live démarré.', 2200);
@@ -3199,7 +3201,8 @@ function formatPublishDate(value: string | null | undefined) {
   }
 }
 
-let publishPanelMode: 'main' | 'security' | 'domain' = 'main';
+let publishPanelMode: 'main' | 'confirm' | 'security' | 'domain' = 'main';
+let publishInFlight: Promise<PublishApiPayload> | null = null;
 
 function publishPanelTitle(status: PublishStatusPayload | null) {
   if (!status) return 'Publication';
@@ -3412,9 +3415,10 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
     status &&
     (status.state === 'published' || status.state === 'changes_unpublished')
   );
-  const publicUrl = hasPublishedDeployment ? status?.public_url || '' : '';
-  const publicUrlLabel = formatPublishUrl(publicUrl);
-  const canOpen = Boolean(publicUrl && hasPublishedDeployment);
+  const targetUrl = status?.public_url || '';
+  const liveUrl = hasPublishedDeployment ? targetUrl : '';
+  const publicUrlLabel = formatPublishUrl(targetUrl);
+  const canOpen = Boolean(liveUrl && hasPublishedDeployment);
   const checks = status?.checks || [];
   const title = publishPanelTitle(status);
   const primaryLabel = isPublishing ? 'Publication…' : publishPrimaryLabel(status);
@@ -3424,6 +3428,15 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const issueCount = failCount + warnCount;
   const visibleCheckCount = issueCount || passCount;
   const canPublish = Boolean(status?.can_publish && !isPublishing);
+  const summary = !status
+    ? ''
+    : status.state === 'published'
+      ? 'La version publique est à jour.'
+      : status.state === 'changes_unpublished'
+        ? 'Des changements vérifiés sont prêts à remplacer la version publique.'
+        : status.state === 'ready_to_publish'
+          ? 'La preview vérifiée est prête à être mise en ligne.'
+          : 'Terminez les contrôles bloquants avant de publier.';
 
   const securityRows = checks.map(check => {
     const tone = check.status === 'pass' ? '#2fbf71' : check.status === 'warn' ? '#d97706' : '#dc2626';
@@ -3451,7 +3464,18 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
     `
     : publishPanelMode === 'domain'
       ? renderDomainSection()
-      : '';
+      : publishPanelMode === 'confirm' && status
+        ? `
+          <div class="cdn-pub__confirm">
+            <strong>${status.state === 'published' || status.state === 'changes_unpublished' ? 'Mettre à jour cette application ?' : 'Publier cette application ?'}</strong>
+            <p>La version vérifiée sera rendue publique sur <span>${escapeHtml(publicUrlLabel)}</span>.</p>
+            <div class="cdn-pub__actions-row">
+              <button type="button" class="cdn-pub__secondary" data-publish-action="main" ${isPublishing ? 'disabled' : ''}>Annuler</button>
+              <button type="button" class="cdn-pub__primary" data-publish-action="confirm-publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
+            </div>
+          </div>
+        `
+        : '';
 
   root.innerHTML = `
     <section class="cdn-pub" role="dialog" aria-label="Publier">
@@ -3467,11 +3491,13 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ${status ? `
           <div class="cdn-pub__url">
             <span class="cdn-pub__glyph">${publishIcon('globe')}</span>
-            <span class="cdn-pub__url-text" data-empty="${publicUrl ? 'false' : 'true'}" title="${escapeHtml(publicUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
-            <button type="button" class="cdn-pub__icon-btn" data-publish-action="copy" ${publicUrl ? '' : 'disabled'} aria-label="Copier l’URL">${publishIcon('copy')}</button>
+            <span class="cdn-pub__url-text" data-empty="${targetUrl ? 'false' : 'true'}" title="${escapeHtml(targetUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
+            <button type="button" class="cdn-pub__icon-btn" data-publish-action="copy" ${liveUrl ? '' : 'disabled'} aria-label="Copier l’URL publique">${publishIcon('copy')}</button>
           </div>
         ` : '<div class="skeleton" style="height:40px;border-radius:11px;background:var(--bg-input);"></div>'}
         ${detailPanel ? `<div style="margin:0 -16px;">${detailPanel}</div>` : `
+        ${summary ? `<p class="cdn-pub__summary">${escapeHtml(summary)}</p>` : ''}
+        ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Cloudflare…</div>' : ''}
         <button type="button" class="cdn-pub__primary" data-publish-action="publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
         <div class="cdn-pub__links">
           <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
@@ -3533,12 +3559,16 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, isPublishing, error);
         if (opening) void loadProjectDomains().then(() => renderPublishPanel(payload, isPublishing, error));
       }
-      if (action === 'copy' && publicUrl) {
-        void navigator.clipboard?.writeText(publicUrl);
+      if (action === 'copy' && liveUrl) {
+        void navigator.clipboard?.writeText(liveUrl);
         showTransientNotice('Lien de l’application copié.');
       }
-      if (action === 'open' && publicUrl && canOpen) window.open(publicUrl, '_blank', 'noopener,noreferrer');
-      if (action === 'publish') void publishCurrentProject(payload);
+      if (action === 'open' && liveUrl && canOpen) window.open(liveUrl, '_blank', 'noopener,noreferrer');
+      if (action === 'publish' && canPublish) {
+        publishPanelMode = 'confirm';
+        renderPublishPanel(payload, false, error);
+      }
+      if (action === 'confirm-publish') void publishCurrentProject(payload);
     });
   });
 }
@@ -3549,12 +3579,17 @@ async function openPublishPanel() {
     return;
   }
   publishPanelMode = 'main';
-  renderPublishPanel(null);
+  const projectId = currentProjectId;
+  renderPublishPanel(null, Boolean(publishInFlight));
   try {
-    const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}/publish/status`);
-    renderPublishPanel(payload);
+    const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`);
+    if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
+      renderPublishPanel(payload, Boolean(publishInFlight));
+    }
   } catch (error) {
-    renderPublishPanel(null, false, error instanceof Error ? error.message : 'Impossible de charger l’état de publication.');
+    if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
+      renderPublishPanel(null, Boolean(publishInFlight), error instanceof Error ? error.message : 'Impossible de charger l’état de publication.');
+    }
   }
 }
 
@@ -3599,21 +3634,28 @@ async function shareProjectLink(button: HTMLButtonElement) {
 }
 
 async function publishCurrentProject(previousPayload: PublishApiPayload | null) {
-  if (!currentProjectId) return;
-  const action = previousPayload?.publish?.state === 'published' || previousPayload?.publish?.state === 'changes_unpublished'
-    ? 'mettre à jour la version publique'
-    : 'publier cette application en ligne';
-  if (!window.confirm(`Confirmer : ${action} ?`)) return;
+  if (!currentProjectId || publishInFlight) return;
+  const projectId = currentProjectId;
   publishPanelMode = 'main';
   renderPublishPanel(previousPayload, true);
+  const idempotencyKey = typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `publish-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const request = apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish`, {
+    method: 'POST',
+    headers: { 'idempotency-key': idempotencyKey },
+    body: JSON.stringify({ branch: 'main', confirmed: true, idempotency_key: idempotencyKey }),
+  });
+  publishInFlight = request;
   try {
-    const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}/publish`, {
-      method: 'POST',
-      body: JSON.stringify({ branch: 'main', confirmed: true }),
-    });
-    renderPublishPanel(payload);
+    const payload = await request;
+    if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) renderPublishPanel(payload);
   } catch (error) {
-    renderPublishPanel(previousPayload, false, error instanceof Error ? error.message : 'La publication a échoué.');
+    if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
+      renderPublishPanel(previousPayload, false, error instanceof Error ? error.message : 'La publication a échoué.');
+    }
+  } finally {
+    if (publishInFlight === request) publishInFlight = null;
   }
 }
 

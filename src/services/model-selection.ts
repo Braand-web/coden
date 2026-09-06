@@ -213,6 +213,38 @@ export function selectModel(request: SelectionRequest): SelectionResult {
     };
   }
 
+  // Design and research quality are preference bars, not hard capabilities.
+  // Refusing the whole turn when a user's plan has a capable, tool-compatible
+  // model produced avoidable "No eligible model" failures in production.
+  // Keep architecture and security fail-closed, but use the strongest model
+  // that clears every objective gate for these non-critical tasks.
+  if (request.task === 'design' || request.task === 'research') {
+    const fallback = candidates
+      .filter((modelId) => {
+        const caps = AI_MODEL_CAPABILITIES[modelId];
+        if (!planAllows(plan, modelId)) return false;
+        if (typeof request.credits === 'number' && request.credits < MODEL_ACTION_CREDIT_FLOORS[modelId]) return false;
+        if ((request.interactive || INHERENTLY_INTERACTIVE.has(request.task)) && isDeferredTier(modelId)) return false;
+        if (request.needs?.vision && !caps.supportsVision) return false;
+        if (request.needs?.audio && !caps.supportsAudio) return false;
+        if (request.needs?.video && !caps.supportsVideo) return false;
+        if (request.needs?.tools && !caps.supportsToolCalling) return false;
+        if (request.needs?.longContext && !caps.supportsLongContext) return false;
+        if (request.needs?.structuredOutput && !caps.supportsStructuredOutput) return false;
+        return !request.estimatedInputTokens || request.estimatedInputTokens <= caps.maxContextTokens;
+      })
+      .sort((a, b) => STRENGTH_ORDER[AI_MODEL_CAPABILITIES[b][dimensionKey]] - STRENGTH_ORDER[AI_MODEL_CAPABILITIES[a][dimensionKey]])[0];
+
+    if (fallback) {
+      return {
+        modelId: fallback,
+        reason: `best accessible model for ${request.task}/${complexity}; preferred ${bar.dimension} strength is unavailable on this plan`,
+        rejected,
+        estimatedUsdPerMillionBlended: Number(blendedCost(fallback).toFixed(3)),
+      };
+    }
+  }
+
   // No eligible candidate: surface the constraint instead of silently using
   // a model that lacks a required capability or exceeds the user's access.
   throw Object.assign(new Error(`No eligible model satisfies ${request.task}/${complexity}.`), { diagnosticCode:'MODEL_CAPABILITY_UNAVAILABLE', rejected });

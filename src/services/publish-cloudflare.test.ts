@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { verifyCloudflareDeployment, type PublishResult } from './publish-cloudflare.ts';
+import { cloudflareDeploymentVersions, cloudflareWorkerNameForSlug } from './publish-cloudflare-workers.ts';
 
 const result: PublishResult = {
   provider: 'cloudflare-workers',
@@ -28,5 +29,25 @@ describe('Cloudflare deployment verification', () => {
     const verification = await promise;
     expect(verification.verified).toBe(false);
     vi.useRealTimers();
+  });
+});
+
+describe('Cloudflare Worker release identity', () => {
+  it('uses one deterministic worker name for publish, domains and rollback', () => {
+    expect(cloudflareWorkerNameForSlug('My Project / Demo')).toBe('coden-my-project-demo');
+    expect(cloudflareWorkerNameForSlug('x'.repeat(100))).toHaveLength(57);
+  });
+
+  it('preserves the exact version weights of a historical deployment', () => {
+    expect(cloudflareDeploymentVersions({
+      versions: [
+        { version_id: 'version-a', percentage: 90 },
+        { version_id: 'version-b', percentage: 10 },
+        { version_id: '', percentage: 100 },
+      ],
+    })).toEqual([
+      { version_id: 'version-a', percentage: 90 },
+      { version_id: 'version-b', percentage: 10 },
+    ]);
   });
 });

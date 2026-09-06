@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
  * Coden anything about an application it had already generated could not work.
  */
 
-const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 // The runtime's own action list, read from the module that owns it.
 const runtime = readFileSync(new URL('./src/services/agent-runtime-v2.ts', import.meta.url), 'utf8');

@@ -20,7 +20,7 @@ import { CodenAgentHarness, InMemoryAgentHarnessStore } from './src/services/age
     ran: { devServer: true, typecheck: true, build: true, browser: true },
     problems: [],
   });
-  assert.equal(verdicts.requested_behavior?.status, 'passed');
+  assert.equal(verdicts.requested_behavior, undefined, 'a successful build and page render do not prove requested behaviour');
   assert.equal(verdicts.build?.status, 'passed');
   assert.equal(verdicts.preview?.status, 'passed');
   assert.equal(verdicts.browser_smoke?.status, 'passed');

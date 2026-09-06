@@ -36,7 +36,7 @@ async function cfJson<T = any>(endpoint: string, init: RequestInit = {}, token =
   return (payload?.result ?? payload) as T;
 }
 
-function safeWorkerName(slug: string) {
+export function cloudflareWorkerNameForSlug(slug: string) {
   const safe = String(slug || 'app')
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
@@ -186,7 +186,11 @@ async function runWranglerDeploy(projectDir: string, workerName: string) {
 async function latestWorkerDeploymentId(workerName: string) {
   const payload = await cfJson<any>(`/accounts/${accountId()}/workers/scripts/${workerName}/deployments`);
   const deployments = Array.isArray(payload) ? payload : payload?.deployments || [];
-  return String(deployments[0]?.id || deployments[0]?.version_id || `${workerName}-${Date.now()}`);
+  const id = deployments[0]?.id;
+  if (typeof id !== 'string' || !id.trim()) {
+    throw new Error('Cloudflare did not return a deployment ID; release identity could not be verified.');
+  }
+  return id;
 }
 
 /** Deploys the executable Worker produced by TanStack Start through the
@@ -197,7 +201,7 @@ export async function publishFullstackProjectToCloudflareWorkers(input: {
   slug: string;
   projectDir: string;
 }): Promise<CloudflareWorkerPublishResult> {
-  const workerName = safeWorkerName(input.slug);
+  const workerName = cloudflareWorkerNameForSlug(input.slug);
   const output = await runWranglerDeploy(input.projectDir, workerName);
   const host = codenHostForSlug(input.slug);
   await cfJson(`/accounts/${accountId()}/workers/domains`, {
@@ -224,7 +228,7 @@ export async function publishProjectToCloudflareWorkers(input: {
 }): Promise<CloudflareWorkerPublishResult> {
   if (!fs.existsSync(input.distDir)) throw new Error(`dist directory not found: ${input.distDir}`);
 
-  const workerName = safeWorkerName(input.slug);
+  const workerName = cloudflareWorkerNameForSlug(input.slug);
   const files = walkFiles(input.distDir);
   if (!files.length) throw new Error('Cannot publish an empty Worker asset directory.');
 
@@ -260,13 +264,13 @@ export async function publishProjectToCloudflareWorkers(input: {
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify({
     main_module: 'main.js',
-    compatibility_date: process.env.CLOUDFLARE_COMPATIBILITY_DATE || '2026-07-03',
+    compatibility_date: process.env.CLOUDFLARE_COMPATIBILITY_DATE || '2026-09-05',
     assets: { jwt: completionToken, not_found_handling: 'single-page-application' },
     bindings: [{ name: 'ASSETS', type: 'assets' }],
   })], { type: 'application/json' }), 'metadata.json');
   form.append('main.js', new Blob([workerSource()], { type: 'application/javascript' }), 'main.js');
 
-  const deployment = await cfJson<any>(`/accounts/${accountId()}/workers/scripts/${workerName}`, {
+  await cfJson<any>(`/accounts/${accountId()}/workers/scripts/${workerName}`, {
     method: 'PUT',
     body: form,
   });
@@ -286,8 +290,55 @@ export async function publishProjectToCloudflareWorkers(input: {
     subdomain: new URL(defaultUrl).host,
     defaultUrl,
     codenUrl: url,
-    deploymentId: String(deployment?.id || deployment?.etag || deployment?.version_id || `${workerName}-${Date.now()}`),
+    deploymentId: await latestWorkerDeploymentId(workerName),
     deploymentUrl: defaultUrl,
+  };
+}
+
+export type CloudflareRollbackResult = {
+  deploymentId: string;
+  versionIds: string[];
+};
+
+export function cloudflareDeploymentVersions(deployment: any) {
+  const versions = Array.isArray(deployment?.versions) ? deployment.versions : [];
+  return versions
+    .map((version: any) => ({
+      version_id: String(version?.version_id || version?.id || ''),
+      percentage: Number.isFinite(Number(version?.percentage)) ? Number(version.percentage) : 0,
+    }))
+    .filter((version: { version_id: string; percentage: number }) => version.version_id && version.percentage > 0);
+}
+
+/** Restore the exact Worker versions referenced by a previous Cloudflare
+ * deployment. Cloudflare creates a new deployment, so rollback remains
+ * auditable and the former production version is still recoverable. */
+export async function rollbackCloudflareWorkerDeployment(
+  workerName: string,
+  deploymentId: string,
+): Promise<CloudflareRollbackResult> {
+  const target = await cfJson<any>(
+    `/accounts/${accountId()}/workers/scripts/${workerName}/deployments/${encodeURIComponent(deploymentId)}`,
+  );
+  const versions = cloudflareDeploymentVersions(target);
+  if (!versions.length) throw new Error('The selected Cloudflare deployment has no restorable Worker version.');
+
+  const created = await cfJson<any>(`/accounts/${accountId()}/workers/scripts/${workerName}/deployments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      strategy: 'percentage',
+      versions,
+      annotations: {
+        'workers/message': `Coden rollback to deployment ${deploymentId}`,
+        'workers/triggered_by': 'rollback',
+      },
+    }),
+  });
+  const createdId = String(created?.id || '');
+  if (!createdId) throw new Error('Cloudflare accepted the rollback but returned no deployment identifier.');
+  return {
+    deploymentId: createdId,
+    versionIds: versions.map((version: { version_id: string }) => version.version_id),
   };
 }
 

@@ -128,7 +128,8 @@ try {
     assert.equal(outcome.ok, false);
 
     const events = await store.listEvents(threadId);
-    const failed = events.find(event => event.type === 'item.failed' && (event.payload as any)?.reason === 'no_progress');
+    assert.equal(outcome.repairOutcome?.stoppedBecause, 'round_limit', 'two rounds exhaust the explicit limit before the three-round stall threshold');
+    const failed = events.find(event => event.type === 'item.failed' && (event.payload as any)?.reason === outcome.repairOutcome?.stoppedBecause);
     assert.ok(failed, 'a review that gives up must be recorded as failed, with the real reason');
   }
 
