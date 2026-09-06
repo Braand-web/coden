@@ -26,6 +26,7 @@ export const AUDITED_SKILL_REPOSITORIES: readonly AuditedSkillRepository[] = [
   { id: 'mblode-agent-skills', repository: 'https://github.com/mblode/agent-skills', commit: '0a639b1ef3b75aa6cc945e778fb1486def1d41bf', license: 'MIT', runtimeEligible: true },
   { id: 'repo-to-skill', repository: 'https://github.com/shuyhere/repo-to-skill', commit: 'f4fe8c564b07dd6e50fa7ec089da8946ef1c29da', license: 'MIT', runtimeEligible: false },
   { id: 'rk-skills', repository: 'https://github.com/richkuo/rk-skills', commit: '2e24981458cb83c544d93a6538bb694da0ec87ba', license: 'MIT', runtimeEligible: true },
+  { id: 'supabase-agent-skills', repository: 'https://github.com/supabase-community/supabase-plugin', commit: 'f3f332e0164c34a8392772811737fda0cb972d06', license: 'MIT', runtimeEligible: true },
 ] as const;
 
 const source = (repositoryId: string, sourcePath: string, contentSha256: string): CodenSkillSource => ({ repositoryId, sourcePath, contentSha256 });
@@ -50,7 +51,10 @@ export const CODEN_SKILL_PROVENANCE: Readonly<Record<CodenCapabilitySkillId, rea
   'tdd-implementation': [source('mattpocock-skills', 'skills/engineering/tdd/SKILL.md', '193b791c489d1640ccfb58d7cbd60fc9e059ef44632b3c92f208784cfe45ab78')],
   'systematic-debugging': [source('mattpocock-skills', 'skills/engineering/diagnosing-bugs/SKILL.md', 'bca66b7141da7d225b7dfd1abf6f2bee657b8044d3897604055e760749c71724')],
   'integration-setup': [source('mattpocock-skills', 'skills/engineering/wizard/SKILL.md', 'dbefb750eae07d9f8b05ab1084f6acfdda2752df2a6b577c46a505e2bc790164')],
-  'database-and-migrations': [],
+  'database-and-migrations': [
+    source('supabase-agent-skills', 'skills/supabase/SKILL.md', '1171386737b231610fa42485707272765c3516a9bbc0bd2c6c161a8cee3d7d33'),
+    source('supabase-agent-skills', 'skills/supabase-postgres-best-practices/SKILL.md', 'ccd6e4596bd51cf344fe76c464867c541ccc16b6d90ae7a9db449fb17588613b'),
+  ],
   'frontend-design': [
     source('anthropic-skills', 'skills/frontend-design/SKILL.md', 'b8009ae690dfa69edc7f08bb8715f32db8817112cfa4388741dbaf876c237df8'),
     source('impeccable', 'plugin/skills/impeccable/SKILL.md', '2d2f8400bdecb08ae4c5807be057b6f8b95f28442a1b53dc5646cb3480107176'),

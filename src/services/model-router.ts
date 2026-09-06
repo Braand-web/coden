@@ -7,6 +7,8 @@ import {
   DEFAULT_PROVIDER_MODEL_ID,
   MODEL_ACTION_CREDIT_FLOORS,
   UserPlan, 
+  ASTRA_MODEL_ID,
+  isPlanAtLeast,
   type AllowedModelId 
 } from '../config/ai-models.ts';
 import { 
@@ -16,7 +18,7 @@ import {
 import { MODELS_BY_COST, selectModel, type SelectionResult, type TaskComplexity, type TaskKind } from './model-selection.ts';
 
 export interface RoutingContext {
-  plan: UserPlan | 'free' | 'pro' | 'scale' | 'enterprise';
+  plan: UserPlan | 'free' | 'pro' | 'business' | 'scale' | 'enterprise';
   mode: 'Auto' | 'Fast' | 'Balanced' | 'Pro' | 'Premium' | 'Max Quality' | 'Custom';
   userCredits: number;
   taskComplexity?: TaskComplexity;
@@ -198,15 +200,7 @@ export class ModelRouter {
   }
 
   private isPlanSufficient(userPlan: string, requiredPlan: string): boolean {
-    const tierValue = (p: string) => {
-      const lower = p.toLowerCase();
-      if (lower === 'enterprise') return 3;
-      if (lower === 'scale') return 2;
-      if (lower === 'pro') return 1;
-      return 0;
-    };
-
-    return tierValue(userPlan) >= tierValue(requiredPlan);
+    return isPlanAtLeast(userPlan, requiredPlan);
   }
 
   /**
@@ -232,6 +226,14 @@ export class ModelRouter {
     // Respect explicit custom choices and skip escalation when no hard signal.
     if (context.mode === 'Custom' || !this.shouldEscalateToFrontier(signals)) {
       return this.selectModel(context, requestedCustomModelId);
+    }
+    if (
+      isPlanAtLeast(context.plan, UserPlan.BUSINESS)
+      && context.userCredits >= MODEL_ACTION_CREDIT_FLOORS[ASTRA_MODEL_ID]
+      && (context.task === 'architecture' || context.task === 'debug' || context.task === 'security' || (signals.autofixFailures || 0) >= 2)
+    ) {
+      validateAllowedModel(ASTRA_MODEL_ID);
+      return ASTRA_MODEL_ID;
     }
     const escalated: RoutingContext = {
       ...context,

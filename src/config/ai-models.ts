@@ -1,9 +1,41 @@
-export const UserPlan = { FREE: 'free', PRO: 'pro', SCALE: 'scale', ENTERPRISE: 'enterprise' } as const;
+export const UserPlan = {
+  FREE: 'free',
+  PRO: 'pro',
+  BUSINESS: 'business',
+  /** Historical persisted value. New configuration uses `business`. */
+  SCALE: 'scale',
+  ENTERPRISE: 'enterprise',
+} as const;
 export type UserPlan = (typeof UserPlan)[keyof typeof UserPlan];
+export type CanonicalUserPlan = Exclude<UserPlan, 'scale'>;
+
+const PLAN_RANK: Record<CanonicalUserPlan, number> = {
+  free: 0,
+  pro: 1,
+  business: 2,
+  enterprise: 3,
+};
+
+/** Keep old `scale` subscriptions readable without creating a second tier. */
+export function normalizeUserPlan(value: unknown): CanonicalUserPlan {
+  const plan = String(value || '').trim().toLowerCase();
+  if (plan === 'scale') return UserPlan.BUSINESS;
+  if (plan === 'pro' || plan === 'business' || plan === 'enterprise') return plan;
+  return UserPlan.FREE;
+}
+
+export function userPlanRank(value: unknown): number {
+  return PLAN_RANK[normalizeUserPlan(value)];
+}
+
+export function isPlanAtLeast(userPlan: unknown, requiredPlan: unknown): boolean {
+  return userPlanRank(userPlan) >= userPlanRank(requiredPlan);
+}
 
 export const AIModelTier = { ECONOMY: 'Economy', STANDARD: 'Standard', PRO: 'Pro', PREMIUM: 'Premium' } as const;
 export type AIModelTier = (typeof AIModelTier)[keyof typeof AIModelTier];
 export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'moonshot' | 'xai';
+export type ModelRouteProvider = 'openrouter';
 export type ModelStrength = 'low' | 'medium' | 'high' | 'frontier';
 export type ModelSpeed = 'fast' | 'balanced' | 'deliberate';
 export type ModelReliability = 'standard' | 'high' | 'experimental';
@@ -37,21 +69,51 @@ export interface ModelCapabilities {
 export interface ModelDefinition {
   id: string;
   label: string;
+  /** Model publisher, used for display and capability adaptation. */
   provider: ModelProvider;
+  /** All text-model execution stays behind the OpenRouter gateway. */
+  routeProvider: ModelRouteProvider;
   contextWindow: number;
   maxOutputTokens: number;
   tier: AIModelTier;
-  minPlan: UserPlan;
+  minPlan: CanonicalUserPlan;
   creditFloor: number;
   inputUsdPerMillion: number;
   outputUsdPerMillion: number;
+  pricingTiers?: readonly {
+    minInputTokens: number;
+    inputUsdPerMillion: number;
+    outputUsdPerMillion: number;
+  }[];
   isNew?: boolean;
   isFast?: boolean;
   isPremium?: boolean;
   isRecommended?: boolean;
+  autoRole?: AutoModelRole;
   description: string;
   capabilities: Omit<ModelCapabilities, 'maxContextTokens' | 'maxOutputTokens'>;
 }
+
+export const AutoModelRole = {
+  ROUTER: 'router',
+  WORKER: 'worker',
+  VISUAL: 'visual',
+  LEAD: 'lead',
+  PREMIUM: 'premium',
+} as const;
+export type AutoModelRole = (typeof AutoModelRole)[keyof typeof AutoModelRole];
+
+export const AUTO_MODEL_ROLE_ORDER = [
+  AutoModelRole.ROUTER,
+  AutoModelRole.WORKER,
+  AutoModelRole.VISUAL,
+  AutoModelRole.LEAD,
+  AutoModelRole.PREMIUM,
+] as const;
+
+export const ASTRA_MODEL_ID = 'openai/gpt-6-astra' as const;
+
+const viaOpenRouter = { routeProvider: 'openrouter' } as const;
 
 const commonTextTools = {
   supportsStreaming: true,
@@ -81,6 +143,7 @@ const commonTextTools = {
 // and are kept off the interactive paths.
 const LEGACY_MODEL_REGISTRY = [
   {
+    ...viaOpenRouter,
     id: 'google/gemini-3.8-flash:batch', label: 'Gemini 3.8 Flash', provider: 'google',
     contextWindow: 1_048_576, maxOutputTokens: 65_536,
     tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 1,
@@ -91,36 +154,43 @@ const LEGACY_MODEL_REGISTRY = [
       speed: 'balanced', reliability: 'high', bestFor: ['classification', 'summary', 'vision', 'long_context', 'background_work'] },
   },
   {
+    ...viaOpenRouter,
     id: 'openai/gpt-5.6-luna-pro', label: 'Luna Pro', provider: 'openai',
     contextWindow: 1_050_000, maxOutputTokens: 128_000,
     tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 2,
-    inputUsdPerMillion: 0.3, outputUsdPerMillion: 1.8, isFast: true, isNew: true,
+    inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2,
+    pricingTiers: [{ minInputTokens: 272_000, inputUsdPerMillion: 0.4, outputUsdPerMillion: 1.8 }],
+    isFast: true, isNew: true,
     description: 'Rapide et économique pour la conversation, les clarifications et les petites modifications.',
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
       reasoningLevel: 'medium', codeLevel: 'high', agenticLevel: 'medium', designLevel: 'medium', securityLevel: 'medium',
       speed: 'fast', reliability: 'high', bestFor: ['conversation', 'clarification', 'classification', 'summary', 'small_edits'] },
   },
   {
+    ...viaOpenRouter,
     id: 'moonshotai/kimi-k3', label: 'Kimi K3', provider: 'moonshot',
     contextWindow: 262_144, maxOutputTokens: 65_536,
     tier: AIModelTier.STANDARD, minPlan: UserPlan.FREE, creditFloor: 3,
-    inputUsdPerMillion: 0.6, outputUsdPerMillion: 2.5, isNew: true,
+    inputUsdPerMillion: 3, outputUsdPerMillion: 15, isNew: true,
     description: 'Bon rapport qualité-prix pour le code, le debug et les boucles d’outils longues.',
     capabilities: { ...commonTextTools,
       reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'medium', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['code_generation', 'debug', 'tests', 'tool_use', 'economy'] },
   },
   {
+    ...viaOpenRouter,
     id: 'openai/gpt-5.6-terra-pro', label: 'Terra Pro', provider: 'openai',
     contextWindow: 1_050_000, maxOutputTokens: 128_000,
     tier: AIModelTier.STANDARD, minPlan: UserPlan.PRO, creditFloor: 5,
     inputUsdPerMillion: 2, outputUsdPerMillion: 12, isNew: true,
+    pricingTiers: [{ minInputTokens: 272_000, inputUsdPerMillion: 4, outputUsdPerMillion: 18 }],
     description: 'Équilibre qualité, vitesse et coût pour les builds quotidiens.',
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
       reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'high', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['full_stack_generation', 'multi_file_edits', 'product_reasoning', 'routine_builds'] },
   },
   {
+    ...viaOpenRouter,
     id: 'anthropic/claude-sonnet-5', label: 'Sonnet 5', provider: 'anthropic',
     contextWindow: 1_000_000, maxOutputTokens: 128_000,
     tier: AIModelTier.PRO, minPlan: UserPlan.PRO, creditFloor: 7,
@@ -131,29 +201,35 @@ const LEGACY_MODEL_REGISTRY = [
       speed: 'balanced', reliability: 'high', bestFor: ['full_stack_generation', 'frontend_generation', 'product_design', 'refactor', 'debug', 'tool_use'] },
   },
   {
+    ...viaOpenRouter,
     id: 'x-ai/grok-4.6', label: 'Grok 4.6', provider: 'xai',
     contextWindow: 500_000, maxOutputTokens: 65_536,
     tier: AIModelTier.PRO, minPlan: UserPlan.PRO, creditFloor: 7,
     inputUsdPerMillion: 2, outputUsdPerMillion: 6, isNew: true,
+    pricingTiers: [{ minInputTokens: 200_000, inputUsdPerMillion: 4, outputUsdPerMillion: 12 }],
     description: 'Agent multimodal robuste pour la recherche, les outils et la résolution technique.',
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
       reasoningLevel: 'frontier', codeLevel: 'high', agenticLevel: 'frontier', designLevel: 'high', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['research', 'tool_use', 'current_information', 'debug', 'vision'] },
   },
   {
+    ...viaOpenRouter,
     id: 'openai/gpt-5.6-sol-pro', label: 'Sol Pro', provider: 'openai',
     contextWindow: 1_050_000, maxOutputTokens: 128_000,
-    tier: AIModelTier.PREMIUM, minPlan: UserPlan.SCALE, creditFloor: 11,
-    inputUsdPerMillion: 2.5, outputUsdPerMillion: 12.5, isPremium: true, isNew: true,
+    tier: AIModelTier.PREMIUM, minPlan: UserPlan.BUSINESS, creditFloor: 11,
+    inputUsdPerMillion: 2, outputUsdPerMillion: 10,
+    pricingTiers: [{ minInputTokens: 272_000, inputUsdPerMillion: 4, outputUsdPerMillion: 15 }],
+    isPremium: true, isNew: true,
     description: 'Qualité premium pour l’architecture, les migrations et les problèmes complexes.',
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
       reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'high', securityLevel: 'frontier',
       speed: 'deliberate', reliability: 'high', bestFor: ['architecture', 'complex_debug', 'security', 'migrations', 'long_horizon_coding'] },
   },
   {
+    ...viaOpenRouter,
     id: 'anthropic/claude-opus-5', label: 'Opus 5', provider: 'anthropic',
     contextWindow: 1_000_000, maxOutputTokens: 128_000,
-    tier: AIModelTier.PREMIUM, minPlan: UserPlan.SCALE, creditFloor: 15,
+    tier: AIModelTier.PREMIUM, minPlan: UserPlan.BUSINESS, creditFloor: 15,
     inputUsdPerMillion: 5, outputUsdPerMillion: 25, isPremium: true, isNew: true,
     description: 'Pour les revues, l’architecture et les corrections les plus difficiles.',
     capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
@@ -161,6 +237,7 @@ const LEGACY_MODEL_REGISTRY = [
       speed: 'deliberate', reliability: 'high', bestFor: ['architecture', 'deep_debug', 'review', 'security', 'complex_reasoning'] },
   },
   {
+    ...viaOpenRouter,
     id: 'anthropic/claude-fable-5.1:batch', label: 'Fable 5.1', provider: 'anthropic',
     contextWindow: 1_000_000, maxOutputTokens: 128_000,
     tier: AIModelTier.PREMIUM, minPlan: UserPlan.ENTERPRISE, creditFloor: 22,
@@ -178,19 +255,55 @@ export const MODEL_REGISTRY = [
   ...LEGACY_MODEL_REGISTRY,
   { ...LEGACY_MODEL_REGISTRY[1], id:'openai/gpt-5.6-luna', label:'Luna', inputUsdPerMillion:0.2, outputUsdPerMillion:1.2 },
   { ...LEGACY_MODEL_REGISTRY[3], id:'openai/gpt-5.6-terra', label:'Terra' },
-  { ...LEGACY_MODEL_REGISTRY[6], id:'openai/gpt-5.6-sol', label:'Sol', inputUsdPerMillion:4, outputUsdPerMillion:20 },
+  { ...LEGACY_MODEL_REGISTRY[6], id:'openai/gpt-5.6-sol', label:'Sol' },
   { ...LEGACY_MODEL_REGISTRY[0], id:'google/gemini-3.8-flash', label:'Gemini 3.8 Flash', inputUsdPerMillion:0.75, outputUsdPerMillion:3.75,
     capabilities:{ ...LEGACY_MODEL_REGISTRY[0].capabilities, codeLevel:'high', agenticLevel:'high', designLevel:'high' } },
   { ...LEGACY_MODEL_REGISTRY[8], id:'anthropic/claude-fable-5.1', label:'Fable 5.1', inputUsdPerMillion:10, outputUsdPerMillion:50 },
+  {
+    ...viaOpenRouter,
+    id: ASTRA_MODEL_ID,
+    label: 'GPT-6 Astra',
+    provider: 'openai',
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    tier: AIModelTier.PREMIUM,
+    minPlan: UserPlan.BUSINESS,
+    creditFloor: 20,
+    inputUsdPerMillion: 10,
+    outputUsdPerMillion: 50,
+    pricingTiers: [{ minInputTokens: 272_000, inputUsdPerMillion: 20, outputUsdPerMillion: 75 }],
+    isPremium: true,
+    isNew: true,
+    description: 'Escalade contrôlée pour architecture, diagnostic et synthèse critiques.',
+    capabilities: {
+      ...commonTextTools,
+      supportsVision: true,
+      supportsFiles: true,
+      reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'frontier',
+      speed: 'deliberate', reliability: 'high', bestFor: ['critical_architecture', 'complex_debug', 'critical_synthesis', 'manual_premium'],
+    },
+  },
 ] as const satisfies readonly ModelDefinition[];
 
+export function getModelTokenPricing(model: ModelDefinition, inputTokens: number) {
+  const tier = [...(model.pricingTiers || [])]
+    .sort((a, b) => b.minInputTokens - a.minInputTokens)
+    .find(candidate => inputTokens >= candidate.minInputTokens);
+  return tier || {
+    minInputTokens: 0,
+    inputUsdPerMillion: model.inputUsdPerMillion,
+    outputUsdPerMillion: model.outputUsdPerMillion,
+  };
+}
+
 export const AUTO_MODEL_ROLES = {
-  router:'openai/gpt-5.6-luna', worker:'openai/gpt-5.6-terra',
-  visual:'google/gemini-3.8-flash', builder:'x-ai/grok-4.6',
-  lead:'openai/gpt-5.6-sol', senior:'anthropic/claude-opus-5', expert:'anthropic/claude-fable-5.1',
+  router: 'openai/gpt-5.6-luna',
+  worker: 'openai/gpt-5.6-terra',
+  visual: 'google/gemini-3.8-flash',
+  lead: 'openai/gpt-5.6-sol',
+  premium: 'anthropic/claude-opus-5',
 } as const;
-// Not an API id: this slot cannot execute until the provider lists it.
-export const UNAVAILABLE_MODEL_ROLES = { ultimate: { name:'GPT-6 Astra', reason:'not_in_openrouter_catalog' } } as const;
+export const UNAVAILABLE_MODEL_ROLES = {} as const;
 export const AUTO_MODEL_IDS = Object.values(AUTO_MODEL_ROLES);
 
 export type AllowedModelId = (typeof MODEL_REGISTRY)[number]['id'];
@@ -252,6 +365,7 @@ export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
   'openai/gpt-5.6-sol':['anthropic/claude-opus-5'],
   'google/gemini-3.8-flash':['openai/gpt-5.6-luna'],
   'anthropic/claude-fable-5.1':['anthropic/claude-opus-5'],
+  [ASTRA_MODEL_ID]: ['anthropic/claude-opus-5'],
   'google/gemini-3.8-flash:batch': ['openai/gpt-5.6-luna-pro'],
   'openai/gpt-5.6-luna-pro': ['google/gemini-3.8-flash:batch'],
   'moonshotai/kimi-k3': ['openai/gpt-5.6-terra-pro'],

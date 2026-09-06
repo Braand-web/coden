@@ -147,20 +147,25 @@ export function resolveCodenSkillPlan(input: CodenSkillPlanInput): CodenSkillExe
 
   const phases: CodenSkillPhase[] = ['understand', 'inspect', 'architect', 'implement', 'verify', 'release'];
   const nodes: CodenSkillPlanNode[] = [];
+  let previousPhaseNodes: string[] = [];
   for (const phase of phases) {
     const phaseSkills = [...selected].map(id => byId.get(id)!).filter(skill => skill.phase === phase);
+    const phaseNodes: string[] = [];
     for (let offset = 0; offset < phaseSkills.length; offset += 3) {
       const chunk = phaseSkills.slice(offset, offset + 3);
-      const previous = nodes[nodes.length - 1];
+      const id = `${phase}-${Math.floor(offset / 3) + 1}`;
       nodes.push({
-        id: `${phase}-${Math.floor(offset / 3) + 1}`,
+        id,
         phase,
         skillIds: chunk.map(skill => skill.id),
         roles: [...new Set(chunk.map(skill => skill.role))],
-        dependsOn: previous ? [previous.id] : [],
-        parallel: chunk.length > 1 && chunk.every(skill => skill.readOnly || phase === 'implement'),
+        dependsOn: [...previousPhaseNodes],
+        parallel: (previousPhaseNodes.length > 0 || chunk.length > 1)
+          && chunk.every(skill => skill.readOnly || phase === 'implement'),
       });
+      phaseNodes.push(id);
     }
+    if (phaseNodes.length) previousPhaseNodes = phaseNodes;
   }
 
   return {

@@ -9,7 +9,7 @@ describe('Coden capability skill planner', () => {
   });
 
   it('pins audited upstream repositories and valid runtime provenance', () => {
-    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(11);
+    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(12);
     expect(AUDITED_SKILL_REPOSITORIES.every(repository => /^[a-f0-9]{40}$/.test(repository.commit))).toBe(true);
     expect(validateSkillProvenance()).toEqual([]);
   });
@@ -29,6 +29,10 @@ describe('Coden capability skill planner', () => {
     expect(plan.nodes.every(node => node.skillIds.length <= 3)).toBe(true);
     expect(plan.requiresFunctionalGate).toBe(true);
     expect(plan.requiresDesignGate).toBe(true);
+    const phaseNodes = new Map(plan.nodes.map(node => [node.id, node]));
+    for (const node of plan.nodes) {
+      expect(node.dependsOn.every(id => phaseNodes.get(id)?.phase !== node.phase)).toBe(true);
+    }
   });
 
   it('uses root-cause debugging and browser evidence for a broken form', () => {

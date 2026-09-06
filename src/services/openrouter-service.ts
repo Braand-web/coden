@@ -1,5 +1,5 @@
 import { validateAllowedModel } from './ai-validator.ts';
-import { MODEL_REGISTRY } from '../config/ai-models.ts';
+import { MODEL_REGISTRY, getModelTokenPricing } from '../config/ai-models.ts';
 import { toOpenRouterChatPayloadExtras, type ProviderRequestConfig } from './provider-adapters.ts';
 import { applyPromptCaching, type CacheableMessage } from './prompt-caching.ts';
 import { ToolCallStreamAccumulator, type AssembledToolCall } from './tool-call-stream-accumulator.ts';
@@ -405,8 +405,9 @@ export class OpenRouterService {
   private estimateUsdCost(model: string, prompt: number, completion: number): number {
     const definition = MODEL_REGISTRY.find(item => item.id === model);
     if (!definition) return 0;
-    return (prompt * definition.inputUsdPerMillion / 1_000_000)
-      + (completion * definition.outputUsdPerMillion / 1_000_000);
+    const pricing = getModelTokenPricing(definition, prompt);
+    return (prompt * pricing.inputUsdPerMillion / 1_000_000)
+      + (completion * pricing.outputUsdPerMillion / 1_000_000);
   }
 }
 

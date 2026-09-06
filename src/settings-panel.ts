@@ -6,6 +6,8 @@ type SettingsTab =
   | 'account'
   | 'privacy'
   | 'appearance'
+  | 'billing'
+  | 'usage'
   | 'capabilities'
   | 'connectors'
   | 'api'
@@ -13,10 +15,101 @@ type SettingsTab =
 
 type AuthMeResponse = {
   success: boolean;
+  plan?: { key?: string; label?: string };
   user?: {
     id?: string;
     email?: string | null;
     role?: string | null;
+  };
+};
+
+type AiUsageItem = {
+  mode?: string | null;
+  credits_charged?: number | null;
+  model_name?: string | null;
+  project_name?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+};
+
+type AiUsageResponse = {
+  success: boolean;
+  wallet?: {
+    balance?: number | null;
+    monthly_credits?: number | null;
+    daily_promo_credits?: number | null;
+    topup_credits?: number | null;
+    breakdown?: Record<string, number>;
+    cloud?: {
+      balance_usd?: number | null;
+      ai_app_balance_usd?: number | null;
+      topup_min_usd?: number | null;
+      database_storage_gb?: number | null;
+      file_storage_gb?: number | null;
+      bandwidth_gb?: number | null;
+    } | null;
+  } | null;
+  history?: AiUsageItem[];
+};
+
+type ModelRateResponse = {
+  success: boolean;
+  models?: Array<{
+    display_name: string;
+    availability: string;
+    tier: string;
+    credits: { plan: number; build: number; fix: number; deploy: number };
+  }>;
+};
+
+type BillingInterval = 'monthly' | 'annual';
+type BillingCatalogResponse = {
+  success: boolean;
+  catalog?: {
+    version: string;
+    annualDiscountPercent: number;
+    creditTiers: number[];
+    plans: Array<{ key: string; name: string; capabilities: string[] }>;
+    prices: Array<{
+      plan: 'pro' | 'business';
+      credits: number;
+      interval: BillingInterval;
+      amountUsd: number;
+      monthlyEquivalentUsd: number;
+    }>;
+    topups: Array<{ id: string; plan: 'pro' | 'business'; credits: number; amountUsd: number }>;
+  };
+};
+
+type BillingWalletResponse = {
+  success: boolean;
+  billing_version?: string;
+  mode?: 'authoritative' | 'shadow';
+  plan?: string;
+  balance?: number;
+  breakdown?: Record<string, number>;
+  grants?: Array<{
+    id: string;
+    kind: string;
+    usage_restriction: string;
+    credits_remaining: number;
+    expires_at: string;
+  }>;
+};
+
+type AutoTopupResponse = {
+  success: boolean;
+  config?: {
+    enabled: boolean;
+    productId: string | null;
+    creditsToAdd: number;
+    thresholdCredits: number;
+    monthlyCapCredits: number;
+    creditsAddedThisMonth: number;
+    hasPaymentMethod: boolean;
+    lastTriggeredAt: string | null;
+    lastError: string | null;
+    requiresPaymentMethod?: boolean;
   };
 };
 
@@ -52,6 +145,12 @@ type SettingsPreferences = {
 let settingsStyleInstalled = false;
 let settingsBound = false;
 let currentAuthSummary: AuthMeResponse | null = null;
+let aiUsageLoaded = false;
+let billingLoaded = false;
+let billingCatalog: BillingCatalogResponse['catalog'] | null = null;
+let billingWallet: BillingWalletResponse | null = null;
+let autoTopupConfig: AutoTopupResponse['config'] | null = null;
+let selectedBillingInterval: BillingInterval = 'monthly';
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
 const SETTINGS_DIRTY_CLASS = 'settings-dirty';
@@ -61,6 +160,8 @@ const tabAliases: Record<SettingsTab, string> = {
   account: 'compte',
   privacy: 'confidentialite',
   appearance: 'apparence',
+  billing: 'facturation',
+  usage: 'ia',
   capabilities: 'capacites',
   connectors: 'connecteurs',
   api: 'api',
@@ -76,6 +177,8 @@ const settingsTabMeta: Record<string, { title: string; description: string }> = 
   connecteurs: { title: 'Intégrations', description: 'Services réellement connectés à votre espace.' },
   api: { title: 'API', description: 'Webhooks and safe connector controls.' },
   apparence: { title: 'Apparence', description: 'Thème, densité et animations.' },
+  facturation: { title: 'Facturation', description: 'Forfait, crédits, renouvellement et paiements.' },
+  ia: { title: 'Usage', description: 'Build, Cloud, IA intégrée et historique de consommation.' },
   danger: { title: 'Danger', description: 'Reversible resets and sign-out.' },
 };
 
@@ -557,6 +660,116 @@ function installSettingsStyle() {
       color: #b42318;
       border-color: rgba(180, 35, 24, .24);
       background: rgba(180, 35, 24, .06);
+    }
+
+    .billing-balance-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 16px;
+      background:
+        radial-gradient(circle at 8% 0%, var(--accent-blue-soft, rgba(37,99,235,.14)), transparent 42%),
+        var(--bg-surface, #fffdf8);
+    }
+
+    .billing-balance-value {
+      display: block;
+      margin-top: 8px;
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: -.045em;
+    }
+
+    .billing-plan-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .billing-plan-card {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid var(--border, #eceae4);
+      border-radius: 12px;
+      background: var(--bg, #fcfbf8);
+    }
+
+    .billing-plan-card[data-plan="pro"] {
+      border-color: color-mix(in srgb, var(--accent-blue, #2563eb) 35%, var(--border, #eceae4));
+    }
+
+    .billing-plan-head,
+    .billing-plan-price {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .billing-plan-head strong { font-size: 14px; }
+    .billing-plan-price strong { font-size: 22px; letter-spacing: -.035em; }
+    .billing-plan-price span { color: var(--text-sub, #77736b); font-size: 11px; }
+
+    .billing-tier-select {
+      width: 100%;
+      height: 36px;
+      border: 1px solid var(--border, #eceae4);
+      border-radius: 9px;
+      padding: 0 10px;
+      color: var(--text, #1c1c1c);
+      background: var(--bg-surface, #fffdf8);
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .billing-inline-actions {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: min(280px, 54%);
+    }
+
+    .billing-inline-actions .billing-tier-select { min-width: 150px; }
+
+    .billing-plan-features {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--text-sub, #77736b);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .billing-plan-features li::before {
+      content: '✓';
+      margin-right: 6px;
+      color: var(--accent-blue, #2563eb);
+      font-weight: 900;
+    }
+
+    .billing-plan-card .settings-action-button {
+      width: 100%;
+      color: var(--bg, #fcfbf8);
+      border-color: var(--accent-blue, #2563eb);
+      background: var(--accent-blue, #2563eb);
+    }
+
+    .billing-plan-card .settings-action-button:disabled {
+      opacity: .56;
+      cursor: wait;
+      transform: none;
+    }
+
+    @media (max-width: 520px) {
+      .billing-plan-grid { grid-template-columns: 1fr; }
+      .billing-balance-card { grid-template-columns: 1fr; }
+      .billing-inline-actions { width: 100%; min-width: 0; }
+      .billing-inline-actions .billing-tier-select { min-width: 0; }
     }
 
     .settings-segment {
@@ -1406,24 +1619,60 @@ function settingsMarkup() {
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-facturation" data-settings-heading="Billing">
+        <div class="settings-card billing-balance-card">
+          <div>
+            <h3 data-settings-billing-plan>Forfait gratuit</h3>
+            <p>Un solde unique pour Build, Cloud et l’IA intégrée. Les grants spécialisés sont consommés en premier.</p>
+            <strong class="billing-balance-value" data-billing-balance>—</strong>
+          </div>
+          <button type="button" class="settings-action-button" data-settings-action="open-usage">Voir l’usage</button>
+        </div>
         <div class="settings-card">
-          <h3>Forfait actuel</h3>
-          <p>Votre forfait détermine les crédits inclus, l’hébergement et l’accès aux ateliers avancés.</p>
-          <div class="settings-row">
-            <div><strong data-settings-billing-plan>Forfait gratuit</strong><span>Comparez les options avant de choisir votre prochain niveau.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-pricing">Voir les forfaits</button>
+          <h3>Choisir un forfait</h3>
+          <p>Les crédits sont attribués chaque mois. L’annuel est payé à l’avance avec 20 % de remise.</p>
+          <div class="settings-segment" role="group" aria-label="Cycle de facturation">
+            <button type="button" class="active" data-billing-interval="monthly">Mensuel</button>
+            <button type="button" data-billing-interval="annual">Annuel · −20 %</button>
+          </div>
+          <div class="billing-plan-grid" data-billing-plan-grid>
+            <div class="usage-empty">Chargement des forfaits…</div>
           </div>
         </div>
         <div class="settings-card">
-          <h3>Services selon l’usage</h3>
-          <p>Les crédits de construction et l’hébergement Coden Cloud restent séparés pour rendre votre consommation lisible.</p>
+          <h3>Crédits et paiements</h3>
+          <p>Les recharges expirent après douze mois et ne sont accordées qu’après confirmation Stripe.</p>
           <div class="settings-row">
-            <div><strong>Crédits de construction</strong><span>Utilisés quand Coden planifie, construit, corrige ou déploie.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-usage">Voir l’usage</button>
+            <div><strong>Ajouter des crédits</strong><span>Disponible pour les forfaits Pro et Business.</span></div>
+            <div class="billing-inline-actions">
+              <select class="billing-tier-select" data-billing-topup-product aria-label="Montant de la recharge"><option value="">Chargement…</option></select>
+              <button type="button" class="settings-action-button" data-settings-action="billing-topup">Ajouter</button>
+            </div>
           </div>
           <div class="settings-row">
-            <div><strong>Coden Cloud</strong><span>Hosting, database, storage, bandwidth and deployed AI usage.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-usage">Review cloud</button>
+            <div><strong>Recharge automatique</strong><span data-billing-auto-status>Désactivée. Un moyen de paiement enregistré est requis.</span></div>
+            <label class="settings-inline-toggle"><input type="checkbox" data-billing-auto-enabled><span>Activer</span></label>
+          </div>
+          <div class="settings-field-grid" data-billing-auto-fields>
+            <div class="settings-field">
+              <label for="billing-auto-product">Recharge</label>
+              <select id="billing-auto-product" class="billing-tier-select" data-billing-auto-product></select>
+            </div>
+            <div class="settings-field">
+              <label for="billing-auto-threshold">Seuil de déclenchement</label>
+              <input id="billing-auto-threshold" type="number" min="0" step="1" value="20" data-billing-auto-threshold>
+            </div>
+            <div class="settings-field">
+              <label for="billing-auto-cap">Plafond mensuel</label>
+              <input id="billing-auto-cap" type="number" min="50" step="50" value="200" data-billing-auto-cap>
+            </div>
+            <div class="settings-field">
+              <label>&nbsp;</label>
+              <button type="button" class="settings-action-button" data-settings-action="billing-auto-topup-save">Enregistrer l’auto-recharge</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div><strong>Factures et moyen de paiement</strong><span>Gérés dans le portail sécurisé Stripe.</span></div>
+            <button type="button" class="settings-action-button" data-settings-action="billing-portal">Gérer</button>
           </div>
         </div>
       </div>
@@ -1578,15 +1827,13 @@ function aiUsageMarkup() {
         </div>
       </div>
       <div class="settings-card">
-        <h3>Coden Cloud</h3>
-        <p>Cloud balance runs published apps: hosting, database, file storage, realtime, bandwidth and deployed AI app usage.</p>
+        <h3>Run usage</h3>
+        <p>Mesures réelles de Cloud et de l’IA intégrée, imputées au solde général après les grants spécialisés.</p>
         <div class="cloud-summary-grid">
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Cloud balance</span><strong class="cloud-summary-value" id="cloud-balance">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">AI app balance</span><strong class="cloud-summary-value" id="cloud-ai-app">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Top-up from</span><strong class="cloud-summary-value" id="cloud-topup-min">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Database</span><strong class="cloud-summary-value" id="cloud-db-storage">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Files</span><strong class="cloud-summary-value" id="cloud-file-storage">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Bandwidth</span><strong class="cloud-summary-value" id="cloud-bandwidth">--</strong></div>
+          <div class="cloud-summary-card"><span class="cloud-summary-label">Build grant</span><strong class="cloud-summary-value" id="grant-build">--</strong></div>
+          <div class="cloud-summary-card"><span class="cloud-summary-label">Cloud grant</span><strong class="cloud-summary-value" id="grant-cloud">--</strong></div>
+          <div class="cloud-summary-card"><span class="cloud-summary-label">AI grant</span><strong class="cloud-summary-value" id="grant-ai">--</strong></div>
+          <div class="cloud-summary-card"><span class="cloud-summary-label">General credits</span><strong class="cloud-summary-value" id="grant-general">--</strong></div>
         </div>
       </div>
       <div class="settings-card">
@@ -1594,8 +1841,8 @@ function aiUsageMarkup() {
         <div id="ai-usage-history"><div class="usage-empty">AI usage history will appear here after your first Plan, Build, Fix or Deploy action.</div></div>
       </div>
       <div class="settings-card">
-        <h3>Model credit rates</h3>
-        <div id="model-credit-rates"><div class="usage-empty">Model credit rates are loading on demand.</div></div>
+        <h3>Tarification mesurée</h3>
+        <p>Coden réserve une borne avant l’action, puis règle uniquement l’usage réel : modèles, outils, sandbox, navigateur, Cloud et IA intégrée. La réserve inutilisée est restituée automatiquement.</p>
       </div>
     </div>
   `;
@@ -1755,8 +2002,7 @@ async function handleSettingsAction(action: string) {
     return;
   }
   if (action === 'open-pricing') {
-    trackFunnelEvent('upgrade_pricing_clicked', { surface: 'settings', plan: 'pro', billing: 'monthly' });
-    window.location.href = '/pricing.html?plan=pro&billing=monthly';
+    activateSettingsTab('facturation');
     return;
   }
   if (action === 'open-integrations') {
@@ -1770,6 +2016,18 @@ async function handleSettingsAction(action: string) {
   }
   if (action === 'open-usage') {
     activateSettingsTab('ia');
+    return;
+  }
+  if (action === 'billing-portal') {
+    await openBillingPortal();
+    return;
+  }
+  if (action === 'billing-topup') {
+    await startTopupCheckout();
+    return;
+  }
+  if (action === 'billing-auto-topup-save') {
+    await saveAutoTopup();
     return;
   }
   if (action === 'reset-preferences') {
@@ -1837,6 +2095,7 @@ export function ensureSettingsPanel() {
   if (!hasManagedMarkup) {
     panel.innerHTML = settingsMarkup();
     aiUsageLoaded = false;
+    billingLoaded = false;
   } else {
     ensureAiUsageTab(panel);
   }
@@ -1861,6 +2120,7 @@ function activateSettingsTab(tab: string) {
   if (description) description.textContent = meta.description;
   if (content) content.scrollTop = 0;
   if (id === 'ia') void loadAiUsageSettings();
+  if (id === 'facturation') void loadBillingSettings();
 }
 
 export function openSettings(tab: SettingsTab = 'profile') {
@@ -1936,6 +2196,19 @@ function bindSettingsPanel() {
       return;
     }
 
+    const billingInterval = target.closest<HTMLElement>('#settings-panel [data-billing-interval]');
+    if (billingInterval?.dataset.billingInterval) {
+      selectedBillingInterval = billingInterval.dataset.billingInterval === 'annual' ? 'annual' : 'monthly';
+      renderBillingSettings();
+      return;
+    }
+
+    const billingCheckout = target.closest<HTMLButtonElement>('#settings-panel [data-billing-checkout]');
+    if (billingCheckout?.dataset.billingCheckout === 'pro' || billingCheckout?.dataset.billingCheckout === 'business') {
+      void startBillingCheckout(billingCheckout.dataset.billingCheckout, billingCheckout);
+      return;
+    }
+
     const action = target.closest<HTMLElement>('#settings-panel [data-settings-action]');
     if (action?.dataset.settingsAction) {
       void handleSettingsAction(action.dataset.settingsAction);
@@ -1969,6 +2242,13 @@ function bindSettingsPanel() {
 
   document.addEventListener('change', event => {
     const target = event.target as HTMLElement | null;
+    const billingTier = target?.closest<HTMLSelectElement>('#settings-panel [data-billing-tier]');
+    if (billingTier?.dataset.billingTier === 'pro' || billingTier?.dataset.billingTier === 'business') {
+      const price = billingPrice(billingTier.dataset.billingTier, Number(billingTier.value));
+      const priceNode = document.querySelector<HTMLElement>(`[data-billing-price="${billingTier.dataset.billingTier}"]`);
+      if (priceNode) priceNode.innerHTML = `<strong>${formatUsd(price?.monthlyEquivalentUsd)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · payé annuellement' : ''}</span>`;
+      return;
+    }
     if (!target?.closest('#settings-panel [data-settings-field]')) return;
     markSettingsDirty();
   });
@@ -1999,7 +2279,7 @@ function formatGb(value: unknown) {
   return `${number % 1 === 0 ? number.toFixed(0) : number.toFixed(2)} GB`;
 }
 
-function formatDate(iso?: string) {
+function formatDate(iso?: string | null) {
   if (!iso) return 'Recently';
   try {
     return new Intl.DateTimeFormat(undefined, {
@@ -2013,7 +2293,180 @@ function formatDate(iso?: string) {
   }
 }
 
-function renderAiUsage(data: AiUsageResponse, rates: ModelRateResponse) {
+function billingPrice(plan: 'pro' | 'business', credits: number) {
+  return billingCatalog?.prices.find(price =>
+    price.plan === plan && price.credits === credits && price.interval === selectedBillingInterval,
+  ) || null;
+}
+
+function billingPlanMarkup(plan: 'pro' | 'business') {
+  const catalogPlan = billingCatalog?.plans.find(item => item.key === plan);
+  const tiers = Array.from(new Set((billingCatalog?.prices || []).filter(price => price.plan === plan).map(price => price.credits))).sort((a, b) => a - b);
+  const defaultTier = tiers.includes(100) ? 100 : (tiers[0] || 100);
+  const price = billingPrice(plan, defaultTier);
+  const current = billingWallet?.plan === plan;
+  return `
+    <article class="billing-plan-card" data-plan="${plan}">
+      <div class="billing-plan-head"><strong>${escapeHtml(catalogPlan?.name || plan)}</strong>${current ? '<span class="settings-mini-badge">Actuel</span>' : ''}</div>
+      <select class="billing-tier-select" data-billing-tier="${plan}" aria-label="Crédits mensuels ${escapeHtml(catalogPlan?.name || plan)}">
+        ${tiers.map(tier => `<option value="${tier}"${tier === defaultTier ? ' selected' : ''}>${new Intl.NumberFormat().format(tier)} crédits / mois</option>`).join('')}
+      </select>
+      <div class="billing-plan-price" data-billing-price="${plan}"><strong>${formatUsd(price?.monthlyEquivalentUsd)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · payé annuellement' : ''}</span></div>
+      <ul class="billing-plan-features">${(catalogPlan?.capabilities || []).slice(0, 5).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+      <button type="button" class="settings-action-button" data-billing-checkout="${plan}"${current ? ' disabled' : ''}>${current ? 'Forfait actuel' : `Choisir ${escapeHtml(catalogPlan?.name || plan)}`}</button>
+    </article>`;
+}
+
+function renderBillingSettings() {
+  const balance = document.querySelector<HTMLElement>('[data-billing-balance]');
+  if (balance) {
+    balance.textContent = billingWallet?.mode === 'shadow'
+      ? 'Accès ouvert · V2 en validation'
+      : `${formatCredits(billingWallet?.balance)} crédits`;
+  }
+  const currentPlan = document.querySelector<HTMLElement>('#tab-facturation [data-settings-billing-plan]');
+  if (currentPlan) currentPlan.textContent = `Forfait ${billingWallet?.plan === 'business' ? 'Business' : billingWallet?.plan === 'pro' ? 'Pro' : 'Free'}`;
+
+  document.querySelectorAll<HTMLElement>('[data-billing-interval]').forEach(button => {
+    button.classList.toggle('active', button.dataset.billingInterval === selectedBillingInterval);
+  });
+  const grid = document.querySelector<HTMLElement>('[data-billing-plan-grid]');
+  if (grid) grid.innerHTML = `${billingPlanMarkup('pro')}${billingPlanMarkup('business')}`;
+
+  const topupSelect = document.querySelector<HTMLSelectElement>('[data-billing-topup-product]');
+  const autoProduct = document.querySelector<HTMLSelectElement>('[data-billing-auto-product]');
+  const topupButton = document.querySelector<HTMLButtonElement>('[data-settings-action="billing-topup"]');
+  const autoSaveButton = document.querySelector<HTMLButtonElement>('[data-settings-action="billing-auto-topup-save"]');
+  const isPaid = billingWallet?.plan === 'pro' || billingWallet?.plan === 'business';
+  const plan = billingWallet?.plan === 'business' ? 'business' : 'pro';
+  const products = (billingCatalog?.topups || []).filter(product => product.plan === plan);
+  if (topupSelect) {
+    topupSelect.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatUsd(product.amountUsd)}</option>`).join('');
+    topupSelect.disabled = !isPaid;
+  }
+  if (autoProduct) {
+    autoProduct.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatUsd(product.amountUsd)}</option>`).join('');
+    autoProduct.value = autoTopupConfig?.productId || products[0]?.id || '';
+    autoProduct.disabled = !isPaid;
+  }
+  const enabled = document.querySelector<HTMLInputElement>('[data-billing-auto-enabled]');
+  const threshold = document.querySelector<HTMLInputElement>('[data-billing-auto-threshold]');
+  const cap = document.querySelector<HTMLInputElement>('[data-billing-auto-cap]');
+  const status = document.querySelector<HTMLElement>('[data-billing-auto-status]');
+  if (enabled) { enabled.checked = Boolean(autoTopupConfig?.enabled); enabled.disabled = !isPaid; }
+  if (threshold) { threshold.value = String(autoTopupConfig?.thresholdCredits || 20); threshold.disabled = !isPaid; }
+  if (cap) { cap.value = String(autoTopupConfig?.monthlyCapCredits || 200); cap.disabled = !isPaid; }
+  if (status) {
+    status.textContent = !isPaid
+      ? 'Disponible avec Pro ou Business.'
+      : autoTopupConfig?.lastError
+        ? `Désactivée : ${autoTopupConfig.lastError}`
+        : autoTopupConfig?.enabled
+          ? `${formatCredits(autoTopupConfig.creditsAddedThisMonth)} crédits ajoutés ce mois.`
+          : autoTopupConfig?.hasPaymentMethod
+            ? 'Prête à être activée avec le moyen de paiement enregistré.'
+            : 'Effectuez une première recharge pour enregistrer le moyen de paiement.';
+  }
+  if (topupButton) topupButton.disabled = !isPaid;
+  if (autoSaveButton) autoSaveButton.disabled = !isPaid;
+}
+
+async function loadBillingSettings(force = false) {
+  if (billingLoaded && !force) return;
+  const grid = document.querySelector<HTMLElement>('[data-billing-plan-grid]');
+  if (grid) grid.innerHTML = '<div class="usage-empty">Chargement des forfaits…</div>';
+  try {
+    const [catalogResponse, walletResponse, autoResponse] = await Promise.all([
+      apiFetch<BillingCatalogResponse>('/api/billing/plans'),
+      apiFetch<BillingWalletResponse>('/api/billing/wallet'),
+      apiFetch<AutoTopupResponse>('/api/billing/auto-topup').catch(() => null),
+    ]);
+    billingCatalog = catalogResponse.catalog || null;
+    billingWallet = walletResponse;
+    autoTopupConfig = autoResponse?.config || null;
+    billingLoaded = true;
+    renderBillingSettings();
+  } catch (error) {
+    if (grid) grid.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'La facturation est momentanément indisponible.')}</div>`;
+  }
+}
+
+async function startBillingCheckout(plan: 'pro' | 'business', button: HTMLButtonElement) {
+  const select = document.querySelector<HTMLSelectElement>(`[data-billing-tier="${plan}"]`);
+  const credits = Number(select?.value || 100);
+  button.disabled = true;
+  button.textContent = 'Ouverture sécurisée…';
+  try {
+    const response = await apiFetch<{ success: boolean; url?: string }>('/api/billing/checkout/subscription', {
+      method: 'POST',
+      body: JSON.stringify({
+        planKey: plan,
+        credits,
+        billingInterval: selectedBillingInterval,
+        email: currentAuthSummary?.user?.email || undefined,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    });
+    if (!response.url) throw new Error('Stripe n’a pas retourné de page de paiement.');
+    window.location.assign(response.url);
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = `Choisir ${plan === 'business' ? 'Business' : 'Pro'}`;
+    setSettingsStatus(error instanceof Error ? error.message : 'Paiement indisponible', 'error');
+  }
+}
+
+async function openBillingPortal() {
+  setSettingsStatus('Ouverture du portail sécurisé…', 'saving');
+  try {
+    const response = await apiFetch<{ success: boolean; url?: string }>('/api/billing/portal', { method: 'POST', body: '{}' });
+    if (!response.url) throw new Error('Portail Stripe indisponible.');
+    window.location.assign(response.url);
+  } catch (error) {
+    setSettingsStatus(error instanceof Error ? error.message : 'Portail indisponible', 'error');
+  }
+}
+
+async function startTopupCheckout() {
+  const select = document.querySelector<HTMLSelectElement>('[data-billing-topup-product]');
+  const productId = String(select?.value || '');
+  if (!productId) return;
+  setSettingsStatus('Ouverture de la recharge…', 'saving');
+  try {
+    const response = await apiFetch<{ success: boolean; url?: string }>('/api/billing/checkout/topup', {
+      method: 'POST',
+      body: JSON.stringify({ productId, email: currentAuthSummary?.user?.email || undefined, idempotencyKey: crypto.randomUUID() }),
+    });
+    if (!response.url) throw new Error('Stripe n’a pas retourné de page de paiement.');
+    window.location.assign(response.url);
+  } catch (error) {
+    setSettingsStatus(error instanceof Error ? error.message : 'Recharge indisponible', 'error');
+  }
+}
+
+async function saveAutoTopup() {
+  const enabled = Boolean(document.querySelector<HTMLInputElement>('[data-billing-auto-enabled]')?.checked);
+  const productId = String(document.querySelector<HTMLSelectElement>('[data-billing-auto-product]')?.value || '');
+  const thresholdCredits = Number(document.querySelector<HTMLInputElement>('[data-billing-auto-threshold]')?.value || 0);
+  const monthlyCapCredits = Number(document.querySelector<HTMLInputElement>('[data-billing-auto-cap]')?.value || 0);
+  if (!productId) return;
+  setSettingsStatus('Enregistrement de l’auto-recharge…', 'saving');
+  try {
+    const response = await apiFetch<AutoTopupResponse>('/api/billing/auto-topup', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, productId, thresholdCredits, monthlyCapCredits }),
+    });
+    autoTopupConfig = response.config || null;
+    renderBillingSettings();
+    setSettingsStatus(response.config?.requiresPaymentMethod
+      ? 'Configuration enregistrée. Faites une première recharge pour enregistrer le moyen de paiement.'
+      : 'Auto-recharge enregistrée', response.config?.requiresPaymentMethod ? 'error' : 'success');
+  } catch (error) {
+    setSettingsStatus(error instanceof Error ? error.message : 'Auto-recharge indisponible', 'error');
+  }
+}
+
+function renderAiUsage(data: AiUsageResponse) {
   const balance = document.getElementById('ai-usage-balance');
   const monthly = document.getElementById('ai-usage-monthly');
   const daily = document.getElementById('ai-usage-daily');
@@ -2023,19 +2476,15 @@ function renderAiUsage(data: AiUsageResponse, rates: ModelRateResponse) {
   if (daily) daily.textContent = formatCredits(data.wallet?.daily_promo_credits);
   if (topups) topups.textContent = formatCredits(data.wallet?.topup_credits);
 
-  const cloud = data.wallet?.cloud;
-  const cloudBalance = document.getElementById('cloud-balance');
-  const cloudAiApp = document.getElementById('cloud-ai-app');
-  const cloudTopupMin = document.getElementById('cloud-topup-min');
-  const cloudDbStorage = document.getElementById('cloud-db-storage');
-  const cloudFileStorage = document.getElementById('cloud-file-storage');
-  const cloudBandwidth = document.getElementById('cloud-bandwidth');
-  if (cloudBalance) cloudBalance.textContent = formatUsd(cloud?.balance_usd);
-  if (cloudAiApp) cloudAiApp.textContent = formatUsd(cloud?.ai_app_balance_usd);
-  if (cloudTopupMin) cloudTopupMin.textContent = cloud?.topup_min_usd ? formatUsd(cloud.topup_min_usd) : 'Included only';
-  if (cloudDbStorage) cloudDbStorage.textContent = formatGb(cloud?.database_storage_gb);
-  if (cloudFileStorage) cloudFileStorage.textContent = formatGb(cloud?.file_storage_gb);
-  if (cloudBandwidth) cloudBandwidth.textContent = formatGb(cloud?.bandwidth_gb);
+  const breakdown = data.wallet?.breakdown || {};
+  const buildGrant = document.getElementById('grant-build');
+  const cloudGrant = document.getElementById('grant-cloud');
+  const aiGrant = document.getElementById('grant-ai');
+  const generalGrant = document.getElementById('grant-general');
+  if (buildGrant) buildGrant.textContent = formatCredits(breakdown.daily_build);
+  if (cloudGrant) cloudGrant.textContent = formatCredits(breakdown.monthly_cloud);
+  if (aiGrant) aiGrant.textContent = formatCredits(breakdown.monthly_ai);
+  if (generalGrant) generalGrant.textContent = formatCredits((breakdown.monthly_plan || 0) + (breakdown.rollover || 0) + (breakdown.topup || 0) + (breakdown.bonus || 0));
 
   const history = document.getElementById('ai-usage-history');
   if (history) {
@@ -2053,44 +2502,17 @@ function renderAiUsage(data: AiUsageResponse, rates: ModelRateResponse) {
     `).join('') : '<div class="usage-empty">AI usage history will appear here after your first Plan, Build, Fix or Deploy action.</div>';
   }
 
-  const rateList = document.getElementById('model-credit-rates');
-  if (rateList) {
-    const models = rates.models || [];
-    rateList.innerHTML = models.length ? models.map(model => `
-      <div class="model-rate-row">
-        <div class="model-rate-head">
-          <div>
-            <div class="model-rate-title">${escapeHtml(model.display_name)}</div>
-            <div class="model-rate-meta">${escapeHtml(model.availability === 'all' ? 'Available to all plans' : `${model.availability} plan and above`)}</div>
-          </div>
-          <span class="model-tier-pill">${escapeHtml(model.tier)}</span>
-        </div>
-        <div class="model-credit-grid">
-          <div class="model-credit-cell"><span>Plan</span><strong>${escapeHtml(model.credits.plan)}</strong></div>
-          <div class="model-credit-cell"><span>Build</span><strong>${escapeHtml(model.credits.build)}</strong></div>
-          <div class="model-credit-cell"><span>Fix</span><strong>${escapeHtml(model.credits.fix)}</strong></div>
-          <div class="model-credit-cell"><span>Deploy</span><strong>${escapeHtml(model.credits.deploy)}</strong></div>
-        </div>
-      </div>
-    `).join('') : '<div class="usage-empty">Model credit rates are unavailable right now.</div>';
-  }
 }
 
 async function loadAiUsageSettings(force = false) {
   if (aiUsageLoaded && !force) return;
   const history = document.getElementById('ai-usage-history');
-  const rateList = document.getElementById('model-credit-rates');
   if (history) history.innerHTML = '<div class="usage-empty">Loading AI usage...</div>';
-  if (rateList) rateList.innerHTML = '<div class="usage-empty">Loading model credit rates...</div>';
   try {
-    const [usage, rates] = await Promise.all([
-      apiFetch<AiUsageResponse>('/api/users/me/ai-usage'),
-      apiFetch<ModelRateResponse>('/api/users/me/model-credit-rates'),
-    ]);
-    renderAiUsage(usage, rates);
+    const usage = await apiFetch<AiUsageResponse>('/api/users/me/ai-usage');
+    renderAiUsage(usage);
     aiUsageLoaded = true;
   } catch (error) {
     if (history) history.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'Unable to load AI usage.')}</div>`;
-    if (rateList) rateList.innerHTML = '<div class="usage-empty">Model credit rates are unavailable right now.</div>';
   }
 }

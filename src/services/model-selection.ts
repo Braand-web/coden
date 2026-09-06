@@ -25,6 +25,7 @@ import {
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_REGISTRY,
   UserPlan,
+  normalizeUserPlan,
   type AllowedModelId,
   type ModelStrength,
 } from '../config/ai-models.ts';
@@ -115,7 +116,7 @@ const DIMENSIONS = {
 /** Complexity moves the bar; it never selects a model by itself. */
 const COMPLEXITY_SHIFT: Record<TaskComplexity, number> = { simple: -1, medium: 0, complex: 1, extreme: 2 };
 
-const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, scale: 2, enterprise: 3 };
+const PLAN_RANK: Record<string, number> = { free: 0, pro: 1, business: 2, enterprise: 3 };
 
 /** Blended price, weighting output more heavily because generations are output-heavy. */
 export function blendedCost(modelId: AllowedModelId): number {
@@ -149,7 +150,7 @@ const INHERENTLY_INTERACTIVE: ReadonlySet<TaskKind> = new Set<TaskKind>([
 
 function planAllows(userPlan: string, modelId: AllowedModelId): boolean {
   const required = AI_MODEL_PLAN_ACCESS[modelId];
-  return (PLAN_RANK[String(userPlan).toLowerCase()] ?? 0) >= (PLAN_RANK[required] ?? 0);
+  return (PLAN_RANK[normalizeUserPlan(userPlan)] ?? 0) >= (PLAN_RANK[normalizeUserPlan(required)] ?? 0);
 }
 
 /**
@@ -170,8 +171,8 @@ export function selectModel(request: SelectionRequest): SelectionResult {
   const preferred = request.needs?.vision ? AUTO_MODEL_ROLES.visual
     : ['classification','conversation','summary'].includes(request.task) ? AUTO_MODEL_ROLES.router
     : ['planning','architecture','security'].includes(request.task) ? AUTO_MODEL_ROLES.lead
-    : request.task === 'review' ? AUTO_MODEL_ROLES.senior
-    : complexity === 'simple' ? AUTO_MODEL_ROLES.worker : AUTO_MODEL_ROLES.builder;
+    : request.task === 'review' ? AUTO_MODEL_ROLES.premium
+    : complexity === 'simple' ? AUTO_MODEL_ROLES.worker : AUTO_MODEL_ROLES.lead;
   const candidates = [preferred, ...MODELS_BY_COST.filter(id => (AUTO_MODEL_IDS as readonly string[]).includes(id) && id !== preferred)];
   for (const modelId of candidates) {
     const caps = AI_MODEL_CAPABILITIES[modelId];

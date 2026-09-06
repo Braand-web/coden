@@ -28,7 +28,13 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     case 'text_end': closeText(); break;
     case 'files_touched': closeText(); next.parts.push(toolPart(`tool-${next.parts.length}`, event.action, event.paths)); next.thinking = false; next.activity = null; break;
     case 'run_finished': closeText(); next.status = event.reason === 'cancelled' ? 'cancelled' : 'done'; next.thinking = false; next.activity = null; break;
+    case 'run_cancelled': closeText(); next.status = 'cancelled'; next.thinking = false; next.activity = null; break;
     case 'run_failed': closeText(); next.status = 'error'; next.error = event.message; next.thinking = false; next.activity = null; break;
+    case 'run_paused': closeText(); next.thinking = false; next.activity = null; break;
+    case 'run_resumed': next.thinking = true; break;
+    case 'decision_required': closeText(); next.thinking = false; next.activity = null; break;
+    case 'artifact_ready': break;
+    case 'cost_checkpoint': closeText(); next.thinking = false; next.activity = null; break;
     case 'heartbeat': break;
   }
   return next;

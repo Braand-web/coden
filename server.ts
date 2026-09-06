@@ -37,6 +37,7 @@ import {
   type CodenSkillBudget,
 } from './src/services/coden-skills.ts';
 import { renderCodenSkillPlan, resolveCodenSkillPlan } from './src/services/coden-skill-plan.ts';
+import { planMission } from './src/services/mission-planner.ts';
 import {
   computeNextWorkflowRun,
   validateWorkflowInput,
@@ -104,7 +105,6 @@ import {
   StripeService,
   SAAS_PLANS,
   TOPUP_PRODUCTS,
-  CLOUD_TOPUP_PRODUCTS,
   PLAN_ECONOMICS_GUARDRAILS,
   getCloudUsageCategories,
   getPlanConfig,
@@ -112,6 +112,7 @@ import {
   isPaidPlanKey,
   normalizePlanKey,
 } from './src/services/billing-service.ts';
+import { BILLING_V2_VERSION, publicBillingCatalog } from './src/config/billing-v2.ts';
 import { AuditLogService, BillingAlertService, UsageMeteringService, MemberLimitService } from './src/services/platform-support.ts';
 import { buildWorldClassUiPolicy } from './src/services/design-generation-policy.ts';
 import {
@@ -330,6 +331,10 @@ const COUNTRY_NAMES: Record<string, string> = {
   US: 'United States',
   ZA: 'South Africa',
 };
+
+// Stripe needs the exact bytes used for its signature. Register this parser
+// before the global JSON parser; the route itself still verifies the signature.
+app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '2mb' }));
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
@@ -710,6 +715,8 @@ function getAuthenticatedUserOrThrow(req: any, requestId?: string) {
 
 app.get('/api/auth/me', requireAuthWithTemporaryGeneration, async (req: any, res) => {
   const auth = getRequiredAuth(req);
+  const planKey = normalizePlanKey(await getOrganizationPlan(auth.userId).catch(() => 'free')) || 'free';
+  const plan = getPlanConfig(planKey) || SAAS_PLANS.free;
   res.json({
     success: true,
     user: {
@@ -723,6 +730,7 @@ app.get('/api/auth/me', requireAuthWithTemporaryGeneration, async (req: any, res
         ? new Date(req.codenTemporaryGenerationExpiresAt).toISOString()
         : null,
     },
+    plan: { key: plan.key, label: plan.name },
     access: CODEN_PUBLIC_ACCESS,
   });
 });
@@ -775,7 +783,7 @@ app.get('/api/health', (_req, res) => {
       generated_app_hosting: process.env.CODEN_STATIC_HOSTING_PROVIDER === 'cloudflare-pages'
         ? 'cloudflare-pages-legacy'
         : 'cloudflare-workers',
-      monetization: 'disabled',
+      monetization: CODEN_MONETIZATION_ENABLED ? 'v2' : 'v2-shadow',
       agent_harness: 'coden-harness/v3',
       agent_harness_persistence: Boolean(
         process.env.CODEN_SUPABASE_MGMT_TOKEN ||
@@ -851,16 +859,7 @@ app.options('/api/analytics/collect', (_req, res) => {
   res.status(204).end();
 });
 
-app.use('/api/billing', (_req, res) => res.status(410).json({
-  success: false,
-  error: 'Coden billing and commercial plans have been removed.',
-  diagnostic_code: 'MONETIZATION_REMOVED',
-}));
-app.use('/api/stripe/webhook', (_req, res) => res.status(410).json({
-  success: false,
-  error: 'Coden billing and commercial plans have been removed.',
-  diagnostic_code: 'MONETIZATION_REMOVED',
-}));
+app.use('/api/billing', requireAuth);
 app.use('/api/ai/estimate', requireAuth);
 app.use('/api/ai/route', requireAuth);
 app.use('/api/users/me', requireAuthWithTemporaryGeneration);
@@ -9264,6 +9263,46 @@ async function loadCloudWalletSnapshot(organizationId: string, plan: ReturnType<
   return snapshot;
 }
 
+type UnifiedGrantSnapshot = {
+  id: string;
+  kind: string;
+  usage_restriction: string;
+  credits_issued: number;
+  credits_remaining: number;
+  issued_at: string;
+  expires_at: string;
+  frozen_at: string | null;
+};
+
+async function loadUnifiedWalletSnapshot(organizationId: string) {
+  const client = requireSupabase('Unified credit wallet listing');
+  const { data, error } = await client
+    .from('credit_grants')
+    .select('id,kind,usage_restriction,credits_issued,credits_remaining,issued_at,expires_at,frozen_at')
+    .eq('account_id', organizationId)
+    .is('frozen_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .gt('credits_remaining', 0)
+    .order('expires_at', { ascending: true });
+
+  if (error) throw error;
+  const grants = ((data || []) as UnifiedGrantSnapshot[]).map(grant => ({
+    ...grant,
+    credits_issued: Number(grant.credits_issued || 0),
+    credits_remaining: Number(grant.credits_remaining || 0),
+  }));
+  const breakdown = grants.reduce<Record<string, number>>((totals, grant) => {
+    totals[grant.kind] = (totals[grant.kind] || 0) + grant.credits_remaining;
+    return totals;
+  }, {});
+
+  return {
+    balance: grants.reduce((sum, grant) => sum + grant.credits_remaining, 0),
+    breakdown,
+    grants,
+  };
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // 1. BILLING ENDPOINTS
 // ──────────────────────────────────────────────────────────────────────
@@ -9291,13 +9330,15 @@ app.get('/api/billing/plans', async (req, res) => {
   res.json({
     success: true,
     plans: getPublicPlans(),
+    catalog: publicBillingCatalog(),
     topups: TOPUP_PRODUCTS,
-    cloud_topups: CLOUD_TOPUP_PRODUCTS,
     cloud_usage_categories: getCloudUsageCategories(),
     enterprise: enterpriseVisible ? SAAS_PLANS.enterprise : null,
     billing: {
+      version: BILLING_V2_VERSION,
       annual_discount_percent: 20,
-      public_plan_keys: ['free', 'pro', 'scale'],
+      unified_credits: true,
+      public_plan_keys: ['free', 'pro', 'business'],
     },
   });
 });
@@ -9305,24 +9346,41 @@ app.get('/api/billing/plans', async (req, res) => {
 // GET /billing/wallet
 app.get('/api/billing/wallet', async (req, res) => {
   const orgId = getUserOrgId(req);
-  const helpers = getDbHelpers();
-  const balance = await helpers.getWallet(orgId);
   const planKey = normalizePlanKey(await getOrganizationPlan(orgId).catch(() => 'free')) || 'free';
   const plan = getPlanConfig(planKey) || SAAS_PLANS.free;
-  const cloud = await loadCloudWalletSnapshot(orgId, plan);
+  let wallet: Awaited<ReturnType<typeof loadUnifiedWalletSnapshot>> | null = null;
+  let legacyShadowBalance: number | null = null;
+
+  try {
+    wallet = await loadUnifiedWalletSnapshot(orgId);
+  } catch (error: any) {
+    if (CODEN_MONETIZATION_ENABLED) {
+      return res.status(503).json({
+        success: false,
+        error: 'The unified billing ledger is temporarily unavailable.',
+        diagnostic_code: 'BILLING_LEDGER_UNAVAILABLE',
+      });
+    }
+    console.warn('[coden:billing_v2_wallet_shadow_unavailable]', {
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+  }
+
+  if (!CODEN_MONETIZATION_ENABLED) {
+    legacyShadowBalance = await getDbHelpers().getWallet(orgId).catch(() => null);
+  }
 
   res.json({
     success: true,
+    billing_version: BILLING_V2_VERSION,
+    mode: CODEN_MONETIZATION_ENABLED ? 'authoritative' : 'shadow',
     organization_id: orgId,
     plan: plan.key,
-    balance,
+    balance: CODEN_MONETIZATION_ENABLED ? (wallet?.balance || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     unlimited: hasUnlimitedTestCredits(orgId),
-    buckets: {
-      monthly_credits: plan.credits,
-      daily_promo_credits: plan.dailyCredits ?? null,
-      topup_credits: null,
-    },
-    cloud,
+    breakdown: wallet?.breakdown || {},
+    grants: wallet?.grants || [],
+    legacy_shadow_balance: legacyShadowBalance,
   });
 });
 
@@ -9330,25 +9388,41 @@ app.get('/api/billing/wallet', async (req, res) => {
 app.get('/api/billing/ledger', async (req, res) => {
   const orgId = getUserOrgId(req);
   const client = requireSupabase('Credit ledger listing');
-  const { data, error } = await client.from('credit_ledger').select('*').eq('wallet_id', orgId).order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  return res.json({ success: true, ledger: (data || []).map(sanitizeCreditLedgerEntry) });
+  const { data, error } = await client
+    .from('credit_ledger_entries')
+    .select('id,entry_type,amount_credits,balance_after,description,created_at,usage_event_id,reservation_id')
+    .eq('account_id', orgId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) {
+    if (CODEN_MONETIZATION_ENABLED) {
+      return res.status(503).json({ success: false, error: 'The unified credit history is temporarily unavailable.' });
+    }
+    const legacy = await client.from('credit_ledger').select('*').eq('wallet_id', orgId).order('created_at', { ascending: false });
+    if (legacy.error) return res.status(500).json({ success: false, error: legacy.error.message });
+    return res.json({ success: true, billing_version: 'legacy-shadow', ledger: (legacy.data || []).map(sanitizeCreditLedgerEntry) });
+  }
+  return res.json({ success: true, billing_version: BILLING_V2_VERSION, ledger: data || [] });
 });
 
 // POST /billing/checkout/subscription
 app.post('/api/billing/checkout/subscription', async (req, res) => {
-  const { planKey, email, successUrl, cancelUrl, billingInterval } = req.body;
+  const { planKey, billingInterval, credits, idempotencyKey } = req.body;
   const orgId = getUserOrgId(req);
+  const auth = getRequiredAuth(req);
+  const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
     const billing = new StripeService(getSupabase());
     const redirectUrl = await billing.createSubscriptionCheckout(
       orgId,
-      email || 'test@coden.app',
+      auth.email,
       planKey || 'pro',
-      successUrl || `${req.protocol}://${req.get('host')}/settings?success=true`,
-      cancelUrl || `${req.protocol}://${req.get('host')}/settings?cancel=true`,
-      billingInterval === 'annual' ? 'annual' : 'monthly'
+      `${settingsUrl}?billing=success`,
+      `${settingsUrl}?billing=cancelled`,
+      billingInterval === 'annual' ? 'annual' : 'monthly',
+      Number(credits || 0) || undefined,
+      String(idempotencyKey || '') || undefined
     );
     res.json({ success: true, url: redirectUrl });
   } catch (error: any) {
@@ -9358,17 +9432,20 @@ app.post('/api/billing/checkout/subscription', async (req, res) => {
 
 // POST /billing/checkout/topup
 app.post('/api/billing/checkout/topup', async (req, res) => {
-  const { productId, email, successUrl, cancelUrl } = req.body;
-  const orgId = req.body.orgId || DEFAULT_ORG_ID;
+  const { productId, idempotencyKey } = req.body;
+  const orgId = getUserOrgId(req);
+  const auth = getRequiredAuth(req);
+  const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
     const billing = new StripeService(getSupabase());
     const redirectUrl = await billing.createTopupCheckout(
       orgId,
-      email || 'test@coden.app',
-      productId || 'topup_credits_500',
-      successUrl || `${req.protocol}://${req.get('host')}/settings?success=true`,
-      cancelUrl || `${req.protocol}://${req.get('host')}/settings?cancel=true`
+      auth.email,
+      productId || TOPUP_PRODUCTS[0]?.id || '',
+      `${settingsUrl}?billing=topup-success`,
+      `${settingsUrl}?billing=topup-cancelled`,
+      String(idempotencyKey || '') || undefined
     );
     res.json({ success: true, url: redirectUrl });
   } catch (error: any) {
@@ -9378,16 +9455,16 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
 
 // POST /billing/portal
 app.post('/api/billing/portal', async (req, res) => {
-  const orgId = req.body.orgId || DEFAULT_ORG_ID;
+  const orgId = getUserOrgId(req);
   const client = requireSupabase('Billing portal');
   
   if (process.env.STRIPE_SECRET_KEY) {
     try {
-      const { data } = await client.from('stripe_customers').select('stripe_customer_id').eq('id', orgId).single();
-      if (data?.stripe_customer_id) {
+      const { data } = await client.from('billing_provider_customers').select('provider_customer_id').eq('account_id', orgId).eq('provider', 'stripe').single();
+      if (data?.provider_customer_id) {
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-18' as any });
         const portalSession = await stripe.billingPortal.sessions.create({
-          customer: data.stripe_customer_id,
+          customer: data.provider_customer_id,
           return_url: `${req.protocol}://${req.get('host')}/settings`
         });
         return res.json({ success: true, url: portalSession.url });
@@ -9401,7 +9478,7 @@ app.post('/api/billing/portal', async (req, res) => {
 });
 
 // POST /stripe/webhook
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }) as any, async (req: any, res: any) => {
+app.post('/api/stripe/webhook', async (req: any, res: any) => {
   const sig = req.headers['stripe-signature'] as string;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
@@ -9842,22 +9919,11 @@ app.post('/api/chat', (req: any, res: any) => {
 
 // POST /billing/checkout/cloud-topup
 app.post('/api/billing/checkout/cloud-topup', async (req, res) => {
-  const { productId, email, successUrl, cancelUrl } = req.body;
-  const orgId = req.body.orgId || getUserOrgId(req);
-
-  try {
-    const billing = new StripeService(getSupabase());
-    const redirectUrl = await billing.createCloudTopupCheckout(
-      orgId,
-      email || (req as any).user?.email || 'test@coden.app',
-      productId || 'cloud_topup_10',
-      successUrl || `${req.protocol}://${req.get('host')}/settings?cloud_success=true`,
-      cancelUrl || `${req.protocol}://${req.get('host')}/settings?cloud_cancel=true`
-    );
-    res.json({ success: true, url: redirectUrl });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  return res.status(410).json({
+    success: false,
+    diagnostic_code: 'UNIFIED_TOPUP_REQUIRED',
+    error: 'Separate Cloud top-ups were retired. Use /api/billing/checkout/topup.',
+  });
 });
 
 function adminSafeString(value: unknown, fallback = '') {
@@ -10393,27 +10459,41 @@ app.get('/api/users/me/model-credit-rates', async (_req: any, res) => {
 
 app.get('/api/users/me/ai-usage', async (req: any, res) => {
   const userId = getUserOrgId(req);
-  const helpers = getDbHelpers();
   const client = requireSupabase('AI usage');
-  const balance = await helpers.getWallet(userId);
-  const planKey = normalizePlanKey(await getOrganizationPlan(userId).catch(() => 'free')) || 'free';
-  const plan = getPlanConfig(planKey) || SAAS_PLANS.free;
-  const cloud = await loadCloudWalletSnapshot(userId, plan);
+  let unifiedWallet: Awaited<ReturnType<typeof loadUnifiedWalletSnapshot>> | null = null;
+  try {
+    unifiedWallet = await loadUnifiedWalletSnapshot(userId);
+  } catch (error: any) {
+    if (CODEN_MONETIZATION_ENABLED) {
+      return res.status(503).json({ success: false, error: 'The unified usage ledger is temporarily unavailable.' });
+    }
+  }
 
   let history: any[] = [];
   try {
     const { data, error } = await client
-      .from('ai_requests')
-      .select('id, project_id, model_id, request_type, status, created_at, ai_request_usage(final_cost_credits,status), projects(name)')
-      .eq('organization_id', userId)
+      .from('credit_ledger_entries')
+      .select('id,entry_type,amount_credits,description,created_at,usage_events(model,category,resource,project_id,projects(name))')
+      .eq('account_id', userId)
+      .in('entry_type', ['usage', 'refund'])
       .order('created_at', { ascending: false })
       .limit(50);
-    if (!error && Array.isArray(data)) history = data.map(sanitizeAiUsageRow);
+    if (!error && Array.isArray(data)) {
+      history = data.map((row: any) => ({
+        id: row.id,
+        mode: row.usage_events?.category || row.usage_events?.resource || (row.entry_type === 'refund' ? 'Refund' : 'Usage'),
+        credits_charged: Math.abs(Number(row.amount_credits || 0)),
+        model_name: row.usage_events?.model || null,
+        project_name: row.usage_events?.projects?.name || null,
+        status: row.entry_type === 'refund' ? 'refunded' : 'completed',
+        created_at: row.created_at,
+      }));
+    }
   } catch {
     history = [];
   }
 
-  if (!history.length) {
+  if (!history.length && !CODEN_MONETIZATION_ENABLED) {
     const { data } = await client
       .from('credit_ledger')
       .select('id,type,amount,balance_after,description,reference_id,created_at')
@@ -10438,12 +10518,12 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
   res.json({
     success: true,
     wallet: {
-      balance,
+      balance: CODEN_MONETIZATION_ENABLED ? (unifiedWallet?.balance || 0) : CODEN_UNMETERED_USAGE_BUDGET,
       unlimited: hasUnlimitedTestCredits(userId),
-      monthly_credits: plan.credits,
-      daily_promo_credits: plan.dailyCredits ?? null,
-      topup_credits: null,
-      cloud,
+      monthly_credits: unifiedWallet?.breakdown.monthly_plan || 0,
+      daily_promo_credits: unifiedWallet?.breakdown.daily_build || 0,
+      topup_credits: unifiedWallet?.breakdown.topup || 0,
+      breakdown: unifiedWallet?.breakdown || {},
     },
     history,
   });
@@ -11532,17 +11612,20 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const generationAbortController = new AbortController();
   const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), 15 * 60_000);
   generationDeadline.unref();
-  res.once('finish', () => clearTimeout(generationDeadline));
-  res.once('close', () => clearTimeout(generationDeadline));
+  const durableStreamRun = Boolean(harnessContext && req.headers.accept?.includes('text/event-stream'));
+  const releaseGenerationResources = () => {
+    clearTimeout(generationDeadline);
+    if (harnessContext) activeHarnessTurnControllers.delete(harnessContext.turn.id);
+  };
+  res.once('finish', releaseGenerationResources);
+  if (!durableStreamRun) res.once('close', releaseGenerationResources);
   if (harnessContext) {
     activeHarnessTurnControllers.set(harnessContext.turn.id, generationAbortController);
-    const releaseHarnessController = () => activeHarnessTurnControllers.delete(harnessContext!.turn.id);
-    res.once('finish', releaseHarnessController);
-    res.once('close', releaseHarnessController);
   }
-  // A client that hangs up mid-run should not leave the run burning credits.
+  // Durable SSE runs survive a tab/network disconnect and remain cancellable by
+  // their authenticated run endpoint. Non-durable requests still stop at once.
   res.on('close', () => {
-    if (res.writableEnded) return;
+    if (res.writableEnded || durableStreamRun) return;
     generationAbortController.abort();
     if (harnessContext) {
       void harnessContext.harness.cancelTurn(harnessContext.turn.id, userId, 'client_disconnected').catch(() => null);
@@ -11550,8 +11633,26 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   });
 
   const frenchActivity = isLikelyFrenchPrompt(prompt);
+  const streamRunId = harnessContext?.turn.id || requestId;
+  const streamMessageId = String(req.body?.assistantMessageId || requestId);
+  if (harnessContext && req.headers.accept?.includes('text/event-stream')) {
+    res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
+    res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
+  }
   const eventStream = req.headers.accept?.includes('text/event-stream')
-    ? createAgentEventStream(res, harnessContext?.turn.id || requestId) : null;
+    ? createAgentEventStream(res, streamRunId, {
+        messageId: streamMessageId,
+        persist: harnessContext ? async envelope => {
+          await harnessContext!.harness.store.appendEvent({
+            threadId: harnessContext!.thread.id,
+            turnId: harnessContext!.turn.id,
+            itemId: harnessContext!.assistantItemId,
+            type: 'public.stream',
+            visibility: envelope.channel === 'chat' ? 'public' : 'technical',
+            payload: envelope as unknown as Record<string, unknown>,
+          });
+        } : undefined,
+      }) : null;
   const respondJson = async (status: number, payload: any) => {
     // The real application must be visible before the model writes its recap.
     // This URL comes from the verified sandbox, not from model-authored prose.
@@ -11597,7 +11698,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
       }
     }
-    if (eventStream) { eventStream.finish(payload, status); return res; }
+    if (eventStream) {
+      try { await eventStream.finish(payload, status); }
+      finally { releaseGenerationResources(); }
+      return res;
+    }
     return res.status(status).json(payload);
   };
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
@@ -11894,6 +11999,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   }
   const effectiveModelSelection = modelRouting.model;
+  const missionPlan = planMission({
+    runId: requestId,
+    prompt: agentPrompt,
+    requestedMode: decision.requestedMode,
+    intent: decision.intent,
+    complexity: inferAgentTaskComplexity(agentPrompt, decision, existingFiles),
+    risk: decision.executionContract?.risk,
+    files: existingFiles,
+    selectedModel: effectiveModelSelection,
+    skillPlan,
+  });
   let agentRunId = '';
   if (AGENT_V2_ENABLED) {
     const contextPack = {
@@ -11913,6 +12029,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       durable_run: durableRunContract ? buildDurableRunPayload({ contract: durableRunContract }).durable_run : null,
       skill: { id: skill.id, version: skill.version, budget: skillBudget },
       skill_plan: skillPlan,
+      mission_profile: missionPlan.profile,
+      task_graph: missionPlan.graph,
     };
     agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
     activeAgentRunControllers.set(agentRunId, generationAbortController);
@@ -12975,6 +13093,57 @@ app.get('/api/projects/:id/agent/threads/:threadId', async (req: any, res: any) 
   }
   const activeTurn = resolved.thread.activeTurnId ? await resolved.harness.store.getTurn(resolved.thread.activeTurnId) : null;
   return res.json({ success: true, harness_version: 'coden-harness/v3', thread: resolved.thread, active_turn: activeTurn });
+});
+
+app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const turn = await resolved.harness.store.getTurn(req.params.turnId);
+  if (!turn || turn.threadId !== resolved.thread.id || turn.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent turn not found.' });
+  }
+
+  let afterEnvelope = Math.max(0, Number.parseInt(String(req.headers['last-event-id'] || req.query?.after || '0'), 10) || 0);
+  let harnessCursor = 0;
+  let disconnected = false;
+  let terminalEnvelopeSeen = false;
+  const startedAt = Date.now();
+  res.status(200).set({
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'X-Accel-Buffering': 'no',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+  req.once('close', () => { disconnected = true; });
+
+  while (!disconnected && !terminalEnvelopeSeen && Date.now() - startedAt < 5 * 60_000) {
+    const events = await resolved.harness.store.listEvents(resolved.thread.id, harnessCursor, 500);
+    for (const event of events) {
+      harnessCursor = Math.max(harnessCursor, Number(event.sequence || 0));
+      if (event.turnId !== turn.id || event.type !== 'public.stream') continue;
+      const envelope = event.payload as any;
+      const sequence = Number(envelope?.seq || 0);
+      if (!Number.isSafeInteger(sequence) || sequence <= afterEnvelope || envelope?.runId !== turn.id) continue;
+      afterEnvelope = sequence;
+      if (!res.write(`id: ${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
+        await new Promise<void>(resolve => res.once('drain', resolve));
+      }
+      const type = String(envelope?.payload?.type || '');
+      if (type === 'run_finished' || type === 'run_failed' || type === 'run_cancelled') terminalEnvelopeSeen = true;
+    }
+    if (terminalEnvelopeSeen || disconnected) break;
+    const latestTurn = await resolved.harness.store.getTurn(turn.id);
+    if (latestTurn && ['completed', 'failed', 'cancelled', 'blocked'].includes(latestTurn.status) && !events.length) break;
+    res.write(': heartbeat\n\n');
+    await new Promise(resolve => setTimeout(resolve, events.length ? 50 : 500));
+  }
+  if (!disconnected && !res.writableEnded) res.end();
 });
 
 app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions', async (req: any, res: any) => {
@@ -14832,6 +15001,31 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   }
 });
 
+app.get('/api/billing/auto-topup', async (req, res) => {
+  const orgId = getUserOrgId(req);
+  try {
+    const config = await new StripeService(getSupabase()).getAutoTopupConfig(orgId);
+    res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
+  } catch (error: any) {
+    res.status(503).json({ success: false, error: error.message });
+  }
+});
+
+app.put('/api/billing/auto-topup', async (req, res) => {
+  const orgId = getUserOrgId(req);
+  try {
+    const config = await new StripeService(getSupabase()).configureAutoTopup(orgId, {
+      enabled: req.body?.enabled === true,
+      productId: String(req.body?.productId || ''),
+      thresholdCredits: Number(req.body?.thresholdCredits || 0),
+      monthlyCapCredits: Number(req.body?.monthlyCapCredits || 0),
+    });
+    res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, res: any) => {
   try {
     const domain = String(req.body?.domain || '').trim().toLowerCase();
@@ -15263,6 +15457,52 @@ const httpServer = app.listen(port, () => {
     initJobQueue(supabaseClient);
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');
+    if (CODEN_MONETIZATION_ENABLED) {
+      const stripeBilling = new StripeService(supabaseClient);
+      const issueIncludedGrants = async () => {
+        try {
+          const issued = await stripeBilling.issueDueIncludedGrants();
+          if (issued > 0) console.log('[coden:billing_included_grants]', { issued });
+        } catch (error: any) {
+          console.warn('[coden:billing_included_grants_failed]', {
+            message: redactSecrets(error?.message || String(error), '[redacted]'),
+          });
+        }
+      };
+      void issueIncludedGrants();
+      const includedGrantTimer = setInterval(issueIncludedGrants, 60 * 60_000);
+      includedGrantTimer.unref?.();
+      if (process.env.STRIPE_SECRET_KEY) {
+        const grantDueAnnualCredits = async () => {
+          try {
+            const granted = await stripeBilling.grantDueAnnualCredits();
+            if (granted > 0) console.log('[coden:billing_annual_grants]', { granted });
+          } catch (error: any) {
+            console.warn('[coden:billing_annual_grants_failed]', {
+              message: redactSecrets(error?.message || String(error), '[redacted]'),
+            });
+          }
+        };
+        void grantDueAnnualCredits();
+        const annualGrantTimer = setInterval(grantDueAnnualCredits, 15 * 60_000);
+        annualGrantTimer.unref?.();
+        const processAutoTopups = async () => {
+          try {
+            const outcomes = await stripeBilling.processDueAutoTopups();
+            const paid = outcomes.filter(item => item.status === 'paid').length;
+            const failed = outcomes.filter(item => item.status === 'failed').length;
+            if (paid || failed) console.log('[coden:billing_auto_topups]', { paid, failed });
+          } catch (error: any) {
+            console.warn('[coden:billing_auto_topups_failed]', {
+              message: redactSecrets(error?.message || String(error), '[redacted]'),
+            });
+          }
+        };
+        void processAutoTopups();
+        const autoTopupTimer = setInterval(processAutoTopups, 60_000);
+        autoTopupTimer.unref?.();
+      }
+    }
     if (CODEN_SKILL_FLAGS.scheduledRuns) {
       const workerId = `workflow_scheduler_${randomUUID()}`;
       setInterval(async () => {

@@ -6,7 +6,7 @@ import './styles/publish-panel.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
-import { consumeAgentStream } from './lib/agent-chat-protocol';
+import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -44,7 +44,7 @@ type ChatMode = AgentMode;
 type PromptUiContext = 'chat_simple' | 'clarification_only' | 'planning_only' | 'project_mission' | 'critical_action';
 type StudioWorkshop = 'chat' | 'design' | 'decks' | 'media';
 type MessageHandle = HTMLElement & { __codenMessageId?: string };
-type PlanKey = 'free' | 'pro' | 'scale' | 'enterprise';
+type PlanKey = 'free' | 'pro' | 'business' | 'enterprise';
 type CodenConversationBlock = unknown;
 type CodenMessagePart = Record<string, any> & { id?: string; type?: string; text?: string; result?: string };
 type CodenFlowChecklistItem = {
@@ -485,7 +485,8 @@ async function openBuilderSettings(tab: string) {
 
 function normalizePlanKey(value: unknown): PlanKey {
   const raw = String(value || 'free').trim().toLowerCase();
-  if (raw === 'pro' || raw === 'scale' || raw === 'enterprise') return raw;
+  if (raw === 'scale') return 'business';
+  if (raw === 'pro' || raw === 'business' || raw === 'enterprise') return raw;
   return 'free';
 }
 
@@ -495,7 +496,7 @@ function planLabel(plan: PlanKey) {
 }
 
 function planRank(plan: PlanKey) {
-  return plan === 'enterprise' ? 4 : plan === 'scale' ? 3 : plan === 'pro' ? 2 : 1;
+  return plan === 'enterprise' ? 4 : plan === 'business' ? 3 : plan === 'pro' ? 2 : 1;
 }
 
 function syncBuilderPlanBadges(planInput: unknown) {
@@ -503,7 +504,7 @@ function syncBuilderPlanBadges(planInput: unknown) {
   currentPlanKey = plan;
   document.querySelectorAll<HTMLElement>('#builder-plan-badge').forEach(badge => {
     badge.textContent = planLabel(plan);
-    badge.classList.remove('free', 'pro', 'scale', 'enterprise');
+    badge.classList.remove('free', 'pro', 'scale', 'business', 'enterprise');
     badge.classList.add(plan);
     badge.setAttribute('title', `Current workspace plan: ${planLabel(plan)}`);
   });
@@ -1699,7 +1700,6 @@ function hasReadyAppPreview() {
 }
 
 function syncPreviewToolbarControls() {
-  syncLivePreviewStartControl();
   const controls = document.querySelector('.preview-toolbar-controls') as HTMLElement | null;
   const refresh = document.getElementById('btn-preview-refresh') as HTMLButtonElement | null;
   const visible = hasReadyAppPreview();
@@ -2525,32 +2525,70 @@ async function requestProjectGeneration(
   signal?: AbortSignal,
   card?: HTMLElement | null,
 ): Promise<any> {
-  const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
-    method: 'POST',
-    headers: { Accept: 'text/event-stream' },
-    body: JSON.stringify(requestBody),
-    signal,
-  }, response => response.headers.get('content-type')?.includes('text/event-stream')
-    ? consumeAgentStream(response, event => {
-      const id = messageHandleId(card || null);
-      if (id && event.channel === 'chat') conversationApi?.applyChatEvent(id, event);
-      if (event.channel === 'workspace' && event.payload.type === 'run_acknowledged') {
-        activeHarnessThreadId = String(event.payload.threadId || '');
-        activeHarnessTurnId = String(event.payload.turnId || '');
-        lastAgentRunId = String(event.payload.runId || '');
+  let lastSequence = 0;
+  let streamRunId = '';
+  let authoritativeResult: any = null;
+  const applyEvent = (event: AgentEnvelope) => {
+    lastSequence = Math.max(lastSequence, event.seq);
+    streamRunId = event.runId;
+    if (event.channel === 'workspace' && event.payload.type === 'result') authoritativeResult = event.payload.result;
+    const id = messageHandleId(card || null);
+    if (id && event.channel === 'chat') conversationApi?.applyChatEvent(id, event);
+    if (event.channel === 'workspace' && event.payload.type === 'run_acknowledged') {
+      activeHarnessThreadId = String(event.payload.threadId || '');
+      activeHarnessTurnId = String(event.payload.turnId || '');
+      lastAgentRunId = String(event.payload.runId || '');
+    }
+    if (event.channel === 'workspace' && event.payload.type === 'preview_ready'
+      && projectId === currentProjectId && event.payload.projectId === projectId && !signal?.aborted) {
+      const url = new URL(String(event.payload.url || ''), window.location.origin);
+      if (url.origin === window.location.origin && url.pathname.startsWith('/preview/')) {
+        activateBuilderView('preview');
+        setLivePreview(url.href);
       }
-      if (event.channel === 'workspace' && event.payload.type === 'preview_ready'
-        && projectId === currentProjectId && event.payload.projectId === projectId && !signal?.aborted) {
-        const url = new URL(String(event.payload.url || ''), window.location.origin);
-        if (url.origin === window.location.origin && url.pathname.startsWith('/preview/')) {
-          activateBuilderView('preview');
-          setLivePreview(url.href);
-        }
+    }
+  };
+  const readGenerationStream = (response: Response, replay = false) => {
+    const threadHeader = response.headers.get('x-coden-thread-id');
+    const turnHeader = response.headers.get('x-coden-turn-id');
+    if (threadHeader) activeHarnessThreadId = threadHeader;
+    if (turnHeader) { activeHarnessTurnId = turnHeader; lastAgentRunId = turnHeader; streamRunId ||= turnHeader; }
+    return response.headers.get('content-type')?.includes('text/event-stream')
+      ? consumeAgentStream(response, applyEvent, { afterSequence: replay ? lastSequence : undefined, expectedRunId: replay ? streamRunId : undefined, requireResult: !replay })
+      : response.json();
+  };
+
+  try {
+    const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
+      method: 'POST',
+      headers: { Accept: 'text/event-stream' },
+      body: JSON.stringify(requestBody),
+      signal,
+    }, response => readGenerationStream(response));
+    if (!payload) throw new Error('Generation returned an empty response.');
+    return payload;
+  } catch (initialError) {
+    if (!(initialError instanceof AgentStreamInterruptedError) || signal?.aborted || !activeHarnessThreadId || !activeHarnessTurnId) throw initialError;
+    lastSequence = Math.max(lastSequence, initialError.lastSequence);
+    streamRunId ||= initialError.runId || activeHarnessTurnId;
+    let lastError: unknown = initialError;
+    for (let attempt = 0; attempt < 8 && !signal?.aborted; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(3_000, 400 * (attempt + 1))));
+      try {
+        await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/stream`, {
+          headers: { Accept: 'text/event-stream', 'Last-Event-ID': String(lastSequence) },
+          signal,
+        }, response => readGenerationStream(response, true));
+        if (authoritativeResult) return authoritativeResult;
+      } catch (replayError) {
+        lastError = replayError;
+        if (!(replayError instanceof AgentStreamInterruptedError)) throw replayError;
+        lastSequence = Math.max(lastSequence, replayError.lastSequence);
       }
-    })
-    : response.json());
-  if (!payload) throw new Error('Generation returned an empty response.');
-  return payload;
+    }
+    if (authoritativeResult) return authoritativeResult;
+    throw lastError;
+  }
 }
 
 async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto') {
@@ -2915,7 +2953,7 @@ async function resumeLivePreview() {
     // Nothing running: the reader is looking at a saved rendering, and the way
     // back to the application itself is the start control.
     if (projectId !== currentProjectId || revision !== previewRevision) return false;
-    if (!url || status?.state !== 'running') { syncLivePreviewStartControl(); return false; }
+    if (!url || status?.state !== 'running') return false;
     activateBuilderView('preview');
     setLivePreview(url);
     return true;
@@ -2927,7 +2965,7 @@ async function resumeLivePreview() {
 }
 
 /**
- * Bring a stopped application back up, on request.
+ * Bring a stopped application back up automatically after generation.
  *
  * `resumeLivePreview` only reattaches to a server that is already running, and
  * a dev server does not survive a redeploy, an eviction, or the project simply
@@ -2935,20 +2973,14 @@ async function resumeLivePreview() {
  * only be seen running again by generating it again, which costs a model call
  * to rebuild something already on disk.
  *
- * It is deliberately a request rather than something the panel does on load.
- * Starting a server means an npm install and a Vite process, and production
- * has room for one at a time — spending that on every project the user merely
- * opens would evict the one they are actually working on.
+ * Saved HTML still restores immediately on project load. The heavier dev
+ * server starts only after a successful generation, without exposing a second
+ * manual action or asking the model to rebuild existing files.
  */
-async function startLivePreview() {
+async function ensureLivePreview() {
   if (!currentProjectId || liveStartInFlight) return;
   const projectId = currentProjectId;
-  const button = document.getElementById('btn-live-preview-start') as HTMLButtonElement | null;
-  const label = document.getElementById('btn-live-preview-start-label');
-  const idleText = label?.textContent || '';
   liveStartInFlight = true;
-  if (button) button.disabled = true;
-  if (label) label.textContent = 'Démarrage…';
   try {
     const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}/sandbox/start`, { method: 'POST' }) as
       { preview_url?: string; state?: string; message?: string } | null;
@@ -2966,9 +2998,6 @@ async function startLivePreview() {
     showTransientNotice(detail ? `Aperçu live indisponible : ${detail}` : 'Aperçu live indisponible.', 5200);
   } finally {
     liveStartInFlight = false;
-    if (button) button.disabled = false;
-    if (label) label.textContent = idleText || 'Lancer l’aperçu live';
-    syncLivePreviewStartControl();
   }
 }
 
@@ -2979,19 +3008,10 @@ async function startLivePreview() {
  * user is looking at — and not on a project with nothing to run, where it can
  * only fail.
  */
-function syncLivePreviewStartControl() {
-  const button = document.getElementById('btn-live-preview-start') as HTMLButtonElement | null;
-  if (!button) return;
-  const offer = Boolean(currentProjectId) && !livePreviewUrl && currentBuilderView === 'preview' && !isGenerating;
-  button.hidden = !offer;
-}
-
 /** Forget the live preview when its sandbox is gone. */
 function clearLivePreview() {
   previewRevision++;
   livePreviewUrl = '';
-  // The server is gone, so starting one is the thing to offer again.
-  syncLivePreviewStartControl();
 }
 
 /**
@@ -3165,7 +3185,6 @@ function ensureToolbar() {
   document.getElementById('btn-live-cancel')?.addEventListener('click', cancelBuild);
   document.getElementById('action-download-zip')?.addEventListener('click', exportCode);
   document.getElementById('btn-preview-refresh')?.addEventListener('click', refreshPreviewFrame);
-  document.getElementById('btn-live-preview-start')?.addEventListener('click', () => { void startLivePreview(); });
   document.querySelectorAll<HTMLButtonElement>('.btn-publish').forEach(button => {
     if (button.dataset.publishBound === 'true') return;
     button.dataset.publishBound = 'true';
@@ -3824,7 +3843,6 @@ function autoResizeChatInput() {
 
 function setBusy(busy: boolean) {
   isGenerating = busy;
-  syncLivePreviewStartControl();
   const cancel = document.getElementById('btn-live-cancel') as HTMLButtonElement | null;
   if (cancel) cancel.style.display = busy ? 'inline-flex' : 'none';
   syncSubmitButtonState();
@@ -4937,7 +4955,7 @@ async function loadProject() {
     } else {
       currentPreviewHtml = '';
       setEmptyPreviewState('idle');
-      await startLivePreview();
+      await ensureLivePreview();
     }
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
