@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 
 const builder = readFileSync('./src/builder-live.ts', 'utf8');
 const markup = readFileSync('./builder.html', 'utf8');
-assert.match(markup, /topbarPreviewTools\.appendChild\(livePreviewStart\)/, 'the restart action must move out of the hidden legacy sub-navigation with the other preview controls');
+assert.doesNotMatch(markup, /id="btn-live-preview-start"/, 'the manual preview start control must not be rendered');
 
 // The action exists and asks the route that actually starts a server.
 assert.match(builder, /async function startLivePreview\(\)/, 'a stopped application must be startable from the interface');
@@ -26,6 +26,7 @@ const start = builder.slice(builder.indexOf('async function startLivePreview'), 
 assert.match(start, /sandbox\/start/, 'by calling the start route');
 assert.match(start, /method: 'POST'/, 'which is a POST');
 assert.match(start, /setLivePreview\(url\)/, 'and the result points the panel at the running server');
+assert.match(builder, /setEmptyPreviewState\('idle'\);\s*await startLivePreview\(\)/, 'a missing runtime must restart automatically');
 
 // Starting takes a minute; a second click would start it twice.
 assert.match(start, /if \(!currentProjectId \|\| liveStartInFlight\) return/, 'a start already under way must not be started again');
@@ -68,9 +69,7 @@ assert.match(builder, /!previewHtml && !liveUrl/, 'a live preview must not be re
 assert.match(builder, /if \(revision !== previewRevision\) \{\s*if \(result.ok\) result.teardown\(\)/, 'a stale browser runtime must be disposed, not replace a newer server preview');
 assert.match(builder, /if \(revision !== previewRevision\) return;\s*if \(booted\) return;/, 'a stale fallback may not overwrite the live iframe with srcdoc');
 
-// And it has to be visible and operable, not merely defined.
-assert.match(markup, /id="btn-live-preview-start"/, 'the button must exist in the page');
-assert.match(markup, /\.preview-live-start-btn \{/, 'and be styled');
-assert.match(builder, /getElementById\('btn-live-preview-start'\)\?\.addEventListener\('click'/, 'and be wired to the action');
+// Runtime recovery remains internal; the toolbar must stay minimal.
+assert.doesNotMatch(markup, /id="btn-live-preview-start"/, 'the manual start button must not exist');
 
 console.log('live preview restart tests passed');

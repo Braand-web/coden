@@ -4937,6 +4937,7 @@ async function loadProject() {
     } else {
       currentPreviewHtml = '';
       setEmptyPreviewState('idle');
+      await startLivePreview();
     }
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
