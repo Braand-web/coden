@@ -1,4 +1,3 @@
-import { getPublicPlan, formatUsd, type BillingInterval } from './config/pricing-plans';
 import { initPromptInputActions } from './prompt-input-actions';
 
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
@@ -8,28 +7,6 @@ function announce(message: string) {
   notice.textContent = message;
   notice.hidden = false;
 }
-
-export function updateLandingBilling(billing: BillingInterval) {
-  document.querySelectorAll<HTMLButtonElement>('[data-billing]').forEach(button => {
-    button.setAttribute('aria-pressed', String(button.dataset.billing === billing));
-  });
-  document.querySelector('.cdn-billing-indicator')?.classList.toggle('annual', billing === 'annual');
-  document.querySelectorAll<HTMLElement>('[data-plan-price]').forEach(element => {
-    const plan = getPublicPlan(element.dataset.planPrice === 'scale' ? 'scale' : 'pro');
-    element.textContent = formatUsd(billing === 'annual' ? plan.annual : plan.monthly);
-  });
-  document.querySelectorAll('[data-price-period]').forEach(element => {
-    element.textContent = billing === 'annual' ? 'Per month, billed yearly' : 'Per month';
-  });
-  document.querySelectorAll<HTMLAnchorElement>('[data-plan-cta]').forEach(link => {
-    link.href = `/auth.html?plan=${link.dataset.planCta === 'scale' ? 'scale' : 'pro'}&billing=${billing}`;
-  });
-}
-
-document.querySelectorAll<HTMLButtonElement>('[data-billing]').forEach(button => {
-  button.addEventListener('click', () => updateLandingBilling(button.dataset.billing === 'annual' ? 'annual' : 'monthly'));
-});
-updateLandingBilling('monthly');
 
 let submitting = false;
 document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {

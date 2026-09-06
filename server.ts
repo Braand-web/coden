@@ -36,6 +36,7 @@ import {
   type CodenSkill,
   type CodenSkillBudget,
 } from './src/services/coden-skills.ts';
+import { renderCodenSkillPlan, resolveCodenSkillPlan } from './src/services/coden-skill-plan.ts';
 import {
   computeNextWorkflowRun,
   validateWorkflowInput,
@@ -69,6 +70,7 @@ import {
 } from './src/services/ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
+import { CODEN_MONETIZATION_ENABLED, CODEN_PUBLIC_ACCESS, CODEN_UNMETERED_USAGE_BUDGET } from './src/config/product-access.ts';
 import { selectModelForAgent } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
@@ -708,13 +710,6 @@ function getAuthenticatedUserOrThrow(req: any, requestId?: string) {
 
 app.get('/api/auth/me', requireAuthWithTemporaryGeneration, async (req: any, res) => {
   const auth = getRequiredAuth(req);
-  let planKey = 'free';
-  try {
-    planKey = normalizePlanKey(await getOrganizationPlan(auth.userId).catch(() => 'free')) || 'free';
-  } catch {
-    planKey = 'free';
-  }
-  const plan = getPlanConfig(planKey) || SAAS_PLANS.free;
   res.json({
     success: true,
     user: {
@@ -728,10 +723,7 @@ app.get('/api/auth/me', requireAuthWithTemporaryGeneration, async (req: any, res
         ? new Date(req.codenTemporaryGenerationExpiresAt).toISOString()
         : null,
     },
-    plan: {
-      key: plan.key,
-      label: plan.name || plan.key,
-    },
+    access: CODEN_PUBLIC_ACCESS,
   });
 });
 
@@ -783,7 +775,7 @@ app.get('/api/health', (_req, res) => {
       generated_app_hosting: process.env.CODEN_STATIC_HOSTING_PROVIDER === 'cloudflare-pages'
         ? 'cloudflare-pages-legacy'
         : 'cloudflare-workers',
-      stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+      monetization: 'disabled',
       agent_harness: 'coden-harness/v3',
       agent_harness_persistence: Boolean(
         process.env.CODEN_SUPABASE_MGMT_TOKEN ||
@@ -859,10 +851,16 @@ app.options('/api/analytics/collect', (_req, res) => {
   res.status(204).end();
 });
 
-app.use('/api/billing/wallet', requireAuthWithTemporaryGeneration);
-app.use('/api/billing/ledger', requireAuthWithTemporaryGeneration);
-app.use('/api/billing/checkout', requireAuth);
-app.use('/api/billing/portal', requireAuth);
+app.use('/api/billing', (_req, res) => res.status(410).json({
+  success: false,
+  error: 'Coden billing and commercial plans have been removed.',
+  diagnostic_code: 'MONETIZATION_REMOVED',
+}));
+app.use('/api/stripe/webhook', (_req, res) => res.status(410).json({
+  success: false,
+  error: 'Coden billing and commercial plans have been removed.',
+  diagnostic_code: 'MONETIZATION_REMOVED',
+}));
 app.use('/api/ai/estimate', requireAuth);
 app.use('/api/ai/route', requireAuth);
 app.use('/api/users/me', requireAuthWithTemporaryGeneration);
@@ -4986,6 +4984,10 @@ async function resolveAgentProviderModel(input: {
   userCredits?: number;
   plan?: string;
 }): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number }> {
+  const accessPlan = CODEN_MONETIZATION_ENABLED ? (input.plan || 'free') : 'enterprise';
+  const accessBudget = CODEN_MONETIZATION_ENABLED
+    ? (Number.isFinite(Number(input.userCredits)) ? Number(input.userCredits) : FALLBACK_WALLET_CREDITS)
+    : CODEN_UNMETERED_USAGE_BUDGET;
   if (input.modelId && input.modelId !== 'auto') {
     const model = normalizeProviderModelForBackend(input.modelId);
     validateAllowedModel(model);
@@ -4994,15 +4996,19 @@ async function resolveAgentProviderModel(input: {
       autoRouted: false,
       complexity: inferAgentTaskComplexity(input.prompt, input.decision, input.files || []),
       mode: 'Custom',
-      plan: (input.plan || 'free') as RoutingContext['plan'],
-      credits: Number.isFinite(Number(input.userCredits)) ? Number(input.userCredits) : FALLBACK_WALLET_CREDITS,
+      plan: accessPlan as RoutingContext['plan'],
+      credits: accessBudget,
     };
   }
 
-  const plan = (input.plan || await getOrganizationPlan(input.project.organization_id).catch(() => 'free')) as RoutingContext['plan'];
-  const credits = Number.isFinite(Number(input.userCredits))
-    ? Number(input.userCredits)
-    : await getWalletWithFallback(getOptionalDbHelpers('model_routing'), input.project.organization_id);
+  const plan = (CODEN_MONETIZATION_ENABLED
+    ? (input.plan || await getOrganizationPlan(input.project.organization_id).catch(() => 'free'))
+    : 'enterprise') as RoutingContext['plan'];
+  const credits = CODEN_MONETIZATION_ENABLED
+    ? (Number.isFinite(Number(input.userCredits))
+      ? Number(input.userCredits)
+      : await getWalletWithFallback(getOptionalDbHelpers('model_routing'), input.project.organization_id))
+    : CODEN_UNMETERED_USAGE_BUDGET;
   const complexity = inferAgentTaskComplexity(input.prompt, input.decision, input.files || []);
   const mode = routingModeForPolicy(input.decision.selectedModelPolicy);
   const model = await modelRouter.selectModel({
@@ -5212,6 +5218,7 @@ function isExplicitProviderModelSelection(value: unknown) {
 }
 
 function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown) {
+  if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0 };
   if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0 };
   const selectedModelFloor = modelId === 'auto' && intent.intent !== 'plan'
     ? MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID]
@@ -5252,6 +5259,7 @@ async function chargeCompletedAgentAction(
   description: string,
   referenceId: string,
 ) {
+  if (!CODEN_MONETIZATION_ENABLED) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
   if (!helpers) {
     console.warn('[coden:credit_charge_skipped]', {
@@ -5332,7 +5340,7 @@ function buildPublicModelList() {
         runtime_capabilities: buildPublicRuntimeCapabilities(id),
         provider: definition?.provider,
         description: definition?.description,
-        plan_minimum: definition?.minPlan,
+        plan_minimum: null,
         badges: {
           new: Boolean(definition?.isNew),
           fast: Boolean(definition?.isFast),
@@ -5357,7 +5365,7 @@ function buildPublicModelProviderGroups() {
       capabilities: AI_MODEL_CAPABILITIES[model.id as AllowedModelId],
       runtime_capabilities: buildPublicRuntimeCapabilities(model.id as AllowedModelId),
       description: model.description,
-      plan_minimum: model.minPlan,
+      plan_minimum: null,
       badges: {
         new: Boolean(model.isNew),
         fast: Boolean(model.isFast),
@@ -6402,7 +6410,7 @@ async function generateFilesWithAi(input: {
 
   // ✅ Parallel specialist agents — run concurrently before main generation
   let parallelAgentContext = '';
-  if (CODEN_SKILL_FLAGS.subagents && input.existingFiles.length > 0 && ['build', 'edit'].includes(input.decision?.intent || '')) {
+  if (CODEN_SKILL_FLAGS.subagents && ['build', 'edit'].includes(input.decision?.intent || '')) {
     try {
       const agentCtx: ParallelAgentContext = {
         projectName: input.projectName,
@@ -9213,6 +9221,7 @@ async function getWalletWithFallback(
   orgId: string,
   fallback = FALLBACK_WALLET_CREDITS,
 ) {
+  if (!CODEN_MONETIZATION_ENABLED) return CODEN_UNMETERED_USAGE_BUDGET;
   if (!helpers) return fallback;
   return helpers.getWallet(orgId).catch(() => fallback);
 }
@@ -10523,11 +10532,13 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
   try {
     // 1. Check Wallet Balance
-    const balance = await clientHelpers.getWallet(orgId);
+    const balance = CODEN_MONETIZATION_ENABLED
+      ? await clientHelpers.getWallet(orgId)
+      : CODEN_UNMETERED_USAGE_BUDGET;
 
     // 2. Select Model
     const routingCtx: RoutingContext = {
-      plan: req.body.plan || 'free',
+      plan: CODEN_MONETIZATION_ENABLED ? (req.body.plan || 'free') : 'enterprise',
       mode: mode || 'Auto',
       userCredits: balance,
       taskComplexity: taskComplexity,
@@ -10553,7 +10564,7 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
     // 3. Reserve Credits safely
     const refId = `req_${Math.random().toString(36).substring(2, 13)}`;
-    await clientHelpers.createReservation(orgId, initialEstimate.finalCredits, refId);
+    if (CODEN_MONETIZATION_ENABLED) await clientHelpers.createReservation(orgId, initialEstimate.finalCredits, refId);
 
     // 4. Call OpenRouter
     try {
@@ -10572,10 +10583,12 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
       const finalEstimate = costEstimator.calculateRequiredCredits(finalCostComp);
 
-      const reservationServ = new CreditReservationService(requireSupabase('Credit reservation release'));
-      await reservationServ.releaseReservation(refId, true, finalEstimate.finalCredits);
-      const finalBalance = await clientHelpers.updateWallet(orgId, -finalEstimate.finalCredits);
-      await clientHelpers.addLedger(orgId, 'usage', -finalEstimate.finalCredits, finalBalance, `AI usage on:${completionResult.model}`, refId);
+      if (CODEN_MONETIZATION_ENABLED) {
+        const reservationServ = new CreditReservationService(requireSupabase('Credit reservation release'));
+        await reservationServ.releaseReservation(refId, true, finalEstimate.finalCredits);
+        const finalBalance = await clientHelpers.updateWallet(orgId, -finalEstimate.finalCredits);
+        await clientHelpers.addLedger(orgId, 'usage', -finalEstimate.finalCredits, finalBalance, `AI usage on:${completionResult.model}`, refId);
+      }
 
       res.json({
         success: true,
@@ -10586,8 +10599,10 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
     } catch (apiError: any) {
       // Platform / API service error => Refund fully!
-      const reservationServ = new CreditReservationService(requireSupabase('Credit reservation refund'));
-      await reservationServ.releaseReservation(refId, false);
+      if (CODEN_MONETIZATION_ENABLED) {
+        const reservationServ = new CreditReservationService(requireSupabase('Credit reservation refund'));
+        await reservationServ.releaseReservation(refId, false);
+      }
 
       throw new Error(`Platform Engine Auto-Refund Triggered: ${apiError.message}`);
     }
@@ -11782,6 +11797,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   });
   const skill = skillResolution.skill;
   const skillBudget = getCodenSkillBudget(skill, String((project as any).plan || (project as any).plan_key || 'free'));
+  const skillPlan = resolveCodenSkillPlan({
+    prompt: agentPrompt,
+    intent: decision.intent,
+    complexity: inferAgentTaskComplexity(agentPrompt, decision, existingFiles),
+    fileCount: existingFiles.length,
+    risk: decision.executionContract?.risk,
+  });
   const explicitConfirmation = req.body?.confirmed === true || req.body?.approvalGranted === true || req.body?.confirmation === 'confirmed';
   if (skillResolution.requiresConfirmation && isCriticalCodenAction(agentPrompt) && !explicitConfirmation) {
     return respondJson(409, {
@@ -11826,7 +11848,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       return null;
     })
     : null;
-  const walletForRouting = await helpers.getWallet(userId).catch(() => FALLBACK_WALLET_CREDITS);
+  const walletForRouting = CODEN_MONETIZATION_ENABLED
+    ? await helpers.getWallet(userId).catch(() => FALLBACK_WALLET_CREDITS)
+    : CODEN_UNMETERED_USAGE_BUDGET;
   let modelRouting;
   try {
     modelRouting = await resolveAgentProviderModel({
@@ -11888,6 +11912,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       deep_reasoning_contract: deepReasoningContract,
       durable_run: durableRunContract ? buildDurableRunPayload({ contract: durableRunContract }).durable_run : null,
       skill: { id: skill.id, version: skill.version, budget: skillBudget },
+      skill_plan: skillPlan,
     };
     agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
     activeAgentRunControllers.set(agentRunId, generationAbortController);
@@ -12003,7 +12028,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const refId = `gen_${randomUUID()}`;
-  await helpers.createReservation(userId, cost.finalCredits, refId);
+  if (CODEN_MONETIZATION_ENABLED) await helpers.createReservation(userId, cost.finalCredits, refId);
 
   try {
     let executionPlan = '';
@@ -12023,12 +12048,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     const steeredAgentPrompt = promptWithPendingAgentInstructions(agentPrompt, agentRunId);
     const basePrompt = req.body?.useLastPlan && lastPlan ? `${lastPlan}\n\nUser confirmed build: ${steeredAgentPrompt}` : steeredAgentPrompt;
+    const skillAwarePrompt = `${basePrompt}\n\n[CODEN SELECTED SKILLS]\n${renderCodenSkillPlan(skillPlan)}\nUse only these selected policies. Do not load or imitate unselected skills.`;
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
     const generation = await generateFilesWithAi({
       projectName: generationProjectName,
-      prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${basePrompt}` : basePrompt,
+      prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${skillAwarePrompt}` : skillAwarePrompt,
       project,
       decision,
       modelId: effectiveModelSelection,
@@ -12704,8 +12730,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       minimum_action_credits: Math.max(2, modelCreditFloor(generation.model)),
       complexity_surcharge: prompt.length > 400 ? 2 : 0,
     });
-    const finalBalance = await helpers.updateWallet(userId, -finalCost.finalCredits);
-    await helpers.addLedger(userId, 'usage', -finalCost.finalCredits, finalBalance, `Generated app files with ${generation.model}`, refId);
+    if (CODEN_MONETIZATION_ENABLED) {
+      const finalBalance = await helpers.updateWallet(userId, -finalCost.finalCredits);
+      await helpers.addLedger(userId, 'usage', -finalCost.finalCredits, finalBalance, `Generated app files with ${generation.model}`, refId);
+    }
     await updateAgentRunStatus(agentRunId, 'completed', {
       public_payload: {
         verification: verificationSummary,
@@ -12775,7 +12803,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   } catch (error: any) {
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
-    await helpers.addLedger(userId, 'refund', cost.finalCredits, await helpers.getWallet(userId), `Generation failed: ${error.message}`, refId);
+    if (CODEN_MONETIZATION_ENABLED) {
+      await helpers.addLedger(userId, 'refund', cost.finalCredits, await helpers.getWallet(userId), `Generation failed: ${error.message}`, refId);
+    }
     await helpers.addAudit({
       user_id: userId,
       organization_id: userId,

@@ -465,6 +465,7 @@ export async function runMultiAgentPipeline(input: {
   const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
 
   let repairOutcome: RepairOutcome;
+  activity('Coden construit l’application…', 'Coden is building the application…');
   try { repairOutcome = await runCoderLoop({
     sandbox,
     mode: 'build',
@@ -494,8 +495,7 @@ export async function runMultiAgentPipeline(input: {
       // Round one writes the application; every later round is fixing what
       // the project's own toolchain still rejects.
       if (event.type === 'repair_round_started') {
-        if (event.round === 1) activity('Coden construit l’application…', 'Coden is building the application…');
-        else activity('Coden corrige les erreurs détectées…', 'Coden is fixing the detected errors…');
+        if (event.round > 1) activity('Coden corrige les erreurs détectées…', 'Coden is fixing the detected errors…');
       } else if (event.type === 'repair_round_finished') {
         activity('Coden vérifie le résultat…', 'Coden is verifying the result…');
       }

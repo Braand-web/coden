@@ -8,7 +8,6 @@ import { initPromptInputActions } from './prompt-input-actions';
 import { formatCreateProjectFlowStatus, startCreateProjectFlow } from './services/create-project-flow';
 import { installPublicPageEnhancements } from './public-page-enhancements';
 import { initLandingI18n, getLandingLang } from './landing-i18n';
-import { initPublicPricingFlow } from './public-pricing-flow';
 import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { getProductPositioning, type ProductLocale } from './product-positioning';
@@ -37,7 +36,7 @@ function syncLandingPositioningMetadata(locale: ProductLocale) {
 
 function init() {
     // The shared product chrome is critical UI. Mount it before optional
-    // landing enhancements so a pricing/i18n failure cannot remove navigation.
+    // landing enhancements so an optional i18n failure cannot remove navigation.
     mountMarketingReactShell();
     initCodenMotion();
     initCodenNavigationTransitions();
@@ -45,7 +44,6 @@ function init() {
     // manifesto is split from already-translated text.
     const landingLocale = initLandingI18n();
     syncLandingPositioningMetadata(landingLocale);
-    initPublicPricingFlow();
     initThemeController();
     normalizeAiChatInputs();
 

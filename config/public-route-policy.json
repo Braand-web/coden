@@ -2,7 +2,6 @@
   "canonicalPublic": [
     "/",
     "/features.html",
-    "/pricing.html",
     "/documentation.html",
     "/security.html",
     "/privacy.html",
@@ -10,14 +9,13 @@
   ],
   "private": [
     "/auth.html",
-    "/checkout.html",
     "/dashboard.html",
     "/builder.html",
     "/admin.html"
   ],
   "redirects": {
     "/about.html": "/",
-    "/enterprise.html": "/pricing.html",
+    "/enterprise.html": "/features.html",
     "/careers.html": "/",
     "/community.html": "/",
     "/api-reference.html": "/documentation.html",

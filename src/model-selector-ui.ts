@@ -468,7 +468,6 @@ function renderModelPanel(provider: ModelProvider, selectedId: string) {
               <span class="model-item-name">${escapeHtml(model.label)}</span>
               ${model.isNew ? '<span class="coden-model-badge new">New</span>' : ''}
               ${model.isPremium ? '<span class="coden-model-badge premium">Premium</span>' : (model.isFast ? '<span class="coden-model-badge fast">Fast</span>' : '')}
-              ${model.minPlan !== 'free' ? '<span class="coden-model-badge">Upgrade</span>' : ''}
             </span>
             <span class="model-item-desc">${escapeHtml(model.description || `${model.tier} · ${Math.round(model.contextWindow / 1000)}K context`)}</span>
           </span>

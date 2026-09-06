@@ -8,7 +8,6 @@ import {
   safeRedirectTarget,
   supabase,
 } from './lib/supabase-browser';
-import { readPricingSelection } from './public-pricing-flow';
 import { trackFunnelEvent } from './conversion-events';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
@@ -58,12 +57,8 @@ let mode: AuthMode = requestedMode === 'signup'
       ? 'reset-password'
       : 'login';
 let redirecting = false;
-const pricingSelection = readPricingSelection();
-
 trackFunnelEvent('auth_viewed', {
   mode,
-  plan: pricingSelection.plan,
-  billing: pricingSelection.billing,
 });
 
 function setStatus(message: string, tone: StatusTone = 'info') {
@@ -249,13 +244,13 @@ async function handleEmailAuth(event: Event) {
   if (mode === 'forgot-password') {
     setBusy(true, busyLabel());
     setStatus('Préparation du lien sécurisé…', 'info');
-    trackFunnelEvent('auth_started', { mode, plan: pricingSelection.plan, billing: pricingSelection.billing });
+    trackFunnelEvent('auth_started', { mode });
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: getPasswordResetRedirectUrl(),
       });
       if (error) throw error;
-      trackFunnelEvent('password_reset_requested', { plan: pricingSelection.plan, billing: pricingSelection.billing });
+      trackFunnelEvent('password_reset_requested');
       setStatus('Si un compte correspond à cette adresse, un lien de réinitialisation vient d’être envoyé.', 'success');
     } catch (error) {
       setStatus(friendlyAuthError(error), 'error');
@@ -282,7 +277,7 @@ async function handleEmailAuth(event: Event) {
     try {
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      trackFunnelEvent('password_reset_completed', { plan: pricingSelection.plan, billing: pricingSelection.billing });
+      trackFunnelEvent('password_reset_completed');
       try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* Keep the confirmation visible if local cleanup fails. */ }
       if (passwordInput) passwordInput.value = '';
       if (confirmPasswordInput) confirmPasswordInput.value = '';
@@ -309,7 +304,7 @@ async function handleEmailAuth(event: Event) {
 
   setBusy(true, busyLabel());
   setStatus(mode === 'signup' ? 'Création de votre compte…' : 'Connexion à votre espace…', 'info');
-  trackFunnelEvent('auth_started', { mode, plan: pricingSelection.plan, billing: pricingSelection.billing });
+  trackFunnelEvent('auth_started', { mode });
 
   try {
     if (mode === 'signup') {
@@ -323,18 +318,18 @@ async function handleEmailAuth(event: Event) {
       });
       if (error) throw error;
       if (data.session) {
-        trackFunnelEvent('auth_completed', { mode, plan: pricingSelection.plan, billing: pricingSelection.billing });
+        trackFunnelEvent('auth_completed', { mode });
         redirectToApp();
         return;
       }
-      trackFunnelEvent('auth_completed', { mode, plan: pricingSelection.plan, billing: pricingSelection.billing });
+      trackFunnelEvent('auth_completed', { mode });
       setStatus('Compte créé. Vérifiez votre e-mail pour le confirmer.', 'success');
       return;
     }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    trackFunnelEvent('auth_completed', { mode, plan: pricingSelection.plan, billing: pricingSelection.billing });
+    trackFunnelEvent('auth_completed', { mode });
     redirectToApp();
   } catch (error) {
     setStatus(friendlyAuthError(error), 'error');
@@ -346,7 +341,7 @@ async function handleEmailAuth(event: Event) {
 async function handleOAuth(button: HTMLButtonElement) {
   setOAuthBusy(button, true);
   setStatus('Ouverture de la connexion Google…', 'info');
-  trackFunnelEvent('auth_started', { mode, provider: 'google', plan: pricingSelection.plan, billing: pricingSelection.billing });
+  trackFunnelEvent('auth_started', { mode, provider: 'google' });
   try {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

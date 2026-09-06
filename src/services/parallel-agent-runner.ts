@@ -480,7 +480,7 @@ export function selectAgentsForContext(ctx: ParallelAgentContext): AgentRole[] {
   if (hasFiles) roles.push('dependency_analyst');
 
   // UI agent — for any build/edit with visual output
-  if (/\b(build|create|cree|creer|genere|app|interface|ui|component|page|layout|design)\b/i.test(prompt)) {
+  if (/\b(build|create|cr[eé]e|cr[eé]er|g[eé]n[eè]re|app|application|interface|ui|component|page|layout|design)\b/i.test(prompt)) {
     roles.push('ui_designer');
   }
 
@@ -491,13 +491,13 @@ export function selectAgentsForContext(ctx: ParallelAgentContext): AgentRole[] {
   }
 
   // Security auditor — hybrid, so cheap unless issues found
-  if (ctx.hasAuth || ctx.hasPayments || hasFiles ||
+  if (ctx.hasAuth || ctx.hasPayments ||
     /\b(auth|login|secret|permission|role|rls|stripe|webhook|security|admin)\b/i.test(prompt)) {
     roles.push('security_auditor');
   }
 
   // UX agent — for new builds
-  if (/\b(build|create|cree|creer|genere|nouvelle app|new app)\b/i.test(prompt)) {
+  if (!hasFiles && /\b(build|create|cr[eé]e|cr[eé]er|g[eé]n[eè]re|nouvelle app|new app|application)\b/i.test(prompt)) {
     roles.push('ux_validator');
   }
 

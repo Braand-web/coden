@@ -4,10 +4,16 @@ import { capSubagentCount, getCodenSkillBudget, getCodenSkill, isCriticalCodenAc
 assert.equal(resolveCodenSkill({ prompt: 'corrige le bug de preview', intent: 'debug_fix' }).skill.id, 'debug');
 assert.equal(resolveCodenSkill({ prompt: 'fais un audit de sécurité avec RLS', intent: 'review' }).skill.id, 'security');
 assert.equal(resolveCodenSkill({ prompt: 'publie cette application', intent: 'deploy' }).requiresConfirmation, true);
+assert.equal(resolveCodenSkill({ prompt: 'crée un reviewer spécialisé', intent: 'create_subagent' }).skill.id, 'subagent-design');
+assert.equal(resolveCodenSkill({ prompt: 'adapte cette compétence au registre Coden', intent: 'create_skill' }).skill.id, 'skill-authoring');
+assert.equal(resolveCodenSkill({ prompt: 'programme un contrôle chaque matin', intent: 'automation' }).skill.id, 'automate');
+assert.equal(resolveCodenSkill({ prompt: 'programme un contrôle chaque matin', intent: 'automation' }).requiresConfirmation, true);
 assert.equal(isCriticalCodenAction('push to git'), true);
 assert.equal(isCriticalCodenAction('change the button color'), false);
 assert.equal(getCodenSkill('build')?.allowedTools.includes('write_file'), true);
 assert.equal(getCodenSkill('review')?.allowedTools.includes('write_file'), false);
+assert.equal(getCodenSkill('subagent-design')?.completionCriteria?.includes('Tools and budgets are least-privilege.'), true);
+assert.equal(getCodenSkill('skill-authoring')?.evidenceRequired?.includes('Routing tests'), true);
 assert.ok(getCodenSkillBudget(getCodenSkill('build')!, 'free').maxTokens < getCodenSkillBudget(getCodenSkill('build')!, 'scale').maxTokens);
 assert.equal(capSubagentCount(10), 3);
 assert.equal(capSubagentCount(10, { skills: true, workflows: true, subagents: false, scheduledRuns: false }), 0);

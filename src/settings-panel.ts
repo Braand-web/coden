@@ -1,64 +1,15 @@
 import { apiFetch } from './lib/api';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
-import { trackFunnelEvent } from './conversion-events';
 
 type SettingsTab =
   | 'profile'
   | 'account'
   | 'privacy'
-  | 'billing'
   | 'appearance'
-  | 'ai-usage'
   | 'capabilities'
   | 'connectors'
   | 'api'
   | 'danger';
-
-type AiUsageResponse = {
-  success: boolean;
-  wallet?: {
-    balance?: number | null;
-    monthly_credits?: number | null;
-    daily_promo_credits?: number | null;
-    topup_credits?: number | null;
-    cloud?: {
-      balance_usd?: number | null;
-      included_balance_usd?: number | null;
-      ai_app_balance_usd?: number | null;
-      database_storage_gb?: number | null;
-      file_storage_gb?: number | null;
-      bandwidth_gb?: number | null;
-      topup_min_usd?: number | null;
-      auto_topup_available?: boolean;
-      auto_topup_enabled?: boolean;
-    };
-  };
-  history?: Array<{
-    id: string;
-    project_name?: string;
-    model_name?: string;
-    mode?: string;
-    credits_charged?: number;
-    status?: string;
-    created_at?: string;
-  }>;
-};
-
-type ModelRateResponse = {
-  success: boolean;
-  models?: Array<{
-    id: string;
-    display_name: string;
-    tier: string;
-    availability: string;
-    credits: {
-      plan: string;
-      build: string;
-      fix: string;
-      deploy: string;
-    };
-  }>;
-};
 
 type AuthMeResponse = {
   success: boolean;
@@ -66,10 +17,6 @@ type AuthMeResponse = {
     id?: string;
     email?: string | null;
     role?: string | null;
-  };
-  plan?: {
-    key?: string;
-    label?: string;
   };
 };
 
@@ -104,7 +51,6 @@ type SettingsPreferences = {
 
 let settingsStyleInstalled = false;
 let settingsBound = false;
-let aiUsageLoaded = false;
 let currentAuthSummary: AuthMeResponse | null = null;
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
@@ -114,9 +60,7 @@ const tabAliases: Record<SettingsTab, string> = {
   profile: 'profil',
   account: 'compte',
   privacy: 'confidentialite',
-  billing: 'facturation',
   appearance: 'apparence',
-  'ai-usage': 'ia',
   capabilities: 'capacites',
   connectors: 'connecteurs',
   api: 'api',
@@ -125,10 +69,8 @@ const tabAliases: Record<SettingsTab, string> = {
 
 const settingsTabMeta: Record<string, { title: string; description: string }> = {
   profil: { title: 'Profil', description: 'Nom, langue et préférences personnelles.' },
-  compte: { title: 'Compte et sécurité', description: 'Identité, forfait et session active.' },
+  compte: { title: 'Compte et sécurité', description: 'Identité et session active.' },
   confidentialite: { title: 'Confidentialité', description: 'Mémoire, données et protections.' },
-  facturation: { title: 'Facturation', description: 'Forfait, crédits et Coden Cloud.' },
-  ia: { title: 'Usage', description: 'AI credits, cloud allowance and recent activity.' },
   capacites: { title: 'Capabilities', description: 'Workshops and agent capabilities.' },
   automatisations: { title: 'Agent autonomy', description: 'Budgets, approvals and workflow safety.' },
   connecteurs: { title: 'Intégrations', description: 'Services réellement connectés à votre espace.' },

@@ -20,7 +20,6 @@ import {
   Search,
   Send,
   Settings,
-  Sparkles,
   WandSparkles,
   X,
 } from 'lucide-react';
@@ -212,10 +211,6 @@ function Sidebar({
         </nav>
 
         <div className="coden-dashboard-sidebar-bottom">
-          <a className="coden-dashboard-upgrade" href="/pricing.html?source=dashboard">
-            <Sparkles size={15} aria-hidden="true" />
-            <span>Upgrade</span>
-          </a>
           <div className="coden-dashboard-account-wrap" ref={accountMenuRef}>
             {accountOpen && (
               <div className="coden-dashboard-account-menu" role="menu">

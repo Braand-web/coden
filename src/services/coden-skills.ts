@@ -14,6 +14,8 @@ export type CodenSkillId =
   | 'test'
   | 'research'
   | 'orchestrate'
+  | 'subagent-design'
+  | 'skill-authoring'
   | 'release'
   | 'automate'
   | 'onboarding';
@@ -37,6 +39,12 @@ export type CodenSkill = {
   approvalPolicy: CodenApprovalPolicy;
   budget: CodenSkillBudget;
   requiresVerification: boolean;
+  /** Roles that may execute this policy. Omitted means the normal harness role. */
+  agentRoles?: string[];
+  /** Observable conditions used by the orchestrator before and after execution. */
+  entryCriteria?: string[];
+  completionCriteria?: string[];
+  evidenceRequired?: string[];
 };
 
 export type CodenSkillFeatureFlags = {
@@ -119,12 +127,40 @@ export const CODEN_SKILLS: readonly CodenSkill[] = [
     approvalPolicy: 'automatic', budget: { maxTokens: 35000, maxToolSteps: 6, maxDurationMs: 90000, maxRetries: 1 }, requiresVerification: false,
   },
   {
-    id: 'orchestrate', version: '1.0.0',
-    description: 'Coordinate bounded specialist reviews and merge their findings.',
+    id: 'orchestrate', version: '1.1.0',
+    description: 'Coordinate bounded specialists in isolated contexts and merge only evidence-backed findings.',
     intents: ['orchestrate', 'decompose', 'multi_agent', 'parallel', 'comprehensive'],
-    capabilities: ['project.read', 'subagents.run', 'findings.merge'],
+    capabilities: ['project.read', 'subagents.run', 'subagents.isolate', 'resources.lock', 'findings.merge'],
     allowedTools: PROJECT_READ_TOOLS,
     approvalPolicy: 'automatic', budget: { maxTokens: 55000, maxToolSteps: 8, maxDurationMs: 150000, maxRetries: 2 }, requiresVerification: true,
+    agentRoles: ['orchestrator', 'planner', 'integrator'],
+    entryCriteria: ['The task contains at least two independent work streams.', 'Each delegated task has a bounded output contract.'],
+    completionCriteria: ['Every child task reached a terminal state.', 'Conflicting findings were resolved by the integrator.'],
+    evidenceRequired: ['Child task summaries', 'Resource ownership map', 'Integrated verification result'],
+  },
+  {
+    id: 'subagent-design', version: '1.0.0',
+    description: 'Define a reusable specialist agent with a narrow delegation trigger, isolated context, tool policy, budget and output contract.',
+    intents: ['create_subagent', 'subagent_design', 'agent_profile', 'specialist_agent'],
+    capabilities: ['project.read', 'project.write', 'subagents.configure', 'policy.validate'],
+    allowedTools: PROJECT_BUILD_TOOLS,
+    approvalPolicy: 'automatic', budget: { maxTokens: 32000, maxToolSteps: 6, maxDurationMs: 90000, maxRetries: 1 }, requiresVerification: true,
+    agentRoles: ['orchestrator', 'agent-designer'],
+    entryCriteria: ['A recurring specialist responsibility is identified.', 'The responsibility is narrower than the master agent role.'],
+    completionCriteria: ['Delegation trigger is specific.', 'Tools and budgets are least-privilege.', 'Output schema and stopping condition are explicit.'],
+    evidenceRequired: ['Validated agent manifest', 'Positive routing example', 'Negative routing example'],
+  },
+  {
+    id: 'skill-authoring', version: '1.0.0',
+    description: 'Create or adapt a compact Coden skill with discriminating triggers, progressive instructions, tool limits and executable acceptance evidence.',
+    intents: ['create_skill', 'adapt_skill', 'skill_authoring', 'skill_registry'],
+    capabilities: ['project.read', 'project.write', 'skills.configure', 'policy.validate', 'verification.run'],
+    allowedTools: PROJECT_BUILD_TOOLS,
+    approvalPolicy: 'automatic', budget: { maxTokens: 36000, maxToolSteps: 7, maxDurationMs: 100000, maxRetries: 1 }, requiresVerification: true,
+    agentRoles: ['orchestrator', 'skill-author'],
+    entryCriteria: ['The capability is reusable across more than one task.', 'No existing skill already owns the same responsibility.'],
+    completionCriteria: ['Description states what and when.', 'Instructions contain no platform-specific assumptions.', 'Routing and policy tests pass.'],
+    evidenceRequired: ['Validated skill manifest', 'Routing tests', 'Tool-policy test', 'Prompt-size check'],
   },
   {
     id: 'release', version: '1.0.0',
@@ -135,12 +171,16 @@ export const CODEN_SKILLS: readonly CodenSkill[] = [
     approvalPolicy: 'confirmation', budget: { maxTokens: 42000, maxToolSteps: 7, maxDurationMs: 120000, maxRetries: 2 }, requiresVerification: true,
   },
   {
-    id: 'automate', version: '1.0.0',
-    description: 'Create or run a bounded project workflow with explicit limits.',
+    id: 'automate', version: '1.1.0',
+    description: 'Design or run a durable Coden workflow from a trigger, bounded action graph and measurable outcome.',
     intents: ['automate', 'automation', 'workflow', 'schedule', 'recurring'],
-    capabilities: ['project.read', 'workflow.manage', 'verification.run'],
+    capabilities: ['project.read', 'workflow.manage', 'integration.discover', 'schedule.validate', 'verification.run'],
     allowedTools: PROJECT_READ_TOOLS,
     approvalPolicy: 'confirmation', budget: { maxTokens: 35000, maxToolSteps: 6, maxDurationMs: 90000, maxRetries: 1 }, requiresVerification: true,
+    agentRoles: ['orchestrator', 'workflow-designer'],
+    entryCriteria: ['Trigger, intended action and measurable outcome are known.', 'Required integrations are available or explicitly deferred.'],
+    completionCriteria: ['Trigger validates.', 'Budget and retry policy are bounded.', 'Workflow has an idempotency key and terminal states.'],
+    evidenceRequired: ['Validated workflow contract', 'Next-run calculation or manual trigger proof', 'Approval record'],
   },
   {
     id: 'onboarding', version: '1.0.0',
@@ -152,7 +192,7 @@ export const CODEN_SKILLS: readonly CodenSkill[] = [
   },
 ];
 
-const PRIORITY: CodenSkillId[] = ['security', 'release', 'debug', 'test', 'review', 'research', 'orchestrate', 'automate', 'onboarding', 'build'];
+const PRIORITY: CodenSkillId[] = ['security', 'release', 'debug', 'test', 'review', 'research', 'skill-authoring', 'subagent-design', 'orchestrate', 'automate', 'onboarding', 'build'];
 
 export const CRITICAL_ACTION_PATTERN = /\b(publish|deploy|production|rollback|delete|remove|migrat(?:e|ion)|domain|secret|credential|password|push\s+(?:to\s+)?git|billing|payment)\b/i;
 
@@ -161,7 +201,17 @@ export function getCodenSkill(id: string): CodenSkill | null {
 }
 
 export function listCodenSkills(): CodenSkill[] {
-  return CODEN_SKILLS.map(skill => ({ ...skill, intents: [...skill.intents], capabilities: [...skill.capabilities], allowedTools: [...skill.allowedTools], budget: { ...skill.budget } }));
+  return CODEN_SKILLS.map(skill => ({
+    ...skill,
+    intents: [...skill.intents],
+    capabilities: [...skill.capabilities],
+    allowedTools: [...skill.allowedTools],
+    budget: { ...skill.budget },
+    agentRoles: skill.agentRoles ? [...skill.agentRoles] : undefined,
+    entryCriteria: skill.entryCriteria ? [...skill.entryCriteria] : undefined,
+    completionCriteria: skill.completionCriteria ? [...skill.completionCriteria] : undefined,
+    evidenceRequired: skill.evidenceRequired ? [...skill.evidenceRequired] : undefined,
+  }));
 }
 
 /** A token matches a word, not a fragment of one. */

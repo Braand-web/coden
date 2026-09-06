@@ -109,12 +109,6 @@ export function getRedirectTarget(): string {
   const explicitRedirect = params.get('redirect');
   if (explicitRedirect) return safeRedirectTarget(explicitRedirect);
 
-  const requestedPlan = params.get('plan');
-  const requestedBilling = params.get('billing') === 'annual' || params.get('billing') === 'yearly' ? 'annual' : 'monthly';
-  if (requestedPlan === 'pro' || requestedPlan === 'scale') {
-    return `/checkout.html?plan=${requestedPlan}&billing=${requestedBilling}`;
-  }
-
   return safeRedirectTarget(null);
 }
 
