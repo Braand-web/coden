@@ -6244,18 +6244,70 @@ function renderDatabaseSection2(db: any): string {
     </section>`;
 }
 
-// Section 3 — Stockage de fichiers. Aucun backend d'upload/diffusion n'existe
-// encore : état honnête, sans zone d'upload ni faux fichiers.
-function renderDatabaseSection3(db: any): string {
-  const requirements = (db.cloud && db.cloud.requirements) || null;
-  const needsStorage = Boolean(requirements && requirements.needs_storage);
-  const statusBadge = needsStorage ? dbBadge('warning', 'Configuration requise') : dbBadge('neutral', 'Bientôt disponible');
-  const detail = needsStorage
-    ? 'Votre application requiert du stockage : il sera provisionné lors de la mise en place du backend.'
-    : 'Décrivez vos besoins de fichiers à Coden (ex. « permets l\'upload d\'avatars ») pour l\'activer.';
+function ensureDatabasePanelStyle() {
+  if (document.getElementById('coden-database-panel-style')) return;
+  const style = document.createElement('style');
+  style.id = 'coden-database-panel-style';
+  style.textContent = `
+    .db-section { grid-column: 1 / -1; display: grid; gap: 12px; min-width: 0; }
+    .db-section-head { display: flex; align-items: flex-start; gap: 10px; }
+    .db-section-icon { color: var(--accent, #7c83ff); display: inline-flex; width: 22px; padding-top: 2px; }
+    .db-section-icon svg { width: 18px; height: 18px; }
+    .db-section-head-text { min-width: 0; }
+    .db-section-title { margin: 0; font-size: 14px; font-weight: 820; color: var(--text, #f4f4f5); }
+    .db-section-desc { margin: 3px 0 0; color: var(--text-muted, #8b8b95); font-size: 11px; line-height: 1.45; }
+    .db-section-body { display: grid; gap: 10px; min-width: 0; }
+    .db-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+    .db-card { min-width: 0; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--bg-panel, #17171b) 88%, transparent); }
+    .db-card-label { color: var(--text-muted, #9b9ba5); font-size: 10px; font-weight: 760; text-transform: uppercase; letter-spacing: .06em; }
+    .db-card-value { margin-top: 8px; color: var(--text, #f4f4f5); font-size: 13px; font-weight: 780; }
+    .db-row-meta { color: var(--text-muted, #9696a1); font-size: 11px; }
+    .db-card-list, .db-file-list { display: grid; gap: 6px; margin-top: 10px; }
+    .db-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
+    .db-row-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text, #ededf0); font-size: 12px; }
+    .db-browser, .db-endusers, .db-storage { min-width: 0; }
+    .db-browser-top, .db-storage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .db-table-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .db-table-chip, .db-action, .db-file-btn, .db-eu-btn { border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 8px; background: transparent; color: var(--text, #ededf0); padding: 6px 9px; font-size: 11px; cursor: pointer; }
+    .db-table-chip:hover, .db-action:hover, .db-file-btn:hover, .db-eu-btn:hover { border-color: var(--border-focus, #777dff); background: var(--accent-dim, rgba(124,131,255,.12)); }
+    .db-table-chip.active { border-color: var(--border-focus, #777dff); background: var(--accent-dim, rgba(124,131,255,.12)); }
+    .db-action-primary { background: var(--accent, #6870ff); border-color: transparent; color: white; font-weight: 760; }
+    .db-input, .db-select { min-height: 30px; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 8px; background: var(--bg-input, #111116); color: var(--text, #ededf0); padding: 5px 8px; font-size: 11px; }
+    .db-file-input { max-width: 100%; color: var(--text-muted, #9b9ba5); font-size: 11px; }
+    .db-file-actions { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+    .db-file-actions a { color: var(--accent, #8b91ff); font-size: 11px; text-decoration: none; }
+    .db-file-actions a:hover { text-decoration: underline; }
+    .db-empty, .db-note, .db-state { padding: 11px 0; color: var(--text-muted, #9696a1); font-size: 11px; line-height: 1.5; }
+    .db-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 9px; background: color-mix(in srgb, var(--accent-dim, rgba(124,131,255,.1)) 70%, transparent); }
+    .db-state-error { color: #ff9caa; }
+    .db-table-scroll { overflow: auto; border: 1px solid var(--border, rgba(255,255,255,.08)); border-radius: 9px; margin-top: 10px; }
+    .db-data-table { width: 100%; border-collapse: collapse; min-width: 440px; font-size: 11px; }
+    .db-data-table th, .db-data-table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border, rgba(255,255,255,.08)); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+    .db-data-table th { color: var(--text-muted, #9b9ba5); font-weight: 760; }
+    .db-pager { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+    .db-pager-btns { display: inline-flex; gap: 5px; }
+    .db-enduser-create { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+    .db-enduser-create .db-input { flex: 1 1 200px; }
+    @media (max-width: 760px) { .db-grid { grid-template-columns: 1fr; } .db-section { grid-column: 1; } }
+    @media (prefers-reduced-motion: reduce) { .db-table-chip, .db-action, .db-file-btn, .db-eu-btn { transition: none; } }
+  `;
+  document.head.appendChild(style);
+}
 
-  // [STORAGE BACKEND ICI] — brancher l'upload / la liste des fichiers quand le
-  // backend de stockage existera. Tant qu'il n'existe pas : aucune zone d'upload.
+// Section 3 — Storage backed by the project's Coden asset bucket. The UI only
+// renders rows returned by the API; it never invents files or download URLs.
+function renderDatabaseSection3(db: any): string {
+  const assets: any[] = Array.isArray(db.assets) ? db.assets : [];
+  const assetsList = assets.length
+    ? `<div class="db-file-list">${assets.map(asset => `
+        <div class="db-row" data-storage-asset="${escapeHtml(String(asset.id || ''))}">
+          <span class="db-row-key" title="${escapeHtml(asset.name || '')}">${escapeHtml(asset.name || '(sans nom)')} <span class="db-row-meta">${escapeHtml(asset.status || 'stocké')}</span></span>
+          <span class="db-file-actions">
+            ${asset.url ? `<a href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer">Ouvrir</a>` : ''}
+            <button type="button" class="db-eu-btn db-eu-del" data-storage-delete="${escapeHtml(String(asset.id || ''))}">Supprimer</button>
+          </span>
+        </div>`).join('')}</div>`
+    : `<div class="db-empty">Aucun fichier dans le bucket du projet.</div>`;
   return `
     <section class="db-section">
       <div class="db-section-head">
@@ -6266,13 +6318,17 @@ function renderDatabaseSection3(db: any): string {
         </div>
       </div>
       <div class="db-section-body">
-        <div class="db-soon">
-          <span class="db-soon-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5-5 5 5"></path><path d="M12 5v12"></path></svg></span>
-          <div class="db-soon-text">
-            <p class="db-soon-title">Stockage managé bientôt disponible</p>
-            <p class="db-soon-desc">L'upload, la gestion et la diffusion de médias ne sont pas encore activés. ${escapeHtml(detail)} Aucune zone d'upload n'est affichée tant que le backend n'existe pas.</p>
+        <div class="db-card">
+          <div class="db-storage-toolbar">
+            <span class="db-row-meta">Bucket <strong>project-assets</strong> · ${assets.length} fichier${assets.length === 1 ? '' : 's'}</span>
+            <span>${dbBadge('success', 'Gestion active')}</span>
           </div>
-          ${statusBadge}
+          <div class="db-enduser-create">
+            <input id="db-storage-file" class="db-file-input" type="file" accept="image/*,application/pdf,text/plain,application/json,video/*,audio/*" />
+            <button type="button" class="db-action db-action-primary" id="db-storage-upload">Importer</button>
+          </div>
+          <div id="db-storage-msg" class="db-enduser-msg" aria-live="polite"></div>
+          ${assetsList}
         </div>
       </div>
     </section>`;
@@ -6285,6 +6341,7 @@ async function loadDatabase() {
     target.innerHTML = `<div class="db-state">Ouvrez ou créez un projet pour consulter l'état réel de son backend cloud.</div>`;
     return;
   }
+  ensureDatabasePanelStyle();
   target.innerHTML = `<div class="db-state">Chargement de l'état du backend…</div>`;
   try {
     const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/database`);
@@ -6294,9 +6351,59 @@ async function loadDatabase() {
     void loadProjectDbBrowser();
     // Section 2's end-user console is hydrated from the project's real auth.
     void loadProjectEndUsers();
+    bindProjectStorageHandlers();
   } catch (error) {
     target.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Backend cloud indisponible pour le moment.')}</div>`;
   }
+}
+
+function storageMsg(message: string, isError = false) {
+  const el = document.getElementById('db-storage-msg');
+  if (!el) return;
+  el.className = `db-enduser-msg${isError ? ' db-state-error' : ' db-enduser-ok'}`;
+  el.textContent = message;
+}
+
+function bindProjectStorageHandlers() {
+  const input = document.getElementById('db-storage-file') as HTMLInputElement | null;
+  const upload = document.getElementById('db-storage-upload') as HTMLButtonElement | null;
+  upload?.addEventListener('click', async () => {
+    const file = input?.files?.[0];
+    if (!file) { storageMsg('Choisissez un fichier.', true); return; }
+    if (file.size > 4 * 1024 * 1024) { storageMsg('La taille maximale est de 4 Mo.', true); return; }
+    upload.disabled = true;
+    storageMsg('Import du fichier…');
+    try {
+      const contentBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Lecture du fichier impossible.'));
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsDataURL(file);
+      });
+      await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/assets`, {
+        method: 'POST',
+        body: JSON.stringify({ name: file.name, mime_type: file.type || 'application/octet-stream', size_bytes: file.size, content_base64: contentBase64 }),
+      });
+      await loadDatabase();
+    } catch (error) {
+      storageMsg(error instanceof Error ? error.message : 'Import impossible.', true);
+      upload.disabled = false;
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-storage-delete]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const assetId = button.getAttribute('data-storage-delete');
+      if (!assetId || !window.confirm('Supprimer définitivement ce fichier ?')) return;
+      button.disabled = true;
+      try {
+        await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+        await loadDatabase();
+      } catch (error) {
+        storageMsg(error instanceof Error ? error.message : 'Suppression impossible.', true);
+        button.disabled = false;
+      }
+    });
+  });
 }
 
 // ── Read-only table browser (sous-système 2) ─────────────────────────────────
@@ -6387,6 +6494,10 @@ async function renderDbRows() {
   try {
     const query = `schema=${encodeURIComponent(dbBrowserCurrent.schema)}&table=${encodeURIComponent(dbBrowserCurrent.table)}&limit=${DB_BROWSER_PAGE}&offset=${dbBrowserOffset}`;
     const data = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/db/rows?${query}`);
+    if (data?.provisioning_required) {
+      area.innerHTML = `<div class="db-note">${DB_ICON_INFO}<span>${escapeHtml(data.message || 'Le backend runtime doit être provisionné avant la lecture des lignes.')}</span></div>`;
+      return;
+    }
     const columns: string[] = Array.isArray(data?.columns) ? data.columns : [];
     const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
     const total: number | null = data?.pagination?.total ?? null;

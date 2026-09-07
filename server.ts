@@ -112,7 +112,7 @@ import {
   isPaidPlanKey,
   normalizePlanKey,
 } from './src/services/billing-service.ts';
-import { BILLING_V2_VERSION, publicBillingCatalog } from './src/config/billing-v2.ts';
+import { BILLING_V2_VERSION, FREE_ACTIVE_USER_COGS_CAP_USD, publicBillingCatalog } from './src/config/billing-v2.ts';
 import { AuditLogService, BillingAlertService, UsageMeteringService, MemberLimitService } from './src/services/platform-support.ts';
 import { buildWorldClassUiPolicy } from './src/services/design-generation-policy.ts';
 import {
@@ -5257,9 +5257,45 @@ async function chargeCompletedAgentAction(
   amount: number,
   description: string,
   referenceId: string,
+  options: {
+    projectId?: string | null;
+    runId?: string | null;
+    category?: UnifiedUsageReservation['category'];
+    resource?: string;
+    provider?: string;
+    model?: string | null;
+    providerCostUsd?: number;
+    completeCostUsd?: number;
+  } = {},
 ) {
   if (!CODEN_MONETIZATION_ENABLED) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
+  if (CODEN_MONETIZATION_ENABLED) {
+    const completeCostUsd = Math.max(0.000001, Number(options.completeCostUsd ?? options.providerCostUsd ?? 0));
+    const reservation = await reserveUnifiedUsage({
+      accountId: userId,
+      category: options.category || 'ai_gateway',
+      credits: amount,
+      estimatedCogsUsd: Math.max(completeCostUsd * 1.5, 0.000001),
+      idempotencyKey: `${referenceId}:reserve`,
+    });
+    const eventId = await recordUnifiedUsageEvent({
+      accountId: userId,
+      projectId: options.projectId,
+      runId: options.runId,
+      category: options.category || 'ai_gateway',
+      resource: options.resource || 'agent_action',
+      provider: options.provider || 'openrouter',
+      model: options.model || null,
+      providerCostUsd: Number(options.providerCostUsd ?? completeCostUsd),
+      allocatedPlatformCostUsd: Math.max(0, completeCostUsd - Number(options.providerCostUsd ?? 0)),
+      completeCostUsd,
+      idempotencyKey: `${referenceId}:usage`,
+      providerPayload: { description },
+    });
+    await settleUnifiedUsage({ reservation, usageEventId: eventId, creditsCharged: amount, completeCostUsd });
+    return;
+  }
   if (!helpers) {
     console.warn('[coden:credit_charge_skipped]', {
       reason: 'persistence_unavailable',
@@ -9146,6 +9182,11 @@ function getDbHelpers() {
   return {
     getWallet: async (orgId: string) => {
       if (hasUnlimitedTestCredits(orgId)) return UNLIMITED_TEST_CREDIT_DISPLAY_BALANCE;
+      if (CODEN_MONETIZATION_ENABLED) {
+        await ensureUnifiedIncludedGrants(orgId);
+        const unified = await loadUnifiedWalletSnapshot(orgId);
+        return unified.balance;
+      }
       const wallet = await ensureCreditWalletRow(client, orgId);
       return getCreditBalanceFromRow(wallet);
     },
@@ -9301,6 +9342,186 @@ async function loadUnifiedWalletSnapshot(organizationId: string) {
     breakdown,
     grants,
   };
+}
+
+type UnifiedUsageReservation = {
+  id: string;
+  accountId: string;
+  category: 'build' | 'cloud' | 'ai_gateway' | 'email';
+  credits: number;
+  estimatedCogsUsd: number;
+  idempotencyKey: string;
+  virtual?: boolean;
+};
+
+/**
+ * V2 is authoritative only through these helpers. Keeping the reservation,
+ * measured event and settlement together prevents a generation from looking
+ * successful while still charging the legacy wallet or losing its COGS data.
+ */
+async function ensureUnifiedBillingAccount(accountId: string) {
+  if (!isUuid(accountId)) throw new Error('A valid billing account is required.');
+  const client = requireSupabase('Unified billing account');
+  const { error } = await client.from('billing_accounts').upsert([{
+    id: accountId,
+    organization_id: accountId,
+    owner_user_id: accountId,
+    currency: 'usd',
+    status: 'active',
+    updated_at: new Date().toISOString(),
+  }], { onConflict: 'id' });
+  if (error) throw new Error(`Unified billing account persistence failed: ${error.message}`);
+  return client;
+}
+
+async function ensureUnifiedIncludedGrants(accountId: string) {
+  const client = await ensureUnifiedBillingAccount(accountId);
+  const planKey = normalizePlanKey(await getOrganizationPlan(accountId).catch(() => 'free')) || 'free';
+  const plan = publicBillingCatalog().plans.find(candidate => candidate.key === planKey) || publicBillingCatalog().plans[0];
+  const now = new Date();
+  const dayKey = now.toISOString().slice(0, 10);
+  const monthKey = dayKey.slice(0, 7);
+  const nextDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+  const { data: existing, error: existingError } = await client
+    .from('credit_grants')
+    .select('kind,source_reference,credits_issued')
+    .eq('account_id', accountId)
+    .gte('issued_at', `${monthKey}-01T00:00:00.000Z`);
+  if (existingError) throw new Error(`Unified grant lookup failed: ${existingError.message}`);
+  const rows = Array.isArray(existing) ? existing : [];
+  const hasSource = (source: string) => rows.some(row => String(row.source_reference || '') === source);
+  const dailyIssued = rows
+    .filter(row => String(row.kind) === 'daily_build')
+    .reduce((sum, row) => sum + Number(row.credits_issued || 0), 0);
+  const monthlyCap = plan.grants.dailyBuildMonthlyCap == null ? plan.grants.dailyBuildCredits || 0 : plan.grants.dailyBuildMonthlyCap;
+  const entitlementTotal = Math.max(1, Number(monthlyCap || 0) + Number(plan.grants.monthlyCloudCredits || 0) + Number(plan.grants.monthlyAiCredits || 0));
+  const cogsFor = (credits: number) => Number((FREE_ACTIVE_USER_COGS_CAP_USD * credits / entitlementTotal).toFixed(8));
+  const grant = async (kind: string, restriction: string, credits: number, expiresAt: string, source: string) => {
+    if (credits <= 0 || hasSource(source)) return;
+    const { error } = await client.rpc('coden_billing_grant', {
+      p_account_id: accountId,
+      p_kind: kind,
+      p_restriction: restriction,
+      p_credits: credits,
+      p_net_revenue_usd: 0,
+      p_max_cogs_usd: cogsFor(credits),
+      p_expires_at: expiresAt,
+      p_source_reference: source,
+      p_idempotency_key: source,
+      p_metadata: { provider: 'coden', plan: planKey, version: BILLING_V2_VERSION },
+    });
+    if (error) throw new Error(`Unified grant failed: ${error.message}`);
+  };
+
+  // Paid monthly grants come from the Stripe webhook. The free entitlement is
+  // safe to issue on demand so a first build never races the hourly scheduler.
+  if (planKey === 'free') {
+    const dailyCredits = Math.min(Number(plan.grants.dailyBuildCredits || 0), Math.max(0, Number(monthlyCap || 0) - dailyIssued));
+    await grant('daily_build', 'build', dailyCredits, nextDay, `included:${accountId}:daily_build:${dayKey}`);
+    await grant('monthly_cloud', 'cloud', Number(plan.grants.monthlyCloudCredits || 0), nextMonth, `included:${accountId}:monthly_cloud:${monthKey}`);
+    await grant('monthly_ai', 'ai_gateway', Number(plan.grants.monthlyAiCredits || 0), nextMonth, `included:${accountId}:monthly_ai:${monthKey}`);
+  }
+  return client;
+}
+
+async function reserveUnifiedUsage(input: {
+  accountId: string;
+  category: UnifiedUsageReservation['category'];
+  credits: number;
+  estimatedCogsUsd: number;
+  idempotencyKey: string;
+}): Promise<UnifiedUsageReservation> {
+  const credits = Math.max(0, Number(input.credits || 0));
+  const estimatedCogsUsd = Math.max(0, Number(input.estimatedCogsUsd || 0));
+  if (!credits) return { ...input, credits, estimatedCogsUsd, id: '', virtual: true };
+  if (hasUnlimitedTestCredits(input.accountId)) return { ...input, credits, estimatedCogsUsd, id: '', virtual: true };
+  const client = await ensureUnifiedIncludedGrants(input.accountId);
+  const { data, error } = await client.rpc('coden_billing_reserve', {
+    p_account_id: input.accountId,
+    p_category: input.category,
+    p_credits: credits,
+    p_estimated_cogs_usd: estimatedCogsUsd,
+    p_idempotency_key: input.idempotencyKey,
+    p_expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+  });
+  if (error || !data) throw new Error(`Unified usage reservation failed: ${error?.message || 'no reservation returned'}`);
+  return { ...input, credits, estimatedCogsUsd, id: String(data) };
+}
+
+async function recordUnifiedUsageEvent(input: {
+  accountId: string;
+  projectId?: string | null;
+  runId?: string | null;
+  category: UnifiedUsageReservation['category'];
+  resource: string;
+  provider: string;
+  model?: string | null;
+  quantity?: number;
+  unit?: string;
+  providerCostUsd: number;
+  allocatedPlatformCostUsd: number;
+  completeCostUsd: number;
+  idempotencyKey: string;
+  providerPayload?: Record<string, unknown>;
+}) {
+  const client = requireSupabase('Measured usage event');
+  const row = {
+    account_id: input.accountId,
+    workspace_id: input.accountId,
+    project_id: input.projectId || null,
+    run_id: input.runId || null,
+    category: input.category,
+    resource: input.resource,
+    provider: input.provider,
+    model: input.model || null,
+    quantity: Math.max(0, Number(input.quantity ?? 1)),
+    unit: input.unit || 'action',
+    provider_cost_usd: Math.max(0, Number(input.providerCostUsd || 0)),
+    allocated_platform_cost_usd: Math.max(0, Number(input.allocatedPlatformCostUsd || 0)),
+    complete_cost_usd: Math.max(0, Number(input.completeCostUsd || 0)),
+    price_version_id: `${BILLING_V2_VERSION}:runtime`,
+    idempotency_key: input.idempotencyKey,
+    provider_payload: redactSecretPayload(input.providerPayload || {}),
+    occurred_at: new Date().toISOString(),
+  };
+  const inserted = await client.from('usage_events').insert([row]).select('id').maybeSingle();
+  if (!inserted.error && inserted.data?.id) return String(inserted.data.id);
+  if (inserted.error && /duplicate|unique/i.test(inserted.error.message || '')) {
+    const existing = await client.from('usage_events').select('id').eq('idempotency_key', input.idempotencyKey).maybeSingle();
+    if (existing.data?.id) return String(existing.data.id);
+  }
+  throw new Error(`Measured usage persistence failed: ${inserted.error?.message || 'no usage event returned'}`);
+}
+
+async function settleUnifiedUsage(input: {
+  reservation: UnifiedUsageReservation;
+  usageEventId: string;
+  creditsCharged: number;
+  completeCostUsd: number;
+}) {
+  if (input.reservation.virtual || !input.reservation.id) return;
+  const client = requireSupabase('Unified usage settlement');
+  const credits = Math.max(0, Number(input.creditsCharged || 0));
+  const completeCostUsd = Math.max(0, Number(input.completeCostUsd || 0));
+  const { error } = await client.rpc('coden_billing_settle', {
+    p_reservation_id: input.reservation.id,
+    p_usage_event_id: input.usageEventId,
+    p_credits_charged: credits,
+    p_complete_cost_usd: completeCostUsd,
+    p_realized_revenue_usd: Number((credits * 0.02).toFixed(8)),
+  });
+  if (error) throw new Error(`Unified usage settlement failed: ${error.message}`);
+}
+
+async function releaseUnifiedUsage(reservation: UnifiedUsageReservation | null) {
+  if (!reservation || reservation.virtual || !reservation.id) return;
+  const client = requireSupabase('Unified usage release');
+  const { error } = await client.rpc('coden_billing_release', {
+    p_reservation_id: reservation.id,
+    p_reason: 'Provider or execution failure; reserved credits returned',
+  });
+  if (error) throw new Error(`Unified usage release failed: ${error.message}`);
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -9871,8 +10092,17 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         requested_mode: requestedMode,
       }).catch(() => null);
     }
+    const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
-    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`);
+    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`, {
+      projectId: canPersistConversation ? project.id : null,
+      category: 'ai_gateway',
+      resource: 'conversation',
+      provider: 'openrouter',
+      model: agentText.model,
+      providerCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0),
+      completeCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0) + 0.00005,
+    });
     return res.json({
       success: true,
       request_id: requestId,
@@ -10642,9 +10872,19 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
       return res.status(402).json(publicCreditGateResponse());
     }
 
-    // 3. Reserve Credits safely
+    // 3. Reserve credits safely. V2 is the only authoritative ledger when it
+    // is enabled; disabled monetization remains genuinely unmetered.
     const refId = `req_${Math.random().toString(36).substring(2, 13)}`;
-    if (CODEN_MONETIZATION_ENABLED) await clientHelpers.createReservation(orgId, initialEstimate.finalCredits, refId);
+    let unifiedReservation: UnifiedUsageReservation | null = null;
+    if (CODEN_MONETIZATION_ENABLED) {
+      unifiedReservation = await reserveUnifiedUsage({
+        accountId: orgId,
+        category: 'ai_gateway',
+        credits: initialEstimate.finalCredits,
+        estimatedCogsUsd: Math.max(Number(actionCostComp.openrouter_cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0), 0.000001),
+        idempotencyKey: `${refId}:reserve`,
+      });
+    }
 
     // 4. Call OpenRouter
     try {
@@ -10663,11 +10903,26 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
       const finalEstimate = costEstimator.calculateRequiredCredits(finalCostComp);
 
-      if (CODEN_MONETIZATION_ENABLED) {
-        const reservationServ = new CreditReservationService(requireSupabase('Credit reservation release'));
-        await reservationServ.releaseReservation(refId, true, finalEstimate.finalCredits);
-        const finalBalance = await clientHelpers.updateWallet(orgId, -finalEstimate.finalCredits);
-        await clientHelpers.addLedger(orgId, 'usage', -finalEstimate.finalCredits, finalBalance, `AI usage on:${completionResult.model}`, refId);
+      if (CODEN_MONETIZATION_ENABLED && unifiedReservation) {
+        const usageEventId = await recordUnifiedUsageEvent({
+          accountId: orgId,
+          category: 'ai_gateway',
+          resource: 'messages_compatibility',
+          provider: 'openrouter',
+          model: completionResult.model,
+          providerCostUsd: Math.max(0, Number(completionResult.cost_usd || 0)),
+          allocatedPlatformCostUsd: Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0),
+          completeCostUsd: Math.max(0.000001, Number(completionResult.cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0)),
+          idempotencyKey: `${refId}:usage`,
+          providerPayload: { compatibility_route: true },
+        });
+        await settleUnifiedUsage({
+          reservation: unifiedReservation,
+          usageEventId,
+          creditsCharged: finalEstimate.finalCredits,
+          completeCostUsd: Math.max(0.000001, Number(completionResult.cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0)),
+        });
+        unifiedReservation = null;
       }
 
       res.json({
@@ -10680,8 +10935,8 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
     } catch (apiError: any) {
       // Platform / API service error => Refund fully!
       if (CODEN_MONETIZATION_ENABLED) {
-        const reservationServ = new CreditReservationService(requireSupabase('Credit reservation refund'));
-        await reservationServ.releaseReservation(refId, false);
+        await releaseUnifiedUsage(unifiedReservation);
+        unifiedReservation = null;
       }
 
       throw new Error(`Platform Engine Auto-Refund Triggered: ${apiError.message}`);
@@ -12108,8 +12363,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       intent: decision.intent,
       requested_mode: decision.requestedMode,
     });
+    const costRealCostUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'router' || (agentText.model === 'auto' && agentText.cost_usd === 0) ? 0 : cost.finalCredits;
-    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI ${decision.intent} with ${agentText.model}`, `agent_${randomUUID()}`);
+    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI ${decision.intent} with ${agentText.model}`, `agent_${randomUUID()}`, {
+      projectId: project.id,
+      runId: agentRunId || null,
+      category: 'ai_gateway',
+      resource: decision.intent,
+      provider: 'openrouter',
+      model: agentText.model,
+      providerCostUsd: Number(agentText.cost_usd || costRealCostUsd || 0),
+      completeCostUsd: Number(agentText.cost_usd || costRealCostUsd || 0) + 0.0001,
+    });
     await recordAgentImprovementSignal(project, userId, {
       prompt,
       decision,
@@ -12146,7 +12411,19 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const refId = `gen_${randomUUID()}`;
-  if (CODEN_MONETIZATION_ENABLED) await helpers.createReservation(userId, cost.finalCredits, refId);
+  let unifiedGenerationReservation: UnifiedUsageReservation | null = null;
+  const generationEstimatedCogsUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
+  if (CODEN_MONETIZATION_ENABLED) {
+    unifiedGenerationReservation = await reserveUnifiedUsage({
+      accountId: userId,
+      category: 'build',
+      // Keep bounded headroom while the provider call is running. Settlement
+      // returns the unused reservation atomically.
+      credits: Math.ceil(cost.finalCredits * 1.5 * 100) / 100,
+      estimatedCogsUsd: Math.max(generationEstimatedCogsUsd * 1.5, 0.000001),
+      idempotencyKey: `${refId}:reserve`,
+    });
+  }
 
   try {
     let executionPlan = '';
@@ -12747,6 +13024,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           : null,
         fact_ledger: factLedger,
       };
+      if (CODEN_MONETIZATION_ENABLED) {
+        await releaseUnifiedUsage(unifiedGenerationReservation);
+        unifiedGenerationReservation = null;
+      }
       return respondJson(200, finalPayload);
     }
     const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
@@ -12848,9 +13129,31 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       minimum_action_credits: Math.max(2, modelCreditFloor(generation.model)),
       complexity_surcharge: prompt.length > 400 ? 2 : 0,
     });
-    if (CODEN_MONETIZATION_ENABLED) {
-      const finalBalance = await helpers.updateWallet(userId, -finalCost.finalCredits);
-      await helpers.addLedger(userId, 'usage', -finalCost.finalCredits, finalBalance, `Generated app files with ${generation.model}`, refId);
+    if (CODEN_MONETIZATION_ENABLED && unifiedGenerationReservation) {
+      const usageEventId = await recordUnifiedUsageEvent({
+        accountId: userId,
+        projectId: project.id,
+        runId: agentRunId || null,
+        category: 'build',
+        resource: decision.intent || 'build',
+        provider: 'openrouter',
+        model: generation.model,
+        providerCostUsd: Number(generation.cost_usd || 0),
+        allocatedPlatformCostUsd: Math.max(0, finalCost.realCostUsd - Number(generation.cost_usd || 0)),
+        completeCostUsd: finalCost.realCostUsd,
+        idempotencyKey: `${refId}:usage`,
+        providerPayload: {
+          files_changed: Number(diff.created?.length || 0) + Number(diff.modified?.length || 0) + Number(diff.deleted?.length || 0),
+          verification: verificationSummary,
+        },
+      });
+      await settleUnifiedUsage({
+        reservation: unifiedGenerationReservation,
+        usageEventId,
+        creditsCharged: finalCost.finalCredits,
+        completeCostUsd: finalCost.realCostUsd,
+      });
+      unifiedGenerationReservation = null;
     }
     await updateAgentRunStatus(agentRunId, 'completed', {
       public_payload: {
@@ -12921,9 +13224,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   } catch (error: any) {
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
-    if (CODEN_MONETIZATION_ENABLED) {
-      await helpers.addLedger(userId, 'refund', cost.finalCredits, await helpers.getWallet(userId), `Generation failed: ${error.message}`, refId);
-    }
+    if (CODEN_MONETIZATION_ENABLED) await releaseUnifiedUsage(unifiedGenerationReservation);
     await helpers.addAudit({
       user_id: userId,
       organization_id: userId,
@@ -13524,18 +13825,19 @@ app.get('/api/projects/:id/database', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
   const files = await loadProjectFiles(project.id);
   const schemaFile = files.find(file => file.path === 'supabase/schema.sql');
   const secrets = await listProjectSecrets(project.id);
   const client = requireSupabase('Project database view');
   const { data: integrations = [] } = await client.from('project_integrations').select('*').eq('project_id', project.id).order('updated_at', { ascending: false });
-  const { data: assets = [] } = await client.from('project_assets').select('id, name, url, kind, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  const { data: assets = [] } = await client.from('project_assets').select('id, name, url, kind, mime_type, size_bytes, status, storage_path, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
   const { data: activity = [] } = await client.from('agent_events').select('event_type, message, created_at').eq('project_id', project.id).order('created_at', { ascending: false }).limit(8);
   const codenCloud = await loadProjectCodenCloud(project.id);
-  const tableMatches = [...(schemaFile?.content || '').matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?([a-zA-Z0-9_]+)/gi)];
-  const tables = tableMatches.length
-    ? tableMatches.map(match => ({ name: match[1], rows: 0, source: 'supabase/schema.sql', columns: [] }))
-    : [{ name: 'project_files', rows: files.length, source: 'coden_control_db', columns: ['path', 'language', 'updated_at'] }];
+  const generatedTables = parseGeneratedSchemaTables(schemaFile?.content || '');
+  const tables = generatedTables.length
+    ? generatedTables.map(table => ({ ...table, rows: null, source: 'supabase/schema.sql' }))
+    : [];
   res.json({
     success: true,
     database: {
@@ -13571,9 +13873,9 @@ app.get('/api/projects/:id/database/tables', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  const files = await loadProjectFiles(project.id);
-  const schemaFile = files.find(file => file.path === 'supabase/schema.sql');
-  res.json({ success: true, tables: schemaFile ? [{ name: 'app_records', rows: 0, schema: schemaFile.content }] : [] });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const { tables } = await loadProjectDatabaseSchema(project.id);
+  res.json({ success: true, tables });
 });
 
 app.get('/api/projects/:id/database/secrets', async (req: any, res: any) => {
@@ -13709,6 +14011,192 @@ function decodeAssetPayload(contentBase64: unknown) {
   }
   return buffer;
 }
+
+function safeProjectDbIdentifier(value: unknown, label: string) {
+  const identifier = String(value || '').trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Invalid ${label}.`);
+  }
+  return identifier;
+}
+
+function parseGeneratedSchemaTables(schema: string) {
+  const tables: Array<{ schema: string; name: string; type: 'TABLE'; columns: string[] }> = [];
+  const tablePattern = /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:(?<schema>[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*)?(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*\((?<body>[\s\S]*?)\)\s*;/gi;
+  for (const match of schema.matchAll(tablePattern)) {
+    const tableSchema = match.groups?.schema || 'public';
+    const tableName = match.groups?.name || '';
+    const body = match.groups?.body || '';
+    const columns = body
+      .split(/,\s*(?=[A-Za-z_][A-Za-z0-9_]*\s+(?:[A-Za-z]|\"))/)
+      .map(line => line.trim().match(/^(?:\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_]*))\s+/)?.[1] || line.trim().match(/^(?:\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_]*))\s+/)?.[2] || '')
+      .filter(Boolean)
+      .filter(column => !/^(primary|foreign|unique|check|constraint)$/i.test(column));
+    tables.push({ schema: tableSchema, name: tableName, type: 'TABLE', columns: [...new Set(columns)] });
+  }
+  return tables;
+}
+
+async function loadProjectDatabaseSchema(projectId: string) {
+  const files = await loadProjectFiles(projectId);
+  const schemaFile = files.find(file => file.path === 'supabase/schema.sql');
+  return {
+    schemaFile,
+    tables: parseGeneratedSchemaTables(schemaFile?.content || ''),
+  };
+}
+
+function projectAuthIsProvisioned(codenCloud: any) {
+  const status = String(codenCloud?.project?.status || '').toLowerCase();
+  const runtime = codenCloud?.project?.public_runtime_config || {};
+  return Boolean(runtime.auth_url && runtime.auth_anon_key && /ready|provisioned|active|enabled/.test(status));
+}
+
+app.get('/api/projects/:id/db/schemas', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const { schemaFile, tables } = await loadProjectDatabaseSchema(project.id);
+  if (!schemaFile || !tables.length) {
+    return res.json({ success: true, schemas: [], tables: [], provisioning_required: true, message: 'Aucun schéma applicatif généré.' });
+  }
+  const schemas = [...new Set(tables.map(table => table.schema))];
+  res.json({
+    success: true,
+    schemas,
+    tables,
+    provisioning_required: false,
+    data_access: 'schema_only',
+    message: 'Le schéma généré est disponible. Les lignes seront accessibles après le provisioning du backend runtime.',
+  });
+});
+
+app.get('/api/projects/:id/db/tables', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  let schema: string;
+  try {
+    schema = safeProjectDbIdentifier(req.query?.schema || 'public', 'schema');
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Invalid schema.' });
+  }
+  const { tables } = await loadProjectDatabaseSchema(project.id);
+  res.json({ success: true, schema, tables: tables.filter(table => table.schema === schema), provisioning_required: false });
+});
+
+app.get('/api/projects/:id/db/rows', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  let schema: string;
+  let table: string;
+  try {
+    schema = safeProjectDbIdentifier(req.query?.schema || 'public', 'schema');
+    table = safeProjectDbIdentifier(req.query?.table, 'table');
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Invalid table.' });
+  }
+  const { tables } = await loadProjectDatabaseSchema(project.id);
+  const selected = tables.find(candidate => candidate.schema === schema && candidate.name === table);
+  if (!selected) return res.status(404).json({ success: false, error: 'Table not found in the generated project schema.' });
+  res.json({
+    success: true,
+    schema,
+    table,
+    columns: selected.columns,
+    rows: [],
+    pagination: { limit: Math.min(100, Math.max(1, Number(req.query?.limit || 50))), offset: Math.max(0, Number(req.query?.offset || 0)), total: 0 },
+    provisioning_required: true,
+    message: 'Le backend runtime de ce projet n’est pas encore provisionné. Aucune ligne n’est simulée.',
+  });
+});
+
+app.get('/api/projects/:id/users', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const codenCloud = await loadProjectCodenCloud(project.id);
+  if (!projectAuthIsProvisioned(codenCloud)) {
+    return res.json({
+      success: true,
+      auth_configured: false,
+      users: [],
+      roles: ['user', 'member', 'editor', 'admin'],
+      message: 'L’authentification runtime du projet n’est pas encore provisionnée. Les utilisateurs de Coden ne sont jamais exposés ici.',
+    });
+  }
+  // A project runtime service-role client is intentionally required here. Do
+  // not fall back to Coden's platform client: that would expose platform users.
+  return res.json({
+    success: true,
+    auth_configured: false,
+    users: [],
+    roles: ['user', 'member', 'editor', 'admin'],
+    message: 'Le runtime Auth est détecté mais son service-role isolé n’est pas configuré dans Coden.',
+  });
+});
+
+for (const mutation of [
+  { method: 'post', path: '/api/projects/:id/users/:uid/reset-password' },
+  { method: 'post', path: '/api/projects/:id/users/:uid/ban' },
+  { method: 'delete', path: '/api/projects/:id/users/:uid' },
+] as const) {
+  const handler = async (req: any, res: any) => {
+    const userId = getUserOrgId(req);
+    const project = await loadProject(req.params.id, userId);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!requireProjectCapability(req, res, 'secrets', project)) return;
+    return res.status(409).json({
+      success: false,
+      error: 'Project Auth is not provisioned with an isolated service role.',
+      diagnostic_code: 'PROJECT_AUTH_NOT_PROVISIONED',
+    });
+  };
+  if (mutation.method === 'post') app.post(mutation.path, handler);
+  else app.delete(mutation.path, handler);
+}
+
+app.post('/api/projects/:id/users', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'secrets', project)) return;
+  return res.status(409).json({ success: false, error: 'Project Auth is not provisioned with an isolated service role.', diagnostic_code: 'PROJECT_AUTH_NOT_PROVISIONED' });
+});
+
+app.get('/api/projects/:id/assets', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const client = requireSupabase('Project asset listing');
+  const { data, error } = await client.from('project_assets').select('id,name,url,kind,mime_type,size_bytes,status,storage_path,created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  res.json({ success: true, assets: data || [], storage: { bucket: 'project-assets', provider: 'supabase_storage', configured: true } });
+});
+
+app.delete('/api/projects/:id/assets/:assetId', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const client = requireSupabase('Project asset deletion');
+  const existing = await client.from('project_assets').select('id,storage_path').eq('id', req.params.assetId).eq('project_id', project.id).maybeSingle();
+  if (existing.error) return res.status(500).json({ success: false, error: existing.error.message });
+  if (!existing.data) return res.status(404).json({ success: false, error: 'Asset not found.' });
+  if (existing.data.storage_path) {
+    const removed = await client.storage.from('project-assets').remove([String(existing.data.storage_path)]);
+    if (removed.error) return res.status(500).json({ success: false, error: removed.error.message });
+  }
+  const deleted = await client.from('project_assets').delete().eq('id', req.params.assetId).eq('project_id', project.id);
+  if (deleted.error) return res.status(500).json({ success: false, error: deleted.error.message });
+  res.json({ success: true, asset_id: req.params.assetId });
+});
 
 app.post('/api/projects/:id/assets', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
