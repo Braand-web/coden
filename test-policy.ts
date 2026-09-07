@@ -9,9 +9,8 @@ import {
   getPlatformIntelligence,
 } from './src/services/design-generation-policy.ts';
 
-// The nine authorised models, and only those. The catalogue was cut from
-// eleven: DeepSeek, Qwen and GLM were retired, and the remaining ids moved to
-// their current provider names.
+// The authorised models, and only those. Astra is intentionally available as
+// a controlled Business/Enterprise escalation, never as a sixth Auto role.
 const EXPECTED_ALLOWED_MODELS = [
   'openai/gpt-5.6-luna', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol',
   'google/gemini-3.8-flash', 'anthropic/claude-fable-5.1',
@@ -24,6 +23,7 @@ const EXPECTED_ALLOWED_MODELS = [
   'openai/gpt-5.6-sol-pro',
   'anthropic/claude-opus-5',
   'anthropic/claude-fable-5.1:batch',
+  'openai/gpt-6-astra',
 ] as const;
 
 async function runTests() {
