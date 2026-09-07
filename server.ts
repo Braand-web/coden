@@ -859,7 +859,15 @@ app.options('/api/analytics/collect', (_req, res) => {
   res.status(204).end();
 });
 
-app.use('/api/billing', requireAuth);
+// The public pricing page reads only the versioned catalog. Keep that one
+// idempotent GET open, while every wallet, checkout, portal and top-up route
+// remains behind the normal authenticated billing boundary.
+function requireBillingAuth(req: any, res: any, next: any) {
+  if (req.method === 'GET' && req.path === '/plans') return next();
+  return requireAuth(req, res, next);
+}
+
+app.use('/api/billing', requireBillingAuth);
 app.use('/api/ai/estimate', requireAuth);
 app.use('/api/ai/route', requireAuth);
 app.use('/api/users/me', requireAuthWithTemporaryGeneration);

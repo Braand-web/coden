@@ -13,6 +13,7 @@ const routePolicy = JSON.parse(read('config/public-route-policy.json')) as {
 };
 const pricingHtml = read('pricing.html');
 const smokeCheck = read('scripts/production-smoke-check.cjs');
+const server = read('server.ts');
 
 assert(routePolicy.canonicalPublic.includes('/pricing.html'), 'Pricing must be an indexed public route.');
 assert.equal(routePolicy.redirects['/pricing'], '/pricing.html', 'The short pricing URL must redirect to the canonical page.');
@@ -22,6 +23,8 @@ assert.match(pricingHtml, /data-pricing-tier="business"/, 'Business requires a c
 assert.match(pricingHtml, /src="\/src\/pricing-page\.ts"/, 'Pricing requires the dynamic catalog adapter.');
 assert.match(smokeCheck, /['"]\/pricing\.html['"]/, 'Production smoke checks must include the pricing page.');
 assert.match(smokeCheck, /['"]\/pricing['"]/, 'Production smoke checks must include the short pricing redirect.');
+assert.match(server, /function requireBillingAuth[\s\S]*?req\.method === 'GET' && req\.path === '\/plans'/, 'Only the public pricing catalog may bypass billing authentication.');
+assert.match(server, /app\.use\('\/api\/billing', requireBillingAuth\)/, 'All other billing routes must remain authenticated.');
 
 assert.equal(priceFor('pro', 100, 'monthly').amountUsd, 25, 'Pro 100 monthly must match the public V2 price.');
 assert.equal(priceFor('business', 100, 'monthly').amountUsd, 50, 'Business 100 monthly must match the public V2 price.');
