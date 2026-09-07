@@ -1,0 +1,644 @@
+/* Coden Cloud Console
+   One calm, project-scoped control surface. Every value rendered inside this
+   shell comes from project APIs or an explicit not-configured state. */
+
+.cloud-console-screen {
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: var(--horizon-canvas, var(--bg)) !important;
+}
+
+.cloud-console-root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cloud-console {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--horizon-text, var(--text));
+  font-family: var(--horizon-font, Manrope, system-ui, sans-serif);
+}
+
+.cloud-console-nav {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 12px;
+  border: 0;
+  border-right: 1px solid var(--horizon-border, var(--border));
+  background: var(--horizon-surface, var(--bg-surface));
+}
+
+.cloud-console-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 12px;
+  color: var(--horizon-text, var(--text));
+}
+
+.cloud-console-brand-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--horizon-blue-soft, var(--accent-dim));
+  color: var(--horizon-blue, var(--accent-blue));
+}
+
+.cloud-console-brand-icon svg,
+.cloud-console-nav-item svg,
+.cloud-console-action svg,
+.cloud-service-icon svg,
+.cloud-service-meta svg,
+.cloud-empty-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cloud-console-brand strong {
+  display: block;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.cloud-console-brand small {
+  display: block;
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cloud-console-nav-scroll {
+  display: grid;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 0;
+}
+
+.cloud-console-nav-label {
+  padding: 12px 10px 4px;
+  color: var(--horizon-subtle, var(--text-sub));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+}
+
+.cloud-console-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--horizon-muted, var(--text-muted));
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 220ms cubic-bezier(.32,.72,0,1), background-color 220ms cubic-bezier(.32,.72,0,1), transform 220ms cubic-bezier(.32,.72,0,1);
+}
+
+.cloud-console-nav-item:hover {
+  background: var(--horizon-raised, var(--bg-input));
+  color: var(--horizon-text, var(--text));
+}
+
+.cloud-console-nav-item:active { transform: scale(.98); }
+
+.cloud-console-nav-item:focus-visible,
+.cloud-console-action:focus-visible,
+.cloud-link-button:focus-visible,
+.cloud-icon-button:focus-visible,
+.cloud-filter:focus-visible {
+  outline: 2px solid var(--horizon-blue, var(--accent-blue));
+  outline-offset: 2px;
+}
+
+.cloud-console-nav-item.is-active {
+  background: var(--horizon-input, var(--bg-input));
+  color: var(--horizon-text, var(--text));
+  box-shadow: var(--horizon-shadow-inset, inset 0 0 0 1px var(--border));
+}
+
+.cloud-console-nav-item.is-active svg { color: var(--horizon-blue, var(--accent-blue)); }
+
+.cloud-console-nav-foot {
+  margin-top: auto;
+  padding: 12px 8px 0;
+  border-top: 1px solid var(--horizon-border, var(--border));
+  color: var(--horizon-subtle, var(--text-sub));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cloud-console-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--horizon-canvas, var(--bg));
+}
+
+.cloud-console-main-inner {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.cloud-console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.cloud-console-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--horizon-blue, var(--accent-blue));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+}
+
+.cloud-console-head h1 {
+  margin: 0;
+  color: var(--horizon-text, var(--text));
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+}
+
+.cloud-console-head p {
+  max-width: 680px;
+  margin: 4px 0 0;
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 14px;
+  line-height: 20px;
+  text-wrap: pretty;
+}
+
+.cloud-console-action,
+.db-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--horizon-border, var(--border));
+  border-radius: 8px;
+  background: var(--horizon-input, var(--bg-input));
+  color: var(--horizon-text, var(--text));
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 220ms cubic-bezier(.32,.72,0,1), border-color 220ms cubic-bezier(.32,.72,0,1), transform 220ms cubic-bezier(.32,.72,0,1);
+}
+
+.cloud-console-action:hover,
+.db-action:hover { background: var(--horizon-raised, var(--accent-dim)); }
+.cloud-console-action:active,
+.db-action:active { transform: scale(.98); }
+.cloud-console-action.is-primary,
+.db-action-primary {
+  border-color: var(--horizon-blue, var(--accent-blue));
+  background: var(--horizon-blue, var(--accent-blue));
+  color: var(--horizon-blue-ink, #fff);
+}
+
+.cloud-console-content { display: grid; gap: 16px; }
+
+.cloud-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 12px;
+}
+
+.cloud-summary-card,
+.cloud-panel,
+.cloud-service-card,
+.cloud-empty {
+  border: 1px solid var(--horizon-border, var(--border));
+  background: var(--horizon-surface, var(--bg-surface));
+  box-shadow: none;
+}
+
+.cloud-summary-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 16px;
+}
+
+.cloud-summary-card span,
+.cloud-panel-kicker {
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.cloud-summary-card strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--horizon-text, var(--text));
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-summary-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--horizon-subtle, var(--text-sub));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cloud-panel {
+  min-width: 0;
+  padding: 20px;
+  border-radius: 16px;
+}
+
+.cloud-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.cloud-panel-head h2 {
+  margin: 0;
+  color: var(--horizon-text, var(--text));
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+}
+
+.cloud-panel-head p {
+  margin: 2px 0 0;
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cloud-services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.cloud-service-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 16px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 220ms cubic-bezier(.32,.72,0,1), background-color 220ms cubic-bezier(.32,.72,0,1), transform 220ms cubic-bezier(.32,.72,0,1);
+}
+
+.cloud-service-card:hover {
+  border-color: var(--horizon-border-strong, var(--border-mid));
+  background: var(--horizon-raised, var(--bg-input));
+  transform: translateY(-2px);
+}
+
+.cloud-service-card:active { transform: scale(.99); }
+
+.cloud-service-icon,
+.cloud-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--horizon-blue-soft, var(--accent-dim));
+  color: var(--horizon-blue, var(--accent-blue));
+}
+
+.cloud-service-card strong {
+  display: block;
+  color: var(--horizon-text, var(--text));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+}
+
+.cloud-service-card small {
+  display: block;
+  margin-top: 2px;
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cloud-service-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--horizon-subtle, var(--text-sub));
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.cloud-service-meta svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.cloud-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid var(--horizon-border, var(--border));
+  border-radius: 9999px;
+  background: var(--horizon-input, var(--bg-input));
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.cloud-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.cloud-status[data-tone="ok"] { color: #168457; }
+.cloud-status[data-tone="warn"] { color: #b36b00; }
+.cloud-status[data-tone="error"] { color: #c13e4f; }
+
+.cloud-detail-list,
+.cloud-log-list,
+.cloud-secret-list,
+.cloud-function-list,
+.cloud-job-list { display: grid; gap: 0; }
+
+.cloud-detail-row,
+.cloud-log-row,
+.cloud-secret-row,
+.cloud-function-row,
+.cloud-job-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--horizon-border, var(--border));
+}
+
+.cloud-detail-row:first-child,
+.cloud-log-row:first-child,
+.cloud-secret-row:first-child,
+.cloud-function-row:first-child,
+.cloud-job-row:first-child { border-top: 0; }
+
+.cloud-detail-row strong,
+.cloud-log-row strong,
+.cloud-secret-row strong,
+.cloud-function-row strong,
+.cloud-job-row strong {
+  display: block;
+  overflow: hidden;
+  color: var(--horizon-text, var(--text));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-detail-row small,
+.cloud-log-row small,
+.cloud-secret-row small,
+.cloud-function-row small,
+.cloud-job-row small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--horizon-muted, var(--text-muted));
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-row-actions { display: inline-flex; align-items: center; gap: 8px; }
+
+.cloud-link-button,
+.cloud-icon-button,
+.db-eu-btn,
+.db-file-btn,
+.db-table-chip {
+  border: 1px solid var(--horizon-border, var(--border));
+  border-radius: 8px;
+  background: var(--horizon-input, var(--bg-input));
+  color: var(--horizon-text, var(--text));
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cloud-link-button,
+.db-eu-btn,
+.db-table-chip { min-height: 32px; padding: 8px 12px; }
+.cloud-icon-button,
+.db-file-btn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
+.cloud-link-button:hover,
+.cloud-icon-button:hover,
+.db-eu-btn:hover,
+.db-file-btn:hover,
+.db-table-chip:hover { background: var(--horizon-raised, var(--accent-dim)); }
+.cloud-link-button.is-danger,
+.db-eu-del { color: #c13e4f; }
+
+.cloud-toolbar,
+.db-browser-top,
+.db-storage-toolbar,
+.db-enduser-create,
+.cloud-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cloud-toolbar { justify-content: space-between; }
+
+.cloud-filter,
+.db-input,
+.db-select {
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--horizon-border, var(--border));
+  border-radius: 8px;
+  background: var(--horizon-input, var(--bg-input));
+  color: var(--horizon-text, var(--text));
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+input.cloud-filter { flex: 1 1 240px; }
+.db-input { flex: 1 1 240px; }
+.db-file-input { max-width: 100%; color: var(--horizon-muted, var(--text-muted)); font: inherit; font-size: 12px; }
+
+.db-card,
+.db-note,
+.cloud-inline-note {
+  border: 1px solid var(--horizon-border, var(--border));
+  border-radius: 12px;
+  background: var(--horizon-input, var(--bg-input));
+}
+
+.db-card { padding: 16px; }
+.db-card-label { color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; font-weight: 600; }
+.db-card-list,
+.db-file-list { display: grid; margin-top: 12px; }
+.db-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--horizon-border, var(--border)); }
+.db-row-key { overflow: hidden; color: var(--horizon-text, var(--text)); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.db-row-meta { color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
+.db-browser,
+.db-endusers,
+.db-storage { min-width: 0; }
+.db-table-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.db-table-chip.active { border-color: var(--horizon-blue, var(--accent-blue)); background: var(--horizon-blue-soft, var(--accent-dim)); color: var(--horizon-blue, var(--accent-blue)); }
+.db-table-scroll { overflow: auto; max-height: 440px; margin-top: 12px; border: 1px solid var(--horizon-border, var(--border)); border-radius: 12px; }
+.db-data-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; line-height: 16px; }
+.db-data-table th,
+.db-data-table td { padding: 12px; border-bottom: 1px solid var(--horizon-border, var(--border)); text-align: left; white-space: nowrap; }
+.db-data-table th { position: sticky; top: 0; background: var(--horizon-surface, var(--bg-surface)); color: var(--horizon-muted, var(--text-muted)); font-weight: 700; }
+.db-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.db-pager-btns,
+.db-file-actions { display: inline-flex; align-items: center; gap: 8px; }
+.db-file-actions a { color: var(--horizon-blue, var(--accent-blue)); font-size: 12px; line-height: 16px; }
+.db-empty,
+.db-state { padding: 16px 0; color: var(--horizon-muted, var(--text-muted)); font-size: 14px; line-height: 20px; }
+.db-note,
+.cloud-inline-note { display: flex; align-items: flex-start; gap: 8px; padding: 12px; color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
+.db-note svg { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px; }
+.db-state-error { color: #c13e4f; }
+.db-enduser-msg { min-height: 20px; color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
+.db-enduser-ok { color: #168457; }
+
+.cloud-empty {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 16px;
+}
+
+.cloud-empty h2 { margin: 0; color: var(--horizon-text, var(--text)); font-size: 18px; line-height: 28px; font-weight: 700; }
+.cloud-empty p { max-width: 600px; margin: 0; color: var(--horizon-muted, var(--text-muted)); font-size: 14px; line-height: 20px; text-wrap: pretty; }
+
+.cloud-console-loading {
+  display: grid;
+  grid-template-columns: 216px 1fr;
+  gap: 24px;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
+.cloud-console-loading span {
+  display: block;
+  min-height: 72px;
+  border-radius: 16px;
+  background: var(--horizon-surface, var(--bg-surface));
+  animation: cloud-console-pulse 1.4s cubic-bezier(.32,.72,0,1) infinite alternate;
+}
+
+.cloud-console-loading span:first-child { grid-row: span 2; min-height: 100%; }
+
+@keyframes cloud-console-pulse { to { opacity: .48; } }
+
+.cloud-analytics-host .analysis-topbar,
+.cloud-analytics-host .analysis-metrics-grid,
+.cloud-analytics-host .analysis-chart-card,
+.cloud-analytics-host .analysis-seo-card,
+.cloud-analytics-host .analysis-breakdown-grid { margin-bottom: 16px; }
+
+@media (max-width: 980px) {
+  .cloud-console { grid-template-columns: 176px minmax(0, 1fr); }
+  .cloud-console-main-inner { padding: 24px; }
+  .cloud-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .cloud-console { display: flex; flex-direction: column; }
+  .cloud-console-nav { flex: 0 0 auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--horizon-border, var(--border)); }
+  .cloud-console-brand,
+  .cloud-console-nav-label,
+  .cloud-console-nav-foot { display: none; }
+  .cloud-console-nav-scroll { display: flex; overflow-x: auto; padding: 0; }
+  .cloud-console-nav-item { width: auto; min-width: max-content; min-height: 36px; padding: 8px 12px; }
+  .cloud-console-main-inner { padding: 16px; }
+  .cloud-console-head { align-items: stretch; flex-direction: column; gap: 12px; }
+  .cloud-console-action { align-self: flex-start; }
+  .cloud-services-grid,
+  .cloud-summary-grid { grid-template-columns: 1fr; }
+  .cloud-panel { padding: 16px; }
+  .cloud-detail-row,
+  .cloud-log-row,
+  .cloud-secret-row,
+  .cloud-function-row,
+  .cloud-job-row { align-items: flex-start; grid-template-columns: 1fr; gap: 8px; }
+  .cloud-row-actions { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-console *,
+  .cloud-console *::before,
+  .cloud-console *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

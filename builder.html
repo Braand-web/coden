@@ -3038,7 +3038,7 @@
       padding-top: 0 !important;
     }
 
-    body.coden-new-project-mode .sub-nav-tab:not(#tab-btn-preview),
+    body.coden-new-project-mode .sub-nav-tab:not(#tab-btn-preview):not(#tab-btn-database),
     body.coden-new-project-mode .sub-nav-action-btn {
       display: none;
     }
@@ -4901,19 +4901,11 @@
             </div>
           </div>
 
-          <div class="analysis-screen-panel" id="screen-layout-database" style="display: none;">
-            <div class="db-cloud">
-              <header class="db-cloud-head">
-                <div class="db-cloud-head-text">
-                  <h1 class="db-cloud-title">Cloud &amp; base de données</h1>
-                  <p class="db-cloud-sub">Base de données managée, authentification et stockage de fichiers pour votre application — pilotés par Coden.</p>
-                </div>
-                <button id="btn-add-secret" type="button" class="db-action db-action-primary" aria-label="Ajouter une clé API">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
-                  <span>Ajouter une clé API</span>
-                </button>
-              </header>
-              <div id="database-content" class="db-sections"><!-- rendu honnêtement par loadDatabase() --></div>
+          <div class="analysis-screen-panel cloud-console-screen" id="screen-layout-database" style="display: none;">
+            <div id="database-content" class="cloud-console-root" aria-live="polite">
+              <div class="cloud-console-loading" aria-label="Chargement de Coden Cloud">
+                <span></span><span></span><span></span>
+              </div>
             </div>
           </div>
 
