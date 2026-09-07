@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { WandSparkles, ListChecks } from 'lucide-react';
+import { Lightbulb, ListChecks } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { SPRING_PRESS } from '../../lib/ease';
 import { cn } from '../../lib/utils';
@@ -18,7 +18,7 @@ type AgentModeComposerProps = {
 };
 
 const MODE_DETAILS = {
-  auto: { icon: WandSparkles, fr: 'Coden choisit la meilleure action.', en: 'Coden chooses the best action.' },
+  auto: { icon: Lightbulb, fr: 'Coden choisit la meilleure action.', en: 'Coden chooses the best action.' },
   plan: { icon: ListChecks, fr: 'Préparer le travail sans modifier le projet.', en: 'Prepare the work without changing the project.' },
 } as const;
 

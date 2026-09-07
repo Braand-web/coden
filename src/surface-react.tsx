@@ -1,7 +1,8 @@
 import { createRoot, type Root } from "react-dom/client";
-import { MarketingHeader } from "./components/shells";
+import { MarketingFooter, MarketingHeader } from "./components/shells";
 
 let marketingRoot: Root | null = null;
+let marketingFooterRoot: Root | null = null;
 
 /** Mounts only the shared React chrome. Existing prompt and business adapters
  * remain in place until their surface migration is validated. */
@@ -21,5 +22,18 @@ export function mountMarketingReactShell(): void {
   if (!host || marketingRoot) return;
   marketingRoot = createRoot(host);
   marketingRoot.render(<MarketingHeader />);
+  const legacyFooter = document.querySelector<HTMLElement>('.footer, .seo-footer, .pricing-footer');
+  let footerHost = document.getElementById('coden-marketing-footer-root');
+  if (!footerHost) {
+    footerHost = document.createElement('div');
+    footerHost.id = 'coden-marketing-footer-root';
+    if (legacyFooter?.parentElement) legacyFooter.parentElement.insertBefore(footerHost, legacyFooter);
+    else document.body.appendChild(footerHost);
+  }
+  legacyFooter?.remove();
+  if (!marketingFooterRoot) {
+    marketingFooterRoot = createRoot(footerHost);
+    marketingFooterRoot.render(<MarketingFooter />);
+  }
   document.body.classList.add("coden-react-surface-home");
 }

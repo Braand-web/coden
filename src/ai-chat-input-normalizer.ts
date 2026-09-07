@@ -12,16 +12,17 @@ function installAiInputStyle() {
   style.id = 'coden-ai-input-normalizer-style';
   style.textContent = `
     :root {
-      --chat-action-height: 24px;
-      --chat-action-radius: 5px;
-      --chat-action-font: 10px;
-      --chat-action-icon: 12px;
+      --chat-action-height: 36px;
+      --chat-action-radius: 9999px;
+      --chat-action-font: 14px;
+      --chat-action-icon: 14px;
     }
 
     .coden-ai-input.input-wrapper,
     .coden-ai-input {
-      border: 1px solid var(--border, #eceae4) !important;
-      background: var(--bg-input, #fffefa) !important;
+      border: 1px solid var(--horizon-border, var(--border, #eceae4)) !important;
+      border-radius: 24px !important;
+      background: var(--horizon-surface, var(--bg-input, #fffefa)) !important;
       color: var(--text, #1c1c1c) !important;
       box-shadow: 0 1px 0 rgba(255,255,255,.78) inset, 0 12px 32px rgba(28,28,28,.07) !important;
       overflow: visible !important;
@@ -34,8 +35,8 @@ function installAiInputStyle() {
     }
 
     .coden-ai-input:focus-within {
-      border-color: var(--border-mid, var(--border, #eceae4)) !important;
-      box-shadow: 0 1px 0 rgba(255,255,255,.78) inset, 0 12px 32px rgba(28,28,28,.08) !important;
+      border-color: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
+      box-shadow: 0 0 0 4px var(--horizon-blue-soft, rgba(59,130,246,.12)), 0 12px 32px rgba(28,28,28,.08) !important;
     }
 
     .coden-ai-input textarea,
@@ -94,6 +95,21 @@ function installAiInputStyle() {
       justify-content: center !important;
     }
 
+    .coden-ai-input .icon-btn {
+      border-color: transparent !important;
+    }
+
+    .coden-ai-input .submit-btn {
+      width: 40px !important;
+      min-width: 40px !important;
+      height: 40px !important;
+      min-height: 40px !important;
+      border-color: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
+      border-radius: 9999px !important;
+      background: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
+      color: #ffffff !important;
+    }
+
     .coden-ai-input .icon-btn svg,
     .coden-ai-input .submit-btn svg,
     .coden-ai-input .model-select svg,
@@ -110,8 +126,8 @@ function installAiInputStyle() {
       width: auto !important;
       min-width: 0 !important;
       max-width: min(156px, 36vw) !important;
-      padding: 0 7px !important;
-      gap: 5px !important;
+      padding: 0 12px !important;
+      gap: 8px !important;
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -141,7 +157,7 @@ function installAiInputStyle() {
     }
 
     .coden-ai-input .submit-btn:not(.active) {
-      opacity: .72 !important;
+      opacity: .42 !important;
     }
 
     .coden-ai-input .icon-btn:hover,
@@ -160,7 +176,7 @@ function installAiInputStyle() {
 
     @media (max-width: 480px) {
       .coden-ai-input .input-actions {
-        gap: 4px !important;
+        gap: 8px !important;
       }
 
       .coden-ai-input .model-select {

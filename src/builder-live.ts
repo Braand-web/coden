@@ -5,6 +5,7 @@ import './styles/coherence.css';
 import './styles/publish-panel.css';
 import './styles/cloud-console.css';
 import './styles/coden-horizon-system.css';
+import './styles/coden-composer.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
@@ -3791,7 +3792,9 @@ function autoResizeChatInput() {
   const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
   if (!input) return;
   input.style.height = 'auto';
-  input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+  const nextHeight = Math.min(Math.max(input.scrollHeight, 52), 240);
+  input.style.height = `${nextHeight}px`;
+  input.style.overflowY = input.scrollHeight > 240 ? 'auto' : 'hidden';
 }
 
 function setBusy(busy: boolean) {
@@ -3840,9 +3843,9 @@ function ensureBuilderModelSelectorStyle() {
   style.id = 'coden-builder-model-selector-style';
   style.textContent = `
     .chat-input-row {
-      --chat-action-height: 24px;
-      --chat-action-radius: 5px;
-      --chat-action-font: 10px;
+      --chat-action-height: 36px;
+      --chat-action-radius: 9999px;
+      --chat-action-font: 14px;
     }
     .chat-input-row #btn-chat-mode,
     .chat-input-row .coden-builder-model-trigger {
@@ -3859,12 +3862,12 @@ function ensureBuilderModelSelectorStyle() {
     .coden-builder-model-trigger {
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 8px;
       max-width: min(156px, 36vw);
-      padding: 0 7px;
-      border-radius: 5px;
+      padding: 0 12px;
+      border-radius: 9999px;
       border: 1px solid var(--border);
-      font-size: 10px;
+      font-size: 14px;
       color: var(--text-muted);
       user-select: none;
       position: relative;
@@ -7404,7 +7407,8 @@ function bindChat() {
     const value = repairTextEncoding(input.value).trim();
     if (!value) return;
     input.value = '';
-    input.style.height = '48px';
+    input.style.height = '52px';
+    input.style.overflowY = 'hidden';
     submit.classList.remove('active');
     syncSubmitButtonState();
     scheduleWorkspaceSave({ draft_prompt: '', selected_mode: mode }, true);

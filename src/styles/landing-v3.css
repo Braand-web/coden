@@ -12,8 +12,8 @@ textarea:focus-visible { outline:none; }
 .cdn-hero-title { text-wrap:balance; }
 .cdn-hero-subtitle { text-wrap:pretty; }
 .cdn-tech-group { display:flex; align-items:center; gap:48px; padding-right:48px; }
-.cdn-tech-brand { display:inline-flex; align-items:center; gap:12px; color:#64625e; font-size:16px; font-weight:600; white-space:nowrap; }
-.cdn-tech-brand svg { width:32px; height:32px; flex:0 0 32px; }
+.cdn-tech-brand { display:inline-flex; align-items:center; gap:12px; color:#64625e; font-size:18px; font-weight:600; white-space:nowrap; }
+.cdn-tech-brand svg { width:36px; height:36px; flex:0 0 36px; }
 .cdn-tech-brand.is-react { color:#149eca; }
 .cdn-tech-brand.is-typescript { color:#3178c6; }
 .cdn-tech-brand.is-vite { color:#8b5cf6; }
@@ -23,6 +23,20 @@ textarea:focus-visible { outline:none; }
 .cdn-footer-brand-mark rect { fill:#3b82f6; }
 .cdn-footer-brand-mark path { fill:#fff; }
 .cdn-footer-brand { color:var(--horizon-text, #1c1c1c) !important; }
+.cdn-marketing-footer { padding:64px 24px 32px; border-top:1px solid var(--horizon-border, #dedbd2); background:var(--horizon-canvas, #fcfbf8); }
+.cdn-footer-intro, .cdn-footer-grid, .cdn-footer-bottom { width:min(1120px, 100%); margin-inline:auto; }
+.cdn-footer-intro { display:flex; align-items:flex-end; justify-content:space-between; gap:32px; padding-bottom:48px; }
+.cdn-footer-intro > div > p { max-width:420px; margin:12px 0 0; color:var(--horizon-muted, #6f6b63); font-size:14px; line-height:20px; text-wrap:pretty; }
+.cdn-footer-brand { display:inline-flex; align-items:center; gap:10px; font-size:18px; font-weight:700; letter-spacing:-.02em; }
+.cdn-footer-brand-mark { display:block; flex:none; }
+.cdn-footer-cta { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:8px 12px; border-radius:10px; background:var(--horizon-blue, #3b82f6); color:#fff !important; font-size:14px; font-weight:600; transition:transform 220ms cubic-bezier(.32,.72,0,1), background-color 220ms cubic-bezier(.32,.72,0,1); }
+.cdn-footer-cta:hover { transform:translateY(-1px); background:var(--horizon-blue-hover, #2563eb); }
+.cdn-footer-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; padding:32px 0; border-top:1px solid var(--horizon-border, #dedbd2); }
+.cdn-footer-grid > div > p { margin:0 0 12px; color:var(--horizon-text, #1c1c1c); font-size:12px; line-height:16px; font-weight:600; }
+.cdn-footer-grid > div > div { display:grid; gap:4px; }
+.cdn-footer-grid a { width:max-content; min-height:32px; display:inline-flex; align-items:center; color:var(--horizon-muted, #6f6b63); font-size:14px; line-height:20px; transition:color 220ms cubic-bezier(.32,.72,0,1); }
+.cdn-footer-grid a:hover { color:var(--horizon-text, #1c1c1c); }
+.cdn-footer-bottom { display:flex; justify-content:space-between; gap:16px; padding-top:24px; border-top:1px solid var(--horizon-border, #dedbd2); color:var(--horizon-muted, #6f6b63); font-size:12px; line-height:16px; }
 .cdn-price { margin:12px 0 0; font-family:'Instrument Serif',Georgia,serif; font-size:52px; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
 .cdn-billing-button { position:relative; z-index:1; padding:9px 20px; border-radius:9999px; border:0; background:transparent; font-size:14px; font-weight:600; cursor:pointer; color:#aab4c3; transition:color 180ms ease; }
 .cdn-billing-button[aria-pressed=true] { color:#08111f; }
@@ -52,7 +66,11 @@ textarea:focus-visible { outline:none; }
   .cdn-pill > div > a:last-child { padding:9px 12px !important; font-size:13px !important; }
   .cdn-billing-button { padding:10px 16px; }
   .cdn-tech-group { gap:32px; padding-right:32px; }
-  .cdn-tech-brand { gap:8px; font-size:14px; }
-  .cdn-tech-brand svg { width:28px; height:28px; flex-basis:28px; }
+  .cdn-tech-brand { gap:8px; font-size:16px; }
+  .cdn-tech-brand svg { width:32px; height:32px; flex-basis:32px; }
+  .cdn-marketing-footer { padding:48px 16px 24px; }
+  .cdn-footer-intro { align-items:flex-start; flex-direction:column; padding-bottom:32px; }
+  .cdn-footer-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+  .cdn-footer-bottom { flex-direction:column; }
 }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .cdn-track { animation:none !important; } }

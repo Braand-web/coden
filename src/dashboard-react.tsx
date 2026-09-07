@@ -18,7 +18,7 @@ import {
   Menu,
   Plus,
   Search,
-  Send,
+  ArrowUp,
   Settings,
   WandSparkles,
   X,
@@ -35,6 +35,7 @@ import { AgentModeComposer } from './components/agent/agent-mode-composer';
 import type { AgentMode } from './services/agent-mode';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
+import './styles/coden-composer.css';
 
 type ProfileResponse = {
   user?: { email?: string; name?: string; full_name?: string };
@@ -300,6 +301,7 @@ function DashboardHome() {
   const [showAllProjects, setShowAllProjects] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const wasSidebarOpen = useRef(false);
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
@@ -351,6 +353,15 @@ function DashboardHome() {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
+    const textarea = composerRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 52), 240);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden';
+  }, [prompt]);
+
+  useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
     window.addEventListener('keydown', onEscape);
     return () => window.removeEventListener('keydown', onEscape);
@@ -392,6 +403,7 @@ function DashboardHome() {
             <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
             <form className="coden-dashboard-composer" onSubmit={createFromPrompt}>
               <textarea
+                ref={composerRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
                 onKeyDown={(event) => {
@@ -401,7 +413,7 @@ function DashboardHome() {
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                rows={3}
+                rows={1}
                 placeholder="Créez un CRM moderne, une boutique, un portfolio…"
                 aria-label="Décrire le projet à créer"
                 disabled={creating}
@@ -409,7 +421,7 @@ function DashboardHome() {
               <div className="coden-dashboard-composer-footer">
                 <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
                 <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
-                  <Send size={16} aria-hidden="true" />
+                  <ArrowUp size={17} aria-hidden="true" />
                 </button>
               </div>
             </form>

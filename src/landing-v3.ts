@@ -1,6 +1,7 @@
 import { initPromptInputActions } from './prompt-input-actions';
 import './styles/agent-surface.css';
 import './styles/coden-horizon-system.css';
+import './styles/coden-composer.css';
 
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
 const notice = document.getElementById('landing-notice');
@@ -17,6 +18,15 @@ document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {
   const submit = wrapper.querySelector<HTMLButtonElement>('[data-build]')!;
   const modeButton = wrapper.querySelector<HTMLButtonElement>('[data-mode-toggle]');
   let mode: 'auto' | 'plan' = 'auto';
+  const resize = () => {
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 52), 240);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden';
+  };
+  textarea.rows = 1;
+  resize();
+  textarea.addEventListener('input', resize);
   modeButton?.addEventListener('click', () => {
     mode = mode === 'auto' ? 'plan' : 'auto';
     wrapper.dataset.promptMode = mode;
@@ -70,6 +80,7 @@ document.querySelectorAll<HTMLAnchorElement>('[data-start-from]').forEach(link =
       textarea.value = link.dataset.startFrom === 'repository'
         ? 'Help me work on this GitHub repository: '
         : 'Build a responsive customer portal with a dashboard, a list of projects and project detail pages.';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
       textarea.focus();
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
       if (link.dataset.startFrom === 'repository') announce('Paste your repository URL and describe the changes you need.');

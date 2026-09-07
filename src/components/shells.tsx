@@ -11,12 +11,12 @@ export function AuthShell({ children, aside, className }: { children: React.Reac
 export function DashboardShell({ sidebar, children, className }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string }) { return <div className={cn("coden-dashboard-shell", className)}>{sidebar}<main className="coden-dashboard-main">{children}</main></div>; }
 export function BuilderShell({ toolbar, sidebar, conversation, preview, className }: { toolbar: React.ReactNode; sidebar?: React.ReactNode; conversation: React.ReactNode; preview: React.ReactNode; className?: string }) { return <div className={cn("coden-builder-shell", className)}><header className="coden-builder-toolbar">{toolbar}</header><div className="coden-builder-grid">{sidebar ? <aside className="coden-builder-sidebar">{sidebar}</aside> : null}<section className="coden-builder-conversation">{conversation}</section><section className="coden-builder-preview">{preview}</section></div></div>; }
 
-export function MarketingHeader({ signInLabel = "Créer mon application" }: { signInLabel?: string }) {
+export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const [open, setOpen] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
   const [locale, setLocale] = React.useState<"fr" | "en">(() => {
     if (typeof document === "undefined") return "fr";
-    return document.documentElement.dataset.lang === "en" ? "en" : "fr";
+    return document.documentElement.dataset.lang === "en" || document.documentElement.lang.toLowerCase().startsWith("en") ? "en" : "fr";
   });
   const reduced = useReducedMotion();
   const headerRef = React.useRef<HTMLElement>(null);
@@ -24,8 +24,8 @@ export function MarketingHeader({ signInLabel = "Créer mon application" }: { si
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const labels = locale === "fr"
-    ? { features: "Fonctionnalités", pricing: "Tarifs", documentation: "Documentation", cta: signInLabel, open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
-    : { features: "Features", pricing: "Pricing", documentation: "Documentation", cta: "Create my app", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+    ? { features: "Fonctionnalités", pricing: "Tarifs", documentation: "Documentation", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
+    : { features: "Features", pricing: "Pricing", documentation: "Documentation", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
   const links = [
     { href: "/features.html", label: labels.features, match: "/features.html" },
     { href: "/pricing.html", label: labels.pricing, match: "/pricing.html" },
@@ -120,5 +120,9 @@ export function MarketingHeader({ signInLabel = "Créer mon application" }: { si
 }
 
 export function MarketingFooter() {
-  return <footer className="coden-react-footer"><div className="coden-react-footer-top"><div><CodenBrand className="coden-react-brand" /><p>De l’idée au produit web vérifié.</p></div><div className="coden-react-footer-cta"><span>Votre idée mérite un premier prototype.</span><Button onClick={() => { window.location.href = "/auth.html"; }}>Créer mon application</Button></div></div><div className="coden-react-footer-grid"><div><h2>Produit</h2><a href="/features.html">Fonctionnalités</a><a href="/pricing.html">Tarifs</a></div><div><h2>Ressources</h2><a href="/documentation.html">Documentation</a></div><div><h2>Confiance</h2><a href="/security.html">Sécurité</a></div><div><h2>Légal</h2><a href="/privacy.html">Confidentialité</a><a href="/terms.html">Conditions</a><a href="mailto:contact@coden.fun">Contact</a></div></div><div className="coden-react-footer-bottom"><span>© {new Date().getFullYear()} Coden</span><span>Construire avec clarté.</span></div></footer>;
+  const english = typeof document !== "undefined" && (document.documentElement.dataset.lang === "en" || document.documentElement.lang.toLowerCase().startsWith("en"));
+  const copy = english
+    ? { statement: "Plan, build, test and publish from one workspace.", invite: "Turn your next idea into a working product.", cta: "Start building", product: "Product", features: "Features", pricing: "Pricing", resources: "Resources", docs: "Documentation", trust: "Trust", security: "Security", legal: "Legal", privacy: "Privacy", terms: "Terms", contact: "Contact", closing: "Built for products that need to ship." }
+    : { statement: "Planifiez, construisez, testez et publiez depuis un seul espace.", invite: "Transformez votre prochaine idée en produit fonctionnel.", cta: "Commencer", product: "Produit", features: "Fonctionnalités", pricing: "Tarifs", resources: "Ressources", docs: "Documentation", trust: "Confiance", security: "Sécurité", legal: "Légal", privacy: "Confidentialité", terms: "Conditions", contact: "Contact", closing: "Conçu pour les produits qui doivent être publiés." };
+  return <footer className="coden-react-footer"><div className="coden-react-footer-top"><div><CodenBrand className="coden-react-brand" /><p>{copy.statement}</p></div><div className="coden-react-footer-cta"><span>{copy.invite}</span><Button onClick={() => { window.location.href = "/auth.html?mode=signup&redirect=%2Fdashboard.html"; }}>{copy.cta}</Button></div></div><div className="coden-react-footer-grid"><div><h2>{copy.product}</h2><a href="/features.html">{copy.features}</a><a href="/pricing.html">{copy.pricing}</a></div><div><h2>{copy.resources}</h2><a href="/documentation.html">{copy.docs}</a></div><div><h2>{copy.trust}</h2><a href="/security.html">{copy.security}</a></div><div><h2>{copy.legal}</h2><a href="/privacy.html">{copy.privacy}</a><a href="/terms.html">{copy.terms}</a><a href="mailto:contact@coden.fun">{copy.contact}</a></div></div><div className="coden-react-footer-bottom"><span>© {new Date().getFullYear()} Coden</span><span>{copy.closing}</span></div></footer>;
 }

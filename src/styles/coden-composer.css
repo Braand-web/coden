@@ -1,0 +1,173 @@
+/* One composer language for every Coden surface. */
+:root {
+  --coden-composer-radius: 24px;
+  --coden-composer-control: 36px;
+  --coden-composer-send: 40px;
+  --coden-composer-ease: cubic-bezier(.32, .72, 0, 1);
+}
+
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+) {
+  width: 100%;
+  border: 1px solid var(--horizon-border, var(--border)) !important;
+  border-radius: var(--coden-composer-radius) !important;
+  background: var(--horizon-surface, var(--bg-input)) !important;
+  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+  overflow: visible !important;
+  transition:
+    border-color 280ms var(--coden-composer-ease),
+    box-shadow 280ms var(--coden-composer-ease),
+    min-height 280ms var(--coden-composer-ease) !important;
+}
+
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+):focus-within {
+  border-color: var(--horizon-blue, var(--accent-blue)) !important;
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft, rgba(59, 130, 246, .12)), var(--horizon-shadow-float) !important;
+}
+
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+) textarea,
+body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
+  min-height: 52px !important;
+  max-height: 240px !important;
+  overflow-y: hidden;
+  resize: none !important;
+  transition: height 220ms var(--coden-composer-ease);
+}
+
+:where(
+  body[data-coden-surface="landing-v3"],
+  body[data-coden-surface="dashboard"],
+  body[data-coden-surface="builder"]
+) .coden-agent-mode-trigger {
+  min-width: 0 !important;
+  min-height: var(--coden-composer-control) !important;
+  height: var(--coden-composer-control) !important;
+  padding: 0 12px !important;
+  gap: 8px !important;
+  border: 1px solid var(--horizon-border, var(--border)) !important;
+  border-radius: 9999px !important;
+  background: transparent !important;
+  color: var(--horizon-muted, var(--text-muted)) !important;
+  box-shadow: none !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+  font-weight: 500 !important;
+}
+
+:where(
+  body[data-coden-surface="landing-v3"],
+  body[data-coden-surface="dashboard"],
+  body[data-coden-surface="builder"]
+) .coden-agent-mode-trigger:hover {
+  border-color: var(--horizon-border-strong, var(--border-focus)) !important;
+  background: var(--horizon-raised, var(--accent-blue-soft)) !important;
+  color: var(--horizon-text, var(--text)) !important;
+}
+
+:where(
+  body[data-coden-surface="landing-v3"],
+  body[data-coden-surface="dashboard"],
+  body[data-coden-surface="builder"]
+) .coden-agent-mode-trigger[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--horizon-blue, #3b82f6) 48%, var(--horizon-border, var(--border))) !important;
+  background: var(--horizon-blue-soft, rgba(59, 130, 246, .12)) !important;
+  color: var(--horizon-blue, var(--accent-blue)) !important;
+}
+
+body[data-coden-surface="landing-v3"] [data-build],
+body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit,
+body[data-coden-surface="builder"] .chat-input-row .submit-btn {
+  width: var(--coden-composer-send) !important;
+  min-width: var(--coden-composer-send) !important;
+  height: var(--coden-composer-send) !important;
+  min-height: var(--coden-composer-send) !important;
+  padding: 0 !important;
+  border: 1px solid var(--horizon-blue, var(--accent-blue)) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-blue, var(--accent-blue)) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--horizon-blue, #3b82f6) 22%, transparent) !important;
+  transition: transform 220ms var(--coden-composer-ease), background-color 220ms var(--coden-composer-ease), opacity 220ms var(--coden-composer-ease) !important;
+}
+
+body[data-coden-surface="landing-v3"] [data-build]:hover,
+body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit:hover:not(:disabled),
+body[data-coden-surface="builder"] .chat-input-row .submit-btn:hover {
+  transform: translateY(-1px) !important;
+  background: var(--horizon-blue-hover, #2563eb) !important;
+}
+
+body[data-coden-surface="landing-v3"] [data-build]:active,
+body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit:active:not(:disabled),
+body[data-coden-surface="builder"] .chat-input-row .submit-btn:active {
+  transform: scale(.98) !important;
+}
+
+/* The Builder footer is only a positioning rail, never a second card. */
+body[data-coden-surface="builder"] .chat-input-row {
+  padding: 12px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .input-wrapper {
+  min-height: 124px;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .chat-input-textarea {
+  padding: 16px 16px 4px !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .input-actions {
+  padding: 8px 12px 12px !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-composer-footer {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .icon-btn {
+  width: var(--coden-composer-control) !important;
+  min-width: var(--coden-composer-control) !important;
+  height: var(--coden-composer-control) !important;
+  min-height: var(--coden-composer-control) !important;
+  border-color: transparent !important;
+  border-radius: 9999px !important;
+  background: transparent !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-decision-card, .coden-stream-notice) {
+  border-radius: var(--coden-composer-radius) !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+}
+
+@media (max-width: 560px) {
+  :root {
+    --coden-composer-radius: 20px;
+    --coden-composer-control: 34px;
+    --coden-composer-send: 38px;
+  }
+
+  body[data-coden-surface="builder"] .chat-input-row { padding: 8px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.input-wrapper, .coden-dashboard-composer, .coden-agent-mode-trigger, [data-build], .submit-btn) {
+    transition-duration: 0ms !important;
+  }
+}
