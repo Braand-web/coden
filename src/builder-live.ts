@@ -7216,8 +7216,12 @@ function ensureResizableSidebar() {
   }
   const handle = document.createElement('div');
   handle.id = 'coden-sidebar-resizer';
-  handle.title = 'Resize chat panel';
-  handle.style.cssText = 'position:absolute;top:0;bottom:0;left:calc(var(--coden-sidebar-width, 380px) - 4px);width:8px;cursor:col-resize;z-index:20;background:linear-gradient(90deg,transparent,rgba(9,9,11,.16),transparent);opacity:.45;touch-action:none;';
+  handle.title = 'Redimensionner la conversation';
+  handle.setAttribute('aria-hidden', 'true');
+  // Keep the hit area available without painting a permanent seam over the
+  // workspace. CSS reveals a thin indicator only while hovering or dragging,
+  // and removes the handle entirely when the conversation is collapsed.
+  handle.style.cssText = 'position:absolute;top:0;bottom:0;left:calc(var(--coden-sidebar-width, 380px) - 4px);width:8px;cursor:col-resize;z-index:20;background:transparent;opacity:1;touch-action:none;';
   body.style.position = 'relative';
   body.appendChild(handle);
   window.addEventListener('resize', () => {

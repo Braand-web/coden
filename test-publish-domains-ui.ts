@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
  */
 const builder = readFileSync('src/builder-live.ts', 'utf8');
 const css = readFileSync('src/styles/publish-panel.css', 'utf8');
+const horizonCss = readFileSync('src/styles/coden-horizon-system.css', 'utf8');
 const server = readFileSync('server.ts', 'utf8');
 
 // Every operation the interface offers reaches a route that exists.
@@ -67,6 +68,20 @@ assert.ok(builder.includes("import './styles/publish-panel.css'"), 'the styleshe
 
 // Motion is opt-out for readers who ask for less of it.
 assert.ok(/prefers-reduced-motion[\s\S]{0,120}animation: none/.test(css), 'the panel entrance must respect reduced motion');
+
+// The top-bar trigger stays compact and keeps its real icon at narrow widths.
+// An older rule hid the label with transparent text and drew an unrelated
+// white dot over the SVG, which looked broken after the workspace contracted.
+assert.match(
+  horizonCss,
+  /\.brand-topbar \.btn-publish\s*\{[\s\S]{0,300}height:\s*32px\s*!important[\s\S]{0,300}padding:\s*0 11px\s*!important/,
+  'the publish trigger must use the compact top-bar dimensions',
+);
+assert.match(
+  horizonCss,
+  /\.brand-topbar \.btn-publish::after\s*\{[\s\S]{0,100}content:\s*none\s*!important/,
+  'the mobile trigger must not cover its real icon with a pseudo-element',
+);
 
 // A field the user types into needs a visible focus state.
 assert.ok(/\.cdn-dom__input:focus-visible/.test(css), 'the domain field needs a visible focus ring');

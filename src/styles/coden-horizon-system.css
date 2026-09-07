@@ -537,10 +537,63 @@ body[data-coden-surface="builder"] .submit-btn {
   color: var(--horizon-blue-ink) !important;
 }
 
-body[data-coden-surface="builder"] .btn-publish {
+body[data-coden-surface="builder"] .brand-topbar .btn-publish {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  gap: 5px !important;
+  padding: 0 11px !important;
   border-color: var(--horizon-blue) !important;
+  border-radius: 8px !important;
   background: var(--horizon-blue) !important;
   color: var(--horizon-blue-ink) !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  line-height: 16px !important;
+  font-weight: 650 !important;
+}
+
+body[data-coden-surface="builder"] .brand-topbar .btn-publish:hover {
+  box-shadow: none !important;
+  filter: brightness(.96) !important;
+  transform: none !important;
+}
+
+body[data-coden-surface="builder"] .brand-topbar .btn-publish:active {
+  transform: scale(.97) !important;
+}
+
+body[data-coden-surface="builder"] .brand-topbar .btn-publish svg {
+  width: 12px !important;
+  height: 12px !important;
+  opacity: 1 !important;
+}
+
+/* The sidebar resize target must never leave a divider across the preview.
+   Its affordance appears only on intent and disappears with the sidebar. */
+body[data-coden-surface="builder"] #coden-sidebar-resizer {
+  background: transparent !important;
+  opacity: 1 !important;
+}
+
+body[data-coden-surface="builder"] #coden-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 180ms var(--horizon-ease);
+}
+
+body[data-coden-surface="builder"] #coden-sidebar-resizer:hover::after,
+body[data-coden-surface="builder"] .workspace-body.is-resizing-sidebar #coden-sidebar-resizer::after {
+  background: var(--horizon-blue);
+}
+
+body[data-coden-surface="builder"] .workspace-body.sidebar-collapsed #coden-sidebar-resizer {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 body[data-coden-surface="builder"] :where(.preview-screen-panel, .preview-device-frame, .preview-iframe-view) {
@@ -1316,6 +1369,36 @@ body[data-coden-surface="admin"] :where(.admin-global-search, .admin-search) {
   body[data-coden-surface="landing-v3"] #top h1 { font-size: 48px !important; }
   body[data-coden-surface="auth"] .auth-card { padding: 24px !important; }
   body.coden-pricing-page .pricing-plan-card { padding: 24px !important; }
+
+  body[data-coden-surface="builder"] #coden-sidebar-resizer {
+    display: none !important;
+    pointer-events: none !important;
+  }
+}
+
+@media (max-width: 560px) {
+  body[data-coden-surface="builder"] .brand-topbar .btn-publish {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    color: var(--horizon-blue-ink) !important;
+  }
+
+  body[data-coden-surface="builder"] .brand-topbar .btn-publish span {
+    display: none !important;
+  }
+
+  body[data-coden-surface="builder"] .brand-topbar .btn-publish::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  body[data-coden-surface="builder"] .brand-topbar .btn-publish svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
