@@ -22,6 +22,7 @@ export type CodenCapabilitySkillId =
   | 'integration-setup'
   | 'database-and-migrations'
   | 'frontend-design'
+  | 'landing-page-design'
   | 'ux-accessibility-review'
   | 'browser-and-visual-qa'
   | 'security-performance-observability'
@@ -97,6 +98,7 @@ export const CODEN_CAPABILITY_SKILLS: readonly CodenCapabilitySkill[] = [
   skill('integration-setup', 'architect', 'backend', false, 'Configure APIs, OAuth, webhooks and required environment safely.', 'Discover configuration from the project, request only unavailable secrets, validate each value without exposing it, and resume from the paused checkpoint.', ['Every required integration reports connected or an explicit recoverable blocker.'], ['Redacted configuration check', 'Integration health result']),
   skill('database-and-migrations', 'implement', 'database', false, 'Apply additive schema, RLS and migration changes with rollback evidence.', 'Use additive migrations, least-privilege RLS, isolated preview data and a reversible migration path; never fabricate persistence.', ['Schema applies cleanly and authorized plus unauthorized data paths are verified.'], ['Migration result', 'RLS checks', 'Rollback plan']),
   skill('frontend-design', 'implement', 'frontend', false, 'Create a distinctive, coherent interface aligned with the product.', 'Choose a clear visual direction, preserve product coherence, implement responsive states and avoid generic decorative excess.', ['The main journey is usable at desktop and mobile widths with complete loading, empty, error and success states.'], ['Desktop screenshot', 'Mobile screenshot']),
+  skill('landing-page-design', 'implement', 'frontend', false, 'Design a focused landing page around one offer, one audience and one primary action.', 'Before coding, lock the audience, offer, conversion event and single primary CTA. Build the page in reviewable sections: hero, benefits, how it works, proof, FAQ, risk reversal and final CTA. Use specific truthful copy, the existing Coden visual tokens, responsive semantics and complete interaction states; never invent proof or ship filler.', ['The page has an explicit conversion goal, a coherent section outline, truthful copy, a working primary CTA, responsive desktop and mobile layouts, SEO metadata, accessibility states and no dead links.'], ['Page outline', 'CTA journey result', 'Desktop screenshot', 'Mobile screenshot', 'SEO and accessibility checks']),
   skill('ux-accessibility-review', 'verify', 'reviewer', true, 'Review flows, states, responsive behavior, keyboard and WCAG concerns.', 'Audit hierarchy, interaction feedback, keyboard focus, semantics, contrast, responsive layout and recovery paths.', ['No blocking UX or accessibility finding remains.'], ['Findings with element evidence', 'Keyboard journey']),
   skill('browser-and-visual-qa', 'verify', 'browser', true, 'Exercise the real preview and inspect DOM, console, network and screenshots.', 'Open the running preview, execute critical journeys, inspect console and network, and compare desktop plus mobile screenshots after repairs.', ['Healthcheck and critical browser journeys pass without blocking console or network errors.'], ['Preview URL', 'Journey results', 'Screenshots']),
   skill('security-performance-observability', 'verify', 'reviewer', true, 'Check security, dependencies, performance and runtime evidence.', 'Prioritize exploitable security boundaries, measure performance before optimizing, and require structured redacted telemetry for failures.', ['No blocking security finding remains and measured regressions are addressed or documented.'], ['Security findings', 'Performance measurement', 'Trace identifier']),
@@ -115,7 +117,8 @@ export function resolveCodenSkillPlan(input: CodenSkillPlanInput): CodenSkillExe
   const complexity = input.complexity || 'medium';
   const writing = WRITE_INTENTS.test(String(input.intent || '')) || has(text, /\b(create|build|modify|change|add|fix|repair|cr[eé]e|construis|modifie|ajoute|corrige|r[eé]pare)\b/i);
   const debugging = has(text, /\b(debug|bug|error|broken|crash|fail|corrige|r[eé]pare|plante)\b/i);
-  const design = has(text, /\b(ui|ux|design|interface|responsive|mobile|visual|couleur|color|bleu|vert|rouge|blue|green|red|typograph|layout|header|dashboard)\b/i);
+  const design = has(text, /\b(ui|ux|design|interface|responsive|mobile|visual|couleur|color|bleu|vert|rouge|blue|green|red|typograph|layout|header|dashboard|landing|marketing|hero|cta)\b/i);
+  const landing = has(text, /\b(landing|marketing|conversion|hero|cta|homepage|home page|page de vente|page d'accueil|page d\u2019accueil)\b/i);
   const database = has(text, /\b(database|supabase|postgres|sql|schema|migration|rls|crud|base de donn[eé]es)\b/i);
   const integration = has(text, /\b(api|oauth|webhook|stripe|payment|paiement|upload|storage|integration|auth)\b/i);
   const release = has(text, /\b(deploy|publish|production|rollback|domain|d[eé]ploie|publie)\b/i);
@@ -137,6 +140,7 @@ export function resolveCodenSkillPlan(input: CodenSkillPlanInput): CodenSkillExe
   if (database) selected.add('database-and-migrations');
   if (integration) selected.add('integration-setup');
   if (design && !minimalVisualEdit) selected.add('frontend-design');
+  if (landing && writing) selected.add('landing-page-design');
   if (design && !minimalVisualEdit) selected.add('ux-accessibility-review');
   if ((writing || debugging || design) && !minimalVisualEdit) selected.add('browser-and-visual-qa');
   if (security) selected.add('security-performance-observability');

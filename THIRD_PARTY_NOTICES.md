@@ -12,6 +12,7 @@ The following repositories informed the adapted policies:
 - anthropics/skills — Apache-2.0 for the selected `frontend-design` skill — commit `41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f`
 - microsoft/skills — MIT — commit `02e0b2f852b39ea00c43283f999b83fc12079273`
 - mblode/agent-skills — MIT — commit `0a639b1ef3b75aa6cc945e778fb1486def1d41bf`
+- elayadesign/ai-design-skills — MIT — selected `landing-page-design` skill — commit `1c1e97cb9878e236552c772092dda7adcdddbcb2`
 - richkuo/rk-skills — MIT — commit `2e24981458cb83c544d93a6538bb694da0ec87ba`
 
 Audited but not loaded into the user-run runtime:

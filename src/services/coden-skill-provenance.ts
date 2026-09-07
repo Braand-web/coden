@@ -27,6 +27,7 @@ export const AUDITED_SKILL_REPOSITORIES: readonly AuditedSkillRepository[] = [
   { id: 'repo-to-skill', repository: 'https://github.com/shuyhere/repo-to-skill', commit: 'f4fe8c564b07dd6e50fa7ec089da8946ef1c29da', license: 'MIT', runtimeEligible: false },
   { id: 'rk-skills', repository: 'https://github.com/richkuo/rk-skills', commit: '2e24981458cb83c544d93a6538bb694da0ec87ba', license: 'MIT', runtimeEligible: true },
   { id: 'supabase-agent-skills', repository: 'https://github.com/supabase-community/supabase-plugin', commit: 'f3f332e0164c34a8392772811737fda0cb972d06', license: 'MIT', runtimeEligible: true },
+  { id: 'elayadesign-ai-design-skills', repository: 'https://github.com/elayadesign/ai-design-skills', commit: '1c1e97cb9878e236552c772092dda7adcdddbcb2', license: 'MIT', runtimeEligible: true },
 ] as const;
 
 const source = (repositoryId: string, sourcePath: string, contentSha256: string): CodenSkillSource => ({ repositoryId, sourcePath, contentSha256 });
@@ -59,6 +60,7 @@ export const CODEN_SKILL_PROVENANCE: Readonly<Record<CodenCapabilitySkillId, rea
     source('anthropic-skills', 'skills/frontend-design/SKILL.md', 'b8009ae690dfa69edc7f08bb8715f32db8817112cfa4388741dbaf876c237df8'),
     source('impeccable', 'plugin/skills/impeccable/SKILL.md', '2d2f8400bdecb08ae4c5807be057b6f8b95f28442a1b53dc5646cb3480107176'),
   ],
+  'landing-page-design': [source('elayadesign-ai-design-skills', 'skills/landing-page-design/SKILL.md', '3aae79f3d33ea293491fe6251f9fee56ee0cbb7aa66d41b3f29cfc662e4bbdd6')],
   'ux-accessibility-review': [
     source('microsoft-skills', '.github/skills/frontend-design-review/SKILL.md', 'a595fe62ad12448d6e3ca3b9b20dd210938e2f8f976a16aff623d44d867c02d7'),
     source('mblode-agent-skills', 'skills/product-design/SKILL.md', '018481a37fad4a3e8024f1edabf81212048e2f583a1c2639c67ef023c2df8c48'),

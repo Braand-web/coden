@@ -4,12 +4,12 @@ import { AUDITED_SKILL_REPOSITORIES, validateSkillProvenance } from './coden-ski
 
 describe('Coden capability skill planner', () => {
   it('publishes the complete eighteen-skill catalogue', () => {
-    expect(CODEN_CAPABILITY_SKILLS).toHaveLength(18);
-    expect(new Set(CODEN_CAPABILITY_SKILLS.map(skill => skill.id)).size).toBe(18);
+    expect(CODEN_CAPABILITY_SKILLS).toHaveLength(19);
+    expect(new Set(CODEN_CAPABILITY_SKILLS.map(skill => skill.id)).size).toBe(19);
   });
 
   it('pins audited upstream repositories and valid runtime provenance', () => {
-    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(12);
+    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(13);
     expect(AUDITED_SKILL_REPOSITORIES.every(repository => /^[a-f0-9]{40}$/.test(repository.commit))).toBe(true);
     expect(validateSkillProvenance()).toEqual([]);
   });
@@ -18,6 +18,14 @@ describe('Coden capability skill planner', () => {
     const plan = resolveCodenSkillPlan({ prompt: 'Change le bleu en vert', intent: 'edit', complexity: 'simple', fileCount: 8 });
     expect(plan.selectedSkillIds).toEqual(['incremental-implementation']);
     expect(plan.requiresDesignGate).toBe(true);
+  });
+
+  it('loads the landing page skill only for a landing page mission', () => {
+    const landing = resolveCodenSkillPlan({ prompt: 'Crée une landing page SaaS avec un hero et un CTA', intent: 'build', complexity: 'medium', fileCount: 6 });
+    const dashboard = resolveCodenSkillPlan({ prompt: 'Crée un dashboard SaaS', intent: 'build', complexity: 'medium', fileCount: 6 });
+    expect(landing.selectedSkillIds).toContain('landing-page-design');
+    expect(landing.requiresDesignGate).toBe(true);
+    expect(dashboard.selectedSkillIds).not.toContain('landing-page-design');
   });
 
   it('composes a full-stack Supabase build without overloading a node', () => {
