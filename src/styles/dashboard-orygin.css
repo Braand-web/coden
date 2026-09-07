@@ -78,7 +78,7 @@ body[data-coden-surface="dashboard"] .btn-sidebar-toggle:focus-visible,
 body[data-coden-surface="dashboard"] .btn-sidebar-expand:hover,
 body[data-coden-surface="dashboard"] .btn-sidebar-expand:focus-visible {
   color: #fff;
-  background: rgba(255,255,255,.08);
+  background: color-mix(in srgb, currentColor 8%, transparent);
   outline: none;
 }
 
@@ -140,7 +140,7 @@ body[data-coden-surface="dashboard"] .sidebar-quick-link:focus-visible,
 body[data-coden-surface="dashboard"] .btn-new-project-sidebar:hover,
 body[data-coden-surface="dashboard"] .btn-new-project-sidebar:focus-visible {
   color: #fff !important;
-  background: rgba(255,255,255,.07) !important;
+  background: color-mix(in srgb, currentColor 7%, transparent) !important;
   outline: none;
 }
 
@@ -181,7 +181,7 @@ body[data-coden-surface="dashboard"] .nav-project {
 body[data-coden-surface="dashboard"] .nav-project:hover,
 body[data-coden-surface="dashboard"] .nav-project:focus-visible,
 body[data-coden-surface="dashboard"] .nav-project.active {
-  background: rgba(255,255,255,.07) !important;
+  background: color-mix(in srgb, currentColor 7%, transparent) !important;
   outline: none;
 }
 
@@ -281,7 +281,7 @@ body[data-coden-surface="dashboard"] .sidebar-local-sign-in {
 
 body[data-coden-surface="dashboard"] .sidebar-local-sign-in:hover,
 body[data-coden-surface="dashboard"] .sidebar-local-sign-in:focus-visible {
-  background: rgba(255,255,255,.08);
+  background: color-mix(in srgb, currentColor 8%, transparent);
   border-color: rgba(255,255,255,.24);
   outline: none;
 }

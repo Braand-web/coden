@@ -64,7 +64,8 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain("'/builder.html?new=1&source=dashboard'");
     expect(reactDashboard).toContain('project=\${encodeURIComponent(projectId)}&source=dashboard');
     expect(reactDashboard).toContain('startCreateProjectFlow');
-    expect(reactDashboard).toContain("{ prompt: request, mode: 'auto', source: 'dashboard' }");
+    expect(reactDashboard).toContain("mode: composerMode === 'plan' ? 'plan' : 'auto'");
+    expect(reactDashboard).toContain('<AgentModeComposer mode={composerMode}');
     expect(reactDashboard).toContain("openSettings('profile')");
     expect(reactDashboard).toContain('data-auth-logout');
     expect(reactDashboard).toContain("localStorage.setItem('coden-dashboard-sidebar-collapsed'");

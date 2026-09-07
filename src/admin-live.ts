@@ -2,6 +2,7 @@ import { apiFetch } from './lib/api';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
+import './styles/coden-horizon-system.css';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 
 initCodenNavigationTransitions();

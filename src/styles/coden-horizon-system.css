@@ -1,0 +1,1328 @@
+/*
+ * Coden Horizon
+ * Shared product and marketing system derived from the supplied warm, quiet
+ * reference while retaining Coden's blue signature and both theme modes.
+ */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --horizon-canvas: #fcfbf8;
+  --horizon-surface: #f7f4ed;
+  --horizon-raised: #f1eee6;
+  --horizon-input: #fffefa;
+  --horizon-border: #e8e4da;
+  --horizon-border-strong: #d5d0c4;
+  --horizon-text: #1c1c1c;
+  --horizon-ink: #030303;
+  --horizon-muted: #64625e;
+  --horizon-subtle: #85817a;
+  --horizon-blue: #3b82f6;
+  --horizon-blue-hover: #2563eb;
+  --horizon-blue-ink: #ffffff;
+  --horizon-blue-soft: rgba(59, 130, 246, .11);
+  --horizon-overlay: rgba(28, 28, 28, .28);
+  --horizon-shadow-inset: inset 0 0 0 .5px rgba(3, 3, 3, .18);
+  --horizon-shadow-float: 0 20px 25px -5px rgba(28, 28, 28, .08), 0 8px 10px -6px rgba(28, 28, 28, .08);
+  --horizon-ease: cubic-bezier(.32, .72, 0, 1);
+
+  --coden-bg: var(--horizon-canvas);
+  --coden-bg-warm: var(--horizon-surface);
+  --coden-surface: var(--horizon-surface);
+  --coden-surface-raised: var(--horizon-raised);
+  --coden-panel: var(--horizon-surface);
+  --coden-input: var(--horizon-input);
+  --coden-text: var(--horizon-text);
+  --coden-muted: var(--horizon-muted);
+  --coden-subtle: var(--horizon-subtle);
+  --coden-border: var(--horizon-border);
+  --coden-border-strong: var(--horizon-border-strong);
+  --coden-blue: var(--horizon-blue);
+  --coden-blue-deep: var(--horizon-blue-hover);
+  --coden-blue-ink: var(--horizon-blue-ink);
+  --coden-blue-soft: var(--horizon-blue-soft);
+  --coden-blue-hover: rgba(59, 130, 246, .17);
+  --coden-blue-active: rgba(59, 130, 246, .24);
+  --coden-focus: var(--horizon-blue);
+  --coden-radius-sm: 8px;
+  --coden-radius-md: 12px;
+  --coden-radius-lg: 16px;
+  --coden-radius-xl: 24px;
+  --coden-shadow-soft: var(--horizon-shadow-inset);
+  --coden-shadow-card: var(--horizon-shadow-float);
+  --coden-ease: var(--horizon-ease);
+  --coden-ease-canonical: var(--horizon-ease);
+  --coden-motion-fast: 150ms;
+  --coden-motion-normal: 220ms;
+  --coden-motion-panel: 500ms;
+
+  --bg: var(--horizon-canvas);
+  --bg-surface: var(--horizon-surface);
+  --bg-elevated: var(--horizon-raised);
+  --bg-input: var(--horizon-input);
+  --bg-panel: var(--horizon-surface);
+  --text: var(--horizon-text);
+  --text-muted: var(--horizon-muted);
+  --text-sub: var(--horizon-subtle);
+  --border: var(--horizon-border);
+  --border-light: rgba(232, 228, 218, .64);
+  --border-mid: var(--horizon-border-strong);
+  --border-focus: var(--horizon-blue);
+  --accent-blue: var(--horizon-blue);
+  --accent-blue-deep: var(--horizon-blue-hover);
+  --accent-blue-soft: var(--horizon-blue-soft);
+  --accent-blue-hover: rgba(59, 130, 246, .17);
+  --accent-blue-active: rgba(59, 130, 246, .24);
+  --focus-ring: var(--horizon-blue);
+  --background: var(--horizon-canvas);
+  --foreground: var(--horizon-text);
+  --surface: var(--horizon-surface);
+  --surface-subtle: var(--horizon-surface);
+  --surface-elevated: var(--horizon-raised);
+  --primary: var(--horizon-blue);
+  --primary-foreground: var(--horizon-blue-ink);
+  --primary-hover: var(--horizon-blue-hover);
+  --primary-active: #1d4ed8;
+  --secondary: var(--horizon-surface);
+  --secondary-foreground: var(--horizon-text);
+  --muted: var(--horizon-surface);
+  --muted-foreground: var(--horizon-muted);
+  --accent: var(--horizon-blue-soft);
+  --accent-foreground: #1e4f9d;
+  --overlay: var(--horizon-overlay);
+  --font-sans: Manrope, system-ui, sans-serif;
+  --font-display: Manrope, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+  --radius-full: 9999px;
+  --shadow-xs: var(--horizon-shadow-inset);
+  --shadow-sm: var(--horizon-shadow-inset);
+  --shadow-md: 0 10px 24px rgba(28, 28, 28, .07);
+  --shadow-lg: var(--horizon-shadow-float);
+  --shadow-xl: 0 28px 64px rgba(28, 28, 28, .12);
+  --shadow-overlay: 0 32px 80px rgba(28, 28, 28, .16);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --horizon-canvas: #0e1116;
+  --horizon-surface: #151a22;
+  --horizon-raised: #1b2230;
+  --horizon-input: #111720;
+  --horizon-border: #263244;
+  --horizon-border-strong: #3a4a60;
+  --horizon-text: #f8fafc;
+  --horizon-ink: #ffffff;
+  --horizon-muted: #aab4c3;
+  --horizon-subtle: #8d98a8;
+  --horizon-blue: #4f8cff;
+  --horizon-blue-hover: #6b9bff;
+  --horizon-blue-ink: #08111f;
+  --horizon-blue-soft: rgba(79, 140, 255, .14);
+  --horizon-overlay: rgba(4, 7, 12, .72);
+  --horizon-shadow-inset: inset 0 0 0 .5px rgba(255, 255, 255, .12);
+  --horizon-shadow-float: 0 20px 42px rgba(0, 0, 0, .34);
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select,
+summary {
+  font-family: var(--font-sans) !important;
+  font-feature-settings: "liga" 0;
+}
+
+body {
+  background: var(--horizon-canvas);
+  color: var(--horizon-text);
+  letter-spacing: -.02em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-sans) !important;
+  font-style: normal !important;
+  font-weight: 600 !important;
+  letter-spacing: -.035em !important;
+  text-wrap: balance;
+}
+
+:where(p, li, dd, figcaption) { text-wrap: pretty; }
+
+:where(button, a, input, textarea, select, summary) {
+  transition-duration: 150ms;
+  transition-timing-function: var(--horizon-ease);
+}
+
+:where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--horizon-blue) !important;
+  outline-offset: 3px !important;
+}
+
+:where(button, [role="button"]):active:not(:disabled) { transform: scale(.98); }
+
+/* Product controls use the rounded, compact interaction language. */
+:where(
+  .btn-primary, .btn-secondary, .btn-outline, .btn-solid, .btn-publish,
+  .btn-submit, .pricing-plan-action, .admin-button, .db-action,
+  .coden-dashboard-new-project, .coden-dashboard-mobile-new,
+  .coden-react-primary, .coden-react-secondary, .coden-ui-button
+) {
+  min-height: 40px;
+  border-radius: 9999px !important;
+  padding-inline: 16px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+
+:where(
+  .icon-btn, .theme-toggle, .coden-react-theme-toggle, .coden-react-menu,
+  .coden-dashboard-icon-button, .preview-refresh-btn,
+  .lovable-icon-btn, .lovable-nav-icon-btn
+) {
+  border-radius: 9999px !important;
+}
+
+:where(
+  input, textarea, select, .input, .db-input, .db-select,
+  .admin-global-search, .admin-search, .coden-dashboard-search
+) {
+  border-radius: 12px !important;
+}
+
+:where(
+  .auth-card, .project-card, .pricing-plan-card, .pricing-final-cta,
+  .admin-card, .db-section, .db-card, .settings-section, .settings-block,
+  .modal-content, .modal-container, .pricing-modal-content,
+  .project-menu-panel, .publish-popover, .coden-ui-overlay-panel,
+  .coden-dashboard-composer, .coden-dashboard-project-card,
+  .coden-dashboard-empty, .coden-dashboard-loading
+) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: none !important;
+}
+
+:where(
+  .dropdown, .coden-model-dropdown, .model-provider-panel,
+  .prompt-mode-menu, .coden-ui-dropdown-panel, .coden-dashboard-account-menu
+) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-input) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
+}
+
+/* Shared public chrome. */
+.coden-react-marketing-header {
+  min-height: 56px !important;
+  border-color: var(--horizon-border) !important;
+  background: color-mix(in srgb, var(--horizon-canvas) 88%, transparent) !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(16px) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(120%) !important;
+}
+
+.coden-react-marketing-header[data-header-state="scrolled"] {
+  top: 8px !important;
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: color-mix(in srgb, var(--horizon-canvas) 92%, transparent) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+}
+
+:where(.coden-react-nav-link, .coden-react-footer a) {
+  color: var(--horizon-muted) !important;
+  font-weight: 500 !important;
+}
+
+:where(.coden-react-nav-link, .coden-react-footer a):hover { color: var(--horizon-text) !important; }
+
+.coden-react-footer {
+  border-top: 1px solid var(--horizon-border) !important;
+  background: var(--horizon-canvas) !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="public"] {
+  background: var(--horizon-canvas) !important;
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="public"] .page-hero::before { display: none !important; }
+body[data-coden-surface="public"] :where(.page-content, .hero-subtitle) { color: var(--horizon-muted) !important; }
+body[data-coden-surface="public"] .page-content h2 { border-color: var(--horizon-border) !important; }
+
+/* Marketing landing: retain content and hooks, replace the competing visual shell. */
+body[data-coden-surface="landing-v3"] > div:first-of-type {
+  background: var(--horizon-canvas) !important;
+  color: var(--horizon-text) !important;
+  font-family: var(--font-sans) !important;
+}
+
+body[data-coden-surface="landing-v3"] #coden-marketing-header-root {
+  padding: 12px clamp(12px, 3vw, 20px) 0 !important;
+}
+
+body[data-coden-surface="landing-v3"] .cdn-pill {
+  height: 56px !important;
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: color-mix(in srgb, var(--horizon-canvas) 88%, transparent) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+}
+
+body[data-coden-surface="landing-v3"] #top {
+  position: relative;
+  overflow: hidden;
+  background: var(--horizon-canvas) !important;
+}
+
+body[data-coden-surface="landing-v3"] #top > [aria-hidden="true"] { display: none !important; }
+
+body[data-coden-surface="landing-v3"] #top > [aria-hidden="true"]:nth-of-type(2) {
+  display: block !important;
+  background: radial-gradient(75% 62% at 50% 100%, color-mix(in srgb, var(--horizon-blue) 58%, transparent), transparent 72%) !important;
+  opacity: .74;
+}
+
+body[data-coden-surface="landing-v3"] #manifesto > [aria-hidden="true"],
+body[data-coden-surface="landing-v3"] #cta > [aria-hidden="true"] { display: none !important; }
+
+body[data-coden-surface="landing-v3"] #top h1 {
+  max-width: 680px;
+  margin-inline: auto;
+  background: linear-gradient(90deg, var(--horizon-ink), var(--horizon-muted));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent !important;
+  font-size: clamp(48px, 7vw, 72px) !important;
+  line-height: 1 !important;
+}
+
+body[data-coden-surface="landing-v3"] #top h1,
+body[data-coden-surface="landing-v3"] main h2,
+body[data-coden-surface="landing-v3"] main h3,
+body[data-coden-surface="landing-v3"] [style*="Instrument Serif"] {
+  font-family: var(--font-sans) !important;
+  font-style: normal !important;
+}
+
+body[data-coden-surface="landing-v3"] #top p,
+body[data-coden-surface="landing-v3"] #top [style*="color:rgba(248,250,252"] {
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="landing-v3"] .cdn-interaction-8 {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-raised) !important;
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="landing-v3"] :where(.cdn-stack-name, .cdn-stack-caption, .cdn-example-note) {
+  color: var(--horizon-muted) !important;
+  font-family: var(--font-sans) !important;
+}
+
+body[data-coden-surface="landing-v3"] .input-wrapper {
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+}
+
+body[data-coden-surface="landing-v3"] .input-wrapper:focus-within {
+  border-color: var(--horizon-blue) !important;
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft), var(--horizon-shadow-float) !important;
+}
+
+body[data-coden-surface="landing-v3"] [data-build],
+body[data-coden-surface="landing-v3"] .cdn-interaction-7 {
+  border-radius: 9999px !important;
+  border-color: var(--horizon-blue) !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+}
+
+body[data-coden-surface="landing-v3"] [data-build]:hover,
+body[data-coden-surface="landing-v3"] .cdn-interaction-7:hover {
+  border-color: var(--horizon-blue-hover) !important;
+  background: var(--horizon-blue-hover) !important;
+}
+
+body[data-coden-surface="landing-v3"] :where([data-start-from], [data-mode-toggle], [data-prompt-action]) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: transparent !important;
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="landing-v3"] :where([data-start-from], [data-mode-toggle], [data-prompt-action]):hover {
+  background: var(--horizon-raised) !important;
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="landing-v3"] main section:not(#top) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-canvas) !important;
+}
+
+body[data-coden-surface="landing-v3"] :where(
+  [style*="background:#151a22"], [style*="background:#11161e"],
+  [style*="background:#1b2230"], [style*="background:linear-gradient"]
+) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="landing-v3"] :where(
+  [style*="border:1px solid #263244"], [style*="border-bottom:1px solid #1b2230"],
+  [style*="border-top:1px solid #263244"]
+) { border-color: var(--horizon-border) !important; }
+
+body[data-coden-surface="landing-v3"] :where([style*="color:#aab4c3"], [style*="color:#8d98a8"]) {
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="landing-v3"] [style*="color:#f8fafc"] { color: var(--horizon-text) !important; }
+
+body[data-coden-surface="landing-v3"] [style*="background:#4f8cff"] { background: var(--horizon-blue) !important; }
+body[data-coden-surface="landing-v3"] [style*="color:#8fb7ff"] { color: var(--horizon-blue) !important; }
+
+body[data-coden-surface="landing-v3"] .cdn-faq {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-surface) !important;
+}
+
+body[data-coden-surface="landing-v3"] .cdn-faq summary:hover { background: var(--horizon-raised) !important; }
+
+body[data-coden-surface="landing-v3"] #landing-notice {
+  border-color: var(--horizon-border-strong);
+  border-radius: 16px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+}
+
+/* Authentication. */
+body[data-coden-surface="auth"],
+body[data-coden-surface="auth"] .auth-page { background: var(--horizon-canvas) !important; }
+
+body[data-coden-surface="auth"] .auth-card {
+  width: min(460px, calc(100% - 32px));
+  padding: 32px !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+}
+
+body[data-coden-surface="auth"] :where(.tabs, .input, .password-control) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="auth"] .tabs { border-radius: 9999px !important; }
+body[data-coden-surface="auth"] .tab-btn { border-radius: 9999px !important; }
+body[data-coden-surface="auth"] .tab-btn.active { background: var(--horizon-raised) !important; color: var(--horizon-text) !important; }
+body[data-coden-surface="auth"] .btn-submit { background: var(--horizon-blue) !important; color: var(--horizon-blue-ink) !important; }
+body[data-coden-surface="auth"] .btn-submit:hover { background: var(--horizon-blue-hover) !important; }
+
+/* Dashboard. */
+body[data-coden-surface="dashboard"] {
+  --dashboard-bg: var(--horizon-canvas);
+  --dashboard-sidebar: var(--horizon-surface);
+  --dashboard-surface: var(--horizon-surface);
+  --dashboard-raised: var(--horizon-raised);
+  --dashboard-text: var(--horizon-text);
+  --dashboard-muted: var(--horizon-muted);
+  --dashboard-border: var(--horizon-border);
+  --dashboard-border-soft: var(--horizon-border);
+  --dashboard-accent: var(--horizon-blue);
+  --dashboard-focus: var(--horizon-blue);
+}
+
+body[data-coden-surface="dashboard"] :where(.coden-dashboard-shell, .coden-dashboard-main, #coden-dashboard-react-root) {
+  background: var(--horizon-canvas) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
+  padding: 12px;
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+}
+
+body[data-coden-surface="dashboard"] :where(.coden-dashboard-new-project, .coden-dashboard-upgrade) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-composer {
+  border: 1px solid var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-project-card {
+  overflow: hidden;
+  border: 1px solid var(--horizon-border) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-project-card:hover {
+  border-color: var(--horizon-border-strong) !important;
+  transform: translateY(-2px);
+}
+
+body[data-coden-surface="dashboard"] :where(.coden-dashboard-project-preview, .coden-dashboard-project-fallback) {
+  border-radius: 16px !important;
+  background: var(--horizon-input) !important;
+}
+
+/* Builder and Cloud console. */
+body[data-coden-surface="builder"] {
+  background: var(--horizon-canvas) !important;
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="builder"] :where(.app-workspace, .workspace-body) {
+  background: var(--horizon-canvas) !important;
+}
+
+body[data-coden-surface="builder"] :where(.brand-topbar, .sub-navbar, .sidebar-pane, .editor-pane) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+}
+
+body[data-coden-surface="builder"] :where(.sub-nav-tabs, .preview-device-toggle, .explorer-tabs, .editor-tabs-bar) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-raised) !important;
+}
+
+body[data-coden-surface="builder"] :where(.sub-nav-tab, .preview-device-btn, .explorer-tab-link, .editor-tab-item) {
+  border-radius: 9999px !important;
+}
+
+body[data-coden-surface="builder"] :where(.sub-nav-tab.active, .preview-device-btn.active, .explorer-tab-link.active, .editor-tab-item.active) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .input-wrapper {
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-input) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .input-wrapper:focus-within {
+  border-color: var(--horizon-blue) !important;
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft) !important;
+}
+
+body[data-coden-surface="builder"] .submit-btn {
+  border-radius: 9999px !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+}
+
+body[data-coden-surface="builder"] .btn-publish {
+  border-color: var(--horizon-blue) !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+}
+
+body[data-coden-surface="builder"] :where(.preview-screen-panel, .preview-device-frame, .preview-iframe-view) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="builder"] .db-cloud { background: var(--horizon-canvas) !important; }
+
+body[data-coden-surface="builder"] :where(.db-section, .db-card) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+}
+
+body[data-coden-surface="builder"] :where(.db-table-scroll, .db-data-table, .db-input, .db-select) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="builder"] :where(.db-action, .db-table-chip, .db-file-btn, .db-eu-btn) {
+  border-radius: 9999px !important;
+}
+
+body[data-coden-surface="builder"] :where(.pricing-modal-content, .project-menu-panel) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+/* Builder conversation, streaming and structured decisions. */
+body[data-coden-surface="builder"] .coden-conversation-react { gap: 16px !important; }
+
+body[data-coden-surface="builder"] .coden-conversation-empty {
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="builder"] .coden-chat-message.user .coden-chat-bubble {
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-raised) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-agent-message, .coden-agent-conversation-run, .coden-response) {
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="builder"] .coden-agent-message { gap: 12px !important; }
+body[data-coden-surface="builder"] .coden-thinking-line {
+  min-height: 24px;
+  color: var(--horizon-muted) !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+body[data-coden-surface="builder"] .coden-tool-line {
+  gap: 8px !important;
+  color: var(--horizon-muted) !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+body[data-coden-surface="builder"] .coden-tool-paths {
+  color: var(--horizon-subtle) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-response code, .coden-response-code-block, .coden-response-table-wrap, .coden-response-math) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-message-actions button, .coden-chat-actions button, .coden-inline-action) {
+  min-height: 32px;
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+  padding: 0 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+
+body[data-coden-surface="builder"] :where(.coden-message-actions button, .coden-chat-actions button, .coden-inline-action):hover {
+  border-color: var(--horizon-border-strong) !important;
+  background: var(--horizon-raised) !important;
+}
+
+body[data-coden-surface="builder"] .coden-agent-message-error {
+  border: 1px solid color-mix(in srgb, #dc2626 30%, var(--horizon-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, #dc2626 7%, var(--horizon-surface));
+  color: #b42318 !important;
+  padding: 12px;
+}
+
+:root[data-theme="dark"] body[data-coden-surface="builder"] .coden-agent-message-error { color: #fca5a5 !important; }
+
+body[data-coden-surface="builder"] .coden-agent-message-note {
+  color: var(--horizon-muted) !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-agent-mode-trigger, .coden-agent-mode-menu) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+}
+
+body[data-coden-surface="builder"] .coden-agent-mode-trigger { border-radius: 9999px !important; }
+body[data-coden-surface="builder"] .coden-agent-mode-menu {
+  border-radius: 16px !important;
+  box-shadow: var(--horizon-shadow-float) !important;
+  backdrop-filter: none !important;
+}
+
+body[data-coden-surface="builder"] .coden-agent-mode-option { border-radius: 12px !important; }
+body[data-coden-surface="builder"] :where(.coden-agent-mode-option:hover, .coden-agent-mode-option.is-active) {
+  background: var(--horizon-raised) !important;
+  color: var(--horizon-text) !important;
+}
+
+.coden-decision-card {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 560px);
+  border: 1px solid var(--horizon-border);
+  border-radius: 16px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 16px;
+  box-shadow: var(--horizon-shadow-inset);
+}
+
+.coden-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--horizon-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.coden-decision-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--horizon-blue);
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft);
+}
+
+.coden-decision-card[data-state="rejected"] .coden-decision-status { background: var(--horizon-subtle); box-shadow: none; }
+.coden-decision-card[data-state="approved"] .coden-decision-status { background: #2f9e66; box-shadow: 0 0 0 4px color-mix(in srgb, #2f9e66 12%, transparent); }
+.coden-decision-card h3 { margin: 0; font-size: 16px !important; line-height: 24px !important; }
+.coden-decision-card p { margin: 0; color: var(--horizon-muted); font-size: 14px; line-height: 20px; white-space: pre-wrap; }
+.coden-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+.coden-decision-actions button {
+  min-height: 36px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coden-decision-actions .is-primary { border-color: var(--horizon-blue); background: var(--horizon-blue); color: var(--horizon-blue-ink); }
+.coden-decision-actions .is-primary:hover { background: var(--horizon-blue-hover); }
+.coden-decision-actions .is-secondary { background: var(--horizon-input); color: var(--horizon-text); }
+.coden-decision-actions .is-secondary:hover { background: var(--horizon-raised); }
+
+.coden-stream-notice {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 560px);
+  border: 1px solid var(--horizon-border);
+  border-radius: 16px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 16px;
+  box-shadow: var(--horizon-shadow-inset);
+}
+.coden-stream-notice-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--horizon-muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  text-transform: none;
+}
+.coden-stream-notice-kicker > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--horizon-blue);
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft);
+}
+.coden-stream-notice h3 { margin: 0; font-size: 16px !important; line-height: 24px !important; }
+.coden-stream-notice p { margin: 0; color: var(--horizon-muted); font-size: 14px; line-height: 20px; }
+.coden-stream-decision-options { display: grid; gap: 8px; }
+.coden-stream-decision-options button {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 12px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.coden-stream-decision-options button:hover:not(:disabled) { border-color: var(--horizon-blue); background: var(--horizon-blue-soft); }
+.coden-stream-decision-options button:disabled { cursor: default; opacity: .62; }
+.coden-stream-decision-options button.is-recommended { border-color: color-mix(in srgb, var(--horizon-blue) 48%, var(--horizon-border)); }
+.coden-stream-decision-options button > span { font-size: 14px; line-height: 20px; font-weight: 600; }
+.coden-stream-decision-options button small { color: var(--horizon-muted); font-size: 12px; line-height: 16px; }
+.coden-stream-decision-options button strong { position: absolute; top: 8px; right: 8px; color: var(--horizon-blue); font-size: 10px; line-height: 16px; font-weight: 600; }
+.coden-stream-decision-options button.is-recommended > span { padding-right: 88px; }
+.coden-stream-notice-hint { font-size: 12px !important; line-height: 16px !important; }
+.coden-stream-artifact-open {
+  width: max-content;
+  min-height: 36px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coden-stream-cost dl { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
+.coden-stream-cost dl > div { min-width: 120px; border-radius: 12px; background: var(--horizon-input); padding: 12px; }
+.coden-stream-cost dt { color: var(--horizon-muted); font-size: 12px; line-height: 16px; }
+.coden-stream-cost dd { margin: 4px 0 0; color: var(--horizon-text); font-size: 16px; line-height: 24px; font-weight: 600; }
+
+/* Plans and tool artifacts share the same low-depth surface when present. */
+body[data-coden-surface="builder"] :where(
+  .coden-plan, .coden-confirmation, .coden-ai-agent, .coden-artifact,
+  .coden-web-preview, .coden-test-results, .coden-terminal, .coden-stack-trace,
+  .coden-tool
+) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: none !important;
+}
+
+body[data-coden-surface="builder"] :where(.coden-queue-item, .coden-ai-agent-item, .coden-file-tree-item, .coden-test-result-item) {
+  border-radius: 12px !important;
+  background: var(--horizon-input) !important;
+}
+
+/* Publish, overlays, notifications and small system dialogs. */
+body[data-coden-surface="builder"] .cdn-pub {
+  border-color: var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
+  font-family: var(--font-sans) !important;
+}
+
+body[data-coden-surface="builder"] :where(.cdn-pub__url, .cdn-pub__check, .cdn-dom__row, .cdn-dom__input) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+body[data-coden-surface="builder"] :where(.cdn-pub__primary, .cdn-pub__secondary, .cdn-pub__small) {
+  border-radius: 9999px !important;
+  font-weight: 600 !important;
+}
+
+body[data-coden-surface="builder"] .cdn-pub__primary { background: var(--horizon-blue) !important; color: var(--horizon-blue-ink) !important; }
+body[data-coden-surface="builder"] .cdn-pub__secondary { background: var(--horizon-input) !important; }
+body[data-coden-surface="builder"] .cdn-pub__progress > span {
+  width: 18px;
+  height: 6px;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--horizon-blue);
+  animation: horizon-status-pulse 1.4s var(--horizon-ease) infinite;
+}
+
+.coden-live-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--horizon-overlay);
+  backdrop-filter: blur(8px);
+}
+
+.coden-live-modal-panel {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid var(--horizon-border);
+  border-radius: 24px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 20px;
+  box-shadow: var(--horizon-shadow-float);
+  outline: none;
+}
+
+.coden-live-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.coden-live-modal-head h3 { margin: 0; font-size: 16px !important; line-height: 24px !important; }
+.coden-live-modal-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-input);
+  color: var(--horizon-muted);
+  cursor: pointer;
+}
+.coden-live-modal-body { color: var(--horizon-text); font-size: 14px; line-height: 20px; }
+.coden-live-modal-body :where(p, ul) { color: var(--horizon-muted); }
+.coden-modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.coden-modal-actions button,
+.coden-clarification-actions button {
+  min-height: 36px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 8px 13px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coden-modal-actions button:first-child,
+.coden-clarification-actions button.primary {
+  border-color: var(--horizon-blue);
+  background: var(--horizon-blue);
+  color: var(--horizon-blue-ink);
+}
+.coden-modal-field { display: grid; gap: 6px; margin: 12px 0; color: var(--horizon-muted); font-size: 12px; line-height: 18px; }
+.coden-modal-field input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 12px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 8px 11px;
+  font: inherit;
+  outline: none;
+}
+.coden-modal-field input:focus { border-color: var(--horizon-blue); box-shadow: 0 0 0 3px var(--horizon-blue-soft); }
+.coden-modal-muted { color: var(--horizon-muted) !important; }
+
+#chat-inline-blocks { display: grid; gap: 8px; padding: 0 16px 8px; }
+.coden-clarification-block {
+  border: 1px solid color-mix(in srgb, var(--horizon-blue) 38%, var(--horizon-border));
+  border-radius: 16px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 14px;
+  box-shadow: var(--horizon-shadow-soft);
+}
+.coden-clarification-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.coden-clarification-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: var(--horizon-muted);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+}
+.coden-clarification-kicker span { width: 8px; height: 8px; border-radius: 9999px; background: var(--horizon-blue); box-shadow: 0 0 0 4px var(--horizon-blue-soft); }
+.coden-clarification-question { color: var(--horizon-text); font-size: 14px; line-height: 20px; font-weight: 600; }
+.coden-clarification-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--horizon-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.coden-clarification-close:hover { background: var(--horizon-raised); color: var(--horizon-text); }
+.coden-clarification-choices { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+.coden-clarification-choices button {
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coden-clarification-choices button:hover { border-color: var(--horizon-blue); background: var(--horizon-blue-soft); }
+.coden-clarification-answer {
+  width: 100%;
+  min-height: 44px;
+  max-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--horizon-border);
+  border-radius: 12px;
+  background: var(--horizon-input);
+  color: var(--horizon-text);
+  padding: 10px 11px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  outline: none;
+}
+.coden-clarification-answer:focus { border-color: var(--horizon-blue); box-shadow: 0 0 0 3px var(--horizon-blue-soft); }
+.coden-clarification-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+/* Cloud/database compatibility surface. */
+body[data-coden-surface="builder"] #screen-layout-database { background: var(--horizon-canvas) !important; color: var(--horizon-text) !important; }
+body[data-coden-surface="builder"] #btn-add-secret {
+  border-color: var(--horizon-blue) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+  font-weight: 600 !important;
+}
+body[data-coden-surface="builder"] :where(.db-card, .db-note, .db-table-scroll) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+}
+body[data-coden-surface="builder"] :where(.db-table-chip, .db-action, .db-file-btn, .db-eu-btn, .db-input, .db-select) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+}
+body[data-coden-surface="builder"] .db-action-primary { border-color: var(--horizon-blue) !important; background: var(--horizon-blue) !important; color: var(--horizon-blue-ink) !important; }
+body[data-coden-surface="builder"] :where(.db-section-title, .db-card-value, .db-row-key) { color: var(--horizon-text) !important; }
+body[data-coden-surface="builder"] :where(.db-section-desc, .db-card-label, .db-row-meta, .db-empty, .db-state) { color: var(--horizon-muted) !important; }
+
+:where(.coden-ui-overlay-panel, .coden-ui-toast) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
+}
+.coden-ui-overlay-panel { border-radius: 24px !important; }
+.coden-ui-toast { border-radius: 16px !important; }
+.coden-ui-skeleton { background: var(--horizon-raised) !important; }
+
+.coden-feedback-toast {
+  position: fixed;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--horizon-border);
+  border-radius: 16px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 12px 14px;
+  box-shadow: var(--horizon-shadow-float);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 200ms var(--horizon-ease), transform 200ms var(--horizon-ease);
+}
+.coden-feedback-toast--corner { right: 24px; bottom: 24px; }
+.coden-feedback-toast--center { left: 50%; bottom: 30px; transform: translate(-50%, 16px); }
+.coden-feedback-toast.is-visible { opacity: 1; transform: translateY(0); }
+.coden-feedback-toast--center.is-visible { transform: translate(-50%, 0); }
+.coden-feedback-toast__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: var(--horizon-blue);
+  box-shadow: 0 0 0 4px var(--horizon-blue-soft);
+}
+.coden-feedback-toast.is-success .coden-feedback-toast__dot {
+  background: var(--success, #159455);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success, #159455) 14%, transparent);
+}
+.coden-feedback-toast__copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.coden-feedback-toast__copy strong { color: var(--horizon-text); font-weight: 600; }
+.coden-feedback-toast__copy span { color: var(--horizon-muted); font-size: 11px; line-height: 16px; }
+.coden-feedback-toast__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--horizon-muted);
+  cursor: pointer;
+}
+.coden-feedback-toast__close:hover { background: var(--horizon-raised); color: var(--horizon-text); }
+
+/* Runtime-injected connector catalogue inherits the same product language. */
+body[data-coden-surface] .connectors-overlay {
+  background: var(--horizon-overlay) !important;
+  backdrop-filter: blur(8px) !important;
+}
+body[data-coden-surface] .connectors-panel {
+  border-color: var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
+  font-family: var(--font-sans) !important;
+}
+body[data-coden-surface] :where(.connectors-sidebar, .connectors-main, .connector-detail) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+  color: var(--horizon-text) !important;
+  backdrop-filter: none !important;
+}
+body[data-coden-surface] :where(.connectors-header, .connectors-intro, .connector-detail-head, .connector-detail-hero, .connector-detail-section) {
+  border-color: var(--horizon-border) !important;
+}
+body[data-coden-surface] .connectors-intro { background: var(--horizon-canvas) !important; }
+body[data-coden-surface] .connectors-intro::after {
+  background: color-mix(in srgb, var(--horizon-canvas) 74%, transparent) !important;
+}
+body[data-coden-surface] :where(.connectors-search, .connectors-sidebar-card, .connector-card, .connector-capability, .connector-detail-back, .connector-request-card) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 16px !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: none !important;
+}
+body[data-coden-surface] :where(.connector-chip, .connectors-filter:hover, .connectors-filter.active) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-raised) !important;
+  color: var(--horizon-text) !important;
+}
+body[data-coden-surface] :where(.connectors-search:focus-within, .connector-card:hover) {
+  border-color: var(--horizon-blue) !important;
+  box-shadow: 0 0 0 3px var(--horizon-blue-soft) !important;
+}
+body[data-coden-surface] .connector-card:hover { transform: translateY(-1px); background: var(--horizon-raised) !important; }
+body[data-coden-surface] :where(.connectors-intro-copy h2, .connectors-title, .connector-card-copy strong, .connector-detail-hero h2, .connector-detail-section h3, .connector-request-card h3) {
+  color: var(--horizon-text) !important;
+}
+body[data-coden-surface] :where(.connectors-intro-copy p, .connectors-catalog-head p, .connectors-count, .connector-card-copy span, .connector-detail-hero p, .connector-capability, .connector-request-card p) {
+  color: var(--horizon-muted) !important;
+}
+body[data-coden-surface] :where(.connectors-sidebar-card button, .connectors-secondary, .connectors-intro-actions button, .connectors-intro-actions a) {
+  border-color: var(--horizon-border) !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-input) !important;
+  color: var(--horizon-text) !important;
+  font-weight: 600 !important;
+}
+body[data-coden-surface] .connector-primary {
+  border-radius: 9999px !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+  font-weight: 600 !important;
+}
+body[data-coden-surface] .connector-request-dialog { background: var(--horizon-overlay) !important; }
+body[data-coden-surface] .settings-hero-card,
+body[data-coden-surface] .billing-balance-card,
+body[data-coden-surface] .settings-danger-zone { background: var(--horizon-surface) !important; }
+
+.coden-history-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--horizon-overlay);
+  backdrop-filter: blur(8px);
+}
+.coden-history-panel {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow: auto;
+  border: 1px solid var(--horizon-border);
+  border-radius: 24px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  box-shadow: var(--horizon-shadow-float);
+}
+.coden-history-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--horizon-border);
+  background: var(--horizon-surface);
+  padding: 18px 20px;
+}
+.coden-history-kicker { color: var(--horizon-muted); font-size: 11px; line-height: 16px; font-weight: 600; }
+.coden-history-head h3 { margin: 4px 0 0; color: var(--horizon-text); font-size: 16px; line-height: 24px; }
+.coden-history-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-input);
+  color: var(--horizon-muted);
+  cursor: pointer;
+}
+.coden-history-body { display: grid; gap: 16px; padding: 20px; }
+.coden-history-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.coden-history-column { display: grid; align-content: start; gap: 8px; }
+.coden-history-column h4 { margin: 0 0 2px; color: var(--horizon-text); font-size: 13px; line-height: 20px; }
+.coden-history-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 16px;
+  background: var(--horizon-input);
+  padding: 12px;
+}
+.coden-history-row__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.coden-history-row__head strong { min-width: 0; color: var(--horizon-text); font-size: 12px; line-height: 18px; }
+.coden-history-status { color: var(--horizon-muted); font-size: 10px; line-height: 16px; font-weight: 600; }
+.coden-history-meta, .coden-history-summary, .coden-history-empty { color: var(--horizon-muted); font-size: 11px; line-height: 16px; }
+.coden-history-diagnostic { color: var(--error, #b42318); font-size: 11px; line-height: 16px; }
+.coden-history-error {
+  border: 1px solid color-mix(in srgb, var(--error, #b42318) 28%, var(--horizon-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--error, #b42318) 8%, var(--horizon-surface));
+  color: var(--error, #b42318);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 18px;
+}
+.coden-history-rollback {
+  justify-self: start;
+  min-height: 32px;
+  border: 1px solid var(--horizon-border);
+  border-radius: 9999px;
+  background: var(--horizon-surface);
+  color: var(--horizon-text);
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.coden-history-rollback:hover, .coden-history-close:hover { background: var(--horizon-raised); color: var(--horizon-text); }
+@media (max-width: 640px) {
+  .coden-history-grid { grid-template-columns: 1fr; }
+  .coden-history-body { padding: 16px; }
+}
+
+@keyframes horizon-status-pulse {
+  0%, 100% { opacity: .45; transform: scaleX(.72); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+
+/* Pricing. */
+body.coden-pricing-page {
+  --pricing-bg: var(--horizon-canvas) !important;
+  --pricing-panel: var(--horizon-surface) !important;
+  --pricing-raised: var(--horizon-raised) !important;
+  --pricing-border: var(--horizon-border) !important;
+  --pricing-muted: var(--horizon-muted) !important;
+  --pricing-text: var(--horizon-text) !important;
+  --pricing-accent: var(--horizon-blue) !important;
+  background: var(--horizon-canvas) !important;
+  color: var(--horizon-text) !important;
+}
+
+body.coden-pricing-page .pricing-plan-card,
+body.coden-pricing-page .pricing-final-cta,
+body.coden-pricing-page .pricing-comparison-scroll,
+body.coden-pricing-page .pricing-usage-grid article {
+  border-color: var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+  box-shadow: none !important;
+}
+
+body.coden-pricing-page .pricing-plan-card:hover {
+  border-color: var(--horizon-border-strong) !important;
+  background: var(--horizon-raised) !important;
+}
+
+body.coden-pricing-page :where(.pricing-plan-action, .pricing-interval, .pricing-plan-badge, .pricing-usage-icon) {
+  border-radius: 9999px !important;
+}
+
+body.coden-pricing-page .pricing-plan-action-primary {
+  border-color: var(--horizon-blue) !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+}
+
+body.coden-pricing-page .pricing-tier-field select { background: var(--horizon-input) !important; }
+body.coden-pricing-page .pricing-hero-proof { color: var(--horizon-muted) !important; }
+body.coden-pricing-page .pricing-interval button.is-selected {
+  background: var(--horizon-text) !important;
+  color: var(--horizon-canvas) !important;
+}
+body.coden-pricing-page .pricing-page-hero h1 span {
+  background: linear-gradient(90deg, var(--horizon-ink), var(--horizon-muted)) !important;
+  background-clip: text !important;
+  -webkit-background-clip: text !important;
+  color: transparent !important;
+}
+body.coden-pricing-page .pricing-plan-featured { border-color: color-mix(in srgb, var(--horizon-blue) 58%, var(--horizon-border)) !important; }
+body.coden-pricing-page .pricing-plan-badge { background: var(--horizon-input) !important; color: var(--horizon-blue) !important; }
+body.coden-pricing-page .pricing-feature-list li { color: var(--horizon-text) !important; }
+
+/* Administration. */
+body[data-coden-surface="admin"] { background: var(--horizon-canvas) !important; }
+body[data-coden-surface="admin"] .admin-shell { background: var(--horizon-canvas) !important; }
+body[data-coden-surface="admin"] :where(.admin-sidebar, .admin-appbar) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-surface) !important;
+  backdrop-filter: none !important;
+}
+
+body[data-coden-surface="admin"] .admin-card {
+  border: 1px solid var(--horizon-border) !important;
+  border-radius: 24px !important;
+  background: var(--horizon-surface) !important;
+}
+
+body[data-coden-surface="admin"] :where(.admin-nav button, .admin-return, .admin-tabs button, .admin-filter-chip) {
+  border-radius: 9999px !important;
+}
+
+body[data-coden-surface="admin"] :where(.admin-nav button.active, .admin-tabs button.active, .admin-filter-chip.active) {
+  background: var(--horizon-blue-soft) !important;
+  color: var(--horizon-blue) !important;
+}
+
+body[data-coden-surface="admin"] .admin-button.primary {
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
+}
+
+body[data-coden-surface="admin"] :where(.admin-global-search, .admin-search) {
+  border-color: var(--horizon-border) !important;
+  background: var(--horizon-input) !important;
+}
+
+@media (max-width: 720px) {
+  body[data-coden-surface="landing-v3"] #top h1 { font-size: 48px !important; }
+  body[data-coden-surface="auth"] .auth-card { padding: 24px !important; }
+  body.coden-pricing-page .pricing-plan-card { padding: 24px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

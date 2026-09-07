@@ -7,8 +7,22 @@ button, a { -webkit-tap-highlight-color:transparent; }
 button:disabled { opacity:.5; cursor:wait; }
 a:focus-visible, button:focus-visible, summary:focus-visible { outline:2px solid #8fb7ff; outline-offset:5px; }
 textarea:focus-visible { outline:none; }
-.cdn-stack-name { font-family:'Instrument Serif',Georgia,serif; font-size:clamp(24px,2.4vw,28px); color:#8190a5; white-space:nowrap; }
 .cdn-stack-caption, .cdn-example-note { color:#8d98a8; text-align:center; font-size:14px; margin:0 auto 22px; }
+.cdn-hero-title, .cdn-hero-subtitle { width:100%; max-width:680px; text-align:center; }
+.cdn-hero-title { text-wrap:balance; }
+.cdn-hero-subtitle { text-wrap:pretty; }
+.cdn-tech-group { display:flex; align-items:center; gap:48px; padding-right:48px; }
+.cdn-tech-brand { display:inline-flex; align-items:center; gap:12px; color:#64625e; font-size:16px; font-weight:600; white-space:nowrap; }
+.cdn-tech-brand svg { width:32px; height:32px; flex:0 0 32px; }
+.cdn-tech-brand.is-react { color:#149eca; }
+.cdn-tech-brand.is-typescript { color:#3178c6; }
+.cdn-tech-brand.is-vite { color:#8b5cf6; }
+.cdn-tech-brand.is-node { color:#4f9b45; }
+.cdn-tech-brand.is-supabase { color:#3ecf8e; }
+.cdn-tech-brand.is-github { color:currentColor; }
+.cdn-footer-brand-mark rect { fill:#3b82f6; }
+.cdn-footer-brand-mark path { fill:#fff; }
+.cdn-footer-brand { color:var(--horizon-text, #1c1c1c) !important; }
 .cdn-price { margin:12px 0 0; font-family:'Instrument Serif',Georgia,serif; font-size:52px; letter-spacing:-.03em; line-height:1; font-variant-numeric:tabular-nums; }
 .cdn-billing-button { position:relative; z-index:1; padding:9px 20px; border-radius:9999px; border:0; background:transparent; font-size:14px; font-weight:600; cursor:pointer; color:#aab4c3; transition:color 180ms ease; }
 .cdn-billing-button[aria-pressed=true] { color:#08111f; }
@@ -37,5 +51,8 @@ textarea:focus-visible { outline:none; }
   .cdn-pill > div { gap:10px !important; }
   .cdn-pill > div > a:last-child { padding:9px 12px !important; font-size:13px !important; }
   .cdn-billing-button { padding:10px 16px; }
+  .cdn-tech-group { gap:32px; padding-right:32px; }
+  .cdn-tech-brand { gap:8px; font-size:14px; }
+  .cdn-tech-brand svg { width:28px; height:28px; flex-basis:28px; }
 }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .cdn-track { animation:none !important; } }

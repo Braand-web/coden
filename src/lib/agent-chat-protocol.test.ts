@@ -60,6 +60,26 @@ describe('agent streaming protocol', () => {
     expect(working.parts.at(-1)).toMatchObject({ type: 'text', text: 'Je crée la page.', done: true });
   });
 
+  it('keeps decisions, artifacts and cost checkpoints structured in the stream', () => {
+    const decision = reduceAgentMessage(EMPTY_MESSAGE, {
+      type: 'decision_required',
+      decisionId: 'decision-1',
+      question: 'Quel domaine faut-il publier ?',
+      options: [{ id: 'coden', label: 'Sous domaine Coden', recommended: true }],
+      allowFreeText: true,
+    }, 1);
+    expect(decision.notices?.[0]).toMatchObject({ type: 'decision', id: 'decision-1', allowFreeText: true });
+
+    const artifact = reduceAgentMessage(decision, { type: 'artifact_ready', artifactId: 'plan-1', artifactType: 'plan', title: 'Plan de publication', version: 2 }, 2);
+    expect(artifact.notices).toHaveLength(2);
+
+    const checkpoint = reduceAgentMessage(artifact, { type: 'cost_checkpoint', checkpointId: 'cost-1', creditsUsed: 18, nextThreshold: 20, completed: 'Build terminé', next: 'Browser QA' }, 3);
+    expect(checkpoint.notices?.at(-1)).toMatchObject({ type: 'cost', creditsUsed: 18, nextThreshold: 20 });
+
+    const resumed = reduceAgentMessage(checkpoint, { type: 'run_resumed' }, 4);
+    expect(resumed.notices).toEqual([expect.objectContaining({ type: 'artifact', id: 'plan-1' })]);
+  });
+
   it('filters split code fences but preserves prose and inline code', () => {
     const filter = createNarrationFilter();
     expect(['Je lis `App`.', '\n``', '`tsx\nsecret code', '\n```', '\nTerminé.'].map(filter).join('')).toBe('Je lis `App`.\n\nTerminé.');

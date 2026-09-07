@@ -335,7 +335,7 @@ body:has(#coden-dashboard-react-root) {
 }
 
 .coden-dashboard-account-menu button:hover {
-  background: rgba(255, 255, 255, .06);
+  background: color-mix(in srgb, currentColor 6%, transparent);
 }
 
 @keyframes coden-dashboard-popover-in {
@@ -504,16 +504,7 @@ body:has(#coden-dashboard-react-root) {
   margin-top: 7px;
 }
 
-.coden-dashboard-composer-footer > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--dashboard-muted);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.coden-dashboard-composer-footer button {
+.coden-dashboard-composer-footer .coden-dashboard-composer-submit {
   display: inline-flex;
   width: 34px;
   height: 34px;
@@ -528,11 +519,11 @@ body:has(#coden-dashboard-react-root) {
   transition: opacity 150ms ease, transform 150ms cubic-bezier(.22, 1, .36, 1);
 }
 
-.coden-dashboard-composer-footer button:hover:not(:disabled) {
+.coden-dashboard-composer-footer .coden-dashboard-composer-submit:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-.coden-dashboard-composer-footer button:disabled {
+.coden-dashboard-composer-footer .coden-dashboard-composer-submit:disabled {
   opacity: .38;
   cursor: not-allowed;
 }

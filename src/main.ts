@@ -1,6 +1,7 @@
 // @ts-ignore
 import './index.css';
 import './styles/modern-shell.css';
+import './styles/coden-horizon-system.css';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
 import { initCodenMotion } from './coden-motion';
 import { initProviderModelSelectors } from './model-selector-ui';
@@ -62,7 +63,7 @@ function init() {
         window.addEventListener('load', liftCurtain);
     }
 
-    const savedTheme = localStorage.getItem('coden-theme') || 'dark';
+    const savedTheme = localStorage.getItem('coden-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
     if (moonIcon && sunIcon) {
         if (savedTheme === 'dark') {

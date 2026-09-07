@@ -3,6 +3,7 @@ import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
 import './styles/publish-panel.css';
+import './styles/coden-horizon-system.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { apiFetch } from './lib/api';
@@ -1113,163 +1114,103 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
 <style>
 :root {
   color-scheme: light dark;
-  --loader-text: #111827;
-  --loader-bg-a: #f8fbff;
-  --loader-bg-b: #eef5ff;
-  --loader-bg-c: #ffffff;
-  --ring-a: #e0ecff;
-  --ring-b: #76a7ff;
-  --ring-c: #2f6df6;
-  --ring-mid-a: #c7dcff;
-  --ring-mid-b: #4f8cff;
-  --ring-mid-c: #173f8f;
-  --ring-glow-a: rgba(79,140,255,.30);
-  --ring-glow-b: rgba(47,109,246,.18);
+  --loader-text: #1c1c1c;
+  --loader-canvas: #fcfbf8;
+  --loader-surface: #f7f4ed;
+  --loader-border: #e8e4da;
+  --loader-accent: #3b82f6;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --loader-text: #f5f7fb;
-    --loader-bg-a: #0f1014;
-    --loader-bg-b: #15171c;
-    --loader-bg-c: #1b1e25;
-    --ring-a: #243b66;
-    --ring-b: #4f8cff;
-    --ring-c: #8ab4ff;
-    --ring-mid-a: #31568f;
-    --ring-mid-b: #76a7ff;
-    --ring-mid-c: #cfe0ff;
-    --ring-glow-a: rgba(79,140,255,.34);
-    --ring-glow-b: rgba(138,180,255,.18);
+    --loader-canvas: #0e1116;
+    --loader-surface: #151a22;
+    --loader-border: rgba(226,232,240,.12);
+    --loader-accent: #4f8cff;
   }
 }
 :root[data-theme="light"] {
   color-scheme: light;
-  --loader-text: #111827;
-  --loader-bg-a: #f8fbff;
-  --loader-bg-b: #eef5ff;
-  --loader-bg-c: #ffffff;
-  --ring-a: #e0ecff;
-  --ring-b: #76a7ff;
-  --ring-c: #2f6df6;
-  --ring-mid-a: #c7dcff;
-  --ring-mid-b: #4f8cff;
-  --ring-mid-c: #173f8f;
-  --ring-glow-a: rgba(79,140,255,.30);
-  --ring-glow-b: rgba(47,109,246,.18);
+  --loader-text: #1c1c1c;
+  --loader-canvas: #fcfbf8;
+  --loader-surface: #f7f4ed;
+  --loader-border: #e8e4da;
+  --loader-accent: #3b82f6;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --loader-text: #f5f7fb;
-  --loader-bg-a: #0f1014;
-  --loader-bg-b: #15171c;
-  --loader-bg-c: #1b1e25;
-  --ring-a: #243b66;
-  --ring-b: #4f8cff;
-  --ring-c: #8ab4ff;
-  --ring-mid-a: #31568f;
-  --ring-mid-b: #76a7ff;
-  --ring-mid-c: #cfe0ff;
-  --ring-glow-a: rgba(79,140,255,.34);
-  --ring-glow-b: rgba(138,180,255,.18);
+  --loader-canvas: #0e1116;
+  --loader-surface: #151a22;
+  --loader-border: rgba(226,232,240,.12);
+  --loader-accent: #4f8cff;
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
   overflow: hidden;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(79,140,255,.08), transparent 32%),
-    linear-gradient(180deg, var(--loader-bg-a), var(--loader-bg-b) 52%, var(--loader-bg-c));
+  font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--loader-canvas);
   color: var(--loader-text);
 }
 .preview-loader {
   position: fixed;
   inset: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
 }
 .loader-core {
-  position: relative;
-  width: min(180px, 54vw);
-  height: min(180px, 54vw);
+  width: min(320px, 100%);
+  min-height: 132px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-weight: 520;
-  letter-spacing: .01em;
+  gap: 24px;
+  border: 1px solid var(--loader-border);
+  border-radius: 24px;
+  background: var(--loader-surface);
+  padding: 24px;
   user-select: none;
 }
 .loader-text {
-  position: relative;
-  z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  max-width: 78%;
-  color: var(--loader-text);
-  font-size: clamp(13px, 3vw, 16px);
-  line-height: 1;
+  max-width: 100%;
+  color: color-mix(in srgb, var(--loader-text) 72%, transparent);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 520;
   text-align: center;
-  filter: drop-shadow(0 1px 10px rgba(0,0,0,.18));
 }
-.loader-letter {
-  display: inline-block;
-  opacity: .4;
-  animation: loaderLetter 3s infinite;
-}
+.loader-letter { display: inline-block; }
 .loader-circle {
-  position: absolute;
-  inset: 0;
+  width: 96px;
+  height: 4px;
+  overflow: hidden;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 32% 24%, rgba(255,255,255,.44), transparent 17%),
-    radial-gradient(circle at 42% 42%, rgba(79,140,255,.12), transparent 48%);
-  animation: loaderCircle 5s linear infinite;
+  background: color-mix(in srgb, var(--loader-text) 10%, transparent);
 }
-.idle .loader-circle { animation-duration: 8s; opacity: .88; }
-.idle .loader-letter { animation-duration: 4.5s; }
-@keyframes loaderCircle {
-  0% {
-    transform: rotate(90deg);
-    box-shadow: 0 6px 12px 0 var(--ring-a) inset, 0 12px 18px 0 var(--ring-b) inset, 0 36px 36px 0 var(--ring-c) inset, 0 0 3px 1.2px var(--ring-glow-a), 0 0 6px 1.8px var(--ring-glow-b);
-  }
-  50% {
-    transform: rotate(270deg);
-    box-shadow: 0 6px 12px 0 var(--ring-mid-a) inset, 0 12px 6px 0 var(--ring-mid-b) inset, 0 24px 36px 0 var(--ring-mid-c) inset, 0 0 3px 1.2px var(--ring-glow-a), 0 0 6px 1.8px var(--ring-glow-b);
-  }
-  100% {
-    transform: rotate(450deg);
-    box-shadow: 0 6px 12px 0 var(--ring-a) inset, 0 12px 18px 0 var(--ring-b) inset, 0 36px 36px 0 var(--ring-c) inset, 0 0 3px 1.2px var(--ring-glow-a), 0 0 6px 1.8px var(--ring-glow-b);
-  }
+.loader-circle::after {
+  content: '';
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--loader-accent);
+  animation: loaderProgress 1.5s cubic-bezier(.32,.72,0,1) infinite alternate;
 }
-@media (prefers-color-scheme: dark) {
-  @keyframes loaderCircle {
-    0%, 100% {
-      transform: rotate(90deg);
-      box-shadow: 0 6px 12px 0 var(--ring-a) inset, 0 12px 18px 0 var(--ring-b) inset, 0 36px 36px 0 var(--ring-c) inset, 0 0 3px 1.2px var(--ring-glow-a), 0 0 6px 1.8px var(--ring-glow-b);
-    }
-    50% {
-      transform: rotate(270deg);
-      box-shadow: 0 6px 12px 0 var(--ring-mid-a) inset, 0 12px 6px 0 var(--ring-mid-b) inset, 0 24px 36px 0 var(--ring-mid-c) inset, 0 0 3px 1.2px var(--ring-glow-a), 0 0 6px 1.8px var(--ring-glow-b);
-    }
-  }
-}
-@keyframes loaderLetter {
-  0%, 100% { opacity: .4; transform: translateY(0) scale(1); }
-  20% { opacity: 1; transform: scale(1.15); }
-  40% { opacity: .7; transform: translateY(0) scale(1); }
-}
-@media (max-width: 520px) {
-  .loader-core { width: min(150px, 58vw); height: min(150px, 58vw); }
-  .loader-text { font-size: 13px; }
+.idle .loader-circle::after { width: 18%; animation: none; }
+@keyframes loaderProgress {
+  from { transform: translateX(0); }
+  to { transform: translateX(150%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .loader-circle,
-  .loader-letter { animation: none !important; }
-  .loader-letter { opacity: .86; }
+  .loader-circle::after { animation: none !important; }
 }
 </style>
 </head>
@@ -1319,14 +1260,14 @@ function mediaPreviewShellHtml(state: 'idle' | 'working' = 'idle', title = 'Medi
 @media(prefers-color-scheme:dark){:root{--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25}}
 :root[data-theme=light]{color-scheme:light;--bg:#fcfbf8;--panel:#fffefa;--ink:#1c1c1c;--muted:#5f5f5d;--line:#eceae4;--soft:#f7f4ed;--blue:#2f6df6}
 :root[data-theme=dark]{color-scheme:dark;--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue:#4f8cff}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,rgba(47,109,246,.10),transparent 32%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
 .wrap{min-height:100vh;display:grid;place-items:center;padding:clamp(18px,4vw,42px)}
 .empty{width:min(760px,100%);display:grid;gap:14px;color:var(--muted)}
 .status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);padding:9px 13px;color:var(--ink);font-size:13px;font-weight:780;box-shadow:0 8px 28px rgba(28,28,28,.06)}
 .dot{width:8px;height:8px;border-radius:999px;background:#2f6df6;box-shadow:0 0 0 5px rgba(47,109,246,.10);animation:${isWorking ? 'pulse 1.6s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 .helper{margin:0;max-width:560px;font-size:clamp(15px,2.2vw,22px);line-height:1.35;color:var(--ink);font-weight:760;letter-spacing:-.02em}
 .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:4px}.mini-card{border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--panel) 90%,transparent);padding:14px;min-height:86px}.mini-card strong{display:block;color:var(--ink);font-size:13px;margin-bottom:6px}.mini-card span{display:block;color:var(--muted);font-size:12px;line-height:1.4}
-.bar{height:4px;width:min(360px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:38%;height:100%;border-radius:999px;background:linear-gradient(90deg,transparent,#2f6df6,transparent);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+.bar{height:4px;width:min(360px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:38%;height:100%;border-radius:999px;background:#2f6df6;animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 @keyframes pulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}@keyframes scan{0%{transform:translateX(-110%)}100%{transform:translateX(270%)}}
 @media(max-width:680px){.mini-grid{grid-template-columns:1fr}.helper{font-size:20px}.empty{gap:12px}}@media(prefers-reduced-motion:reduce){.dot,.bar::after{animation:none}}
 </style>
@@ -1383,7 +1324,7 @@ function designPreviewShellHtml(state: 'idle' | 'working' = 'idle', title = 'Des
 @media(prefers-color-scheme:dark){:root{--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue-soft:rgba(79,140,255,.16)}}
 :root[data-theme=light]{color-scheme:light;--bg:#fcfbf8;--panel:#fffefa;--ink:#1c1c1c;--muted:#66625a;--line:#ece8df;--soft:#f7f3ea;--blue:#2f6df6;--blue-soft:rgba(47,109,246,.10)}
 :root[data-theme=dark]{color-scheme:dark;--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue:#4f8cff;--blue-soft:rgba(79,140,255,.16)}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 0,var(--blue-soft),transparent 34%),var(--bg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
 .wrap{min-height:100vh;display:grid;place-items:center;padding:clamp(18px,4vw,44px)}
 .studio{width:min(860px,100%);display:grid;gap:16px}
 .status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);padding:9px 13px;font-size:13px;font-weight:780;box-shadow:0 8px 28px rgba(28,28,28,.06)}
@@ -1392,7 +1333,7 @@ h1{margin:0;max-width:720px;font-size:clamp(34px,6vw,70px);line-height:.98;lette
 p{margin:0;max-width:620px;color:var(--muted);font-size:clamp(15px,2vw,20px);line-height:1.45}
 .pills{display:flex;flex-wrap:wrap;gap:7px}.pill{border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,transparent);border-radius:999px;padding:8px 11px;color:var(--muted);font-size:12px;font-weight:760}.pill strong{color:var(--ink)}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:5px}.card{border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--panel) 90%,transparent);padding:15px;min-height:112px;box-shadow:0 20px 60px rgba(28,28,28,.05)}.card strong{display:block;font-size:13px;margin-bottom:8px}.card span{display:block;color:var(--muted);font-size:12px;line-height:1.45}
-.bar{height:4px;width:min(420px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:35%;height:100%;border-radius:999px;background:linear-gradient(90deg,transparent,var(--blue),transparent);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+.bar{height:4px;width:min(420px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:35%;height:100%;border-radius:999px;background:var(--blue);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 @keyframes pulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}@keyframes scan{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
 @media(max-width:760px){.grid{grid-template-columns:1fr 1fr}h1{font-size:42px}.studio{gap:13px}}@media(max-width:520px){.grid{grid-template-columns:1fr}.pills{gap:6px}}@media(prefers-reduced-motion:reduce){.dot,.bar::after{animation:none}}
 </style>
@@ -1889,7 +1830,11 @@ function ensureConversationApi() {
   if (conversationApi) return conversationApi;
   const scroll = chatScroll();
   if (!scroll) return null;
-  conversationApi = mountBuilderConversation(scroll);
+  conversationApi = mountBuilderConversation(scroll, {
+    onDecisionSelect: (_decisionId, option) => {
+      void sendActiveHarnessInstruction(option.label);
+    },
+  });
   bindConversationFeedbackBridge();
   return conversationApi;
 }
@@ -1947,7 +1892,6 @@ function ensureInlineBlockHost() {
   const inputRow = document.querySelector('.chat-input-row');
   host = document.createElement('div');
   host.id = 'chat-inline-blocks';
-  host.style.cssText = 'display:grid;gap:8px;padding:0 24px 8px;';
   inputRow?.parentElement?.insertBefore(host, inputRow);
   return host;
 }
@@ -2666,7 +2610,7 @@ function addInlineAction(card: HTMLElement | null, label: string, action: () => 
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = label;
-  button.style.cssText = 'margin-top:10px;height:30px;border:1px solid var(--border);background:var(--text);color:var(--bg);border-radius:7px;padding:0 10px;font-size:11px;font-weight:700;cursor:pointer;';
+  button.className = 'coden-inline-action';
   button.addEventListener('click', action);
   card.appendChild(button);
 }
@@ -3001,13 +2945,6 @@ async function ensureLivePreview() {
   }
 }
 
-/**
- * Offer the control exactly when it is the thing to do.
- *
- * Not while a server is already running — the button would restart what the
- * user is looking at — and not on a project with nothing to run, where it can
- * only fail.
- */
 /** Forget the live preview when its sandbox is gone. */
 function clearLivePreview() {
   previewRevision++;
@@ -3683,7 +3620,7 @@ function ensureHistoryPanel() {
   if (root) return root;
   root = document.createElement('div');
   root.id = 'coden-history-panel';
-  root.style.cssText = 'position:fixed;inset:0;background:rgba(9,9,11,.38);display:grid;place-items:center;z-index:99999;padding:16px;backdrop-filter:blur(8px);';
+  root.className = 'coden-history-modal';
   document.body.appendChild(root);
   root.addEventListener('click', event => {
     if (event.target === root) closeHistoryPanel();
@@ -3710,46 +3647,46 @@ function renderHistoryPanel(runs: AgentRunSummary[] = [], versions: ProjectVersi
       run.duration_ms ? `${Math.max(1, Math.round(run.duration_ms / 1000))}s` : '',
     ].filter(Boolean).join(' · ');
     return `
-    <div style="border:1px solid var(--border-light);background:var(--bg-elevated);border-radius:10px;padding:10px;display:grid;gap:5px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-        <strong style="font-size:12px;color:var(--text);">${escapeHtml(run.intent || 'agent run')}</strong>
-        <span style="font-size:10px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHtml(run.status || 'unknown')}</span>
+    <div class="coden-history-row">
+      <div class="coden-history-row__head">
+        <strong>${escapeHtml(run.intent || 'agent run')}</strong>
+        <span class="coden-history-status">${escapeHtml(run.status || 'unknown')}</span>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);">${escapeHtml(runMeta)}</div>
-      ${run.diagnostic_code ? `<div style="font-size:11px;color:#991b1b;">${escapeHtml(run.diagnostic_code)}</div>` : ''}
+      <div class="coden-history-meta">${escapeHtml(runMeta)}</div>
+      ${run.diagnostic_code ? `<div class="coden-history-diagnostic">${escapeHtml(run.diagnostic_code)}</div>` : ''}
     </div>
   `;
-  }).join('') : '<div style="color:var(--text-muted);font-size:12px;">No agent runs recorded yet.</div>';
+  }).join('') : '<div class="coden-history-empty">No agent runs recorded yet.</div>';
   const versionRows = versions.length ? versions.map(version => `
-    <div style="border:1px solid var(--border-light);background:var(--bg-elevated);border-radius:10px;padding:10px;display:grid;gap:8px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-        <strong style="font-size:12px;color:var(--text);">Version ${escapeHtml(String(version.version_number || ''))}</strong>
-        <span style="font-size:11px;color:var(--text-muted);">${formatShortDate(version.created_at)}</span>
+    <div class="coden-history-row">
+      <div class="coden-history-row__head">
+        <strong>Version ${escapeHtml(String(version.version_number || ''))}</strong>
+        <span class="coden-history-meta">${formatShortDate(version.created_at)}</span>
       </div>
-      <div style="font-size:11px;color:var(--text-muted);line-height:1.45;">${escapeHtml(version.diff_summary?.summary || version.label || 'Saved project version.')}</div>
-      <button type="button" data-history-rollback="${escapeHtml(version.id)}" style="justify-self:start;height:28px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);border-radius:7px;padding:0 10px;font-size:11px;font-weight:800;cursor:pointer;">Rollback</button>
+      <div class="coden-history-summary">${escapeHtml(version.diff_summary?.summary || version.label || 'Saved project version.')}</div>
+      <button class="coden-history-rollback" type="button" data-history-rollback="${escapeHtml(version.id)}">Rollback</button>
     </div>
-  `).join('') : '<div style="color:var(--text-muted);font-size:12px;">No saved versions yet.</div>';
+  `).join('') : '<div class="coden-history-empty">No saved versions yet.</div>';
 
   root.innerHTML = `
-    <section style="width:min(760px,100%);max-height:min(760px,calc(100vh - 32px));overflow:auto;border:1px solid var(--border);background:var(--bg-surface);color:var(--text);border-radius:16px;box-shadow:0 28px 90px rgba(9,9,11,.22);">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px;border-bottom:1px solid var(--border-light);">
+    <section class="coden-history-panel" role="dialog" aria-modal="true" aria-labelledby="coden-history-title">
+      <header class="coden-history-head">
         <div>
-          <div style="font-size:11px;color:var(--text-muted);font-weight:800;letter-spacing:.12em;text-transform:uppercase;">Project history</div>
-          <h3 style="margin:4px 0 0;font-size:16px;line-height:1.2;">Runs, versions and rollback</h3>
+          <div class="coden-history-kicker">Project history</div>
+          <h3 id="coden-history-title">Runs, versions and rollback</h3>
         </div>
-        <button type="button" data-history-close style="border:1px solid var(--border);background:var(--bg-input);color:var(--text);width:28px;height:28px;border-radius:8px;cursor:pointer;">×</button>
-      </div>
-      <div style="padding:16px;display:grid;gap:14px;">
-        ${loading ? '<div style="font-size:12px;color:var(--text-muted);">Loading history...</div>' : ''}
-        ${error ? `<div style="border:1px solid rgba(185,28,28,.28);background:rgba(254,242,242,.88);color:#991b1b;border-radius:10px;padding:10px;font-size:12px;">${escapeHtml(error)}</div>` : ''}
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
-          <div style="display:grid;gap:8px;align-content:start;">
-            <h4 style="margin:0;font-size:13px;">Agent runs</h4>
+        <button class="coden-history-close" type="button" data-history-close aria-label="Close history">×</button>
+      </header>
+      <div class="coden-history-body">
+        ${loading ? '<div class="coden-history-empty">Loading history...</div>' : ''}
+        ${error ? `<div class="coden-history-error" role="alert">${escapeHtml(error)}</div>` : ''}
+        <div class="coden-history-grid">
+          <div class="coden-history-column">
+            <h4>Agent runs</h4>
             ${runRows}
           </div>
-          <div style="display:grid;gap:8px;align-content:start;">
-            <h4 style="margin:0;font-size:13px;">Saved versions</h4>
+          <div class="coden-history-column">
+            <h4>Saved versions</h4>
             ${versionRows}
           </div>
         </div>
@@ -6915,21 +6852,21 @@ function showClarificationBlock(payload: any, originalPrompt: string, requestedM
   const recommendLabel = isFrench ? 'Utiliser la suggestion' : 'Use suggestion';
   const continueLabel = isFrench ? 'Envoyer la precision' : 'Send detail';
   host.innerHTML = `
-    <div id="clarification-block" style="border:1px solid var(--border-focus, var(--border));background:var(--bg-surface);border-radius:13px;padding:12px;color:var(--text);box-shadow:0 18px 50px rgba(0,0,0,.16);">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:8px;">
+    <div id="clarification-block" class="coden-clarification-block">
+      <div class="coden-clarification-head">
         <div>
-          <div style="font-size:11px;color:var(--text-muted);font-weight:800;margin-bottom:4px;">${escapeHtml(eyebrow)}</div>
-          <div style="font-size:13px;line-height:1.45;font-weight:650;">${escapeHtml(question)}</div>
+          <div class="coden-clarification-kicker"><span aria-hidden="true"></span>${escapeHtml(eyebrow)}</div>
+          <div class="coden-clarification-question">${escapeHtml(question)}</div>
         </div>
-        <button type="button" data-action="dismiss" aria-label="Dismiss" style="border:0;background:transparent;color:var(--text-muted);cursor:pointer;font-size:18px;line-height:1;">&times;</button>
+        <button class="coden-clarification-close" type="button" data-action="dismiss" aria-label="Dismiss">&times;</button>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;">
-        ${choices.map(choice => `<button type="button" data-choice="${escapeHtml(choice)}" style="border:1px solid var(--border);background:var(--bg-input);color:var(--text);border-radius:999px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;">${escapeHtml(choice)}</button>`).join('')}
+      <div class="coden-clarification-choices">
+        ${choices.map(choice => `<button type="button" data-choice="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`).join('')}
       </div>
-      <textarea data-free-answer placeholder="${escapeHtml(placeholder)}" style="width:100%;min-height:42px;max-height:90px;resize:vertical;border:1px solid var(--border);background:var(--bg-input);color:var(--text);border-radius:9px;padding:9px;font-size:12px;line-height:1.4;outline:none;"></textarea>
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:9px;">
-        ${recommendation ? `<button type="button" data-action="recommend" style="height:30px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:8px;padding:0 10px;font-size:11px;font-weight:750;cursor:pointer;">${escapeHtml(recommendLabel)}</button>` : ''}
-        <button type="button" data-action="continue" style="height:30px;border:0;background:var(--text);color:var(--bg);border-radius:8px;padding:0 12px;font-size:11px;font-weight:850;cursor:pointer;">${escapeHtml(continueLabel)}</button>
+      <textarea class="coden-clarification-answer" data-free-answer placeholder="${escapeHtml(placeholder)}"></textarea>
+      <div class="coden-clarification-actions">
+        ${recommendation ? `<button class="secondary" type="button" data-action="recommend">${escapeHtml(recommendLabel)}</button>` : ''}
+        <button class="primary" type="button" data-action="continue">${escapeHtml(continueLabel)}</button>
       </div>
     </div>
   `;
@@ -7005,9 +6942,9 @@ function showApiKeyModal(requirements: any[]) {
   showMiniModal('Connect external API', `
     <p>Keys are stored server-side and masked in the Database tab.</p>
     ${rows.map((item, index) => `
-      <label style="display:grid;gap:5px;margin:10px 0;font-size:11px;color:var(--text-muted);">
+      <label class="coden-modal-field">
         ${escapeHtml(item.service)} &middot; ${escapeHtml(item.variable)}
-        <input data-key-index="${index}" data-service="${escapeHtml(item.service)}" data-variable="${escapeHtml(item.variable)}" type="password" placeholder="${escapeHtml(item.variable)}" style="height:34px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);border-radius:7px;padding:0 10px;">
+        <input data-key-index="${index}" data-service="${escapeHtml(item.service)}" data-variable="${escapeHtml(item.variable)}" type="password" placeholder="${escapeHtml(item.variable)}">
       </label>
     `).join('')}
     <div class="coden-modal-actions">
@@ -7039,7 +6976,7 @@ function showFixBugBox(errors: any[]) {
   const first = errors[0] || { message: 'Preview failed.' };
   showMiniModal('Fix bug', `
     <p>${escapeHtml(first.message || 'Preview failed.')}</p>
-    <p style="color:var(--text-muted);">${escapeHtml(first.file || 'unknown file')}</p>
+    <p class="coden-modal-muted">${escapeHtml(first.file || 'unknown file')}</p>
     <div class="coden-modal-actions">
       <button data-action="fix">Fix with AI</button>
       <button data-action="copy">Copy error</button>
@@ -7059,24 +6996,37 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
   document.getElementById('coden-live-modal')?.remove();
   const root = document.createElement('div');
   root.id = 'coden-live-modal';
-  root.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:99999;padding:16px;';
+  root.className = 'coden-live-modal';
+  root.setAttribute('role', 'presentation');
   root.innerHTML = `
-    <div style="width:min(420px,100%);border:1px solid var(--border);background:var(--bg-surface);color:var(--text);border-radius:14px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.22);">
-      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px;">
-        <h3 style="font-size:15px;margin:0;">${escapeHtml(title)}</h3>
-        <button data-action="close" style="border:0;background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer;">&times;</button>
+    <div class="coden-live-modal-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" tabindex="-1">
+      <div class="coden-live-modal-head">
+        <h3>${escapeHtml(title)}</h3>
+        <button data-action="close" class="coden-live-modal-close" type="button" aria-label="Fermer">&times;</button>
       </div>
-      <div style="font-size:12px;color:var(--text);line-height:1.5;">${html}</div>
+      <div class="coden-live-modal-body">${html}</div>
     </div>
   `;
+  const close = () => {
+    document.removeEventListener('keydown', onKeyDown);
+    root.remove();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') close();
+  };
   root.querySelectorAll('button[data-action]').forEach(button => {
     button.addEventListener('click', async () => {
       const action = (button as HTMLElement).dataset.action || 'close';
       if (action !== 'close') await onAction(action, root);
-      root.remove();
+      close();
     });
   });
+  root.addEventListener('mousedown', event => {
+    if (event.target === root) close();
+  });
+  document.addEventListener('keydown', onKeyDown);
   document.body.appendChild(root);
+  (root.querySelector('.coden-live-modal-panel') as HTMLElement | null)?.focus();
 }
 
 function bindChat() {

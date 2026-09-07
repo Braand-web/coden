@@ -1,11 +1,12 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ChevronDown, Check, ShieldCheck, WandSparkles, ListChecks } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { EASE_OUT, SPRING_PRESS } from '../../lib/ease';
+import { WandSparkles, ListChecks } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import { SPRING_PRESS } from '../../lib/ease';
 import { cn } from '../../lib/utils';
 import { modeLabel, normalizeAgentMode, type AgentMode } from '../../services/agent-mode';
 import '../../styles/agent-conversation.css';
+import '../../styles/agent-surface.css';
 
 type AgentModeComposerProps = {
   mode: AgentMode;
@@ -18,12 +19,10 @@ type AgentModeComposerProps = {
 
 const MODE_DETAILS = {
   auto: { icon: WandSparkles, fr: 'Coden choisit la meilleure action.', en: 'Coden chooses the best action.' },
-  build: { icon: ShieldCheck, fr: 'Créer ou modifier l’application.', en: 'Create or update the application.' },
   plan: { icon: ListChecks, fr: 'Préparer le travail sans modifier le projet.', en: 'Prepare the work without changing the project.' },
 } as const;
 
-export const COMPOSER_AGENT_MODES = ['auto', 'build', 'plan'] as const satisfies readonly AgentMode[];
-const MODE_OPTIONS = COMPOSER_AGENT_MODES;
+export const COMPOSER_AGENT_MODES = ['auto', 'plan'] as const satisfies readonly AgentMode[];
 type VisibleAgentMode = (typeof COMPOSER_AGENT_MODES)[number];
 
 function visibleMode(mode: AgentMode): VisibleAgentMode {
@@ -31,14 +30,9 @@ function visibleMode(mode: AgentMode): VisibleAgentMode {
 }
 
 export function AgentModeComposer({ mode, onModeChange, disabled = false, locale = 'fr', className, triggerId }: AgentModeComposerProps) {
-  const [open, setOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState<VisibleAgentMode>(visibleMode(normalizeAgentMode(mode)));
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuId = useId();
   const reduced = useReducedMotion();
   const normalized = selectedMode;
-  const options = MODE_OPTIONS;
 
   useEffect(() => setSelectedMode(visibleMode(normalizeAgentMode(mode))), [mode]);
 
@@ -51,94 +45,32 @@ export function AgentModeComposer({ mode, onModeChange, disabled = false, locale
     return () => window.removeEventListener('coden-agent-mode-sync', onSync);
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const current = options.indexOf(normalized);
-        const next = event.key === 'ArrowDown' ? (current + 1) % options.length : (current - 1 + options.length) % options.length;
-        onModeChange(options[next]);
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open, normalized, onModeChange]);
-
   const CurrentIcon = MODE_DETAILS[normalized].icon;
+  const nextMode: VisibleAgentMode = normalized === 'auto' ? 'plan' : 'auto';
+  const actionLabel = locale === 'fr'
+    ? (nextMode === 'plan' ? 'Passer en mode Plan' : 'Revenir au mode Auto')
+    : (nextMode === 'plan' ? 'Switch to Plan mode' : 'Return to Auto mode');
+
   return (
     <div className={cn('coden-agent-mode-composer', className)}>
-      <button
-        ref={triggerRef}
+      <motion.button
         id={triggerId}
         type="button"
         className="coden-agent-mode-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={menuId}
+        aria-label={actionLabel}
+        aria-pressed={normalized === 'plan'}
         disabled={disabled}
-        onClick={() => setOpen((value) => !value)}
+        whileTap={reduced ? undefined : { scale: .98 }}
+        transition={SPRING_PRESS}
+        onClick={() => {
+          setSelectedMode(nextMode);
+          onModeChange(nextMode);
+        }}
         title={MODE_DETAILS[normalized][locale]}
       >
         <CurrentIcon aria-hidden="true" size={14} />
         <span>{modeLabel(normalized, locale)}</span>
-        <ChevronDown aria-hidden="true" size={14} className={cn(open && 'is-open')} />
-      </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            ref={menuRef}
-            id={menuId}
-            role="menu"
-            className="coden-agent-mode-menu"
-            initial={reduced ? { opacity: 0 } : { opacity: 0, y: 5, scale: .98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={reduced ? { opacity: 0 } : { opacity: 0, y: 5, scale: .98 }}
-            transition={reduced ? { duration: 0 } : { duration: .18, ease: EASE_OUT }}
-          >
-            {options.map((option) => {
-              const Icon = MODE_DETAILS[option].icon;
-              const active = option === normalized;
-              return (
-                <motion.button
-                  key={option}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={active}
-                  className={cn('coden-agent-mode-option', active && 'is-active')}
-                  whileTap={reduced ? undefined : { scale: .98 }}
-                  transition={SPRING_PRESS}
-                  onClick={() => {
-                    setSelectedMode(option);
-                    onModeChange(option);
-                    setOpen(false);
-                    triggerRef.current?.focus();
-                  }}
-                >
-                  <Icon aria-hidden="true" size={15} />
-                  <span className="coden-agent-mode-option-copy">
-                    <strong>{modeLabel(option, locale)}</strong>
-                    <small>{MODE_DETAILS[option][locale]}</small>
-                  </span>
-                  {active ? <Check aria-hidden="true" size={15} /> : null}
-                </motion.button>
-              );
-            })}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      </motion.button>
     </div>
   );
 }

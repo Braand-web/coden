@@ -16,7 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
 import { AgentMessage } from './components/agent/agent-message';
-import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState } from './components/agent/agent-parts';
+import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState, type DecisionNotice } from './components/agent/agent-parts';
 import type { AgentEnvelope } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
 import "./styles/agent-surface.css";
@@ -38,6 +38,15 @@ export type CodenConversationAction = {
   id: string;
   label: string;
   onClick: () => void;
+};
+
+type CodenConversationBlock = {
+  type: "confirmation";
+  title: string;
+  body: string;
+  state: "approval-requested" | "approved" | "rejected";
+  approveLabel?: string;
+  rejectLabel?: string;
 };
 
 type LiveRunLine = {
@@ -80,6 +89,7 @@ export type CodenConversationMessage = {
   content: string;
   working?: boolean;
   actions?: CodenConversationAction[];
+  block?: CodenConversationBlock;
   createdAt?: string;
   liveRun?: LiveRunState;
 };
@@ -100,6 +110,11 @@ export type CodenConversationApi = {
   addAction: (id: string, label: string, onClick: () => void) => void;
   clear: () => void;
   messages: () => CodenConversationMessage[];
+};
+
+type ConversationCallbacks = {
+  onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void;
+  onArtifactOpen?: (artifactId: string) => void;
 };
 
 const markdown = new MarkdownIt({
@@ -230,10 +245,31 @@ function textFromBlock(block: unknown) {
     .join("\n\n");
 }
 
+export function normalizeConversationBlock(block: unknown): CodenConversationBlock | undefined {
+  if (!block || typeof block !== "object") return undefined;
+  const record = block as Record<string, unknown>;
+  if (record.type !== "confirmation") return undefined;
+  const title = String(record.title || "").trim();
+  const body = String(record.body || record.content || "").trim();
+  if (!title && !body) return undefined;
+  const state = ["approval-requested", "approved", "rejected"].includes(String(record.state))
+    ? String(record.state) as CodenConversationBlock["state"]
+    : "approval-requested";
+  return {
+    type: "confirmation",
+    title,
+    body,
+    state,
+    approveLabel: String(record.approveLabel || "").trim() || undefined,
+    rejectLabel: String(record.rejectLabel || "").trim() || undefined,
+  };
+}
+
 function cloneMessages(messages: CodenConversationMessage[]) {
   return messages.map((message) => ({
     ...message,
     actions: [...(message.actions || [])],
+    block: message.block ? { ...message.block } : undefined,
     liveRun: message.liveRun
       ? {
         ...message.liveRun,
@@ -356,9 +392,12 @@ function createStore() {
     setBlock(id, block) {
       mutate(() => {
         const message = find(id);
-        if (!message || !block) return;
-        const text = textFromBlock(block);
+        if (!message) return;
+        message.block = normalizeConversationBlock(block);
+        if (!message.block) return;
+        const text = textFromBlock(message.block);
         if (text) message.content = text;
+        message.working = false;
       });
     },
     setFlow(id, flow) {
@@ -864,7 +903,30 @@ function RichResponse({ content }: { content: string }) {
   return <div className="coden-rich-response" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-function MessageView({ message }: { message: CodenConversationMessage }) {
+export function ConversationDecision({ block, actions = [] }: { block: CodenConversationBlock; actions?: CodenConversationAction[] }) {
+  const stateLabel = block.state === "rejected" ? "Annulée" : block.state === "approved" ? "Confirmée" : "Décision requise";
+  return (
+    <section className="coden-decision-card" data-state={block.state} aria-label={block.title || stateLabel}>
+      <div className="coden-decision-head">
+        <span className="coden-decision-status" aria-hidden="true" />
+        <span>{stateLabel}</span>
+      </div>
+      {block.title ? <h3>{block.title}</h3> : null}
+      {block.body ? <p>{block.body}</p> : null}
+      {actions.length ? (
+        <div className="coden-decision-actions">
+          {actions.map((action, index) => (
+            <button key={action.id} type="button" className={index === 0 ? "is-primary" : "is-secondary"} onClick={action.onClick}>
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function MessageView({ message, callbacks }: { message: CodenConversationMessage; callbacks: ConversationCallbacks }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
 
@@ -891,8 +953,12 @@ function MessageView({ message }: { message: CodenConversationMessage }) {
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
-          {message.liveRun?.chat ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} /> : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
-          {message.actions?.length ? (
+          {message.block
+            ? <ConversationDecision block={message.block} actions={message.actions} />
+            : message.liveRun?.chat
+              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
+              : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
+          {!message.block && message.actions?.length ? (
             <div className="coden-chat-actions">
               {message.actions.map((action) => (
                 <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>
@@ -922,7 +988,7 @@ function MessageView({ message }: { message: CodenConversationMessage }) {
   );
 }
 
-function ConversationApp({ store, host }: { store: ReturnType<typeof createStore>; host: HTMLElement }) {
+function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof createStore>; host: HTMLElement; callbacks: ConversationCallbacks }) {
   const [version, setVersion] = useState(0);
   const messages = store.messages();
   const lastLengthRef = useRef(0);
@@ -962,7 +1028,7 @@ function ConversationApp({ store, host }: { store: ReturnType<typeof createStore
   return (
     <div className="coden-conversation-react">
       {messages.length ? (
-        messages.map((message) => <MessageView key={message.id} message={message} />)
+        messages.map((message) => <MessageView key={message.id} message={message} callbacks={callbacks} />)
       ) : (
         <div className="coden-conversation-empty">
           <h3>Entamez une conversation</h3>
@@ -973,12 +1039,12 @@ function ConversationApp({ store, host }: { store: ReturnType<typeof createStore
   );
 }
 
-export function mountBuilderConversation(host: HTMLElement): CodenConversationApi {
+export function mountBuilderConversation(host: HTMLElement, callbacks: ConversationCallbacks = {}): CodenConversationApi {
   ensureConversationStyles();
   host.innerHTML = "";
   const store = createStore();
   const root: Root = createRoot(host);
-  root.render(<ConversationApp host={host} store={store} />);
+  root.render(<ConversationApp host={host} store={store} callbacks={callbacks} />);
   window.addEventListener("beforeunload", () => root.unmount(), { once: true });
   return store;
 }

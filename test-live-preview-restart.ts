@@ -20,13 +20,14 @@ const builder = readFileSync('./src/builder-live.ts', 'utf8');
 const markup = readFileSync('./builder.html', 'utf8');
 assert.doesNotMatch(markup, /id="btn-live-preview-start"/, 'the manual preview start control must not be rendered');
 
-// The action exists and asks the route that actually starts a server.
-assert.match(builder, /async function startLivePreview\(\)/, 'a stopped application must be startable from the interface');
-const start = builder.slice(builder.indexOf('async function startLivePreview'), builder.indexOf('function syncLivePreviewStartControl'));
+// Recovery exists and asks the route that actually starts a server, but it is
+// automatic rather than exposed as a second toolbar action.
+assert.match(builder, /async function ensureLivePreview\(\)/, 'a stopped application must restart automatically');
+const start = builder.slice(builder.indexOf('async function ensureLivePreview'), builder.indexOf('/** Forget the live preview'));
 assert.match(start, /sandbox\/start/, 'by calling the start route');
 assert.match(start, /method: 'POST'/, 'which is a POST');
 assert.match(start, /setLivePreview\(url\)/, 'and the result points the panel at the running server');
-assert.match(builder, /setEmptyPreviewState\('idle'\);\s*await startLivePreview\(\)/, 'a missing runtime must restart automatically');
+assert.match(builder, /setEmptyPreviewState\('idle'\);\s*await ensureLivePreview\(\)/, 'a missing runtime must restart automatically');
 
 // Starting takes a minute; a second click would start it twice.
 assert.match(start, /if \(!currentProjectId \|\| liveStartInFlight\) return/, 'a start already under way must not be started again');
@@ -38,29 +39,13 @@ assert.match(start, /\} finally \{/, 'and must be released whatever happens, or 
 assert.match(start, /error\?\.message/, 'the failure the server reported is what the user is told');
 
 /**
- * Offered when it is the thing to do, and not otherwise.
- *
- * On a running server the button would restart what the user is watching; on a
- * project with no files it can only fail; during a generation the run starts
- * one itself.
+ * Recovery is automatic and the toolbar remains minimal.
  */
-const sync = builder.slice(builder.indexOf('function syncLivePreviewStartControl'), builder.indexOf('/** Forget the live preview'));
-assert.match(sync, /!livePreviewUrl/, 'not offered while a server is already running');
-assert.match(sync, /Boolean\(currentProjectId\)/, 'not offered without a project');
-assert.match(sync, /!isGenerating/, 'not offered during a generation, which starts one itself');
-assert.match(sync, /currentBuilderView === 'preview'/, 'and not over the code or database tabs');
-
-// It has to follow the state rather than be set once.
-assert.match(builder, /syncPreviewToolbarControls\(\) \{\r?\n  syncLivePreviewStartControl\(\);/,
-  'the control must follow every change the preview toolbar already follows');
-const clear = builder.slice(builder.indexOf('function clearLivePreview'), builder.indexOf('function clearLivePreview') + 400);
-assert.match(clear, /syncLivePreviewStartControl\(\)/, 'losing the server must bring the offer back');
-const busy = builder.slice(builder.indexOf('function setBusy(busy: boolean)'), builder.indexOf('function setBusy(busy: boolean)') + 300);
-assert.match(busy, /syncLivePreviewStartControl\(\)/, 'and a generation starting or ending must update it');
+assert.doesNotMatch(builder, /function syncLivePreviewStartControl/, 'the removed manual control must not leave dead synchronization code');
 
 // Reopening a project with nothing running is the case this exists for.
 const resume = builder.slice(builder.indexOf('async function resumeLivePreview'), builder.indexOf('/** Forget the live preview'));
-assert.match(resume, /syncLivePreviewStartControl\(\); return false;/, 'a project whose sandbox is gone must be offered the start control');
+assert.match(resume, /if \(!url \|\| status\?\.state !== 'running'\) return false;/, 'a missing sandbox must fall through to automatic restart');
 assert.match(builder, /const resumedLive = await resumeLivePreview\(\)/, 'resolve the live server before choosing a fallback runtime');
 assert.match(builder, /event\.payload\.type === 'preview_ready'/, 'a verified live preview must arrive before the closing model recap');
 assert.match(builder, /url\.pathname\.startsWith\('\/preview\/'\)/, 'only the authenticated same-origin preview proxy may control the iframe');

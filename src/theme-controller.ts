@@ -9,9 +9,9 @@ function isTheme(value: string | null): value is CodenTheme {
 export function getInitialTheme(): CodenTheme {
   try {
     const stored = localStorage.getItem(CODEN_THEME_KEY);
-    return isTheme(stored) ? stored : 'dark';
+    return isTheme(stored) ? stored : 'light';
   } catch {
-    return 'dark';
+    return 'light';
   }
 }
 
@@ -20,7 +20,7 @@ export function applyTheme(theme: CodenTheme): void {
   document.documentElement.style.colorScheme = theme;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = theme === 'dark' ? '#0f1014' : '#fafafa';
+  if (themeColor) themeColor.content = theme === 'dark' ? '#0e1116' : '#fcfbf8';
 
   document.querySelectorAll<HTMLElement>('[data-theme-icon="dark"], #moon-icon').forEach((icon) => {
     icon.classList.toggle('hidden', theme !== 'dark');

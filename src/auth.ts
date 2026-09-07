@@ -14,6 +14,7 @@ import { initCodenNavigationTransitions } from './navigation-transitions';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
 import './styles/auth-premium.css';
+import './styles/coden-horizon-system.css';
 
 type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 type StatusTone = 'info' | 'error' | 'success';

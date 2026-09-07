@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { Response } from '../ui/response';
 import { COMPOSER_AGENT_MODES } from './agent-mode-composer';
 import { normalizeAgentMode } from '../../services/agent-mode';
+import { ConversationDecision, normalizeConversationBlock } from '../../builder-conversation-island';
 
 /**
  * What survived the streaming removal: the markdown response renderer and the
@@ -26,9 +27,27 @@ describe('agent conversation UI', () => {
   });
 
   it('keeps the composer minimal while Auto routes advanced intents internally', () => {
-    expect(COMPOSER_AGENT_MODES).toEqual(['auto', 'build', 'plan']);
+    expect(COMPOSER_AGENT_MODES).toEqual(['auto', 'plan']);
     expect(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research'].map(normalizeAgentMode)).toEqual(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research']);
     expect(normalizeAgentMode('fix')).toBe('fix');
     expect(normalizeAgentMode('research')).toBe('research');
+  });
+
+  it('keeps a structured decision interactive instead of flattening it into prose', () => {
+    const block = normalizeConversationBlock({
+      type: 'confirmation',
+      title: 'Confirmation nécessaire',
+      body: 'Vérifiez la publication avant de continuer.',
+      state: 'approval-requested',
+    });
+    expect(block).toBeTruthy();
+    const html = renderToStaticMarkup(React.createElement(ConversationDecision, {
+      block: block!,
+      actions: [{ id: 'continue', label: 'Continuer', onClick: () => undefined }],
+    }));
+    expect(html).toContain('coden-decision-card');
+    expect(html).toContain('Décision requise');
+    expect(html).toContain('<button');
+    expect(html).toContain('Continuer');
   });
 });

@@ -103,7 +103,7 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
 .coden-ui-button-ghost:hover:not(:disabled) { background: var(--accent-blue-soft); color: var(--text); }
 .coden-ui-button-danger { background: color-mix(in srgb, var(--error) 16%, transparent); color: var(--error); border-color: color-mix(in srgb, var(--error) 34%, var(--border)); }
 .coden-ui-button:disabled { cursor: not-allowed; opacity: .54; transform: none; }
-.coden-ui-card, .coden-ui-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px rgba(0,0,0,.16); }
+.coden-ui-card, .coden-ui-panel { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 0 color-mix(in srgb, currentColor 3%, transparent) inset, 0 12px 32px rgba(0,0,0,.16); }
 .coden-ui-card { padding: 20px; }
 .coden-ui-panel { padding: 24px; }
 .coden-ui-card:hover { border-color: var(--border-mid); }

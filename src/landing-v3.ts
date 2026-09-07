@@ -1,4 +1,6 @@
 import { initPromptInputActions } from './prompt-input-actions';
+import './styles/agent-surface.css';
+import './styles/coden-horizon-system.css';
 
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
 const notice = document.getElementById('landing-notice');
@@ -17,11 +19,15 @@ document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {
   let mode: 'auto' | 'plan' = 'auto';
   modeButton?.addEventListener('click', () => {
     mode = mode === 'auto' ? 'plan' : 'auto';
+    wrapper.dataset.promptMode = mode;
     modeButton.setAttribute('aria-pressed', String(mode === 'plan'));
+    modeButton.setAttribute('aria-label', mode === 'plan' ? 'Return to Auto mode' : 'Switch to Plan mode');
+    modeButton.setAttribute('title', mode === 'plan' ? 'Prepare the work without changing the project.' : 'Coden chooses the best action.');
     const label = modeButton.querySelector('[data-mode-label]');
     if (label) label.textContent = mode === 'plan' ? 'Plan' : 'Auto';
     submit.setAttribute('aria-label', mode === 'plan' ? 'Plan this app' : 'Build now');
   });
+  wrapper.dataset.promptMode = mode;
   async function start() {
     if (submitting) return;
     const prompt = textarea.value.trim();

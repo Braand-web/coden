@@ -15,9 +15,15 @@
   color: var(--text);
   padding: 0 10px;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 180ms var(--ease-out), border-color 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+.coden-agent-mode-trigger[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+  color: var(--text);
 }
 
 .coden-agent-mode-trigger:hover {

@@ -31,7 +31,10 @@ import {
   startCreateProjectFlow,
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
+import { AgentModeComposer } from './components/agent/agent-mode-composer';
+import type { AgentMode } from './services/agent-mode';
 import './styles/dashboard-react.css';
+import './styles/coden-horizon-system.css';
 
 type ProfileResponse = {
   user?: { email?: string; name?: string; full_name?: string };
@@ -290,6 +293,7 @@ function DashboardHome() {
   });
   const [search, setSearch] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [composerMode, setComposerMode] = useState<AgentMode>('auto');
   const [creating, setCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState('');
   const [projectView, setProjectView] = useState<'all' | 'recent'>('all');
@@ -329,7 +333,7 @@ function DashboardHome() {
     }
     try {
       await startCreateProjectFlow(
-        { prompt: request, mode: 'auto', source: 'dashboard' },
+        { prompt: request, mode: composerMode === 'plan' ? 'plan' : 'auto', source: 'dashboard' },
         {
           onStatus: (status: CreateProjectFlowStatus) => {
             setCreationStatus(formatCreateProjectFlowStatus(status, 'fr'));
@@ -403,8 +407,8 @@ function DashboardHome() {
                 disabled={creating}
               />
               <div className="coden-dashboard-composer-footer">
-                <span><WandSparkles size={14} aria-hidden="true" /> Auto</span>
-                <button type="submit" disabled={!prompt.trim() || creating} aria-label="Créer le projet">
+                <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
+                <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
                   <Send size={16} aria-hidden="true" />
                 </button>
               </div>
