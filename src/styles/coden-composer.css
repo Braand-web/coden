@@ -1,7 +1,7 @@
 /* One composer language for every Coden surface. */
 :root {
   --coden-composer-radius: 24px;
-  --coden-composer-control: 32px;
+  --coden-composer-control: 30px;
   --coden-composer-send: 36px;
   --coden-composer-ease: cubic-bezier(.32, .72, 0, 1);
 }
