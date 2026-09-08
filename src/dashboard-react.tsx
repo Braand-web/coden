@@ -15,6 +15,7 @@ import {
   ChevronRight,
   FileCode2,
   LogOut,
+  Mic,
   Menu,
   Plus,
   Search,
@@ -33,6 +34,7 @@ import {
 } from './services/create-project-flow';
 import { AgentModeComposer } from './components/agent/agent-mode-composer';
 import type { AgentMode } from './services/agent-mode';
+import { initPromptInputActions } from './prompt-input-actions';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
@@ -253,11 +255,20 @@ function Sidebar({
 function ProjectCard({ project }: { project: DashboardProject }) {
   const state = projectState(project);
   const previewHtml = project.preview_html?.trim();
+  const isErrorPreview = Boolean(previewHtml && /data-coden-preview-error\s*=\s*["']true/i.test(previewHtml));
+  const hasRenderedPreview = Boolean(previewHtml && !isErrorPreview);
+  const liveUrl = project.live_url?.trim();
+  const hasLivePreview = Boolean(!hasRenderedPreview && liveUrl && /^https?:\/\//i.test(liveUrl));
+  const fallbackMessage = /building|generating|running/i.test(`${project.status || ''} ${project.preview_status || ''}`)
+    ? 'Aperçu en préparation'
+    : isErrorPreview
+      ? 'Aperçu à corriger'
+      : 'Générez le projet pour afficher son aperçu';
   return (
     <article className="coden-dashboard-project-card">
       <a className="coden-dashboard-project-card-link" href={builderUrl(project.id)} aria-label={`Ouvrir le projet ${project.name}`}>
         <span className="coden-dashboard-project-preview">
-          {previewHtml ? (
+          {hasRenderedPreview ? (
             <iframe
               title={`Aperçu de ${project.name}`}
               srcDoc={previewHtml}
@@ -265,14 +276,25 @@ function ProjectCard({ project }: { project: DashboardProject }) {
               sandbox="allow-scripts"
               tabIndex={-1}
             />
+          ) : hasLivePreview ? (
+            <iframe
+              title={`Aperçu en ligne de ${project.name}`}
+              src={liveUrl}
+              loading="lazy"
+              sandbox="allow-scripts allow-forms"
+              referrerPolicy="no-referrer"
+              tabIndex={-1}
+            />
           ) : (
             <span className="coden-dashboard-project-fallback" aria-hidden="true">
               <span><FileCode2 size={25} /></span>
               <strong>{project.name}</strong>
-              <small>Aucun aperçu vérifié</small>
+              <small>{fallbackMessage}</small>
             </span>
           )}
-          <span className={`coden-dashboard-project-badge is-${state.key}`}>{state.label}</span>
+          <span className={`coden-dashboard-project-badge is-${state.key}`}>
+            {hasRenderedPreview || hasLivePreview ? 'Aperçu' : state.label}
+          </span>
         </span>
         <span className="coden-dashboard-project-card-meta">
           <span className="coden-dashboard-project-card-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
@@ -302,6 +324,7 @@ function DashboardHome() {
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const wasSidebarOpen = useRef(false);
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
@@ -362,6 +385,12 @@ function DashboardHome() {
   }, [prompt]);
 
   useEffect(() => {
+    const root = composerFormRef.current?.parentElement;
+    if (!root) return;
+    initPromptInputActions({ root, persistForBuilder: true });
+  }, []);
+
+  useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
     window.addEventListener('keydown', onEscape);
     return () => window.removeEventListener('keydown', onEscape);
@@ -401,7 +430,7 @@ function DashboardHome() {
             </span>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
             <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
-            <form className="coden-dashboard-composer" onSubmit={createFromPrompt}>
+            <form ref={composerFormRef} className="coden-dashboard-composer input-wrapper" onSubmit={createFromPrompt}>
               <textarea
                 ref={composerRef}
                 value={prompt}
@@ -418,11 +447,21 @@ function DashboardHome() {
                 aria-label="Décrire le projet à créer"
                 disabled={creating}
               />
-              <div className="coden-dashboard-composer-footer">
-                <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
-                <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
-                  <ArrowUp size={17} aria-hidden="true" />
-                </button>
+              <div className="coden-dashboard-composer-footer input-actions">
+                <div className="coden-dashboard-composer-actions actions-left" aria-label="Actions du composer">
+                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="upload" aria-label="Joindre des fichiers" disabled={creating}>
+                    <Plus size={16} aria-hidden="true" />
+                  </button>
+                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="voice" aria-label="Saisie vocale" disabled={creating}>
+                    <Mic size={15} aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="coden-dashboard-composer-actions actions-right">
+                  <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
+                  <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
+                    <ArrowUp size={17} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </form>
             <div className="coden-dashboard-create-status" role="status" aria-live="polite">

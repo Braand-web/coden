@@ -33,6 +33,11 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain('Tout parcourir');
     expect(reactDashboard).toContain('preview_html');
     expect(reactDashboard).toContain('sandbox="allow-scripts"');
+    expect(reactDashboard).toContain('data-coden-preview-error');
+    expect(reactDashboard).toContain('data-prompt-action="upload"');
+    expect(reactDashboard).toContain('data-prompt-action="voice"');
+    expect(reactDashboard).toContain('initPromptInputActions');
+    expect(server).toContain('preview_html: project.preview_html || \'\'');
     expect(reactDashboard).not.toContain('Que veux-tu accomplir');
     expect(reactDashboard).not.toContain('Demander à Coden');
     expect(reactDashboard).not.toContain('Crédits');

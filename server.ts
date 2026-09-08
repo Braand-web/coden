@@ -7297,7 +7297,10 @@ async function enrichProjectsForDashboard(projects: GeneratedProject[]) {
       model_id: project.model_id || 'auto',
       status: project.status || 'draft',
       preview_status: project.preview_status || 'idle',
-      preview_html: project.preview_status === 'verified' ? project.preview_html || '' : '',
+      // A generated rendering remains useful while its verification verdict is
+      // being repaired. The client filters the explicit error document, but it
+      // must receive the real artifact to render it in the dashboard.
+      preview_html: project.preview_html || '',
       publish_status: publishStatus,
       live_url: liveUrl,
       created_at: project.created_at,
