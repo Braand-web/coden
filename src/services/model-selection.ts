@@ -67,6 +67,8 @@ export type SelectionRequest = {
   interactive?: boolean;
   /** Estimated prompt size, to rule out models that cannot hold it. */
   estimatedInputTokens?: number;
+  /** Explicit selection remains pinned, but never bypasses access or capabilities. */
+  requestedModel?: string;
 };
 
 export type SelectionResult = {
@@ -173,7 +175,11 @@ export function selectModel(request: SelectionRequest): SelectionResult {
     : ['planning','architecture','security'].includes(request.task) ? AUTO_MODEL_ROLES.lead
     : request.task === 'review' ? AUTO_MODEL_ROLES.premium
     : complexity === 'simple' ? AUTO_MODEL_ROLES.worker : AUTO_MODEL_ROLES.lead;
-  const candidates = [preferred, ...MODELS_BY_COST.filter(id => (AUTO_MODEL_IDS as readonly string[]).includes(id) && id !== preferred)];
+  if (request.requestedModel && !MODELS_BY_COST.includes(request.requestedModel as AllowedModelId)) {
+    throw Object.assign(new Error('The selected model is not available.'), { diagnosticCode: 'MODEL_CAPABILITY_UNAVAILABLE' });
+  }
+  const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId]
+    : [preferred, ...MODELS_BY_COST.filter(id => (AUTO_MODEL_IDS as readonly string[]).includes(id) && id !== preferred)];
   for (const modelId of candidates) {
     const caps = AI_MODEL_CAPABILITIES[modelId];
 
@@ -191,7 +197,7 @@ export function selectModel(request: SelectionRequest): SelectionResult {
       rejected.push({ modelId, because: 'deferred execution tier, not usable interactively' });
       continue;
     }
-    if (STRENGTH_ORDER[caps[dimensionKey]] < requiredStrength) {
+    if (!request.requestedModel && STRENGTH_ORDER[caps[dimensionKey]] < requiredStrength) {
       rejected.push({ modelId, because: `${bar.dimension} is ${caps[dimensionKey]}, ${request.task} at ${complexity} needs at least ${strengthName(requiredStrength)}` });
       continue;
     }

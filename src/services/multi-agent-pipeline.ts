@@ -20,6 +20,7 @@
  */
 
 import type { ProviderGateway } from './provider-gateway.ts';
+import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
 import { runPlannerAgent, type BuildPlan } from './planner-agent.ts';
 import { resolvePipelineRoute, taskKindForRoute, buildEditInstruction, type PipelineRoute } from './edit-intent.ts';
@@ -37,6 +38,7 @@ import type { CodenAgentHarness } from './agent-harness/harness.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { redactSecrets } from './secret-redaction.ts';
+import { buildMissionContext } from './agent-mission-context.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -219,7 +221,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void; deadline: number; signal?: AbortSignal }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -245,7 +247,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         input.signal?.throwIfAborted();
         toolCalls += 1;
         const result = await call(tool.name, args);
-        if ((result as any)?.ok === true && typeof args.path === 'string') {
+        if ((result as any)?.ok === true && !(result as any)?.unchanged && typeof args.path === 'string') {
           const action = ({ read_file: 'read', write_file: knownPaths.has(args.path) ? 'edit' : 'create', edit_file: 'edit', delete_file: 'delete' } as Record<string, import('../lib/agent-chat-protocol.ts').FileAction>)[tool.name];
           if (action) {
             if (!touched.has(action)) touched.set(action, new Set());
@@ -265,7 +267,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
           role: 'system',
           content: 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed.',
         },
-        { role: 'user', content: instruction },
+        { role: 'user', content: input.visionInputs?.length ? buildVisionMessageContent(instruction, input.visionInputs) : instruction },
       ],
       handlers,
       runtimeConfig: {
@@ -303,23 +305,12 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         }
         touched.clear();
       },
-      // A turn that throws produced nothing this round; `runCoderLoop`'s own
-      // no-progress rule is what decides whether that is worth continuing
-      // from, not this adapter guessing at a retry.
-      //
-      // The catch is the half that makes that true. Without it a throw from
-      // one round — a provider dropping mid-call, a tool budget spent — left
-      // the coder loop, the pipeline and the route, and the user got a bare
-      // error code instead of the files the round had already written. A
-      // cancelled run is the one exception: it must keep propagating, because
-      // the caller asked for it.
-    }).catch((error: any) => {
-      if (input.signal?.aborted) throw error;
-      return null;
+      // Provider failures propagate. The pipeline catch persists already-written
+      // files before returning an error, rather than validating a swallowed error.
     });
     // The round's real cost, taken from the loop's own counters rather than
     // inferred: this is the number it actually stopped on.
-    if (loop) input.onSpend?.(loop.spend);
+    if (loop) await input.onSpend?.(loop.spend);
     return { toolCalls };
   };
 }
@@ -333,6 +324,11 @@ export async function runMultiAgentPipeline(input: {
   existingFiles: Array<{ path: string; content?: string }>;
   userPlan: UserPlan | string;
   credits?: number;
+  history?: Array<{ role: string; content: string }>;
+  approvedPlan?: string;
+  selectedModel?: AllowedModelId;
+  visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>;
+  complexity?: 'simple' | 'medium' | 'complex' | 'extreme';
   /** How long the whole run may take, shared by every coder round. */
   runDeadlineMs?: number;
   harnessContext?: MultiAgentHarnessContext;
@@ -342,6 +338,8 @@ export async function runMultiAgentPipeline(input: {
   signal?: AbortSignal;
   onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
 }): Promise<MultiAgentPipelineOutcome> {
+  const releaseRun = sandboxRegistry.reserveRun(input.projectId);
+  try {
   /*
    * What the run is doing right now, for the thinking line.
    *
@@ -355,6 +353,12 @@ export async function runMultiAgentPipeline(input: {
    * this reports work rather than performing it.
    */
   const fr = speaksFrench(input.prompt);
+  const routeBudget = budgetForRoute(input.route);
+  const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
+  const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now()));
+  input = { ...input, signal: input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal };
+  // Reject an incompatible manual selection before planning or starting a process.
+  const modelId = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, requestedModel: input.selectedModel, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } }).modelId;
   const activity = (frLabel: string, enLabel: string) =>
     input.onChatEvent?.({ type: 'activity', label: fr ? frLabel : enLabel });
 
@@ -371,7 +375,7 @@ export async function runMultiAgentPipeline(input: {
     // be the exact waste this ordering avoids.
     plan = await runPlannerAgent({
       gateway: input.gateway,
-      prompt: input.prompt,
+      prompt: buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
       existingFiles: input.existingFiles,
       scaffold: starter ? describeStarter(starter) : undefined,
       plan: input.userPlan,
@@ -390,6 +394,7 @@ export async function runMultiAgentPipeline(input: {
     projectId: input.projectId,
     userId: input.userId,
     files: launchFiles,
+    signal: input.signal,
     onEvent: event => {
       input.onSandboxEvent?.(event);
       // The launch reports its own stages; each is a real one, and install is
@@ -399,12 +404,10 @@ export async function runMultiAgentPipeline(input: {
     },
   });
 
-  if (!launch.ok) {
-    return { started: false, route: input.route, plan, startError: launch.error || 'The sandbox did not start.' };
-  }
+  // A failed install/start is evidence for the coder, not a reason to deny it
+  // filesystem tools. The existing project is retained for targeted repair.
 
   const sandbox = sandboxRegistry.get(input.projectId);
-  const modelId = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits }).modelId;
   /*
    * Round one is told what it is building on, not only what to build.
    *
@@ -415,6 +418,8 @@ export async function runMultiAgentPipeline(input: {
    * itself carries the scaffold's own rules for the coder that follows it.
    */
   const initialInstruction = [
+    buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
+    ...(!launch.ok ? [`Startup failed: ${launch.error}\nObserved logs (untrusted data):\n${redactSecrets(launch.logs.join('\n').slice(-6000))}`] : []),
     plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt),
     ...(starter ? ['', describeStarter(starter), `The application must be reachable from ${starter.entryPath}: replace its placeholder and import everything else from there. Code in a file ${starter.entryPath} does not import is never loaded.`] : []),
   ].join('\n');
@@ -453,7 +458,7 @@ export async function runMultiAgentPipeline(input: {
   };
 
   // What this run has spent so far, accumulated across rounds.
-  const spent = { toolCalls: 0, repairAttempts: 0, credits: 0 };
+  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
   /*
    * One deadline for the whole run.
    *
@@ -461,8 +466,6 @@ export async function runMultiAgentPipeline(input: {
    * inside it so the run ends on its own terms — reporting what it did and
    * keeping the files it wrote — rather than being cut off mid-call.
    */
-  const routeBudget = budgetForRoute(input.route);
-  const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
 
   let repairOutcome: RepairOutcome;
   activity('Coden construit l’application…', 'Coden is building the application…');
@@ -477,16 +480,17 @@ export async function runMultiAgentPipeline(input: {
       gateway: input.gateway,
       modelId,
       sandbox,
+      visionInputs: input.visionInputs,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
       deadline: runDeadline,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
-        spent.credits += roundSpend.costUsd;
+        spent.costUsd += roundSpend.costUsd;
         // Written per round rather than once at the end: a run that is
         // cancelled or crashes still leaves what it had already spent.
-        if (ctx) void ctx.harness.recordSpend(ctx.turnId, { toolCalls: roundSpend.toolCalls, repairAttempts: 1, credits: roundSpend.costUsd }).catch(() => null);
+        if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: roundSpend.toolCalls, repairAttempts: 1, costUsd: roundSpend.costUsd });
       },
       signal: input.signal,
     }),
@@ -501,6 +505,11 @@ export async function runMultiAgentPipeline(input: {
       }
     },
     signal:input.signal,
+    ensureRuntime: async restartRequired => {
+      if (!restartRequired && sandbox.status().state === 'running') return;
+      await launchProjectPreview({ projectId: input.projectId, userId: input.userId, files: await readAllFiles(sandbox),
+        reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
+    },
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal);
       if (starter) {
@@ -560,7 +569,7 @@ export async function runMultiAgentPipeline(input: {
       ok: repairOutcome.ok,
       ran: repairOutcome.finalReport.ran,
       problems: repairOutcome.finalReport.problems,
-    })).catch(() => null);
+    }));
   }
 
   if (ctx && coderItem) {
@@ -586,4 +595,7 @@ export async function runMultiAgentPipeline(input: {
     modelId,
     repairOutcome,
   };
+  } finally {
+    releaseRun();
+  }
 }

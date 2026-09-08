@@ -18,13 +18,12 @@
 import { sandboxRegistry } from './sandbox-registry.ts';
 import type { ProjectSandbox } from './project-sandbox.ts';
 import { decideCommand } from './command-policy.ts';
+import { needsRestart } from './launch.ts';
 
 export type ToolResult =
   | { ok: true; [key: string]: unknown }
   | { ok: false; error: string; hint?: string };
 
-/** How much of a file is worth putting in a prompt. */
-const MAX_FILE_CHARS = 60_000;
 const MAX_SEARCH_HITS = 40;
 
 function fail(error: string, hint?: string): ToolResult {
@@ -47,7 +46,7 @@ export const SANDBOX_TOOL_SCHEMAS = [
   {
     name: 'read_file',
     description: 'Read one file. Read before editing: an edit written from memory of a previous message is how a project loses work.',
-    parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    parameters: { type: 'object', properties: { path: { type: 'string' }, offset: { type: 'integer', minimum: 0, description: 'Character offset, initially 0. Continue using nextOffset.' }, limit: { type: 'integer', minimum: 1, maximum: 12000 } }, required: ['path'] },
   },
   {
     name: 'search_files',
@@ -132,7 +131,7 @@ export function isPersistentPreviewCommand(command: string, args: readonly strin
   return false;
 }
 
-export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void } = {}) {
+export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void; signal?: AbortSignal } = {}) {
   const sandbox: ProjectSandbox = sandboxRegistry.get(projectId);
   const changed = (paths: string[]) => options.onChange?.(paths);
 
@@ -142,14 +141,17 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       return { ok: true, files, count: files.length };
     },
 
-    async read_file({ path }: { path: string }) {
+    async read_file({ path, offset = 0, limit = 12000 }: { path: string; offset?: number; limit?: number }) {
       try {
         const content = await sandbox.readProjectFile(String(path));
+        if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1) return fail('Invalid read range.');
+        const end = Math.min(content.length, offset + Math.min(limit, 12000));
         return {
           ok: true,
           path,
-          content: content.slice(0, MAX_FILE_CHARS),
-          truncated: content.length > MAX_FILE_CHARS,
+          content: content.slice(offset, end),
+          offset, totalChars: content.length, nextOffset: end < content.length ? end : null,
+          truncated: end < content.length,
         };
       } catch {
         // Naming the alternatives is what turns a miss into a correction
@@ -180,9 +182,11 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
 
     async write_file({ path, content }: { path: string; content: string }) {
       try {
+        const previous = await sandbox.readProjectFile(String(path)).catch(() => null);
+        if (previous === String(content ?? '')) return { ok: true, path, unchanged: true, bytes: previous.length };
         await sandbox.writeFiles([{ path: String(path), content: String(content ?? '') }]);
         changed([String(path)]);
-        return { ok: true, path, bytes: String(content ?? '').length };
+        return { ok: true, path, bytes: String(content ?? '').length, restartRequired: needsRestart([String(path)]) };
       } catch (error: any) {
         return fail(error?.message || 'The file could not be written.');
       }
@@ -208,13 +212,15 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       if (occurrences > 1) {
         return fail(`That snippet appears ${occurrences} times in ${target}.`, 'Include more surrounding lines so it matches exactly once.');
       }
+      if (needle === String(replace ?? '')) return { ok: true, path: target, unchanged: true, replaced: 0 };
       await sandbox.writeFiles([{ path: target, content: content.replace(needle, String(replace ?? '')) }]);
       changed([target]);
-      return { ok: true, path: target, replaced: 1 };
+      return { ok: true, path: target, replaced: 1, restartRequired: needsRestart([target]) };
     },
 
     async delete_file({ path }: { path: string }) {
       try {
+        if (!await sandbox.hasFile(String(path))) return { ok:true, path, unchanged:true };
         await sandbox.deleteProjectFile(String(path));
         changed([String(path)]);
         return { ok: true, path };
@@ -229,7 +235,7 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
         return fail(`${packageName || '(empty)'} is not a package name.`, 'Give a package name, optionally with a version.');
       }
       const args = ['install', packageName, ...(dev ? ['--save-dev'] : []), '--no-audit', '--no-fund'];
-      const result = await sandbox.runCommand('npm', args, { timeoutMs: 120_000, allowReview: true });
+      const result = await sandbox.runCommand('npm', args, { timeoutMs: 120_000, allowReview: true, signal: options.signal });
       if (result.code !== 0) return fail(`npm install ${packageName} failed.`, result.output.slice(-1_500));
       // The dev server has to come back for a new dependency to be resolvable;
       // hot reload cannot introduce a module that was not on disk.
@@ -247,7 +253,11 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
         return fail(`Refused: ${decision.reason}`, 'Use install_package to add a dependency.');
       }
       try {
-        const result = await sandbox.runCommand(String(command), argv, { timeoutMs: 180_000 });
+        const result = await sandbox.runCommand(String(command), argv, { timeoutMs: 180_000, signal: options.signal });
+        if (result.code !== 0 || result.timedOut) return {
+          ...fail(result.timedOut ? 'COMMAND_TIMED_OUT' : 'COMMAND_FAILED'),
+          exitCode: result.code, timedOut: result.timedOut, output: result.output.slice(-8000),
+        };
         return {
           ok: true,
           exitCode: result.code,

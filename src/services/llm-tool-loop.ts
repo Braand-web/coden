@@ -103,7 +103,10 @@ function transcriptSize(messages: ChatMessage[]): number {
 
 function safeToolResult(value: unknown) {
   const serialized = JSON.stringify(value ?? null);
-  return serialized.length > 16_000 ? `${serialized.slice(0, 16_000)}...` : serialized;
+  if (serialized.length <= 80_000) return serialized;
+  return JSON.stringify({ ok: false, truncated: true, error: 'TOOL_RESULT_TOO_LARGE',
+    hint: 'Request a smaller file range or a more specific search. This result is not complete.',
+    preview: serialized.slice(0, 12_000), originalChars: serialized.length });
 }
 
 function parseToolArguments(raw: string | undefined) {
@@ -235,7 +238,7 @@ export async function runLlmToolLoop(input: {
     let seen = 0;
     const options = {
       maxAttempts: 1,
-      timeoutMs: input.timeoutMs,
+      timeoutMs: Math.max(1, Math.min(input.timeoutMs ?? Infinity, deadline - Date.now())),
       runtimeConfig: input.runtimeConfig,
       runtimeConfigForModel,
       signal: input.signal,
@@ -252,6 +255,7 @@ export async function runLlmToolLoop(input: {
     promptTokens += result.usage?.prompt_tokens || 0;
     completionTokens += result.usage?.completion_tokens || 0;
     costUsd += result.cost_usd || 0;
+    if (Date.now() >= deadline) { stoppedBecause = 'time_budget'; break; }
     if (!result.tool_calls?.length) return { result, messages, toolExecutions, spend: spend() };
 
     messages.push({

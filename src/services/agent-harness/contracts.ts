@@ -119,6 +119,8 @@ export type HarnessTurn = {
     subagents: number;
     repairAttempts: number;
     credits: number;
+    /** Provider-reported or estimated USD; never interchangeable with credits. */
+    costUsd?: number;
   };
   checkpoint?: Record<string, unknown>;
   startedAt?: string;

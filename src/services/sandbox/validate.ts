@@ -133,7 +133,7 @@ export function parseRuntimeOutput(output: string, source: 'dev_server' | 'build
  */
 export async function validateProject(
   sandbox: ProjectSandbox,
-  options: { typecheckTimeoutMs?: number; buildTimeoutMs?: number; skipBuild?: boolean } = {},
+  options: { typecheckTimeoutMs?: number; buildTimeoutMs?: number; skipBuild?: boolean; signal?: AbortSignal } = {},
 ): Promise<ValidationReport> {
   const startedAt = Date.now();
   const ran = { devServer: false, typecheck: false, build: false };
@@ -184,6 +184,7 @@ export async function validateProject(
   if (hasTypecheck) {
     const typecheck = await sandbox.runCommand('npm', ['run', 'typecheck'], {
       timeoutMs: options.typecheckTimeoutMs ?? 120_000,
+      signal: options.signal,
     }).catch(() => ({ code: -1, output: 'The typecheck process could not be started or timed out.' }));
     if (typecheck) {
       ran.typecheck = true;
@@ -204,6 +205,7 @@ export async function validateProject(
   if (!options.skipBuild) {
     const build = await sandbox.runCommand('npm', ['run', 'build'], {
       timeoutMs: options.buildTimeoutMs ?? 180_000,
+      signal: options.signal,
     }).catch(() => ({ code: -1, output: 'The build process could not be started or timed out.' }));
     if (build) {
       ran.build = true;

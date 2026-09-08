@@ -58,6 +58,7 @@ console.log('browser interaction runner tests passed');
 {
   const executablePath = [
     process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    (await import('playwright')).chromium.executablePath(),
     ...['chromium', 'chromium-1194', 'chromium-1234'].flatMap(dir => [
       `/opt/pw-browsers/${dir}/chrome-linux/chrome`,
       `/opt/pw-browsers/${dir}/chrome-linux64/chrome`,

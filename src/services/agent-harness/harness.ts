@@ -79,6 +79,9 @@ export class CodenAgentHarness {
     if (!canTransitionTurn(turn.status, status)) {
       throw new Error(`Invalid harness turn transition: ${turn.status} -> ${status}`);
     }
+    if (status === 'completed' && turn.definitionOfDone.some(check => check.required && check.status !== 'passed')) {
+      throw Object.assign(new Error('Required verification is incomplete.'), { diagnosticCode: 'VERIFICATION_INCOMPLETE' });
+    }
     const patch: Partial<HarnessTurn> = { status };
     if (status === 'running' && !turn.startedAt) patch.startedAt = nowIso();
     if (isTerminalTurnStatus(status)) patch.completedAt = nowIso();
@@ -200,13 +203,14 @@ export class CodenAgentHarness {
    * already there rather than replacing it, so a run that reports twice — once
    * per coder round — accumulates instead of overwriting.
    */
-  async recordSpend(turnId: string, spend: { toolCalls?: number; repairAttempts?: number; credits?: number }) {
+  async recordSpend(turnId: string, spend: { toolCalls?: number; repairAttempts?: number; credits?: number; costUsd?: number }) {
     const turn = await this.requiredTurn(turnId);
     const budgetUsed = {
       ...turn.budgetUsed,
       toolCalls: turn.budgetUsed.toolCalls + Math.max(0, Math.round(spend.toolCalls || 0)),
       repairAttempts: turn.budgetUsed.repairAttempts + Math.max(0, Math.round(spend.repairAttempts || 0)),
       credits: turn.budgetUsed.credits + Math.max(0, spend.credits || 0),
+      costUsd: (turn.budgetUsed.costUsd || 0) + Math.max(0, spend.costUsd || 0),
     };
     return this.store.updateTurn(turnId, { budgetUsed });
   }

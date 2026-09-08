@@ -240,7 +240,7 @@ export class ProjectSandbox {
       let entries;
       try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
-        if (skip.has(entry.name)) continue;
+        if (skip.has(entry.name) || entry.isSymbolicLink()) continue;
         const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
         if (entry.isDirectory()) await walk(path.join(dir, entry.name), rel);
         else found.push(rel);
@@ -271,6 +271,7 @@ export class ProjectSandbox {
     args: readonly string[],
     options: { timeoutMs?: number; allowReview?: boolean; signal?: AbortSignal } = {},
   ): Promise<{ code: number | null; output: string; timedOut: boolean }> {
+    options.signal?.throwIfAborted();
     const decision = decideCommand(binary, args);
     if (decision.verdict === 'blocked' || (decision.verdict === 'review' && !options.allowReview)) {
       return Promise.reject(new Error(`Command refused (${decision.verdict}): ${decision.reason}`));
@@ -284,17 +285,28 @@ export class ProjectSandbox {
         env: sandboxEnv(this.env),
         shell: false,
         windowsHide: true,
+        detached: process.platform !== 'win32',
       });
       let output = '';
       let timedOut = false;
       let settled = false;
-      const done = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn(); } };
-      const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
-      const onAbort = () => { child.kill('SIGKILL'); done(() => reject(new Error('Command cancelled.'))); };
+      const done = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); options.signal?.removeEventListener('abort', onAbort); fn(); } };
+      const killTree = () => {
+        if (!child.pid) return;
+        if (process.platform === 'win32') {
+          const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true, shell: false, stdio: 'ignore' });
+          killer.on('error', () => { child.kill('SIGKILL'); });
+        } else {
+          try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+        }
+      };
+      const timer = setTimeout(() => { timedOut = true; killTree(); }, timeoutMs);
+      const onAbort = () => { killTree(); done(() => reject(new Error('Command cancelled.'))); };
       options.signal?.addEventListener('abort', onAbort, { once: true });
+      if (options.signal?.aborted) onAbort();
       const collect = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
         const text = String(chunk);
-        output += text;
+        output = (output + text).slice(-256_000);
         this.log(stream, text);
       };
       child.stdout.on('data', c => collect(c, 'stdout'));
@@ -348,8 +360,9 @@ export class ProjectSandbox {
    * ready on the first alone is how a user gets an iframe pointed at a socket
    * that refuses connections.
    */
-  start(options: { script?: string; timeoutMs?: number; basePath?: string } = {}): Promise<SandboxStatus> {
+  start(options: { script?: string; timeoutMs?: number; basePath?: string; signal?: AbortSignal } = {}): Promise<SandboxStatus> {
     return this.serialise(async () => {
+      options.signal?.throwIfAborted();
       if (this.child && this.state === 'running') return this.status();
       await this.stopProcess();
       const script = options.script || 'dev';
@@ -393,11 +406,14 @@ export class ProjectSandbox {
 
       const ready = new Promise<number>((resolve, reject) => {
         let settled = false;
-        const finish = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn(); } };
+        const finish = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); options.signal?.removeEventListener('abort', onAbort); fn(); } };
+        const onAbort = () => finish(() => reject(new Error('Preview start cancelled.')));
         const timer = setTimeout(
           () => finish(() => reject(new Error(`The dev server did not report a URL within ${Math.round(timeoutMs / 1000)}s.`))),
           timeoutMs,
         );
+        options.signal?.addEventListener('abort', onAbort, {once:true});
+        if (options.signal?.aborted) onAbort();
         const scan = (chunk: Buffer, stream: 'stdout' | 'stderr') => {
           const text = String(chunk);
           this.log(stream, text);
@@ -414,7 +430,7 @@ export class ProjectSandbox {
         const port = await ready;
         // Probe the base the server was actually told to serve, not `/`: with a
       // base set, `/` is a 404 and would look like a server that never came up.
-      await waitForHttp(`http://127.0.0.1:${port}${this.basePath || '/'}`, Math.min(20_000, timeoutMs));
+      await waitForHttp(`http://127.0.0.1:${port}${this.basePath || '/'}`, Math.min(20_000, timeoutMs), options.signal);
         this.port = port;
         this.state = 'running';
         this.lastUsedAt = Date.now();
@@ -497,12 +513,14 @@ export class ProjectSandbox {
 }
 
 /** Poll until the server answers, or give up. A connection refusal is normal here. */
-async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
+async function waitForHttp(url: string, timeoutMs: number, signal?: AbortSignal): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = 'no response';
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+      const timeoutSignal = AbortSignal.timeout(2_000);
+      const response = await fetch(url, { signal: signal ? AbortSignal.any([signal,timeoutSignal]) : timeoutSignal });
       // Any answer proves the socket is live and routed. A dev server is
       // entitled to 404 the root while still serving the app.
       if (response.status > 0) return;

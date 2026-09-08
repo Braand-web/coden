@@ -26,6 +26,7 @@ import { CODEN_ARCHITECT_POLICY, CODEN_SENIOR_AGENT_OS_POLICY } from './agent-pr
 import type { UserPlan } from '../config/ai-models.ts';
 import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
+import { describeProjectSource } from './agent-mission-context.ts';
 
 export type BuildPlanFile = {
   path: string;
@@ -119,11 +120,12 @@ function describeExistingFiles(files: Array<{ path: string }>, scaffold?: string
   return `Existing project files (${paths.length}):\n${paths.slice(0, 200).join('\n')}${paths.length > 200 ? `\n... and ${paths.length - 200} more` : ''}`;
 }
 
-function buildPlannerUserMessage(prompt: string, existingFiles: Array<{ path: string }>, scaffold?: string): string {
+function buildPlannerUserMessage(prompt: string, existingFiles: Array<{ path: string; content?: string }>, scaffold?: string): string {
   return [
     `Request: ${String(prompt || '').trim()}`,
     '',
     describeExistingFiles(existingFiles, scaffold),
+    describeProjectSource(existingFiles, prompt),
   ].join('\n');
 }
 

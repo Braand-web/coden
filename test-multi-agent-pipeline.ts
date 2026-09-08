@@ -168,7 +168,7 @@ try {
     assert.match(app?.content || '', /Count: 1/);
   }
 
-  // -- the sandbox failing to start is reported, not thrown -----------------
+  // -- startup failure remains repairable and never silently falls back -----
   // A malformed package.json fails npm install near-instantly, with no
   // network round trip — a fast, deterministic way to exercise this path.
   {
@@ -185,9 +185,10 @@ try {
     });
     await cleanup('pipeline-bad-install');
 
-    assert.equal(outcome.started, false);
-    assert.ok(!outcome.started);
-    assert.ok(outcome.startError, 'the caller needs a reason to log, even though it will fall back silently to the user');
+    assert.equal(outcome.started, true, 'the coder must receive file tools even if installation failed');
+    assert.ok(outcome.started);
+    assert.equal(outcome.ok, false, 'a model that made no repair cannot pass');
+    assert.ok(outcome.repairOutcome.finalReport.problems.length > 0);
     // The planner still ran — planning costs nothing extra and happens before
     // the sandbox — so its output is preserved even though the build never got
     // the chance to use it.
@@ -197,7 +198,7 @@ try {
   // -- harness persistence: the build is recorded as its own subagent -------
   {
     const provider = scriptedProvider([
-      { text: '', toolCall: { name: 'write_file', args: { path: 'src/App.tsx', content: COUNTER_APP } } },
+      { text: '', toolCall: { name: 'write_file', args: { path: 'src/App.tsx', content: COUNTER_APP.replace('Count: 0', 'Count: 2') } } },
       { text: 'Done.' },
     ]);
     const gateway = new ProviderGateway(provider.service);

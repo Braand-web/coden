@@ -79,11 +79,20 @@ export const DEFAULT_LIMITS: RegistryLimits = {
 
 export class SandboxRegistry {
   private readonly sandboxes = new Map<string, ProjectSandbox>();
+  private readonly activeRuns = new Set<string>();
   private readonly limits: RegistryLimits;
   private sweeper: ReturnType<typeof setInterval> | null = null;
 
   constructor(limits: Partial<RegistryLimits> = {}) {
     this.limits = { ...DEFAULT_LIMITS, ...limits };
+  }
+
+  /** Host-local writer lease. A distributed lease is still required for replicas. */
+  reserveRun(projectId: string): () => void {
+    if (this.activeRuns.has(projectId)) throw Object.assign(new Error('A run already owns this project.'), {diagnosticCode:'PROJECT_RUN_ACTIVE'});
+    if (this.activeRuns.size >= this.limits.maxRunning) throw Object.assign(new Error('All execution slots are busy.'), {diagnosticCode:'SANDBOX_CAPACITY'});
+    this.activeRuns.add(projectId);
+    return () => { this.activeRuns.delete(projectId); };
   }
 
   /** The sandbox for this project, created on first use. */
@@ -109,7 +118,7 @@ export class SandboxRegistry {
   private running(): ProjectSandbox[] {
     return [...this.sandboxes.values()].filter(sandbox => {
       const state = sandbox.status().state;
-      return state === 'running' || state === 'starting';
+      return state === 'running' || state === 'starting' || state === 'installing';
     });
   }
 
@@ -123,8 +132,10 @@ export class SandboxRegistry {
     const evicted: string[] = [];
     let running = this.running().filter(sandbox => sandbox.projectId !== projectId);
     while (running.length >= this.limits.maxRunning) {
-      const oldest = running.reduce((a, b) => (a.lastUsedAt <= b.lastUsedAt ? a : b));
-      await oldest.stop().catch(() => null);
+      const evictable = running.filter(sandbox => !this.activeRuns.has(sandbox.projectId));
+      if (!evictable.length) throw Object.assign(new Error('Active runs cannot be evicted.'), {diagnosticCode:'SANDBOX_CAPACITY'});
+      const oldest = evictable.reduce((a, b) => (a.lastUsedAt <= b.lastUsedAt ? a : b));
+      await oldest.stop();
       evicted.push(oldest.projectId);
       running = running.filter(sandbox => sandbox.projectId !== oldest.projectId);
     }
@@ -135,6 +146,7 @@ export class SandboxRegistry {
   async sweepIdle(now = Date.now()): Promise<string[]> {
     const stopped: string[] = [];
     for (const sandbox of this.running()) {
+      if (this.activeRuns.has(sandbox.projectId)) continue;
       if (now - sandbox.lastUsedAt < this.limits.idleMs) continue;
       await sandbox.stop().catch(() => null);
       stopped.push(sandbox.projectId);

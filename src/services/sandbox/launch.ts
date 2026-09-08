@@ -22,7 +22,7 @@
 
 import { sandboxRegistry } from './sandbox-registry.ts';
 import type { SandboxFile, SandboxStatus } from './project-sandbox.ts';
-import { issuePreviewToken } from './preview-token.ts';
+import { issuePreviewToken, readPreviewToken } from './preview-token.ts';
 
 export type LaunchEvent =
   | { type: 'sandbox_writing'; files: number }
@@ -76,8 +76,10 @@ export async function launchProjectPreview(input: {
   /** Force a fresh install and a fresh process, whatever is already there. */
   reinstall?: boolean;
   onEvent?: (event: LaunchEvent) => void;
+  signal?: AbortSignal;
 }): Promise<LaunchResult> {
   const emit = input.onEvent || (() => {});
+  input.signal?.throwIfAborted();
   const sandbox = sandboxRegistry.get(input.projectId);
   const fail = (stage: 'install' | 'start', message: string, state: SandboxStatus['state']): LaunchResult => {
     const logs = sandbox.getLogs(60).map(entry => entry.line);
@@ -91,12 +93,21 @@ export async function launchProjectPreview(input: {
   if (input.env) sandbox.setEnv(input.env);
 
   emit({ type: 'sandbox_writing', files: input.files.length });
+  const changedPaths: string[] = [];
+  for (const file of input.files) {
+    if (!needsRestart([file.path])) continue;
+    const previous = await sandbox.readProjectFile(file.path).catch(() => null);
+    if (previous !== file.content) changedPaths.push(file.path);
+  }
+  const reinstall = input.reinstall || changedPaths.some(path => /^(package\.json|package-lock\.json)$/.test(path));
+  if (input.reinstall || changedPaths.length) await sandbox.stop();
   await sandbox.writeFiles(input.files);
 
   let installDurationMs: number | null = null;
-  if (input.reinstall || !(await hasDependencies(sandbox))) {
+  if (reinstall || !(await hasDependencies(sandbox))) {
     emit({ type: 'sandbox_installing' });
-    const install = await sandbox.install();
+    const install = await sandbox.install({ signal: input.signal });
+    input.signal?.throwIfAborted();
     installDurationMs = install.durationMs;
     if (!install.ok) return fail('install', 'The project dependencies could not be installed.', 'crashed');
     emit({ type: 'sandbox_installed', durationMs: install.durationMs });
@@ -107,10 +118,16 @@ export async function launchProjectPreview(input: {
   // server is told to serve under: a server behind a prefix writes absolute
   // URLs for its own modules, so it has to know that prefix or every module
   // 404s behind a document that loaded fine.
-  const token = issuePreviewToken({ projectId: input.projectId, userId: input.userId });
-  const basePath = `/preview/${token}/`;
+  const currentBase = sandbox.status().basePath;
+  const currentGrant = readPreviewToken(currentBase?.match(/^\/preview\/([^/]+)\/$/)?.[1]);
+  const reusable = currentGrant?.projectId === input.projectId && currentGrant.userId === input.userId
+    && currentGrant.expiresAt > Date.now() + 5 * 60_000;
+  const basePath = reusable ? currentBase! : `/preview/${issuePreviewToken({ projectId: input.projectId, userId: input.userId })}/`;
+  if (sandbox.status().state === 'running' && currentBase !== basePath) await sandbox.stop();
+  input.signal?.throwIfAborted();
   const startedAt = Date.now();
-  const status = await sandbox.start({ basePath });
+  const status = await sandbox.start({ basePath, signal: input.signal });
+  input.signal?.throwIfAborted();
   const startDurationMs = Date.now() - startedAt;
   if (status.state !== 'running' || !status.port) {
     return fail('start', status.lastError || 'The dev server did not start.', status.state);

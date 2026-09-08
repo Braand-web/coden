@@ -36,6 +36,13 @@
 import type { ProjectSandbox } from './project-sandbox.ts';
 import { createSandboxTools, SANDBOX_TOOL_SCHEMAS } from './sandbox-tools.ts';
 import { validateProject, buildRepairInstruction, type ValidationReport } from './validate.ts';
+import { createHash } from 'node:crypto';
+
+async function fileRevisions(sandbox: ProjectSandbox): Promise<Map<string, string>> {
+  const entries = await Promise.all((await sandbox.listFiles()).map(async path =>
+    [path, createHash('sha256').update(await sandbox.readProjectFile(path)).digest('hex')] as const));
+  return new Map(entries);
+}
 
 export type RepairRound = {
   round: number;
@@ -147,6 +154,7 @@ export async function runCoderLoop(input: {
   beforeRound?: (round: number) => Promise<string | undefined>;
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
+  ensureRuntime?: (restartRequired: boolean) => Promise<void>;
 }): Promise<RepairOutcome> {
   const mode = input.mode ?? 'repair';
   if (mode === 'build' && !input.initialInstruction) {
@@ -159,8 +167,11 @@ export async function runCoderLoop(input: {
   const maxStalledRounds = Math.max(1, input.maxStalledRounds ?? DEFAULT_MAX_STALLED_ROUNDS);
   let stalledRounds = 0;
   const rounds: RepairRound[] = [];
+  const steeringHistory: string[] = [];
+  const initialFiles = mode === 'build' ? await fileRevisions(input.sandbox) : null;
+  let previousFiles = initialFiles;
 
-  let report = input.initialReport ?? await validateProject(input.sandbox, { skipBuild: true });
+  let report = input.initialReport ?? await validateProject(input.sandbox, { skipBuild: true, signal: input.signal });
   // A build asked for something that has not been written yet, so an empty,
   // valid scaffold reporting "ok" here is not the outcome — it is the
   // starting line. Exiting on it would report success on an unbuilt project.
@@ -178,6 +189,7 @@ export async function runCoderLoop(input: {
   for (let round = 1; round <= maxRounds; round += 1) {
     input.signal?.throwIfAborted();
     const steering = await input.beforeRound?.(round);
+    if (steering) steeringHistory.push(steering);
     const errorsBefore = countErrors(report);
     emit({ type: 'repair_round_started', round, errors: errorsBefore });
 
@@ -185,6 +197,7 @@ export async function runCoderLoop(input: {
     let restartRequired = false;
     const tools = createSandboxTools(input.sandbox.projectId, {
       onChange: paths => paths.forEach(path => touched.add(path)),
+      signal: input.signal,
     });
 
     let calls = 0;
@@ -215,8 +228,9 @@ export async function runCoderLoop(input: {
     const stallNotice = stalledRounds > 0
       ? `\n\nYour previous ${stalledRounds === 1 ? 'attempt' : `${stalledRounds} attempts`} did not reduce these errors. Do not repeat the same edit. Read the failing file and its imports before changing anything, and fix the cause rather than the symptom.`
       : '';
-    const instruction = (isBuildRound ? input.initialInstruction! : buildRepairInstruction(report) + stallNotice)
-      + (steering ? `\n\nAdditional user instructions to apply now:\n${steering}` : '');
+    const instruction = (isBuildRound ? input.initialInstruction! :
+      `${input.initialInstruction ? `Original mission and constraints (still mandatory):\n${input.initialInstruction}\n\n` : ''}${buildRepairInstruction(report)}${stallNotice}`)
+      + (steeringHistory.length ? `\n\nUser instructions to preserve:\n${steeringHistory.join('\n')}` : '');
 
     await input.turn({
       instruction,
@@ -224,20 +238,34 @@ export async function runCoderLoop(input: {
       call: guardedCall,
       maxToolCalls,
     });
+    const currentFiles = initialFiles ? await fileRevisions(input.sandbox) : null;
+    if (previousFiles && currentFiles) {
+      for (const path of new Set([...previousFiles.keys(), ...currentFiles.keys()])) {
+        if (previousFiles.get(path) !== currentFiles.get(path)) touched.add(path);
+      }
+      previousFiles = currentFiles;
+    }
 
     // A new dependency is not something hot reload can introduce, so the
     // server has to come back before the checks mean anything.
-    if (restartRequired && input.sandbox.status().state === 'running') {
+    if (input.ensureRuntime) {
+      await input.ensureRuntime(restartRequired);
+    } else if (restartRequired && input.sandbox.status().state === 'running') {
       const basePath = input.sandbox.status().basePath || undefined;
       await input.sandbox.stop();
       await input.sandbox.start({ basePath });
     }
 
-    report = await validateProject(input.sandbox);
+    report = await validateProject(input.sandbox, { signal: input.signal });
     input.signal?.throwIfAborted();
     if (report.ok && input.verifyPreview) {
       const preview = await input.verifyPreview();
       report = { ...report, ok:preview.ok, problems:[...report.problems,...preview.problems], ran:{...report.ran,browser:preview.ran.browser}, durationMs:report.durationMs+preview.durationMs };
+    }
+    const hasActualChanges = initialFiles && currentFiles && [...new Set([...initialFiles.keys(), ...currentFiles.keys()])]
+      .some(path => initialFiles.get(path) !== currentFiles.get(path));
+    if (report.ok && mode === 'build' && !hasActualChanges) {
+      report = { ...report, ok: false, problems: [...report.problems, { source: 'runtime', severity: 'error', message: 'NO_CHANGES: The requested change has not been implemented. Inspect the mission and use file tools; a clean existing build is not completion.' }] };
     }
     const errorsAfter = countErrors(report);
     const filesTouched = [...touched];
@@ -245,7 +273,12 @@ export async function runCoderLoop(input: {
     await input.afterRound?.(rounds[rounds.length-1], report);
     emit({ type: 'repair_round_finished', round, errorsBefore, errorsAfter, filesTouched });
 
-    if (report.ok) return finish('fixed');
+    if (report.ok) {
+      const pending = await input.beforeRound?.(round + 1);
+      if (!pending) return finish('fixed');
+      steeringHistory.push(pending);
+      report = { ...report, ok: false, problems: [...report.problems, { source: 'runtime', severity: 'error', message: 'New user instructions arrived. Apply them before completion.' }] };
+    }
     // Fewer errors is progress even without a clean result — the next round
     // gets a shorter list. Not judged on a build's first round: `errorsBefore`
     // there is the empty scaffold's error count, not an earlier attempt at

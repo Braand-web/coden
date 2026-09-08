@@ -11922,44 +11922,45 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     if (status < 400 && payload.success === true && payload.preview?.live_url) {
       eventStream?.workspace({ type:'preview_ready', projectId:project.id, url:payload.preview.live_url, status:payload.preview.status });
     }
-    if (status < 400 && payload.pipeline === 'multi_agent') {
-      try {
-        let seen = 0;
-        const recap = await providerGateway.streamingCompletion('openai/gpt-5.6-luna', [
-          { role:'system', content:'Write a concise user-facing report in the language of the request, at most three sentences. Report only the observed facts supplied. A passing build is not proof of functional browser QA. Mention unverified checks. Do not expose private reasoning, internal model names or secrets. Never invent successful tests.' },
-          { role:'user', content:JSON.stringify({ request:prompt, success:payload.success, changes:{ created:payload.diff?.created?.length, modified:payload.diff?.modified?.length, deleted:payload.diff?.deleted?.length }, preview:payload.preview?.status, checks:payload.verification || null }) },
-        ], { timeoutMs:30_000, signal:generationAbortController.signal, allowFallback:false,
-          runtimeConfig:{ adapter:'openrouter', maxTokens:1200, reasoning:{ effort:'low' } },
-          onChunk: accumulated => { const delta = accumulated.slice(seen); seen = accumulated.length; if (delta) eventStream?.chat({ type:'text_delta', delta }); },
-        });
-        payload.summary = recap.text;
-        payload.assistant_source = 'model';
-        payload.assistant_streamed = Boolean(eventStream);
-      } catch (error) {
-        payload.summary = '';
-        payload.narration_error = 'MODEL_RECAP_UNAVAILABLE';
-        eventStream?.workspace({ type:'narration_failed', code:'MODEL_RECAP_UNAVAILABLE' });
-      }
-    }
     if (harnessContext) {
       payload.threadId = harnessContext.thread.id;
       payload.turnId = harnessContext.turn.id;
       payload.runId = harnessContext.turn.id;
       try {
-        if (payload.pipeline === 'multi_agent' && payload.summary) {
-          await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:payload.summary,intent:payload.intent?.intent,requested_mode:requestedMode});
+        if (status < 400 && payload.success !== false && payload.pipeline !== 'multi_agent'
+          && [payload.summary, payload.text, payload.message].some(value => typeof value === 'string' && value.trim())) {
+          await harnessContext.harness.settleDefinitionOfDone(harnessContext.turn.id, { answer_complete:{status:'passed', evidence:'A provider response was generated and persisted for the resolved conversational task.'} });
         }
-        const terminal = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
+        let terminal: 'cancelled' | 'failed' | 'completed' | 'blocked' = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
         const current = await harnessContext.harness.store.getTurn(harnessContext.turn.id);
+        const pendingChecks = current?.definitionOfDone.filter(check => check.required && check.status !== 'passed') || [];
+        if (terminal === 'completed' && pendingChecks.length) {
+          terminal = 'blocked';
+          const message = isLikelyFrenchPrompt(prompt)
+            ? 'Le travail est sauvegardé. La validation complète reste à effectuer ; les contrôles non exécutés ne sont pas déclarés réussis.'
+            : 'The work is saved. Full verification is still pending; checks that did not run are not reported as passed.';
+          payload = { ...payload, success:false, needs_fix:true, diagnostic_code:'VERIFICATION_INCOMPLETE', recoverable:true,
+            message, summary:message, verification:{ ...payload.verification, status:'incomplete', pendingCriteria:pendingChecks.map(check=>({id:check.id,label:check.label,status:check.status})) } };
+        }
         if (current && !['completed','failed','cancelled','blocked'].includes(current.status)) {
           await harnessContext.harness.transitionItem(harnessContext.assistantItemId, terminal, { source:payload.assistant_source || 'system', diagnostic_code:payload.diagnostic_code || null });
           await harnessContext.harness.transitionTurn(harnessContext.turn.id, terminal, { diagnostic_code:payload.diagnostic_code || null });
+        }
+        if (payload.pipeline === 'multi_agent' && payload.summary) {
+          await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:payload.summary,intent:payload.intent?.intent,requested_mode:requestedMode});
         }
       } catch (error) {
         console.error('[coden:harness_finalize_failed]', {requestId,message:redactSecrets(String(error))});
         status=503;
         payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
       }
+    }
+    if (status < 400 && payload.pipeline === 'multi_agent') {
+      // Structured verification reports need no extra, unmetered provider call.
+      payload.assistant_source = 'verification_report';
+      payload.assistant_streamed = Boolean(eventStream);
+      if (payload.summary) eventStream?.chat({ type:'text_delta', delta:payload.summary });
+      eventStream?.chat({ type:'text_end' });
     }
     if (eventStream) {
       try { await eventStream.finish(payload, status); }
@@ -12003,6 +12004,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   }
   const decision: IntentDecision = initialDecision;
+  if (harnessContext && ['answer', 'plan_only', 'ask_clarification'].includes(decision.nextAction || '')) {
+    await harnessContext.harness.store.updateTurn(harnessContext.turn.id, {
+      definitionOfDone:[{id:'answer_complete',label:'A response to the resolved user request is delivered.',required:true,status:'pending'}],
+    });
+  }
+  // Both execution engines share these guards. Never let an early return bypass them.
+  if (decision.requiresFileChanges && !hasProjectCapability(req, 'build', project)) {
+    return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied: this project is read-only for your role.' });
+  }
+  if (isCriticalCodenAction(agentPrompt) && !(req.body?.confirmed === true || req.body?.approvalGranted === true || req.body?.confirmation === 'confirmed')) {
+    return respondJson(409, { success: false, diagnostic_code: 'AGENT_CONFIRMATION_REQUIRED', requires_confirmation: true, error: 'Explicit confirmation is required before this action.' });
+  }
 
   /**
    * The multi-agent pipeline: a real sandbox, real tools, an approvable plan
@@ -12024,6 +12037,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    */
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
   if (process.env.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute) {
+    if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
     try {
       await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
       const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
@@ -12037,13 +12051,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         prompt: agentPrompt,
         route: pipelineRoute,
         existingFiles,
+        history: recentHistory,
+        approvedPlan: req.body?.useLastPlan ? lastPlan || undefined : undefined,
+        complexity: inferAgentTaskComplexity(agentPrompt, decision, existingFiles),
+        selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
+        visionInputs,
         userPlan: routingPlan,
         credits: routingCredits,
         onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
         signal: generationAbortController.signal,
         onSnapshot: async files => { await saveProject({ ...project, preview_status:'needs_fix', updated_at:new Date().toISOString() }, files as GeneratedFile[]); },
         onSandboxEvent: event => {
-          eventStream?.workspace({ ...event });
+          eventStream?.workspace(event.type === 'preview_ready' ? { ...event, projectId: project.id } : event);
         },
         onCoderEvent: event => {
           eventStream?.workspace({ ...event });

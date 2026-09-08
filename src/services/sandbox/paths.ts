@@ -11,6 +11,7 @@
 
 import path from 'node:path';
 import os from 'node:os';
+import { lstatSync } from 'node:fs';
 
 /** The root every sandbox lives under. One directory, one owner. */
 export function sandboxRoot(): string {
@@ -54,6 +55,15 @@ export function resolveInSandbox(projectId: string, relativePath: string): strin
   const resolved = path.resolve(base, requested);
   if (resolved === base || !resolved.startsWith(base + path.sep)) {
     throw new Error(`Path escapes the project sandbox: ${relativePath}`);
+  }
+  // Reject links/junctions in existing path components. This protects file
+  // tools, but is not an OS sandbox and cannot constrain arbitrary processes.
+  for (let current = resolved; current !== path.dirname(base); current = path.dirname(current)) {
+    try {
+      if (lstatSync(current).isSymbolicLink()) throw new Error(`Symbolic links are not allowed in sandbox paths: ${relativePath}`);
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
   }
   return resolved;
 }

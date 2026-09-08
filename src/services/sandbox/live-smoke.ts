@@ -24,12 +24,14 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
     signal?.addEventListener('abort', stop, { once:true });
     signal?.throwIfAborted();
     const context = await browser.newContext({ serviceWorkers:'block' });
+    const policyBlocked = new Set<string>();
     // No credentials or production API calls. Unsupported external integrations
     // are reported as unverified rather than probed with the host's identity.
     await context.route('**/*', route => {
       const request = new URL(route.request().url());
-      return request.origin === origin || ['data:','blob:'].includes(request.protocol)
-        ? route.continue() : route.abort('blockedbyclient');
+      if (request.origin === origin || ['data:','blob:'].includes(request.protocol)) return route.continue();
+      policyBlocked.add(route.request().url());
+      return route.abort('blockedbyclient');
     });
     const page = await context.newPage();
     page.on('pageerror', error => fail(`Browser exception: ${error.message}`));
@@ -37,6 +39,10 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       if (response.status() >= 400 && ['document','script','stylesheet','fetch','xhr'].includes(response.request().resourceType())) fail(`HTTP ${response.status()}: ${new URL(response.url()).pathname}`);
     });
     page.on('requestfailed', request => {
+      if (policyBlocked.has(request.url())) {
+        report.problems.push({ source: 'runtime', severity: 'warning', message: `EXTERNAL_DEPENDENCY_UNVERIFIED: ${new URL(request.url()).hostname}` });
+        return;
+      }
       if (['document','script','stylesheet','fetch','xhr'].includes(request.resourceType())) fail(`Resource unavailable: ${new URL(request.url()).pathname}`);
     });
     for (const width of [1280,390]) {
@@ -58,7 +64,7 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       if (result.overflow) fail(`Horizontal overflow at ${width}px.`);
     }
     report.ran.browser = true;
-    report.ok = report.problems.length === 0;
+    report.ok = report.problems.every(problem => problem.severity !== 'error');
   } catch (error) {
     signal?.throwIfAborted();
     fail(`PREVIEW_BROWSER_CHECK_FAILED: ${error instanceof Error ? error.message : 'unknown error'}`);
