@@ -404,6 +404,45 @@ body:has(#coden-dashboard-react-root) {
   width: 190px;
 }
 
+@media (min-width: 768px) {
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand-row {
+    position: relative;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-brand {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-new-project {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    margin-inline: auto;
+    padding: 0 !important;
+    gap: 0;
+    justify-content: center;
+  }
+
+  .coden-dashboard-sidebar.is-collapsed .coden-dashboard-new-project svg {
+    display: block;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+  }
+}
+
 .coden-dashboard-main {
   min-width: 0;
   flex: 1;
