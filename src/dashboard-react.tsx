@@ -253,12 +253,12 @@ function Sidebar({
 }
 
 function ProjectCard({ project }: { project: DashboardProject }) {
-  const state = projectState(project);
   const previewHtml = project.preview_html?.trim();
   const isErrorPreview = Boolean(previewHtml && /data-coden-preview-error\s*=\s*["']true/i.test(previewHtml));
   const hasRenderedPreview = Boolean(previewHtml && !isErrorPreview);
   const liveUrl = project.live_url?.trim();
   const hasLivePreview = Boolean(!hasRenderedPreview && liveUrl && /^https?:\/\//i.test(liveUrl));
+  const state = isErrorPreview ? { key: 'issue', label: 'À vérifier' } : projectState(project);
   const fallbackMessage = /building|generating|running/i.test(`${project.status || ''} ${project.preview_status || ''}`)
     ? 'Aperçu en préparation'
     : isErrorPreview
