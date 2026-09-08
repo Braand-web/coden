@@ -107,8 +107,6 @@ function installAiInputStyle() {
 
     .coden-ai-input .icon-btn,
     .coden-ai-input .submit-btn {
-      width: var(--chat-action-height) !important;
-      min-width: var(--chat-action-height) !important;
       padding: 0 !important;
       display: inline-flex !important;
       align-items: center !important;
@@ -117,8 +115,12 @@ function installAiInputStyle() {
     }
 
     .coden-ai-input .icon-btn {
+      width: 30px !important;
+      min-width: 30px !important;
+      height: 30px !important;
+      min-height: 30px !important;
       border-color: transparent !important;
-      flex: 0 0 var(--chat-action-height) !important;
+      flex: 0 0 30px !important;
     }
 
     .coden-ai-input .submit-btn {
