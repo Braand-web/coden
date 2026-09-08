@@ -24,8 +24,8 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const labels = locale === "fr"
-    ? { features: "Fonctionnalités", pricing: "Tarifs", documentation: "Documentation", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
-    : { features: "Features", pricing: "Pricing", documentation: "Documentation", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+    ? { features: "Fonctionnalités", pricing: "Tarifs", documentation: "Documentation", signIn: "Se connecter", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
+    : { features: "Features", pricing: "Pricing", documentation: "Documentation", signIn: "Sign in", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
   const links = [
     { href: "/features.html", label: labels.features, match: "/features.html" },
     { href: "/pricing.html", label: labels.pricing, match: "/pricing.html" },
@@ -88,13 +88,14 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
     <nav className="coden-react-nav" id="landing-nav-menu" aria-label={locale === "fr" ? "Navigation principale" : "Main navigation"}>
       {links.map(link => <a key={link.href} href={link.href} aria-current={pathname === link.match ? "page" : undefined}>{link.label}</a>)}
     </nav>
-    <div className="coden-react-header-actions">
-      <button type="button" className="coden-react-theme-toggle" data-theme-toggle aria-label={labels.theme} title={labels.theme}>
+      <div className="coden-react-header-actions">
+        <button type="button" className="coden-react-theme-toggle" data-theme-toggle aria-label={labels.theme} title={labels.theme}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
           <path d="M20.8 15.1A8.5 8.5 0 0 1 8.9 3.2 8.5 8.5 0 1 0 20.8 15.1Z" />
         </svg>
       </button>
-      <a className="coden-react-cta sign-in-btn" data-conversion-event="sign_in_click" data-conversion-place="navbar" href="/auth.html">{labels.cta}</a>
+      <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="navbar" href="/auth.html">{labels.signIn}</a>
+      <a className="coden-react-cta sign-in-btn" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">{labels.cta}</a>
       <IconButton
         ref={triggerRef}
         id="landing-nav-toggle"
@@ -112,7 +113,8 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
         <motion.div className="coden-react-mobile-backdrop" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .18, ease: EASE_DRAWER }} onMouseDown={() => closeMenu(true)} />
         <motion.div ref={menuRef} id="landing-nav-menu-mobile" className="coden-react-mobile-nav" role="dialog" aria-modal="true" aria-label={locale === "fr" ? "Navigation mobile" : "Mobile navigation"} tabIndex={-1} initial={reduced ? { opacity: 1 } : { opacity: 0, y: -6, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: .985 }} transition={{ duration: reduced ? 0 : .24, ease: EASE_DRAWER }}>
           {links.map(link => <a key={link.href} href={link.href} aria-current={pathname === link.match ? "page" : undefined} onClick={() => closeMenu(false)}>{link.label}</a>)}
-          <a className="coden-react-cta" data-conversion-event="sign_in_click" data-conversion-place="mobile_nav" href="/auth.html" onClick={() => closeMenu(false)}>{labels.cta}</a>
+          <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="mobile_nav" href="/auth.html" onClick={() => closeMenu(false)}>{labels.signIn}</a>
+          <a className="coden-react-cta" data-conversion-event="start_building_click" data-conversion-place="mobile_nav" href="/auth.html?mode=signup&redirect=%2Fdashboard.html" onClick={() => closeMenu(false)}>{labels.cta}</a>
         </motion.div>
       </> : null}
     </AnimatePresence>
