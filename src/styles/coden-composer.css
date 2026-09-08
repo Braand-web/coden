@@ -15,7 +15,9 @@
   border: 1px solid var(--horizon-border, var(--border)) !important;
   border-radius: var(--coden-composer-radius) !important;
   background: var(--horizon-surface, var(--bg-input)) !important;
-  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+  /* Keep one clean outer surface. The inset shadow and legacy pseudo layers
+     read as a second border inside the composer, especially on light mode. */
+  box-shadow: var(--horizon-shadow-float) !important;
   overflow: visible !important;
   transition:
     border-color 280ms var(--coden-composer-ease),
@@ -30,6 +32,20 @@
 ):focus-within {
   border-color: var(--horizon-blue, var(--accent-blue)) !important;
   box-shadow: 0 0 0 4px var(--horizon-blue-soft, rgba(59, 130, 246, .12)), var(--horizon-shadow-float) !important;
+}
+
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+)::before,
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+)::after {
+  content: none !important;
+  display: none !important;
 }
 
 :where(

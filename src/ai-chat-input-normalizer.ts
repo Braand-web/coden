@@ -24,7 +24,7 @@ function installAiInputStyle() {
       border-radius: 24px !important;
       background: var(--horizon-surface, var(--bg-input, #fffefa)) !important;
       color: var(--text, #1c1c1c) !important;
-      box-shadow: 0 1px 0 rgba(255,255,255,.78) inset, 0 12px 32px rgba(28,28,28,.07) !important;
+      box-shadow: 0 12px 32px rgba(28,28,28,.07) !important;
       overflow: visible !important;
       text-align: left !important;
     }
