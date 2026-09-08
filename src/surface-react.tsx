@@ -1,5 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { MarketingFooter, MarketingHeader } from "./components/shells";
+import { initThemeController } from "./theme-controller";
 
 let marketingRoot: Root | null = null;
 let marketingFooterRoot: Root | null = null;
@@ -22,6 +23,9 @@ export function mountMarketingReactShell(): void {
   if (!host || marketingRoot) return;
   marketingRoot = createRoot(host);
   marketingRoot.render(<MarketingHeader />);
+  // React commits the header after the shell mount call. Bind the theme
+  // control on the next frame so public pages can toggle immediately.
+  window.requestAnimationFrame(() => initThemeController());
   const legacyFooter = document.querySelector<HTMLElement>('.footer, .seo-footer, .pricing-footer');
   let footerHost = document.getElementById('coden-marketing-footer-root');
   if (!footerHost) {

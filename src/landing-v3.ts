@@ -1,10 +1,13 @@
 import { initPromptInputActions } from './prompt-input-actions';
+import { initThemeController } from './theme-controller';
 import './styles/agent-surface.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
 
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
 const notice = document.getElementById('landing-notice');
+initThemeController();
+
 function announce(message: string) {
   if (!notice) return;
   notice.textContent = message;
