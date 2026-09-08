@@ -52,6 +52,14 @@ function installAiInputStyle() {
       opacity: .82 !important;
     }
 
+    .coden-ai-input textarea:focus,
+    .coden-ai-input textarea:focus-visible {
+      border: 0 !important;
+      outline: 0 !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+
     .coden-ai-input .input-actions {
       min-height: var(--chat-action-height) !important;
       height: var(--chat-action-height) !important;

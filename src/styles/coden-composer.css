@@ -60,6 +60,24 @@ body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
   transition: height 220ms var(--coden-composer-ease);
 }
 
+/* Focus belongs to the composer surface. Generic shell focus rules must not
+   draw a second border, ring, or rounded rectangle inside the textarea. */
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+) textarea:focus,
+:where(
+  body[data-coden-surface="landing-v3"] .input-wrapper,
+  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
+  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
+) textarea:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
 :where(
   body[data-coden-surface="landing-v3"],
   body[data-coden-surface="dashboard"],
