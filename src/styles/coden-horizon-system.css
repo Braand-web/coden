@@ -1429,7 +1429,7 @@ body[data-coden-surface="admin"] :where(.admin-global-search, .admin-search) {
   }
 }
 
-/* Keep the public pages on the same dark pill chrome as the landing page.
+/* Keep the public pages on the same pill chrome as the landing page.
    The landing keeps its static source markup; the other public pages use the
    React header, so this is the shared visual contract between both surfaces. */
 body:not([data-coden-surface="landing-v3"]) #coden-marketing-header-root {
@@ -1455,18 +1455,18 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-marketing-header[data-h
   padding: 0 8px 0 12px !important;
   gap: 24px !important;
   transform: none !important;
-  border: 1px solid #263244 !important;
+  border: 1px solid var(--horizon-border) !important;
   border-radius: 9999px !important;
-  background: rgba(21, 26, 34, .82) !important;
-  color: #f8fafc !important;
-  box-shadow: 0 1px 0 color-mix(in srgb, currentColor 5%, transparent) inset, 0 6px 16px rgba(0, 0, 0, .45) !important;
-  backdrop-filter: blur(18px) !important;
-  -webkit-backdrop-filter: blur(18px) !important;
+  background: color-mix(in srgb, var(--horizon-canvas) 88%, transparent) !important;
+  color: var(--horizon-text) !important;
+  box-shadow: var(--horizon-shadow-inset) !important;
+  backdrop-filter: blur(18px) saturate(120%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(120%) !important;
 }
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-brand {
   gap: 9px !important;
-  color: #f8fafc !important;
+  color: var(--horizon-text) !important;
   font-size: 19px !important;
 }
 
@@ -1490,7 +1490,7 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-nav a {
   min-height: 20px !important;
   padding: 0 !important;
   border-radius: 0 !important;
-  color: #aab4c3 !important;
+  color: var(--horizon-muted) !important;
   font-size: 14px !important;
   font-weight: 500 !important;
   background: transparent !important;
@@ -1498,7 +1498,7 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-nav a {
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-nav a:hover,
 body:not([data-coden-surface="landing-v3"]) .coden-react-nav a[aria-current="page"] {
-  color: #f8fafc !important;
+  color: var(--horizon-text) !important;
   background: transparent !important;
 }
 
@@ -1514,7 +1514,7 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-signin {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  color: #aab4c3 !important;
+  color: var(--horizon-muted) !important;
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -1523,15 +1523,15 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-signin {
 }
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-signin:hover {
-  color: #f8fafc !important;
+  color: var(--horizon-text) !important;
 }
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-cta {
-  min-height: 36px !important;
+  min-height: 0 !important;
   padding: 8px 12px !important;
-  border-radius: 10px !important;
-  background: #4f8cff !important;
-  color: #08111f !important;
+  border-radius: 9999px !important;
+  background: var(--horizon-blue) !important;
+  color: var(--horizon-blue-ink) !important;
   font-size: 14px !important;
   font-weight: 600 !important;
   white-space: nowrap;
@@ -1539,16 +1539,16 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-cta {
 }
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-cta:hover {
-  background: #6b9bff !important;
-  color: #08111f !important;
+  background: var(--horizon-blue-hover) !important;
+  color: var(--horizon-blue-ink) !important;
   transform: translateY(-1px);
 }
 
 body:not([data-coden-surface="landing-v3"]) .coden-react-menu {
   display: none;
-  border-color: #263244 !important;
+  border-color: var(--horizon-border) !important;
   background: transparent !important;
-  color: #aab4c3 !important;
+  color: var(--horizon-muted) !important;
 }
 
 @media (max-width: 899px) {
