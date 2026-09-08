@@ -2,6 +2,7 @@
 import express from 'express';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
+import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
@@ -9493,13 +9494,7 @@ async function recordUnifiedUsageEvent(input: {
     provider_payload: redactSecretPayload(input.providerPayload || {}),
     occurred_at: new Date().toISOString(),
   };
-  const inserted = await client.from('usage_events').insert([row]).select('id').maybeSingle();
-  if (!inserted.error && inserted.data?.id) return String(inserted.data.id);
-  if (inserted.error && /duplicate|unique/i.test(inserted.error.message || '')) {
-    const existing = await client.from('usage_events').select('id').eq('idempotency_key', input.idempotencyKey).maybeSingle();
-    if (existing.data?.id) return String(existing.data.id);
-  }
-  throw new Error(`Measured usage persistence failed: ${inserted.error?.message || 'no usage event returned'}`);
+  return insertUnifiedUsageEvent(client, row);
 }
 
 async function settleUnifiedUsage(input: {

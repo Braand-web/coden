@@ -52,3 +52,6 @@ Application checkpoint: checkpoint/agent-audit-c409e2a (c409e2a6f1571647a43ce19b
 Rollback the application to the previous healthy deployment if the healthcheck regresses.
 The SQL correction is backwards-compatible; do not revert it merely because the app rolls back.
 No historical billing data or user projects were removed.
+# Production follow-up — usage event compatibility
+
+The first production check confirmed commit `2b19ff6` and all seven public HTTP routes. Runtime logs then exposed a second pre-existing migration mismatch: V4 event inserts omitted legacy NOT NULL `organization_id` and `action_type`. The writer now resolves the organization from the billing account, preserves legacy cost/model fields, and scopes duplicate recovery to the same account and organization. No constraint or RLS protection was removed. A dedicated executable regression covers account mapping, legacy fields, duplicate replay, foreign duplicate rejection and persistence failure; typecheck passed after this correction.
