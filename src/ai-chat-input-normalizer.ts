@@ -12,7 +12,7 @@ function installAiInputStyle() {
   style.id = 'coden-ai-input-normalizer-style';
   style.textContent = `
     :root {
-      --chat-action-height: 32px;
+      --chat-action-height: 30px;
       --chat-submit-size: 36px;
       --chat-action-radius: 9999px;
       --chat-action-font: 13px;
@@ -61,12 +61,13 @@ function installAiInputStyle() {
     }
 
     .coden-ai-input .input-actions {
-      min-height: var(--chat-action-height) !important;
-      height: var(--chat-action-height) !important;
+      min-height: 40px !important;
+      height: 40px !important;
       margin-top: auto !important;
-      padding: 2px 10px 8px !important;
+      padding: 0 10px 4px !important;
       align-items: center !important;
       gap: 4px !important;
+      box-sizing: border-box !important;
     }
 
     .coden-ai-input .actions-left,
@@ -112,10 +113,12 @@ function installAiInputStyle() {
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
+      line-height: 0 !important;
     }
 
     .coden-ai-input .icon-btn {
       border-color: transparent !important;
+      flex: 0 0 var(--chat-action-height) !important;
     }
 
     .coden-ai-input .submit-btn {
