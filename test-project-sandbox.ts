@@ -105,7 +105,7 @@ try {
   mark = Date.now();
   const started = await sandbox.start({ basePath: '/preview/test-token/' });
   timings.start_ms = Date.now() - mark;
-  assert.equal(started.state, 'running', `dev server must start: ${started.lastError}`);
+  assert.equal(started.state, 'running', `dev server must start: ${started.lastError}\n${sandbox.getLogs(30).map(entry => entry.line).join('\n')}`);
   assert.ok(started.port && started.port > 0, 'the port comes from the process, never from a constant');
   assert.ok(started.url, 'a running sandbox has a URL');
 

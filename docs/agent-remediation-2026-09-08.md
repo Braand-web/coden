@@ -39,6 +39,10 @@ Run npm run lint, npm run test:unit, npm test, npm run build.
 Also execute test-browser-interaction-runner.ts with the real installed Chromium.
 Validated locally: typecheck passed; 106 unit tests passed; the full npm test script passed;
 production build passed; browser interaction/storage checks passed with real Chromium.
+A supplementary project-sandbox rerun after switching to restricted Windows execution
+failed because esbuild could not read an ancestor directory (Access is denied).
+The same test passed in the full suite before that restriction. This supplemental
+environment check is not counted as passed; verify the actual Linux runtime after deployment.
 Verify the deployed commit through Railway and /api/health, then check public pages and a browser-rendered page.
 Never publish tokens, .env files or provider credentials.
 
