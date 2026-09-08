@@ -1,8 +1,8 @@
 /* One composer language for every Coden surface. */
 :root {
   --coden-composer-radius: 24px;
-  --coden-composer-control: 36px;
-  --coden-composer-send: 40px;
+  --coden-composer-control: 32px;
+  --coden-composer-send: 36px;
   --coden-composer-ease: cubic-bezier(.32, .72, 0, 1);
 }
 
@@ -138,17 +138,67 @@ body[data-coden-surface="builder"] .chat-input-row {
 }
 
 body[data-coden-surface="builder"] .chat-input-row .input-wrapper {
-  min-height: 124px;
+  min-height: 96px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
 }
 
 body[data-coden-surface="builder"] .chat-input-row .chat-input-textarea {
-  padding: 16px 16px 4px !important;
+  min-height: 44px !important;
+  max-height: 180px !important;
+  padding: 12px 16px 2px !important;
   font-size: 14px !important;
   line-height: 20px !important;
 }
 
 body[data-coden-surface="builder"] .chat-input-row .input-actions {
-  padding: 8px 12px 12px !important;
+  flex: 0 0 auto !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  margin-top: auto !important;
+  padding: 2px 10px 8px !important;
+  gap: 4px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .actions-left,
+body[data-coden-surface="builder"] .chat-input-row .actions-right {
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .actions-right {
+  min-width: 0 !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row #btn-chat-mode,
+body[data-coden-surface="builder"] .chat-input-row #model-select-btn,
+body[data-coden-surface="builder"] .chat-input-row .coden-builder-model-trigger {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 10px !important;
+  gap: 6px !important;
+  font-size: 13px !important;
+  line-height: 18px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .icon-btn {
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .icon-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+}
+
+body[data-coden-surface="builder"] .chat-input-row .submit-btn {
+  width: var(--coden-composer-send) !important;
+  min-width: var(--coden-composer-send) !important;
+  height: var(--coden-composer-send) !important;
+  min-height: var(--coden-composer-send) !important;
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-composer-footer {
@@ -175,8 +225,8 @@ body[data-coden-surface="builder"] :where(.coden-decision-card, .coden-stream-no
 @media (max-width: 560px) {
   :root {
     --coden-composer-radius: 20px;
-    --coden-composer-control: 34px;
-    --coden-composer-send: 38px;
+    --coden-composer-control: 30px;
+    --coden-composer-send: 34px;
   }
 
   body[data-coden-surface="builder"] .chat-input-row { padding: 8px !important; }

@@ -1136,6 +1136,7 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
   --loader-surface: #f7f4ed;
   --loader-border: #e8e4da;
   --loader-accent: #3b82f6;
+  --loader-accent-soft: rgba(59,130,246,.10);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -1144,6 +1145,7 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
     --loader-surface: #151a22;
     --loader-border: rgba(226,232,240,.12);
     --loader-accent: #4f8cff;
+    --loader-accent-soft: rgba(79,140,255,.14);
   }
 }
 :root[data-theme="light"] {
@@ -1153,6 +1155,7 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
   --loader-surface: #f7f4ed;
   --loader-border: #e8e4da;
   --loader-accent: #3b82f6;
+  --loader-accent-soft: rgba(59,130,246,.10);
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -1161,6 +1164,7 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
   --loader-surface: #151a22;
   --loader-border: rgba(226,232,240,.12);
   --loader-accent: #4f8cff;
+  --loader-accent-soft: rgba(79,140,255,.14);
 }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
@@ -1181,61 +1185,76 @@ body {
 }
 .loader-core {
   width: min(320px, 100%);
-  min-height: 132px;
+  min-height: 168px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 14px;
   border: 1px solid var(--loader-border);
   border-radius: 24px;
   background: var(--loader-surface);
   padding: 24px;
   user-select: none;
 }
-.loader-text {
+.loader-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--loader-accent) 34%, var(--loader-border));
+  border-radius: 14px;
+  background: var(--loader-accent-soft);
+  color: var(--loader-accent);
+  animation: loaderMarkPulse 2.2s ease-in-out infinite;
+}
+.loader-mark svg { width: 22px; height: 22px; display: block; }
+.loader-copy { display: grid; gap: 4px; text-align: center; }
+.loader-title {
+  color: var(--loader-text);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 650;
+}
+.loader-status {
+  color: color-mix(in srgb, var(--loader-text) 64%, transparent);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 520;
+}
+.loader-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
-  color: color-mix(in srgb, var(--loader-text) 72%, transparent);
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 520;
-  text-align: center;
+  gap: 5px;
+  min-height: 8px;
 }
-.loader-letter { display: inline-block; }
-.loader-circle {
-  width: 96px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--loader-text) 10%, transparent);
-}
-.loader-circle::after {
-  content: '';
-  display: block;
-  width: 40%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--loader-accent);
-  animation: loaderProgress 1.5s cubic-bezier(.32,.72,0,1) infinite alternate;
-}
-.idle .loader-circle::after { width: 18%; animation: none; }
-@keyframes loaderProgress {
-  from { transform: translateX(0); }
-  to { transform: translateX(150%); }
-}
+.loader-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--loader-accent); opacity: .28; }
+.working .loader-dot { animation: loaderDot 1.05s ease-in-out infinite; }
+.working .loader-dot:nth-child(2) { animation-delay: .12s; }
+.working .loader-dot:nth-child(3) { animation-delay: .24s; }
+.idle .loader-dot:first-child { opacity: .82; }
+@keyframes loaderDot { 0%, 80%, 100% { opacity: .28; transform: scale(.82); } 40% { opacity: 1; transform: scale(1); } }
+@keyframes loaderMarkPulse { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) {
-  .loader-circle::after { animation: none !important; }
+  .loader-mark, .loader-dot { animation: none !important; }
 }
 </style>
 </head>
 <body>
   <main class="preview-loader ${stateClass}" aria-label="Preview preparation">
     <div class="loader-core" role="status" aria-live="polite" aria-label="${status}">
-      <span class="loader-text">${letters}</span>
-      <div class="loader-circle" aria-hidden="true"></div>
+      <div class="loader-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l1.35 4.15L17.5 8.5l-4.15 1.35L12 14l-1.35-4.15L6.5 8.5l4.15-1.35L12 3z"></path>
+          <path d="M19 15l.55 1.7 1.7.55-1.7.55L19 19.5l-.55-1.7-1.7-.55 1.7-.55L19 15z"></path>
+        </svg>
+      </div>
+      <div class="loader-copy">
+        <strong class="loader-title">Aperçu Coden</strong>
+        <span class="loader-status">${letters}</span>
+      </div>
+      <div class="loader-indicator" aria-hidden="true"><i class="loader-dot"></i><i class="loader-dot"></i><i class="loader-dot"></i></div>
     </div>
   </main>
 </body>
