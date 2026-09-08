@@ -337,7 +337,7 @@ body[data-coden-surface="landing-v3"] .input-wrapper {
   border: 1px solid var(--horizon-border) !important;
   border-radius: 24px !important;
   background: var(--horizon-surface) !important;
-  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
 }
 
 body[data-coden-surface="landing-v3"] .input-wrapper:focus-within {
@@ -470,7 +470,7 @@ body[data-coden-surface="dashboard"] :where(.coden-dashboard-new-project, .coden
 body[data-coden-surface="dashboard"] .coden-dashboard-composer {
   border: 1px solid var(--horizon-border) !important;
   background: var(--horizon-surface) !important;
-  box-shadow: var(--horizon-shadow-inset), var(--horizon-shadow-float) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-project-card {
@@ -523,7 +523,7 @@ body[data-coden-surface="builder"] .chat-input-row .input-wrapper {
   border: 1px solid var(--horizon-border) !important;
   border-radius: 24px !important;
   background: var(--horizon-input) !important;
-  box-shadow: var(--horizon-shadow-inset) !important;
+  box-shadow: var(--horizon-shadow-float) !important;
 }
 
 body[data-coden-surface="builder"] .chat-input-row .input-wrapper:focus-within {
