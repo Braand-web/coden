@@ -365,6 +365,13 @@ function packageJson(name: string, extraDependencies: Record<string, string> = {
   }, null, 2) + '\n';
 }
 
+/**
+ * The path every starter renders, for callers that have a file list but no
+ * starter — reading stored project files, for instance. A starter's own
+ * `entryPath` stays the authority wherever one is in hand.
+ */
+export const STARTER_ENTRY_PATH = 'src/App.tsx';
+
 const BASE_FILES: SandboxFile[] = [
   { path: 'index.html', content: INDEX_HTML },
   { path: 'vite.config.ts', content: VITE_CONFIG },
@@ -421,7 +428,7 @@ export const STARTERS: Record<StarterId, Starter> = {
     title: 'React + Vite + Tailwind',
     description: 'A typed React application with Tailwind, an error boundary and a typecheck script.',
     reservedPaths: RESERVED,
-    entryPath: 'src/App.tsx',
+    entryPath: STARTER_ENTRY_PATH,
     files: [{ path: 'package.json', content: packageJson('app') }, ...BASE_FILES, { path: 'src/vite-env.d.ts', content: '/// <reference types="vite/client" />\n' }],
   },
   'react-supabase': {
@@ -429,7 +436,7 @@ export const STARTERS: Record<StarterId, Starter> = {
     title: 'React + Vite + Tailwind + Supabase',
     description: 'The React starter with a configured Supabase browser client and typed environment.',
     reservedPaths: [...RESERVED, 'src/lib/supabase.ts'],
-    entryPath: 'src/App.tsx',
+    entryPath: STARTER_ENTRY_PATH,
     files: [
       { path: 'package.json', content: packageJson('app', { '@supabase/supabase-js': VERSIONS.supabase }) },
       ...BASE_FILES,
@@ -517,10 +524,11 @@ export function describeStarter(starter: Starter): string {
     `Scaffold: ${starter.title}.`,
     'These files already exist and must not be rewritten:',
     ...starter.reservedPaths.map(path => `- ${path}`),
-    'Tailwind, TypeScript and an error boundary are already configured.',
-    "Import application code with the '@/' alias, which points at src/.",
-    `index.html loads src/main.tsx, which renders ${starter.entryPath}. ${starter.entryPath} currently holds a placeholder that renders "Building…"; replacing it is what makes the application appear.`,
-    `Write the application itself in ${starter.entryPath} and in the components, pages, hooks and state it imports. A file ${starter.entryPath} does not import is never loaded, whatever it contains.`,
-    'This is a React + TypeScript project. Write .tsx/.ts, not standalone .js entry points.',
+    "Tailwind, TypeScript and an error boundary are configured. Import with the '@/' alias for src/.",
+    // The three facts that decide whether the application is ever loaded, in
+    // as few words as they can be said: this text rides on every prompt.
+    `src/main.tsx renders ${starter.entryPath}, which holds a placeholder showing "Building…".`,
+    `Write the app in ${starter.entryPath} and what it imports — anything it does not import never runs.`,
+    'React + TypeScript: write .tsx/.ts, never a standalone .js entry point.',
   ].join('\n');
 }

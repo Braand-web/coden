@@ -130,4 +130,41 @@ for (const starter of Object.values(STARTERS)) {
   assert.match(instruction.slice(0, 900), /starter\.entryPath/, 'and name the entry file it must reach');
 }
 
+/*
+ * And the projects that were verified before verification learned to look.
+ *
+ * Eight projects carry `preview_status: 'verified'` with `src/App.tsx` still
+ * at its placeholder — generated before 2026-09-04, each showing the user
+ * "Building…" under a badge saying it was checked. The files are not repaired
+ * here: only a real run can write an application, and inventing one would be
+ * worse than the placeholder. The false claim is what gets repaired.
+ */
+{
+  const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+  assert.match(server, /async function reconcileScaffoldOnlyPreviews\(/, 'a stale verified claim must be reconciled');
+  assert.match(server, /void reconcileScaffoldOnlyPreviews\(\)/, 'and the reconciliation must run at startup');
+
+  const body = server.slice(server.indexOf('async function reconcileScaffoldOnlyPreviews('));
+  const fn = body.slice(0, body.indexOf('async function ensureAgentHarnessSchema('));
+  assert.match(fn, /STARTER_ENTRY_PATH/, 'it must look at the file the app actually renders');
+  assert.match(fn, /STARTER_ENTRY_PLACEHOLDER/, 'and compare it against the placeholder, not a guess');
+  assert.match(fn, /preview_status: 'needs_fix'/, 'and tell the truth about the preview');
+  // The files are read and never written: the only update targets `projects`.
+  const projectFilesChain = fn.slice(fn.indexOf(".from('project_files')"));
+  assert.match(projectFilesChain.slice(0, 400), /\.select\(/, 'the files are read');
+  for (const statement of fn.split('await client')) {
+    if (!statement.includes(".from('project_files')")) continue;
+    assert.doesNotMatch(statement, /\.update\(|\.delete\(|\.insert\(|\.upsert\(/, 'it must never rewrite a user\'s files');
+  }
+  assert.match(fn, /\.from\('projects'\)\s*\n?\s*\.update\(/, 'only the project\'s own claim is corrected');
+}
+
+// The shared entry path and each starter's own must not drift apart.
+{
+  const { STARTER_ENTRY_PATH } = await import('./src/services/sandbox/starters.ts');
+  for (const starter of Object.values(STARTERS)) {
+    assert.equal(starter.entryPath, STARTER_ENTRY_PATH, `${starter.id}: one entry path, one source`);
+  }
+}
+
 console.log('scaffold-is-not-an-app tests passed');

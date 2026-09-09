@@ -1600,6 +1600,57 @@ async function reapInterruptedAgentRuns() {
   return { runs, turns };
 }
 
+/**
+ * Stop a project claiming to be verified while it is still the scaffold.
+ *
+ * Verification only learned to check the entry file on 2026-09-04, so every
+ * project generated before that could pass while `src/App.tsx` still held the
+ * placeholder — the coder had written its files somewhere the app never
+ * imports. Eight of them carry `preview_status: 'verified'` and `status:
+ * 'active'` today, and each shows the user "Building…" forever under a badge
+ * saying it was checked.
+ *
+ * The files are not repaired here — only a real run can write the application,
+ * and inventing one would be worse than the placeholder. What is repaired is
+ * the claim: `needs_fix` is the truth, and it is what tells the interface to
+ * offer a rebuild instead of a verified preview.
+ *
+ * Runs at every boot rather than once, so a regression in the same place
+ * corrects itself instead of accumulating silently.
+ */
+async function reconcileScaffoldOnlyPreviews() {
+  const client = getSupabase();
+  if (!client) return { corrected: 0 };
+
+  const { data, error } = await client
+    .from('project_files')
+    .select('project_id, content, projects!inner(preview_status)')
+    .eq('path', STARTER_ENTRY_PATH)
+    .neq('projects.preview_status', 'needs_fix');
+  if (error) {
+    console.warn('[coden:scaffold_preview_reconcile_skipped]', { message: error.message });
+    return { corrected: 0 };
+  }
+
+  const placeholder = STARTER_ENTRY_PLACEHOLDER.trim();
+  const stale = (data || [])
+    .filter((row: any) => String(row?.content || '').trim() === placeholder)
+    .map((row: any) => String(row?.project_id));
+  if (!stale.length) return { corrected: 0 };
+
+  const { error: updateError } = await client
+    .from('projects')
+    .update({ preview_status: 'needs_fix' })
+    .in('id', stale);
+  if (updateError) {
+    console.warn('[coden:scaffold_preview_reconcile_failed]', { message: updateError.message });
+    return { corrected: 0 };
+  }
+
+  console.log('[coden:scaffold_only_previews_reconciled]', { corrected: stale.length });
+  return { corrected: stale.length };
+}
+
 async function ensureAgentHarnessSchema() {
   const projectRef = getSupabaseProjectRef(process.env.SUPABASE_URL || '');
   if (!projectRef) return { applied: false, reason: 'missing_project_ref' };
@@ -14947,7 +14998,7 @@ import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
-import { selectStarter, applyStarter, describeStarter } from './src/services/sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
@@ -15929,6 +15980,9 @@ const httpServer = app.listen(port, () => {
   });
   void reapInterruptedAgentRuns().catch((error: any) => {
     console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  });
+  void reconcileScaffoldOnlyPreviews().catch((error: any) => {
+    console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
 
   registerJobHandler('workflow_run', async (job, onProgress) => {
