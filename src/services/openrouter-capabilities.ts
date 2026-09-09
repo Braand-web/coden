@@ -77,27 +77,44 @@ export function enforceModelCapabilities(model: CatalogModel, payload: Record<st
   const supported = new Set(model.supported_parameters);
   const body: Record<string, any> = { ...payload, provider: { require_parameters: true } };
   /*
-   * Refuse only what the request cannot do without.
+   * This function is where two catalogues meet, and only one of them is true.
    *
-   * `tools` and `response_format` are contracts: a coder loop with no tools
-   * cannot write a file, and a caller parsing JSON cannot use prose. Failing
-   * there is right.
+   * `AI_MODEL_CAPABILITIES` in src/config/ai-models.ts is a hand-written
+   * fixture: `commonTextTools` asserts `supportsStructuredOutput`,
+   * `supportsToolCalling` and `supportsJsonMode` for every model in the
+   * registry, unconditionally. `supported_parameters` here is what OpenRouter
+   * actually advertises today. Nothing reconciles them, so the fixture decides
+   * what gets SENT and this function decides what gets REFUSED — and when the
+   * provider changes what it advertises, every request that asked for the
+   * affected parameter dies.
    *
-   * `reasoning` is not a contract, it is a quality setting — and treating it
-   * like one cost a whole run. Production failed a request at 16:37 with
-   * `MODEL_CAPABILITY_UNAVAILABLE` after seven seconds, having written
-   * nothing, because a model did not advertise a parameter the answer never
-   * depended on. It is dropped and logged now, exactly as `temperature`
-   * already is a few lines below.
+   * That is not hypothetical. Between 2026-09-05 and 2026-09-08 every recorded
+   * failure — thirteen of thirteen, and 100% of the traffic on the last day —
+   * was `MODEL_CAPABILITY_UNAVAILABLE`, in eight to twelve seconds, having
+   * produced nothing.
+   *
+   * So the rule is: refuse only what the request genuinely cannot do without.
+   *
+   * `tools` is a contract. A coder loop with no tools cannot write a file, and
+   * pretending otherwise produces a confident answer with an empty project. It
+   * still throws — and `ProviderGateway` treats that as this model's failure
+   * rather than the request's, handing over to a candidate that can.
+   *
+   * `response_format` is NOT a contract, however much it looks like one. Every
+   * caller that asks for JSON already survives prose: `parseOrRepairStructuredObject`
+   * re-asks the model to repair a malformed answer, and the intent router adds
+   * `completeIntentRouterOutput` on top. Killing the run denies them the chance
+   * to do the job they exist for. Dropped and logged, like `reasoning` and
+   * `temperature` below.
    */
-  for (const parameter of ['tools', 'response_format']) {
-    if (body[parameter] !== undefined && !supported.has(parameter)) {
-      throw new CapabilityError('MODEL_CAPABILITY_UNAVAILABLE', `${model.id} does not advertise ${parameter} support.`);
-    }
+  if (body.tools !== undefined && !supported.has('tools')) {
+    throw new CapabilityError('MODEL_CAPABILITY_UNAVAILABLE', `${model.id} does not advertise tools support.`);
   }
-  if (body.reasoning !== undefined && !supported.has('reasoning')) {
-    console.info('[coden:provider_parameter_omitted]', { model: model.id, parameter: 'reasoning', reason: 'not advertised by OpenRouter' });
-    delete body.reasoning;
+  for (const parameter of ['response_format', 'reasoning']) {
+    if (body[parameter] !== undefined && !supported.has(parameter)) {
+      console.info('[coden:provider_parameter_omitted]', { model: model.id, parameter, reason: 'not advertised by OpenRouter' });
+      delete body[parameter];
+    }
   }
   // Automatic choice is implicit when this parameter is not advertised (Fable).
   if (!supported.has('tool_choice') && body.tool_choice === 'auto') delete body.tool_choice;

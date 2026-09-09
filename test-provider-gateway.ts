@@ -440,3 +440,99 @@ console.log('test-provider-gateway passed');
   assert.deepEqual(payload.tools, [{}], 'and what the request needs survives');
   assert.throws(() => enforceModelCapabilities({ ...model, supported_parameters: [] }, { tools: [{}] }), /tools/);
 }
+
+/*
+ * The catalogue that decides and the catalogue that refuses were not the same.
+ *
+ * `AI_MODEL_CAPABILITIES` is a hand-written fixture asserting
+ * `supportsStructuredOutput` and `supportsToolCalling` for every model in the
+ * registry; `supported_parameters` is what OpenRouter advertises today.
+ * Nothing reconciles them, so the fixture decided what to send and
+ * `enforceModelCapabilities` refused it. Between 2026-09-05 and 2026-09-08
+ * every recorded failure was `MODEL_CAPABILITY_UNAVAILABLE` — thirteen of
+ * thirteen, and every request on the last day — in under twelve seconds,
+ * having produced nothing.
+ */
+{
+  const { enforceModelCapabilities } = await import('./src/services/openrouter-capabilities.ts');
+  const model = { id: 'm', context_length: 100_000, supported_parameters: ['tools'], top_provider: {} } as any;
+
+  // A structured-output request survives a model that will not take the
+  // parameter: every caller that asks for JSON already repairs prose.
+  const payload = enforceModelCapabilities(model, {
+    tools: [{}],
+    response_format: { type: 'json_schema', json_schema: { name: 'x', strict: true, schema: {} } },
+    reasoning: { effort: 'high' },
+    max_tokens: 100,
+  });
+  assert.equal(payload.response_format, undefined, 'an unadvertised response_format is dropped, not fatal');
+  assert.equal(payload.reasoning, undefined, 'and so is reasoning');
+  assert.deepEqual(payload.tools, [{}], 'while what the request needs survives');
+
+  // Tools remain a contract: a coder loop with no tools cannot write a file.
+  assert.throws(
+    () => enforceModelCapabilities({ ...model, supported_parameters: ['response_format'] }, { tools: [{}] }),
+    /tools/,
+    'tools stay fatal, so the gateway can hand over to a model that has them',
+  );
+}
+
+/*
+ * And that handover has to exist on all three gateway paths. It was added to
+ * `chat` only, so a coder loop (streamingCompletion) and a live stream
+ * (streamChat) still died on the first incapable candidate.
+ */
+{
+  class CapabilityFailure extends Error {
+    diagnosticCode = 'MODEL_CAPABILITY_UNAVAILABLE';
+  }
+
+  // streamingCompletion: the path the coder loop takes.
+  {
+    const fake = new FakeOpenRouter();
+    let call = 0;
+    fake.streamChat = async function* (modelId: string) {
+      this.calls.push(modelId);
+      if (++call === 1) throw new CapabilityFailure('no tools here');
+      yield { type: 'token' as const, text: 'ok', model: modelId };
+    };
+    const gateway = new ProviderGateway(fake as any);
+    const result = await gateway.streamingCompletion('openai/gpt-5.6-luna', messages, { allowFallback: true });
+    assert.equal(result.text, 'ok', 'the fallback must answer');
+    assert.equal(fake.calls.length, 2, 'the incapable model hands over instead of failing the run');
+  }
+
+  // streamChat: the live path.
+  {
+    const fake = new FakeOpenRouter();
+    let call = 0;
+    fake.streamChat = async function* (modelId: string) {
+      this.calls.push(modelId);
+      if (++call === 1) throw new CapabilityFailure('no tools here');
+      yield { type: 'token' as const, text: 'ok', model: modelId };
+    };
+    const gateway = new ProviderGateway(fake as any);
+    const seen: string[] = [];
+    for await (const event of gateway.streamChat('openai/gpt-5.6-luna', messages, { allowFallback: true })) {
+      if (event.type === 'token') seen.push(event.text);
+    }
+    assert.deepEqual(seen, ['ok'], 'the fallback streams');
+    assert.equal(fake.calls.length, 2, 'the incapable model hands over here too');
+  }
+
+  // But never once the caller has already seen output: that would replay text.
+  {
+    const fake = new FakeOpenRouter();
+    fake.streamChat = async function* (modelId: string) {
+      this.calls.push(modelId);
+      yield { type: 'token' as const, text: 'partial', model: modelId };
+      throw new CapabilityFailure('mid-stream');
+    };
+    const gateway = new ProviderGateway(fake as any);
+    await assert.rejects(() => gateway.streamingCompletion('openai/gpt-5.6-luna', messages, {
+      allowFallback: true,
+      onChunk: () => {},
+    }));
+    assert.equal(fake.calls.length, 1, 'text already shown is never replayed by a handover');
+  }
+}

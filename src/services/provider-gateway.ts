@@ -184,7 +184,11 @@ export class ProviderGateway {
         const classified = this.classifyError(error, candidate);
         this.noteFailure(candidate, classified.retryable);
         this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
-        if (yieldedAnyEvent || !classified.retryable) throw classified;
+        if (yieldedAnyEvent) throw classified;
+        // Same handover as the other two paths: a model that cannot do this at
+        // all is what the next candidate exists for.
+        if (isModelSpecificFailure(classified.diagnosticCode)) continue;
+        if (!classified.retryable) throw classified;
       }
     }
 
@@ -220,6 +224,10 @@ export class ProviderGateway {
     const candidates = this.candidatesFor(primary, options.allowFallback === true);
     let lastError: any = null;
 
+    // Whether anything has already reached the caller's progress callback. A
+    // handover after that would replay text the user has already read.
+    let emittedAnyChunk = false;
+
     const collect = async (
       candidate: AllowedModelId,
       runtimeConfig?: ProviderRequestConfig,
@@ -245,6 +253,7 @@ export class ProviderGateway {
         if (event.type === 'token') {
           text += event.text;
           if (options.onChunk) {
+            emittedAnyChunk = true;
             try { options.onChunk(text); } catch { /* progress reporting must never break a run */ }
           }
         }
@@ -300,6 +309,12 @@ export class ProviderGateway {
         let classified = this.classifyError(error, candidate);
         this.noteFailure(candidate, classified.retryable);
         this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
+        // A capability this model does not have is the other candidates' cue,
+        // exactly as in `chat` — but only while nothing has reached the caller,
+        // since a handover after that would replay text already on screen.
+        // `enforceModelCapabilities` throws before the request is sent, so the
+        // case that matters here is always the silent one.
+        if (isModelSpecificFailure(classified.diagnosticCode) && !emittedAnyChunk) continue;
         if (!classified.retryable) throw classified;
       }
     }
