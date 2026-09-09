@@ -12093,11 +12093,27 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
 
 
+      /*
+       * What this project already decided, before deciding anything again.
+       *
+       * The memory layer is complete and was wired into `generateFilesWithAi`
+       * only, so it went dark the day this pipeline became the live path:
+       * 36 decisions across 20 projects, none read or written since
+       * 2026-09-03. A project that had settled on a router or a state library
+       * re-chose one on every request.
+       */
+      const projectMemory = await loadProjectMemoryContext({
+        client: getSupabase(),
+        projectId: project.id,
+        prompt: agentPrompt,
+      });
+
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
         userId,
         prompt: agentPrompt,
+        memoryContext: projectMemory,
         route: pipelineRoute,
         existingFiles,
         history: recentHistory,
@@ -12146,6 +12162,24 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           route: pipelineRoute,
           ok: outcome.ok,
         }).catch(() => null);
+
+        /*
+         * What this run settled, so the next one inherits it.
+         *
+         * Only from a run that verified: a decision read out of a build that
+         * did not work is a mistake the project would then be told to repeat.
+         * The plan's own summary is the text, since it says what was chosen
+         * rather than what was attempted.
+         */
+        if (outcome.ok) {
+          const decisionsStored = await saveArchitectureDecisions({
+            client: getSupabase(),
+            projectId: project.id,
+            prompt: agentPrompt,
+            assistantOutput: outcome.plan?.summary || '',
+          });
+          if (decisionsStored) console.log('[coden:project_memory_updated]', { project: project.id, decisions: decisionsStored });
+        }
 
         return respondJson(200, {
           success: outcome.ok,
@@ -14999,6 +15033,7 @@ import { renderProjectArchitecture } from './src/services/project-architecture.t
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
+import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';

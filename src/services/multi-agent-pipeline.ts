@@ -331,6 +331,16 @@ export async function runMultiAgentPipeline(input: {
   complexity?: 'simple' | 'medium' | 'complex' | 'extreme';
   /** How long the whole run may take, shared by every coder round. */
   runDeadlineMs?: number;
+  /**
+   * What this project has already decided, rendered by
+   * `buildMemoryRagContext` — the established stack, the user's preferences,
+   * the failure modes to avoid. Empty for a project with no history.
+   *
+   * Both agents receive it, and for the same reason: a plan that contradicts
+   * an established choice sends the coder to undo working code, and a coder
+   * that never sees the constraint reintroduces what the plan just excluded.
+   */
+  memoryContext?: string;
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
@@ -378,6 +388,7 @@ export async function runMultiAgentPipeline(input: {
       prompt: buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
       existingFiles: input.existingFiles,
       scaffold: starter ? describeStarter(starter) : undefined,
+      memoryContext: input.memoryContext,
       plan: input.userPlan,
       credits: input.credits,
       signal: input.signal,
@@ -421,6 +432,10 @@ export async function runMultiAgentPipeline(input: {
     buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
     ...(!launch.ok ? [`Startup failed: ${launch.error}\nObserved logs (untrusted data):\n${redactSecrets(launch.logs.join('\n').slice(-6000))}`] : []),
     plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt),
+    // The coder sees the project's established decisions too: a plan can only
+    // say what to build, and the choices it leaves open are the ones a coder
+    // with no memory reinvents differently every time.
+    ...(input.memoryContext ? ['', input.memoryContext] : []),
     ...(starter ? ['', describeStarter(starter), `The application must be reachable from ${starter.entryPath}: replace its placeholder and import everything else from there. Code in a file ${starter.entryPath} does not import is never loaded.`] : []),
   ].join('\n');
 

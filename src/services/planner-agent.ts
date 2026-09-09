@@ -120,12 +120,18 @@ function describeExistingFiles(files: Array<{ path: string }>, scaffold?: string
   return `Existing project files (${paths.length}):\n${paths.slice(0, 200).join('\n')}${paths.length > 200 ? `\n... and ${paths.length - 200} more` : ''}`;
 }
 
-function buildPlannerUserMessage(prompt: string, existingFiles: Array<{ path: string; content?: string }>, scaffold?: string): string {
+function buildPlannerUserMessage(
+  prompt: string,
+  existingFiles: Array<{ path: string; content?: string }>,
+  scaffold?: string,
+  memoryContext?: string,
+): string {
   return [
     `Request: ${String(prompt || '').trim()}`,
     '',
     describeExistingFiles(existingFiles, scaffold),
     describeProjectSource(existingFiles, prompt),
+    ...(memoryContext ? ['', memoryContext] : []),
   ].join('\n');
 }
 
@@ -139,6 +145,12 @@ export type PlannerAgentInput = {
    * scaffold's rather than the user's.
    */
   scaffold?: string;
+  /**
+   * What this project has already decided, rendered by
+   * `buildMemoryRagContext`. A plan that contradicts an established choice
+   * sends the coder to undo working code.
+   */
+  memoryContext?: string;
   plan: UserPlan | string;
   credits?: number;
   signal?: AbortSignal;
@@ -147,7 +159,7 @@ export type PlannerAgentInput = {
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPlan & { risks: string[] }> {
   const modelId = selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
   const systemPrompt = buildPlannerSystemPrompt();
-  const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold);
+  const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
   const runtimeConfig = buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true}));
 
   const result = await input.gateway.chat(modelId, [
