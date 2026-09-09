@@ -39,6 +39,8 @@ import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { redactSecrets } from './secret-redaction.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
+import { buildWorldClassUiPolicy } from './design-generation-policy.ts';
+import { describeDesignResources } from './design-resource-catalogue.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -199,6 +201,44 @@ function budgetForRoute(route: PipelineRoute): { maxRounds: number; maxToolCalls
   return { maxRounds: 8, maxToolCallsPerRound: 40, maxStalledRounds: 3, runDeadlineMs: 11 * 60_000 };
 }
 
+/**
+ * The design system, for the routes that are actually designing something.
+ *
+ * `buildWorldClassUiPolicy` is 1055 lines of platform intelligence — app-type
+ * classification, layout and density strategy, required components, states and
+ * motion rules, anti-generic-AI-design rules, a self-audit and a worked
+ * example. It was written for `generateFilesWithAi` and is called from three
+ * places, all of them in the legacy path. When this pipeline became the live
+ * one, every generation stopped seeing any of it: `grep -n design` across this
+ * file and `planner-agent.ts` returned nothing at all.
+ *
+ * That is the whole reason generated applications came out looking defaulted.
+ * Nothing here is new capability; it is the capability that already existed,
+ * reaching the agents that do the work.
+ *
+ * Returns `undefined` for `small_edit`, and that is the point of the function.
+ * The policy and its resource catalogue weigh about 3,500 tokens; spending it to change a subtitle is
+ * paying a design review for a typo, on the route whose whole budget is three
+ * minutes. It runs where a surface is being designed — a new project, or a
+ * change large enough to add screens.
+ */
+function designContextForRoute(route: PipelineRoute, prompt: string, hasExistingFiles: boolean): string | undefined {
+  if (route === 'small_edit') return undefined;
+  const policy = buildWorldClassUiPolicy({ prompt });
+  return [
+    policy.systemPrompt,
+    '',
+    describeDesignResources(),
+    // On an existing project the classifier reads the request, not the
+    // application — "add a booking page" to a dashboard classifies as
+    // something else entirely. What is already on screen outranks the hint,
+    // for the same reason the policy already says the prompt outranks it.
+    ...(hasExistingFiles
+      ? ['', 'EXISTING APPLICATION: this project already has a visual identity — its tokens, type scale, spacing, component shapes and motion. Read it before designing, and extend it. The detected platform type and design direction above are derived from the request alone and must never override what the project already looks like. New screens belong to the existing product, not beside it.']
+      : []),
+  ].join('\n');
+}
+
 /** The plan's file list and rationale, as round one's instruction. */
 function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
@@ -221,7 +261,16 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal }): RepairTurn {
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal;
+  /**
+   * The design system, from `designContextForRoute`.
+   *
+   * It goes in the system message rather than the round-one instruction
+   * because every round writes interface code, not just the first. A repair
+   * round that has lost the design rules fixes the type error and flattens the
+   * component it touched on the way past.
+   */
+  designPolicy?: string }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -265,7 +314,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed.',
+          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed.',
         },
         { role: 'user', content: input.visionInputs?.length ? buildVisionMessageContent(instruction, input.visionInputs) : instruction },
       ],
@@ -376,6 +425,11 @@ export async function runMultiAgentPipeline(input: {
   // scaffold the sandbox will actually start from.
   const starter = input.route === 'new_project' ? selectStarter(input.prompt) : null;
 
+  // Computed once and given to both agents, so the plan and the code that
+  // implements it are designed to the same brief. A planner that has not seen
+  // the design system names three files; the coder then designs from nothing.
+  const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0);
+
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
@@ -389,6 +443,7 @@ export async function runMultiAgentPipeline(input: {
       existingFiles: input.existingFiles,
       scaffold: starter ? describeStarter(starter) : undefined,
       memoryContext: input.memoryContext,
+      designPolicy,
       plan: input.userPlan,
       credits: input.credits,
       signal: input.signal,
@@ -498,6 +553,7 @@ export async function runMultiAgentPipeline(input: {
       visionInputs: input.visionInputs,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
+      designPolicy,
       deadline: runDeadline,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
