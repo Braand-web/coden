@@ -3,7 +3,6 @@ import express from 'express';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
-import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
@@ -16,7 +15,7 @@ import { runParallelAgents, mergeAgentOutputs, selectAgentsForContext, type Para
 import { initJobQueue, startJobWorker, enqueueJob, getJobStatus, cancelJob, shouldUseJobQueue, registerJobHandler } from './src/services/async-job-queue.ts';
 import fs from 'fs';
 import path from 'path';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
@@ -103,7 +102,7 @@ import {
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
 import { DomainService, createCloudflareDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
 import {
-  StripeService,
+  SaspayService,
   SAAS_PLANS,
   TOPUP_PRODUCTS,
   PLAN_ECONOMICS_GUARDRAILS,
@@ -333,9 +332,9 @@ const COUNTRY_NAMES: Record<string, string> = {
   ZA: 'South Africa',
 };
 
-// Stripe needs the exact bytes used for its signature. Register this parser
+// Saspay signs the timestamp plus the exact request bytes. Register this parser
 // before the global JSON parser; the route itself still verifies the signature.
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '2mb' }));
+app.use('/api/saspay/webhook', express.raw({ type: 'application/json', limit: '2mb' }));
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
@@ -5231,7 +5230,8 @@ async function createAgentTextResponse(input: {
 function detectExternalApiRequirements(prompt: string): ExternalApiRequirement[] {
   const lower = prompt.toLowerCase();
   const services: Array<[string, string, string, string[]]> = [
-    ['Stripe', 'STRIPE_SECRET_KEY', 'Payments and billing operations', ['stripe', 'payment', 'checkout', 'abonnement']],
+    ['Saspay', 'SASPAY_API_KEY', 'Coden payments and credit checkout operations', ['payment', 'paiement', 'checkout', 'abonnement']],
+    ['Stripe', 'STRIPE_SECRET_KEY', 'Explicit Stripe integration requested by the generated app', ['stripe']],
     ['Resend', 'RESEND_API_KEY', 'Transactional emails', ['resend', 'sendgrid', 'email', 'mail']],
     ['Google Maps', 'GOOGLE_MAPS_API_KEY', 'Maps, places and geocoding', ['google maps', 'map', 'maps', 'géolocalisation', 'geolocation']],
     ['Twilio', 'TWILIO_AUTH_TOKEN', 'SMS and WhatsApp messaging', ['twilio', 'whatsapp', 'sms']],
@@ -9477,7 +9477,7 @@ async function ensureUnifiedIncludedGrants(accountId: string) {
     if (error) throw new Error(`Unified grant failed: ${error.message}`);
   };
 
-  // Paid monthly grants come from the Stripe webhook. The free entitlement is
+  // Paid monthly grants come from the Saspay webhook. The free entitlement is
   // safe to issue on demand so a first build never races the hourly scheduler.
   if (planKey === 'free') {
     const dailyCredits = Math.min(Number(plan.grants.dailyBuildCredits || 0), Math.max(0, Number(monthlyCap || 0) - dailyIssued));
@@ -9691,7 +9691,7 @@ app.post('/api/billing/checkout/subscription', async (req, res) => {
   const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
-    const billing = new StripeService(getSupabase());
+    const billing = new SaspayService(getSupabase());
     const redirectUrl = await billing.createSubscriptionCheckout(
       orgId,
       auth.email,
@@ -9716,7 +9716,7 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
   const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
-    const billing = new StripeService(getSupabase());
+    const billing = new SaspayService(getSupabase());
     const redirectUrl = await billing.createTopupCheckout(
       orgId,
       auth.email,
@@ -9733,36 +9733,26 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
 
 // POST /billing/portal
 app.post('/api/billing/portal', async (req, res) => {
-  const orgId = getUserOrgId(req);
-  const client = requireSupabase('Billing portal');
-  
-  if (process.env.STRIPE_SECRET_KEY) {
-    try {
-      const { data } = await client.from('billing_provider_customers').select('provider_customer_id').eq('account_id', orgId).eq('provider', 'stripe').single();
-      if (data?.provider_customer_id) {
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-18' as any });
-        const portalSession = await stripe.billingPortal.sessions.create({
-          customer: data.provider_customer_id,
-          return_url: `${req.protocol}://${req.get('host')}/settings`
-        });
-        return res.json({ success: true, url: portalSession.url });
-      }
-    } catch (e: any) {
-      return res.status(503).json({ success: false, error: `Billing portal setup failed: ${e.message}` });
-    }
-  }
-  
-  res.status(503).json({ success: false, error: 'Stripe is not configured. Add STRIPE_SECRET_KEY on Railway.' });
+  getUserOrgId(req);
+  const returnUrl = `${req.protocol}://${req.get('host')}/dashboard.html?settings=billing`;
+  res.json({
+    success: true,
+    url: returnUrl,
+    provider: 'saspay',
+    message: 'Saspay purchases and renewals are managed securely from Coden.',
+  });
 });
 
-// POST /stripe/webhook
-app.post('/api/stripe/webhook', async (req: any, res: any) => {
-  const sig = req.headers['stripe-signature'] as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+// POST /saspay/webhook
+app.post('/api/saspay/webhook', async (req: any, res: any) => {
+  const signature = String(req.headers['x-webhook-signature'] || '');
+  const timestamp = String(req.headers['x-webhook-timestamp'] || '');
+  const eventHeader = String(req.headers['x-webhook-event'] || '');
+  const webhookSecret = process.env.SASPAY_WEBHOOK_SECRET || '';
 
   try {
-    const stripeService = new StripeService(getSupabase());
-    const result = await stripeService.handleWebhook(req.body, sig, webhookSecret);
+    const saspayService = new SaspayService(getSupabase());
+    const result = await saspayService.handleWebhook(req.body, signature, timestamp, eventHeader, webhookSecret);
     res.json({ received: true, ...result });
   } catch (err: any) {
     res.status(400).send(`Webhook Error: ${err.message}`);
@@ -10363,7 +10353,7 @@ function buildAdminHealth() {
   return [
     { id: 'supabase', label: 'Supabase', status: supabaseDiagnostics.project_refs_match ? 'ok' : 'warning', detail: supabaseDiagnostics.project_refs_match ? 'Frontend/backend refs match' : 'Check Supabase env refs' },
     { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'API key configured' : 'Missing provider key' },
-    { id: 'stripe', label: 'Stripe', status: process.env.STRIPE_SECRET_KEY ? 'ok' : 'warning', detail: process.env.STRIPE_SECRET_KEY ? 'Billing key configured' : 'Billing key missing' },
+    { id: 'saspay', label: 'Saspay', status: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'ok' : 'warning', detail: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'Billing key and webhook configured' : 'Billing configuration incomplete' },
     { id: 'admin', label: 'Admin guard', status: 'ok', detail: `${getPlatformAdminEmails().size} admin email${getPlatformAdminEmails().size > 1 ? 's' : ''} configured` },
   ];
 }
@@ -15603,7 +15593,7 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
 app.get('/api/billing/auto-topup', async (req, res) => {
   const orgId = getUserOrgId(req);
   try {
-    const config = await new StripeService(getSupabase()).getAutoTopupConfig(orgId);
+    const config = await new SaspayService(getSupabase()).getAutoTopupConfig(orgId);
     res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
   } catch (error: any) {
     res.status(503).json({ success: false, error: error.message });
@@ -15611,18 +15601,12 @@ app.get('/api/billing/auto-topup', async (req, res) => {
 });
 
 app.put('/api/billing/auto-topup', async (req, res) => {
-  const orgId = getUserOrgId(req);
-  try {
-    const config = await new StripeService(getSupabase()).configureAutoTopup(orgId, {
-      enabled: req.body?.enabled === true,
-      productId: String(req.body?.productId || ''),
-      thresholdCredits: Number(req.body?.thresholdCredits || 0),
-      monthlyCapCredits: Number(req.body?.monthlyCapCredits || 0),
-    });
-    res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
-  }
+  getUserOrgId(req);
+  res.status(409).json({
+    success: false,
+    billing_version: BILLING_V2_VERSION,
+    error: 'La recharge automatique n’est pas disponible avec Saspay. Utilisez un checkout manuel sécurisé.',
+  });
 });
 
 app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, res: any) => {
@@ -16060,10 +16044,10 @@ const httpServer = app.listen(port, () => {
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');
     if (CODEN_MONETIZATION_ENABLED) {
-      const stripeBilling = new StripeService(supabaseClient);
+      const saspayBilling = new SaspayService(supabaseClient);
       const issueIncludedGrants = async () => {
         try {
-          const issued = await stripeBilling.issueDueIncludedGrants();
+          const issued = await saspayBilling.issueDueIncludedGrants();
           if (issued > 0) console.log('[coden:billing_included_grants]', { issued });
         } catch (error: any) {
           console.warn('[coden:billing_included_grants_failed]', {
@@ -16074,10 +16058,10 @@ const httpServer = app.listen(port, () => {
       void issueIncludedGrants();
       const includedGrantTimer = setInterval(issueIncludedGrants, 60 * 60_000);
       includedGrantTimer.unref?.();
-      if (process.env.STRIPE_SECRET_KEY) {
+      if (process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET) {
         const grantDueAnnualCredits = async () => {
           try {
-            const granted = await stripeBilling.grantDueAnnualCredits();
+            const granted = await saspayBilling.grantDueAnnualCredits();
             if (granted > 0) console.log('[coden:billing_annual_grants]', { granted });
           } catch (error: any) {
             console.warn('[coden:billing_annual_grants_failed]', {
@@ -16088,21 +16072,19 @@ const httpServer = app.listen(port, () => {
         void grantDueAnnualCredits();
         const annualGrantTimer = setInterval(grantDueAnnualCredits, 15 * 60_000);
         annualGrantTimer.unref?.();
-        const processAutoTopups = async () => {
+        const expireEndedPlans = async () => {
           try {
-            const outcomes = await stripeBilling.processDueAutoTopups();
-            const paid = outcomes.filter(item => item.status === 'paid').length;
-            const failed = outcomes.filter(item => item.status === 'failed').length;
-            if (paid || failed) console.log('[coden:billing_auto_topups]', { paid, failed });
+            const expired = await saspayBilling.expireEndedPlans();
+            if (expired > 0) console.log('[coden:billing_plans_expired]', { expired });
           } catch (error: any) {
-            console.warn('[coden:billing_auto_topups_failed]', {
+            console.warn('[coden:billing_plan_expiry_failed]', {
               message: redactSecrets(error?.message || String(error), '[redacted]'),
             });
           }
         };
-        void processAutoTopups();
-        const autoTopupTimer = setInterval(processAutoTopups, 60_000);
-        autoTopupTimer.unref?.();
+        void expireEndedPlans();
+        const planExpiryTimer = setInterval(expireEndedPlans, 15 * 60_000);
+        planExpiryTimer.unref?.();
       }
     }
     if (CODEN_SKILL_FLAGS.scheduledRuns) {

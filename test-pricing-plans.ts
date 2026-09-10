@@ -32,6 +32,9 @@ assert.equal(priceFor('pro', 100, 'annual').amountUsd, 240, 'Annual pricing must
 
 const catalog = publicBillingCatalog();
 assert.equal(catalog.plans.length, 3, 'The public catalog must expose Free, Pro and Business.');
+assert.equal(catalog.provider, 'saspay', 'Saspay must be the public billing provider.');
+assert.equal(catalog.currency, 'xaf', 'The public catalog must settle in XAF.');
+assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 100 && price.interval === 'monthly' && price.amount === 15_000), 'The public Pro entry price must be 15 000 XAF.');
 assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 10_000), 'The public catalog must expose the highest Pro tier.');
 assert(catalog.prices.some(price => price.plan === 'business' && price.credits === 10_000), 'The public catalog must expose the highest Business tier.');
 

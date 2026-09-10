@@ -74,10 +74,11 @@ type BillingCatalogResponse = {
       plan: 'pro' | 'business';
       credits: number;
       interval: BillingInterval;
-      amountUsd: number;
-      monthlyEquivalentUsd: number;
+      amount: number;
+      monthlyEquivalent: number;
+      currency: string;
     }>;
-    topups: Array<{ id: string; plan: 'pro' | 'business'; credits: number; amountUsd: number }>;
+    topups: Array<{ id: string; plan: 'pro' | 'business'; credits: number; amount: number; currency: string }>;
   };
 };
 
@@ -95,22 +96,6 @@ type BillingWalletResponse = {
     credits_remaining: number;
     expires_at: string;
   }>;
-};
-
-type AutoTopupResponse = {
-  success: boolean;
-  config?: {
-    enabled: boolean;
-    productId: string | null;
-    creditsToAdd: number;
-    thresholdCredits: number;
-    monthlyCapCredits: number;
-    creditsAddedThisMonth: number;
-    hasPaymentMethod: boolean;
-    lastTriggeredAt: string | null;
-    lastError: string | null;
-    requiresPaymentMethod?: boolean;
-  };
 };
 
 type UserWorkspaceStateResponse = {
@@ -149,7 +134,6 @@ let aiUsageLoaded = false;
 let billingLoaded = false;
 let billingCatalog: BillingCatalogResponse['catalog'] | null = null;
 let billingWallet: BillingWalletResponse | null = null;
-let autoTopupConfig: AutoTopupResponse['config'] | null = null;
 let selectedBillingInterval: BillingInterval = 'monthly';
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
@@ -1640,7 +1624,7 @@ function settingsMarkup() {
         </div>
         <div class="settings-card">
           <h3>Crédits et paiements</h3>
-          <p>Les recharges expirent après douze mois et ne sont accordées qu’après confirmation Stripe.</p>
+          <p>Les recharges expirent après douze mois et ne sont accordées qu’après confirmation signée de Saspay.</p>
           <div class="settings-row">
             <div><strong>Ajouter des crédits</strong><span>Disponible pour les forfaits Pro et Business.</span></div>
             <div class="billing-inline-actions">
@@ -1649,30 +1633,8 @@ function settingsMarkup() {
             </div>
           </div>
           <div class="settings-row">
-            <div><strong>Recharge automatique</strong><span data-billing-auto-status>Désactivée. Un moyen de paiement enregistré est requis.</span></div>
-            <label class="settings-inline-toggle"><input type="checkbox" data-billing-auto-enabled><span>Activer</span></label>
-          </div>
-          <div class="settings-field-grid" data-billing-auto-fields>
-            <div class="settings-field">
-              <label for="billing-auto-product">Recharge</label>
-              <select id="billing-auto-product" class="billing-tier-select" data-billing-auto-product></select>
-            </div>
-            <div class="settings-field">
-              <label for="billing-auto-threshold">Seuil de déclenchement</label>
-              <input id="billing-auto-threshold" type="number" min="0" step="1" value="20" data-billing-auto-threshold>
-            </div>
-            <div class="settings-field">
-              <label for="billing-auto-cap">Plafond mensuel</label>
-              <input id="billing-auto-cap" type="number" min="50" step="50" value="200" data-billing-auto-cap>
-            </div>
-            <div class="settings-field">
-              <label>&nbsp;</label>
-              <button type="button" class="settings-action-button" data-settings-action="billing-auto-topup-save">Enregistrer l’auto-recharge</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div><strong>Factures et moyen de paiement</strong><span>Gérés dans le portail sécurisé Stripe.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="billing-portal">Gérer</button>
+            <div><strong>Paiements et renouvellement</strong><span>Checkout Saspay sécurisé. Les forfaits mensuels et annuels se renouvellent depuis Coden.</span></div>
+            <button type="button" class="settings-action-button" data-settings-action="billing-portal">Actualiser</button>
           </div>
         </div>
       </div>
@@ -1747,7 +1709,7 @@ function settingsMarkup() {
             <div class="settings-integration"><strong>GitHub</strong><span>Repository synchronization and versioned collaboration.</span></div>
             <div class="settings-integration"><strong>Supabase</strong><span>Platform auth and generated-app backend services.</span></div>
             <div class="settings-integration"><strong>Vercel</strong><span>Production deployment and live URL verification.</span></div>
-            <div class="settings-integration"><strong>Stripe</strong><span>Protected checkout, subscriptions and billing workflows.</span></div>
+            <div class="settings-integration"><strong>Saspay</strong><span>Checkout FCFA protégé, paiements FlowPay et webhooks signés.</span></div>
           </div>
         </div>
         <div class="settings-card">
@@ -2026,10 +1988,6 @@ async function handleSettingsAction(action: string) {
     await startTopupCheckout();
     return;
   }
-  if (action === 'billing-auto-topup-save') {
-    await saveAutoTopup();
-    return;
-  }
   if (action === 'reset-preferences') {
     resetLocalPreferences();
     return;
@@ -2246,7 +2204,7 @@ function bindSettingsPanel() {
     if (billingTier?.dataset.billingTier === 'pro' || billingTier?.dataset.billingTier === 'business') {
       const price = billingPrice(billingTier.dataset.billingTier, Number(billingTier.value));
       const priceNode = document.querySelector<HTMLElement>(`[data-billing-price="${billingTier.dataset.billingTier}"]`);
-      if (priceNode) priceNode.innerHTML = `<strong>${formatUsd(price?.monthlyEquivalentUsd)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · payé annuellement' : ''}</span>`;
+      if (priceNode) priceNode.innerHTML = `<strong>${formatBillingAmount(price?.monthlyEquivalent, price?.currency)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · paiement annuel' : ''}</span>`;
       return;
     }
     if (!target?.closest('#settings-panel [data-settings-field]')) return;
@@ -2265,11 +2223,11 @@ function formatCredits(value: unknown) {
   return Number.isInteger(number) ? String(number) : number.toFixed(1);
 }
 
-function formatUsd(value: unknown) {
+function formatBillingAmount(value: unknown, currency = 'XAF') {
   if (value === null || value === undefined || value === '') return '--';
   const number = Number(value);
   if (!Number.isFinite(number)) return String(value);
-  return `$${number.toFixed(number % 1 === 0 ? 0 : 2)}`;
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(number);
 }
 
 function formatGb(value: unknown) {
@@ -2311,7 +2269,7 @@ function billingPlanMarkup(plan: 'pro' | 'business') {
       <select class="billing-tier-select" data-billing-tier="${plan}" aria-label="Crédits mensuels ${escapeHtml(catalogPlan?.name || plan)}">
         ${tiers.map(tier => `<option value="${tier}"${tier === defaultTier ? ' selected' : ''}>${new Intl.NumberFormat().format(tier)} crédits / mois</option>`).join('')}
       </select>
-      <div class="billing-plan-price" data-billing-price="${plan}"><strong>${formatUsd(price?.monthlyEquivalentUsd)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · payé annuellement' : ''}</span></div>
+      <div class="billing-plan-price" data-billing-price="${plan}"><strong>${formatBillingAmount(price?.monthlyEquivalent, price?.currency)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · paiement annuel' : ''}</span></div>
       <ul class="billing-plan-features">${(catalogPlan?.capabilities || []).slice(0, 5).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       <button type="button" class="settings-action-button" data-billing-checkout="${plan}"${current ? ' disabled' : ''}>${current ? 'Forfait actuel' : `Choisir ${escapeHtml(catalogPlan?.name || plan)}`}</button>
     </article>`;
@@ -2334,41 +2292,15 @@ function renderBillingSettings() {
   if (grid) grid.innerHTML = `${billingPlanMarkup('pro')}${billingPlanMarkup('business')}`;
 
   const topupSelect = document.querySelector<HTMLSelectElement>('[data-billing-topup-product]');
-  const autoProduct = document.querySelector<HTMLSelectElement>('[data-billing-auto-product]');
   const topupButton = document.querySelector<HTMLButtonElement>('[data-settings-action="billing-topup"]');
-  const autoSaveButton = document.querySelector<HTMLButtonElement>('[data-settings-action="billing-auto-topup-save"]');
   const isPaid = billingWallet?.plan === 'pro' || billingWallet?.plan === 'business';
   const plan = billingWallet?.plan === 'business' ? 'business' : 'pro';
   const products = (billingCatalog?.topups || []).filter(product => product.plan === plan);
   if (topupSelect) {
-    topupSelect.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatUsd(product.amountUsd)}</option>`).join('');
+    topupSelect.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatBillingAmount(product.amount, product.currency)}</option>`).join('');
     topupSelect.disabled = !isPaid;
   }
-  if (autoProduct) {
-    autoProduct.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatUsd(product.amountUsd)}</option>`).join('');
-    autoProduct.value = autoTopupConfig?.productId || products[0]?.id || '';
-    autoProduct.disabled = !isPaid;
-  }
-  const enabled = document.querySelector<HTMLInputElement>('[data-billing-auto-enabled]');
-  const threshold = document.querySelector<HTMLInputElement>('[data-billing-auto-threshold]');
-  const cap = document.querySelector<HTMLInputElement>('[data-billing-auto-cap]');
-  const status = document.querySelector<HTMLElement>('[data-billing-auto-status]');
-  if (enabled) { enabled.checked = Boolean(autoTopupConfig?.enabled); enabled.disabled = !isPaid; }
-  if (threshold) { threshold.value = String(autoTopupConfig?.thresholdCredits || 20); threshold.disabled = !isPaid; }
-  if (cap) { cap.value = String(autoTopupConfig?.monthlyCapCredits || 200); cap.disabled = !isPaid; }
-  if (status) {
-    status.textContent = !isPaid
-      ? 'Disponible avec Pro ou Business.'
-      : autoTopupConfig?.lastError
-        ? `Désactivée : ${autoTopupConfig.lastError}`
-        : autoTopupConfig?.enabled
-          ? `${formatCredits(autoTopupConfig.creditsAddedThisMonth)} crédits ajoutés ce mois.`
-          : autoTopupConfig?.hasPaymentMethod
-            ? 'Prête à être activée avec le moyen de paiement enregistré.'
-            : 'Effectuez une première recharge pour enregistrer le moyen de paiement.';
-  }
   if (topupButton) topupButton.disabled = !isPaid;
-  if (autoSaveButton) autoSaveButton.disabled = !isPaid;
 }
 
 async function loadBillingSettings(force = false) {
@@ -2376,14 +2308,12 @@ async function loadBillingSettings(force = false) {
   const grid = document.querySelector<HTMLElement>('[data-billing-plan-grid]');
   if (grid) grid.innerHTML = '<div class="usage-empty">Chargement des forfaits…</div>';
   try {
-    const [catalogResponse, walletResponse, autoResponse] = await Promise.all([
+    const [catalogResponse, walletResponse] = await Promise.all([
       apiFetch<BillingCatalogResponse>('/api/billing/plans'),
       apiFetch<BillingWalletResponse>('/api/billing/wallet'),
-      apiFetch<AutoTopupResponse>('/api/billing/auto-topup').catch(() => null),
     ]);
     billingCatalog = catalogResponse.catalog || null;
     billingWallet = walletResponse;
-    autoTopupConfig = autoResponse?.config || null;
     billingLoaded = true;
     renderBillingSettings();
   } catch (error) {
@@ -2407,7 +2337,7 @@ async function startBillingCheckout(plan: 'pro' | 'business', button: HTMLButton
         idempotencyKey: crypto.randomUUID(),
       }),
     });
-    if (!response.url) throw new Error('Stripe n’a pas retourné de page de paiement.');
+    if (!response.url) throw new Error('Saspay n’a pas retourné de page de paiement.');
     window.location.assign(response.url);
   } catch (error) {
     button.disabled = false;
@@ -2420,7 +2350,7 @@ async function openBillingPortal() {
   setSettingsStatus('Ouverture du portail sécurisé…', 'saving');
   try {
     const response = await apiFetch<{ success: boolean; url?: string }>('/api/billing/portal', { method: 'POST', body: '{}' });
-    if (!response.url) throw new Error('Portail Stripe indisponible.');
+    if (!response.url) throw new Error('Espace de facturation Saspay indisponible.');
     window.location.assign(response.url);
   } catch (error) {
     setSettingsStatus(error instanceof Error ? error.message : 'Portail indisponible', 'error');
@@ -2437,32 +2367,10 @@ async function startTopupCheckout() {
       method: 'POST',
       body: JSON.stringify({ productId, email: currentAuthSummary?.user?.email || undefined, idempotencyKey: crypto.randomUUID() }),
     });
-    if (!response.url) throw new Error('Stripe n’a pas retourné de page de paiement.');
+    if (!response.url) throw new Error('Saspay n’a pas retourné de page de paiement.');
     window.location.assign(response.url);
   } catch (error) {
     setSettingsStatus(error instanceof Error ? error.message : 'Recharge indisponible', 'error');
-  }
-}
-
-async function saveAutoTopup() {
-  const enabled = Boolean(document.querySelector<HTMLInputElement>('[data-billing-auto-enabled]')?.checked);
-  const productId = String(document.querySelector<HTMLSelectElement>('[data-billing-auto-product]')?.value || '');
-  const thresholdCredits = Number(document.querySelector<HTMLInputElement>('[data-billing-auto-threshold]')?.value || 0);
-  const monthlyCapCredits = Number(document.querySelector<HTMLInputElement>('[data-billing-auto-cap]')?.value || 0);
-  if (!productId) return;
-  setSettingsStatus('Enregistrement de l’auto-recharge…', 'saving');
-  try {
-    const response = await apiFetch<AutoTopupResponse>('/api/billing/auto-topup', {
-      method: 'PUT',
-      body: JSON.stringify({ enabled, productId, thresholdCredits, monthlyCapCredits }),
-    });
-    autoTopupConfig = response.config || null;
-    renderBillingSettings();
-    setSettingsStatus(response.config?.requiresPaymentMethod
-      ? 'Configuration enregistrée. Faites une première recharge pour enregistrer le moyen de paiement.'
-      : 'Auto-recharge enregistrée', response.config?.requiresPaymentMethod ? 'error' : 'success');
-  } catch (error) {
-    setSettingsStatus(error instanceof Error ? error.message : 'Auto-recharge indisponible', 'error');
   }
 }
 
