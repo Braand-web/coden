@@ -31,6 +31,7 @@ import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create
 import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
 import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-mode';
+import { parsePlanPresentation, type PlanSectionId } from './lib/plan-presentation';
 
 initThemeController();
 import {
@@ -2468,6 +2469,74 @@ function safeAssistantDisplayText(value: unknown, _speaksFrench = false) {
   return text.replace(/\n\s*[-*]\s*$/gm, '').trim();
 }
 
+function planSectionLabel(id: PlanSectionId, speaksFrench: boolean) {
+  const labels: Record<PlanSectionId, [string, string]> = {
+    features: ['Fonctionnalités prévues', 'Planned features'],
+    architecture: ['Approche produit', 'Product approach'],
+    steps: ['Étapes de réalisation', 'Implementation steps'],
+    files: ['Fichiers concernés', 'Files involved'],
+    risks: ['Points à confirmer', 'Things to confirm'],
+  };
+  return labels[id][speaksFrench ? 0 : 1];
+}
+
+function planFallbackMarkdown(plan: NonNullable<ReturnType<typeof parsePlanPresentation>>, speaksFrench: boolean) {
+  const sections = plan.sections
+    .map(section => `### ${planSectionLabel(section.id, speaksFrench)}\n${section.items.map(item => `- ${item}`).join('\n')}`)
+    .join('\n\n');
+  return [
+    `## ${plan.title}`,
+    plan.summary,
+    sections,
+  ].filter(Boolean).join('\n\n');
+}
+
+function renderPlanResponse(
+  card: HTMLElement | null,
+  rawContent: string,
+  prompt: string,
+  speaksFrench: boolean,
+  options: { withActions?: boolean } = {},
+) {
+  const safeRawContent = repairTextEncoding(redactSecrets(rawContent)).trim();
+  const plan = parsePlanPresentation(safeRawContent);
+  if (!plan) return false;
+
+  lastPlan = plan.source;
+  const block = {
+    type: 'plan',
+    title: repairTextEncoding(plan.title),
+    summary: repairTextEncoding(plan.summary),
+    sections: plan.sections.map(section => ({
+      id: section.id,
+      label: planSectionLabel(section.id, speaksFrench),
+      items: section.items.map(item => repairTextEncoding(item)),
+    })),
+  };
+  const canRenderPlanCard = Boolean(messageHandleId(card) && conversationApi?.setBlock);
+  if (canRenderPlanCard) {
+    setMessageBlock(card, block);
+  } else {
+    updateMessage(card, planFallbackMarkdown(plan, speaksFrench));
+  }
+
+  if (options.withActions !== false) {
+    addInlineAction(card, speaksFrench ? 'Construire ce plan' : 'Build this plan', () => {
+      setChatMode('build');
+      void generateFromPrompt(prompt, 'build', true, {}, prompt);
+    });
+    addInlineAction(card, speaksFrench ? 'Ajuster le plan' : 'Adjust plan', () => {
+      setChatMode('plan');
+      const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+      if (!input) return;
+      input.value = speaksFrench ? 'Ajuste ce plan : ' : 'Adjust this plan: ';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    });
+  }
+  return true;
+}
+
 async function requestSimpleConversation(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<boolean> {
   const messageId = messageHandleId(card);
   const payload = await apiFetch<any>('/api/assistant/chat', {
@@ -2491,6 +2560,10 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
 
   const content = String(payload?.text || '').trim();
   if (!content) throw new Error('The selected AI model returned an empty response.');
+  if (requestedMode === 'plan' && renderPlanResponse(card, content, prompt, speaksFrench)) {
+    clearMessageShimmer(card);
+    return true;
+  }
   const safeContent = safeAssistantDisplayText(content, speaksFrench);
   if (!safeContent) throw new Error('The selected AI model returned a response that failed the output safety checks.');
   if (messageId && conversationApi) conversationApi.updateMessage(messageId, safeContent);
@@ -2583,6 +2656,11 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
       ? error.message.trim()
       : 'The selected AI model did not return a usable response.';
     updateMessage(card, message);
+    if (/temporarily unavailable|temporairement indisponible|ne répond pas pour le moment|not responding right now|timed out|délai|timeout/i.test(message)) {
+      addInlineAction(card, speaksFrench ? 'Réessayer' : 'Retry', () => {
+        void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
+      });
+    }
   } finally {
     setBusy(false);
     // Safety net: if the request was cancelled or failed before any answer
@@ -4937,13 +5015,29 @@ function restoreMessages(payload: ProjectPayload) {
     .forEach(message => {
       const role = message.role === 'user' ? 'user' : 'assistant';
       const rawContent = messageTextFromParts(message.parts, message.content || '');
-      const content = role === 'assistant'
-        ? safeAssistantDisplayText(rawContent, isLikelyFrenchText(rawContent))
-        : rawContent;
+      const speaksFrench = isLikelyFrenchText(rawContent);
+      const isStoredPlan = role === 'assistant' && message.intent === 'plan';
+      const storedPlan = isStoredPlan ? parsePlanPresentation(repairTextEncoding(redactSecrets(rawContent))) : null;
+      const content = storedPlan
+        ? planFallbackMarkdown(storedPlan, speaksFrench)
+        : role === 'assistant'
+          ? safeAssistantDisplayText(rawContent, speaksFrench)
+          : rawContent;
       const card = appendMessage(role, content);
-      void card;
       if (message.intent === 'plan') {
         lastPlan = rawContent;
+      }
+      if (storedPlan && messageHandleId(card) && conversationApi?.setBlock) {
+        setMessageBlock(card, {
+          type: 'plan',
+          title: repairTextEncoding(storedPlan.title),
+          summary: repairTextEncoding(storedPlan.summary),
+          sections: storedPlan.sections.map(section => ({
+            id: section.id,
+            label: planSectionLabel(section.id, speaksFrench),
+            items: section.items.map(item => repairTextEncoding(item)),
+          })),
+        });
       }
     });
 }

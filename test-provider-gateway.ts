@@ -140,7 +140,7 @@ class FakeAnthropic {
     onFallback: transition => transitions.push(transition),
   });
   assert.equal(result.text, '{"files":[]}');
-  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch']);
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna']);
   assert.equal(transitions[0]?.reason, 'MODEL_OUTPUT_PARSE_FAILED');
 }
 
@@ -155,10 +155,10 @@ class FakeAnthropic {
     onFallback: transition => transitions.push(transition),
   });
   assert.equal(result.text, 'ok');
-  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch']);
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna']);
   assert.deepEqual(transitions, [{
     from: 'openai/gpt-5.6-luna-pro',
-    to: 'google/gemini-3.8-flash:batch',
+    to: 'openai/gpt-5.6-luna',
     reason: 'PROVIDER_TIMEOUT',
   }]);
 }
@@ -188,8 +188,29 @@ class FakeAnthropic {
   assert.equal(result.text, 'valid-project-artifact');
   assert.deepEqual(
     fake.calls,
-    ['openai/gpt-5.6-luna-pro', 'google/gemini-3.8-flash:batch'],
-    'Auto recovery must retry a malformed artifact with the configured compatible model.',
+    ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna'],
+    'Auto recovery must use an interactive fallback rather than a deferred batch model.',
+  );
+}
+
+/*
+ * Auto is allowed to recover before anything visible is returned. One fallback
+ * still made a short provider incident terminal, so the policy now has a
+ * bounded second independent candidate. Explicit selections remain pinned.
+ */
+{
+  const fake = new FakeOpenRouter();
+  fake.failures.push(
+    new ProviderHttpError('OpenRouter', 503, 'temporarily unavailable'),
+    new ProviderHttpError('OpenRouter', 503, 'temporarily unavailable'),
+  );
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.chat('openai/gpt-5.6-luna-pro', messages, { maxAttempts: 1, allowFallback: true });
+  assert.equal(result.text, 'ok');
+  assert.deepEqual(
+    fake.calls,
+    ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+    'Auto must exhaust its bounded interactive recovery chain before surfacing an outage.',
   );
 }
 
@@ -409,6 +430,25 @@ console.log('test-provider-gateway passed');
   assert.equal(result.text, 'ok', 'the fallback must answer');
   assert.equal(fake.calls.length, 2, 'the incapable model is tried once, then handed over — not retried');
   assert.notEqual(fake.calls[1], fake.calls[0], 'and handed to a different model');
+}
+
+// A provider can reject a runtime option despite its recently cached catalogue
+// saying it supports it. Auto must preserve the request and try the next
+// candidate; an explicit model remains pinned by the allowFallback gate.
+{
+  const fake = new FakeOpenRouter();
+  fake.failures.push(new ProviderHttpError('OpenRouter', 422, 'unsupported reasoning parameter'));
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.chat('openai/gpt-5.6-luna', messages, {
+    maxAttempts: 1,
+    allowFallback: true,
+  });
+  assert.equal(result.text, 'ok');
+  assert.deepEqual(
+    fake.calls,
+    ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+    'Auto should hand an incompatible provider configuration to its compatible recovery model.',
+  );
 }
 
 // Pinned to one model, the same failure is still the answer the user needs.

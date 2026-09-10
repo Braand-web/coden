@@ -55,18 +55,40 @@ export class ModelRouter {
     // 1. Direct validation of custom model choice if in Custom mode
     if (context.mode === 'Custom' && requestedCustomModelId && requestedCustomModelId !== 'auto') {
       validateAllowedModel(requestedCustomModelId);
-      
-      const minPlan = AI_MODEL_PLAN_ACCESS[requestedCustomModelId as AllowedModelId];
+      const requestedModel = requestedCustomModelId as AllowedModelId;
+
+      // A batch tier is a background capability, not an interactive answer.
+      // Do not accept it in Builder just because the user selected it: this
+      // route has no polling contract and would look like an unavailable model.
+      if (context.interactive && requestedModel.endsWith(':batch')) {
+        throw Object.assign(
+          new Error('The selected model is available only for deferred background work.'),
+          { diagnosticCode: 'MODEL_DEFERRED_UNAVAILABLE' },
+        );
+      }
+
+      const minPlan = AI_MODEL_PLAN_ACCESS[requestedModel];
       if (!this.isPlanSufficient(context.plan, minPlan)) {
         throw new ModelNotAllowedForPlanError(requestedCustomModelId, context.plan);
       }
-      
+
       // Credit check threshold for custom selection
-      if (context.userCredits < MODEL_ACTION_CREDIT_FLOORS[requestedCustomModelId as AllowedModelId]) {
+      if (context.userCredits < MODEL_ACTION_CREDIT_FLOORS[requestedModel]) {
         throw new Error('Action unavailable with current plan. Please use Auto or upgrade.');
       }
 
-      return requestedCustomModelId as AllowedModelId;
+      // A named model remains the user's choice, but it cannot bypass a real
+      // requirement such as image input, tools, or long context. Treating an
+      // explicit selection as an unconditional pass made the UI promise a
+      // capability that the selected provider could never receive.
+      if (!this.supportsRequiredCapabilities(requestedModel, context.requiredCapabilities)) {
+        throw Object.assign(
+          new Error('The selected model does not meet the capabilities required for this task.'),
+          { diagnosticCode: 'MODEL_CAPABILITY_UNAVAILABLE' },
+        );
+      }
+
+      return requestedModel;
     }
 
     // 2. Filter available models based on Plan access
@@ -76,19 +98,9 @@ export class ModelRouter {
     });
 
     // 3. Filter by required capabilities
-    let capableModels = planAccessibleModels.filter(modelId => {
-      const caps = AI_MODEL_CAPABILITIES[modelId];
-      if (context.requiredCapabilities?.vision && !caps.supportsVision) return false;
-      if (context.requiredCapabilities?.tools && !caps.supportsTools) return false;
-      if (context.requiredCapabilities?.structuredOutput && !caps.supportsStructuredOutput) return false;
-      if (context.requiredCapabilities?.longContext && !caps.supportsLongContext) return false;
-      if (context.requiredCapabilities?.reasoning && caps.reasoningLevel === 'low') return false;
-      if (context.requiredCapabilities?.code && caps.codeLevel === 'low') return false;
-      if (context.requiredCapabilities?.agentic && caps.agenticLevel === 'low') return false;
-      if (context.requiredCapabilities?.design && caps.designLevel === 'low') return false;
-      if (context.requiredCapabilities?.security && caps.securityLevel === 'low') return false;
-      return true;
-    });
+    let capableModels = planAccessibleModels.filter(modelId =>
+      this.supportsRequiredCapabilities(modelId, context.requiredCapabilities),
+    );
 
     if (capableModels.length === 0) {
       throw new Error('Aucun modèle autorisé ne possède toutes les capacités requises pour ce run.');
@@ -147,6 +159,23 @@ export class ModelRouter {
 
   private firstAvailable(models: AllowedModelId[], preferred: AllowedModelId[]) {
     return preferred.find(modelId => models.includes(modelId)) || models[0];
+  }
+
+  private supportsRequiredCapabilities(
+    modelId: AllowedModelId,
+    required: RoutingContext['requiredCapabilities'] = {},
+  ) {
+    const caps = AI_MODEL_CAPABILITIES[modelId];
+    if (required?.vision && !caps.supportsVision) return false;
+    if (required?.tools && !caps.supportsTools) return false;
+    if (required?.structuredOutput && !caps.supportsStructuredOutput) return false;
+    if (required?.longContext && !caps.supportsLongContext) return false;
+    if (required?.reasoning && caps.reasoningLevel === 'low') return false;
+    if (required?.code && caps.codeLevel === 'low') return false;
+    if (required?.agentic && caps.agenticLevel === 'low') return false;
+    if (required?.design && caps.designLevel === 'low') return false;
+    if (required?.security && caps.securityLevel === 'low') return false;
+    return true;
   }
 
   private hasSpecificCapabilityNeeds(context: RoutingContext) {

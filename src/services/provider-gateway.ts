@@ -723,7 +723,11 @@ function sleep(ms: number) {
  * answer the user needs.
  */
 function isModelSpecificFailure(diagnosticCode: string): boolean {
-  return /^MODEL_(?:UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)$/.test(diagnosticCode);
+  return /^MODEL_(?:UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)$/.test(diagnosticCode)
+    // The live catalogue can be briefly stale, or an upstream provider can
+    // reject an option it advertised. Do not weaken the request; Auto may
+    // hand it to the next compatible candidate before anything is visible.
+    || diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG';
 }
 
 /**

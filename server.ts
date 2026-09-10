@@ -72,7 +72,7 @@ import {
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
 import { CODEN_MONETIZATION_ENABLED, CODEN_PUBLIC_ACCESS, CODEN_UNMETERED_USAGE_BUDGET } from './src/config/product-access.ts';
-import { selectModelForAgent } from './src/services/model-selection.ts';
+import { selectModelForAgent, type TaskKind } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
   deriveProjectName,
@@ -4991,6 +4991,8 @@ function createProviderRuntimeOptions(input: {
   files?: GeneratedFile[];
   mode?: 'text' | 'generation';
   stream?: boolean;
+  /** Only enable tool declarations when this caller owns matching handlers. */
+  allowTools?: boolean;
   timeoutMs?: number;
   maxTokens?: number;
   hasVisionInput?: boolean;
@@ -5008,7 +5010,7 @@ function createProviderRuntimeOptions(input: {
     modelId: input.model,
     task,
     stream: input.stream,
-    allowTools: input.mode !== 'generation',
+    allowTools: input.allowTools ?? input.mode !== 'generation',
     timeoutMs: input.timeoutMs,
     maxTokens: input.maxTokens, // undefined = use profile default (now properly sized)
     hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
@@ -5023,7 +5025,7 @@ function createProviderRuntimeOptions(input: {
       modelId,
       task,
       stream: input.stream,
-      allowTools: input.mode !== 'generation',
+      allowTools: input.allowTools ?? input.mode !== 'generation',
       timeoutMs: input.timeoutMs,
       maxTokens: input.maxTokens,
       hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
@@ -5031,6 +5033,28 @@ function createProviderRuntimeOptions(input: {
       preferStructuredOutput: input.mode === 'generation' ? true : undefined,
     })),
   };
+}
+
+function taskKindForAgentDecision(decision: IntentDecision): TaskKind {
+  switch (decision.intent) {
+    case 'conversation':
+    case 'clarification_required':
+      return 'conversation';
+    case 'plan':
+      return 'planning';
+    case 'build':
+      return 'code_generation';
+    case 'edit':
+      return 'code_edit';
+    case 'debug_fix':
+      return 'debug';
+    case 'verify':
+      return 'review';
+    case 'deploy_assist':
+      return 'architecture';
+    default:
+      return 'summary';
+  }
 }
 
 async function resolveAgentProviderModel(input: {
@@ -5042,43 +5066,57 @@ async function resolveAgentProviderModel(input: {
   userCredits?: number;
   plan?: string;
 }): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number }> {
-  const accessPlan = CODEN_MONETIZATION_ENABLED ? (input.plan || 'free') : 'enterprise';
-  const accessBudget = CODEN_MONETIZATION_ENABLED
-    ? (Number.isFinite(Number(input.userCredits)) ? Number(input.userCredits) : FALLBACK_WALLET_CREDITS)
-    : CODEN_UNMETERED_USAGE_BUDGET;
-  if (input.modelId && input.modelId !== 'auto') {
-    const model = normalizeProviderModelForBackend(input.modelId);
-    validateAllowedModel(model);
-    return {
-      model,
-      autoRouted: false,
-      complexity: inferAgentTaskComplexity(input.prompt, input.decision, input.files || []),
-      mode: 'Custom',
-      plan: accessPlan as RoutingContext['plan'],
-      credits: accessBudget,
-    };
-  }
-
-  const plan = (CODEN_MONETIZATION_ENABLED
+  // Manual choices are still subject to the exact same access, credit and
+  // capability contract as Auto. The old early return skipped this policy and
+  // allowed a hidden mismatch between what Coden promised and what the model
+  // API could perform.
+  const accessPlan = (CODEN_MONETIZATION_ENABLED
     ? (input.plan || await getOrganizationPlan(input.project.organization_id).catch(() => 'free'))
     : 'enterprise') as RoutingContext['plan'];
-  const credits = CODEN_MONETIZATION_ENABLED
+  const accessBudget = CODEN_MONETIZATION_ENABLED
     ? (Number.isFinite(Number(input.userCredits))
       ? Number(input.userCredits)
       : await getWalletWithFallback(getOptionalDbHelpers('model_routing'), input.project.organization_id))
     : CODEN_UNMETERED_USAGE_BUDGET;
   const complexity = inferAgentTaskComplexity(input.prompt, input.decision, input.files || []);
+  const task = taskKindForAgentDecision(input.decision);
+  const requiredCapabilities = requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || []);
+
+  if (input.modelId && input.modelId !== 'auto') {
+    const model = await modelRouter.selectModel({
+      plan: accessPlan,
+      mode: 'Custom',
+      userCredits: accessBudget,
+      task,
+      taskComplexity: complexity,
+      interactive: true,
+      requiredCapabilities,
+    }, normalizeProviderModelForBackend(input.modelId));
+    return {
+      model,
+      autoRouted: false,
+      complexity,
+      mode: 'Custom',
+      plan: accessPlan,
+      credits: accessBudget,
+    };
+  }
+
   const mode = routingModeForPolicy(input.decision.selectedModelPolicy);
   const model = await modelRouter.selectModel({
-    plan,
+    plan: accessPlan,
     mode,
-    userCredits: credits,
+    userCredits: accessBudget,
+    task,
     taskComplexity: complexity,
+    // Every Builder and dashboard turn has a person waiting on it. Never
+    // route it to a deferred tier even when that tier is inexpensive.
+    interactive: true,
     preferredModels: studioPreferredModelsForPrompt(input.prompt),
-    requiredCapabilities: requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || []),
+    requiredCapabilities,
   });
   validateAllowedModel(model);
-  return { model, autoRouted: true, complexity, mode, plan, credits };
+  return { model, autoRouted: true, complexity, mode, plan: accessPlan, credits: accessBudget };
 }
 
 function buildAgentTextMessages(input: {
@@ -5182,15 +5220,21 @@ async function createAgentTextResponse(input: {
     plan: input.plan,
   })).model;
   validateAllowedModel(selectedModel);
-  assertAgentModelCapabilities(selectedModel, { structuredOutput: true, toolCalling: decision.intent !== 'conversation' });
   const runtimeOptions = createProviderRuntimeOptions({
     model: selectedModel,
     prompt,
     decision,
     files,
     stream: false,
+    // This path returns a user-visible answer; it does not run a tool loop.
+    // Never tell a model it can call tools unless a matching executor exists.
+    allowTools: false,
     timeoutMs: decision.intent === 'conversation' ? 12_000 : decision.intent === 'plan' ? 30_000 : 45_000,
     hasVisionInput: Boolean(input.visionInputs?.length),
+  });
+  assertAgentModelCapabilities(selectedModel, {
+    structuredOutput: runtimeOptions.runtime.responseFormat.type !== 'text',
+    toolCalling: runtimeOptions.runtime.tools.length > 0,
   });
 
   try {
@@ -5198,7 +5242,10 @@ async function createAgentTextResponse(input: {
       selectedModel,
       buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
       {
-        maxAttempts: decision.intent === 'conversation' ? 1 : 2,
+        // A retry before anything reaches the browser is safe for every text
+        // response, including a normal chat reply. It prevents a transient 5xx
+        // from surfacing as an avoidable "model unavailable" message.
+        maxAttempts: 2,
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
         runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
@@ -6517,14 +6564,15 @@ async function generateFilesWithAi(input: {
         hasDatabase: /database|supabase|sql|schema/i.test(input.prompt),
         hasPayments: /stripe|payment|billing|checkout/i.test(input.prompt),
         language: input.deepReasoningContract?.language || 'auto',
-        // ✅ Dynamic model resolution — each agent gets the best model for its tier
+        // Supplementary agents inherit the model already authorized for this
+        // run. They must not quietly spend another plan tier, bypass the
+        // user's manual selection, or turn a healthy primary call into an
+        // unrelated provider failure.
         availableModels: {
-          fast:      'openai/gpt-5.6-luna-pro',
-          balanced:  'moonshotai/kimi-k3',
-          reasoning: selectedModel, // use the already-resolved primary model for reasoning tasks
-          design:    /gemini-3\.7|sonnet-5|opus-5|gpt-5\.6-sol/i.test(selectedModel)
-                       ? selectedModel
-                       : 'anthropic/claude-sonnet-5',
+          fast: selectedModel,
+          balanced: selectedModel,
+          reasoning: selectedModel,
+          design: selectedModel,
         },
       };
       const agentRoles = selectAgentsForContext(agentCtx);
@@ -6540,6 +6588,10 @@ async function generateFilesWithAi(input: {
             files: input.existingFiles,
             mode: 'text',
             stream: false,
+            // These agents provide bounded analysis only. The actual build
+            // loop owns the sandbox tool handlers, so do not expose a second
+            // set of tools that nobody here can execute.
+            allowTools: false,
             timeoutMs: Math.min(15_000, input.skillBudget?.maxDurationMs || 15_000),
             maxTokens: 4_000,
           });
@@ -10108,7 +10160,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         user_id: userId,
         role: 'user',
         content: prompt,
-        intent: 'conversation',
+        intent: decision.intent,
         requested_mode: requestedMode,
       }).catch(() => null);
     }
@@ -10135,7 +10187,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         user_id: userId,
         role: 'assistant',
         content,
-        intent: 'conversation',
+        intent: decision.intent,
         requested_mode: requestedMode,
       }).catch(() => null);
     }

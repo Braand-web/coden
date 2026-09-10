@@ -32,8 +32,8 @@ for (const modelId of AI_ALLOWED_MODELS) {
   const luna = getAIModelCapabilityProfile('openai/gpt-5.6-luna-pro');
   assert.equal(
     luna.fallbackPrimary,
-    'google/gemini-3.8-flash:batch',
-    'The capability registry must expose Luna’s bounded Auto recovery candidate.',
+    'openai/gpt-5.6-luna',
+    'The capability registry must expose Luna Pro’s interactive Auto recovery candidate.',
   );
 }
 

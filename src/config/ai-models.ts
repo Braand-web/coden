@@ -358,25 +358,27 @@ export const AI_MODEL_CAPABILITIES = buildRecord<ModelCapabilities>(model => ({
 // A fallback is allowed only for an Auto-routed request that has not produced
 // usable user-visible output yet. Explicit model choices stay pinned. Keep the
 // chains short and within the same or a lower accessible tier so a recovery is
-// bounded, explainable and never turns into an unbounded multi-model run.
+// bounded, explainable and never turns into an unbounded multi-model run. Two
+// independent candidates are deliberate: a single provider outage used to make
+// Auto behave like a pinned model after just one fallback failed.
 export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
-  'openai/gpt-5.6-luna':['google/gemini-3.8-flash'],
-  'openai/gpt-5.6-terra':['x-ai/grok-4.6'],
-  'openai/gpt-5.6-sol':['anthropic/claude-opus-5'],
-  'google/gemini-3.8-flash':['openai/gpt-5.6-luna'],
-  'anthropic/claude-fable-5.1':['anthropic/claude-opus-5'],
-  [ASTRA_MODEL_ID]: ['anthropic/claude-opus-5'],
-  'google/gemini-3.8-flash:batch': ['openai/gpt-5.6-luna-pro'],
-  'openai/gpt-5.6-luna-pro': ['google/gemini-3.8-flash:batch'],
-  'moonshotai/kimi-k3': ['openai/gpt-5.6-terra-pro'],
-  'openai/gpt-5.6-terra-pro': ['anthropic/claude-sonnet-5'],
-  'anthropic/claude-sonnet-5': ['openai/gpt-5.6-terra-pro'],
-  'x-ai/grok-4.6': ['anthropic/claude-sonnet-5'],
-  'openai/gpt-5.6-sol-pro': ['anthropic/claude-opus-5'],
-  'anthropic/claude-opus-5': ['openai/gpt-5.6-sol-pro'],
+  'openai/gpt-5.6-luna':['google/gemini-3.8-flash', 'openai/gpt-5.6-luna-pro'],
+  'openai/gpt-5.6-terra':['moonshotai/kimi-k3', 'google/gemini-3.8-flash'],
+  'openai/gpt-5.6-sol':['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
+  'google/gemini-3.8-flash':['openai/gpt-5.6-luna', 'openai/gpt-5.6-luna-pro'],
+  'anthropic/claude-fable-5.1':['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
+  [ASTRA_MODEL_ID]: ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
+  'google/gemini-3.8-flash:batch': ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna'],
+  'openai/gpt-5.6-luna-pro': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+  'moonshotai/kimi-k3': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+  'openai/gpt-5.6-terra-pro': ['anthropic/claude-sonnet-5', 'moonshotai/kimi-k3'],
+  'anthropic/claude-sonnet-5': ['openai/gpt-5.6-terra-pro', 'moonshotai/kimi-k3'],
+  'x-ai/grok-4.6': ['anthropic/claude-sonnet-5', 'moonshotai/kimi-k3'],
+  'openai/gpt-5.6-sol-pro': ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
+  'anthropic/claude-opus-5': ['openai/gpt-5.6-sol-pro', 'anthropic/claude-sonnet-5'],
   // Fable is the deferred tier; its recovery is the interactive model of the
   // same family, never another batch model that would defer a second time.
-  'anthropic/claude-fable-5.1:batch': ['anthropic/claude-opus-5'],
+  'anthropic/claude-fable-5.1:batch': ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
 };
 
 export type ModelCreditRate = {
