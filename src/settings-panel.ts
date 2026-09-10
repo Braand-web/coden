@@ -134,6 +134,7 @@ let aiUsageLoaded = false;
 let billingLoaded = false;
 let billingCatalog: BillingCatalogResponse['catalog'] | null = null;
 let billingWallet: BillingWalletResponse | null = null;
+let billingWalletUnavailable = false;
 let selectedBillingInterval: BillingInterval = 'monthly';
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
@@ -2278,12 +2279,16 @@ function billingPlanMarkup(plan: 'pro' | 'business') {
 function renderBillingSettings() {
   const balance = document.querySelector<HTMLElement>('[data-billing-balance]');
   if (balance) {
-    balance.textContent = billingWallet?.mode === 'shadow'
+    balance.textContent = billingWalletUnavailable
+      ? 'Solde momentanément indisponible'
+      : billingWallet?.mode === 'shadow'
       ? 'Accès ouvert · V2 en validation'
       : `${formatCredits(billingWallet?.balance)} crédits`;
   }
   const currentPlan = document.querySelector<HTMLElement>('#tab-facturation [data-settings-billing-plan]');
-  if (currentPlan) currentPlan.textContent = `Forfait ${billingWallet?.plan === 'business' ? 'Business' : billingWallet?.plan === 'pro' ? 'Pro' : 'Free'}`;
+  if (currentPlan) currentPlan.textContent = billingWalletUnavailable
+    ? 'Forfait à confirmer'
+    : `Forfait ${billingWallet?.plan === 'business' ? 'Business' : billingWallet?.plan === 'pro' ? 'Pro' : 'Free'}`;
 
   document.querySelectorAll<HTMLElement>('[data-billing-interval]').forEach(button => {
     button.classList.toggle('active', button.dataset.billingInterval === selectedBillingInterval);
@@ -2308,12 +2313,25 @@ async function loadBillingSettings(force = false) {
   const grid = document.querySelector<HTMLElement>('[data-billing-plan-grid]');
   if (grid) grid.innerHTML = '<div class="usage-empty">Chargement des forfaits…</div>';
   try {
-    const [catalogResponse, walletResponse] = await Promise.all([
-      apiFetch<BillingCatalogResponse>('/api/billing/plans'),
-      apiFetch<BillingWalletResponse>('/api/billing/wallet'),
-    ]);
+    const catalogResponse = await apiFetch<BillingCatalogResponse>('/api/billing/plans');
     billingCatalog = catalogResponse.catalog || null;
-    billingWallet = walletResponse;
+    if (!billingCatalog) throw new Error('Le catalogue des forfaits est indisponible.');
+  } catch (error) {
+    if (grid) grid.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'La facturation est momentanément indisponible.')}</div>`;
+    return;
+  }
+
+  billingWalletUnavailable = false;
+  try {
+    billingWallet = await apiFetch<BillingWalletResponse>('/api/billing/wallet');
+  } catch (error) {
+    // A private balance outage must never hide the public, versioned pricing catalog.
+    billingWallet = null;
+    billingWalletUnavailable = true;
+    console.warn('[coden:billing_wallet_unavailable]', error);
+  }
+
+  try {
     billingLoaded = true;
     renderBillingSettings();
   } catch (error) {
