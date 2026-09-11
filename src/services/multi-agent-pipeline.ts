@@ -461,6 +461,10 @@ export async function runMultiAgentPipeline(input: {
   // scaffold the sandbox will actually start from.
   const starter = input.route === 'new_project' ? selectStarter(input.prompt) : null;
 
+  // Hoisted above planning: the planner is a recorded step too, and the
+  // record cannot start halfway through the run it describes.
+  const ctx = input.harnessContext;
+
   // Computed once and given to both agents, so the plan and the code that
   // implements it are designed to the same brief. A planner that has not seen
   // the design system names three files; the coder then designs from nothing.
@@ -493,6 +497,32 @@ export async function runMultiAgentPipeline(input: {
     });
     input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
     input.onChatEvent?.({ type:'text_end' });
+
+    /*
+     * The plan, recorded as the plan.
+     *
+     * `plan` is a declared item kind and no row has ever carried it. The
+     * planner is a real agent doing real work — its own model call, its own
+     * cost, its own failure mode — and the record showed the build appearing
+     * out of nothing. The `planner` role exists in the tool registry precisely
+     * so that this step can be attributed to something other than the agent
+     * that writes the files.
+     *
+     * Recorded after the fact rather than around the call: the plan is the
+     * artifact worth keeping, and a harness failure must not cost a plan that
+     * a model was already paid for.
+     */
+    if (ctx) {
+      await ctx.harness.createItem({
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        kind: 'plan',
+        role: 'planner',
+        status: 'completed',
+        title: plan.summary.slice(0, 120),
+        payload: { files: plan.files, risks: plan.risks, route: input.route },
+      }).catch((error: any) => console.info('[coden:harness_plan_unrecorded]', { reason: error?.message }));
+    }
   }
 
   const launchFiles = starter
@@ -550,7 +580,6 @@ export async function runMultiAgentPipeline(input: {
 
   // Failure to persist a checkpoint is explicit; never claim a resumable run
   // when its durable state was not recorded.
-  const ctx = input.harnessContext;
   const coderItem = ctx
     ? await ctx.harness.spawnSubagent({
         turnId: ctx.turnId,

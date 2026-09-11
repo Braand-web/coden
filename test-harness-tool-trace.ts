@@ -135,6 +135,28 @@ const CTX = { turnId: 'turn_1', role: 'integrator' as const };
   assert.ok(DEFAULT_HARNESS_BUDGET.maxRepairAttempts >= 8, 'and the rounds the coder loop is actually given');
 }
 
+/*
+ * The plan is recorded as a plan, by the planner.
+ *
+ * `plan` is a declared item kind that no row has ever carried, and the
+ * `planner` role exists in the registry precisely so this step is attributed
+ * to something other than the agent that writes the files. Without it the
+ * record showed a build appearing out of nothing, though a real model call
+ * with its own cost and its own failure mode produced it.
+ */
+{
+  const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
+  const planning = pipeline.slice(pipeline.indexOf('plan = await runPlannerAgent({'), pipeline.indexOf('const launchFiles'));
+
+  assert.match(planning, /kind: 'plan'/, 'the plan must be recorded as a plan');
+  assert.match(planning, /role: 'planner'/, 'attributed to the planner, not the agent that writes files');
+  assert.match(planning, /payload: \{ files: plan\.files, risks: plan\.risks/, 'with the files and risks it committed to');
+
+  // Recorded after the call, not around it: a harness failure must not cost a
+  // plan a model was already paid for.
+  assert.match(planning, /\.catch\(\(error: any\) => console\.info\('\[coden:harness_plan_unrecorded\]'/, 'and never at the plan\'s expense');
+}
+
 // And it is wired where the tool calls happen.
 {
   const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
