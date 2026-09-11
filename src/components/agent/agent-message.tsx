@@ -34,7 +34,22 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onArtif
   return <section className="coden-agent-message" aria-busy={streaming} data-status={state.status}>
     {state.parts.map(part => part.type === 'text' ? <Response key={part.id} isStreaming={streaming && !part.done}>{part.text}</Response> : <AgentToolLine key={part.id} part={part} />)}
     {(state.notices || []).map(notice => <StreamNotice key={`${notice.type}-${notice.id}`} notice={notice} onDecisionSelect={onDecisionSelect} onArtifactOpen={onArtifactOpen} />)}
-    <AnimatePresence>{streaming && state.thinking ? <AgentThinkingLine key="activity" label={state.activity} /> : null}</AnimatePresence>
+    {/*
+      * Keyed on the label, not on the slot.
+      *
+      * The key was the constant 'activity', so React reused the same element
+      * every time the run moved on — "prépare le plan" became "installe les
+      * dépendances" became "construit l'application" with no mount and no
+      * unmount, which meant `AnimatePresence` never saw a transition and the
+      * text was swapped in place mid-shimmer. `mode="wait"` then holds the
+      * outgoing phrase until it has finished leaving, so the two never overlap
+      * on one line.
+      */}
+    <AnimatePresence mode="wait">
+      {streaming && state.thinking
+        ? <AgentThinkingLine key={state.activity || 'thinking'} label={state.activity} />
+        : null}
+    </AnimatePresence>
     {state.error ? <p role="alert" className="coden-agent-message-error">{state.error}</p> : null}
     {state.status === 'cancelled' ? <p className="coden-agent-message-note">Exécution annulée.</p> : null}
     {!streaming && (onCopy || onRetry) ? <div className="coden-message-actions">

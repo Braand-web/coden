@@ -1,7 +1,9 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Response } from '../ui/response';
+import { AgentThinkingLine } from './agent-thinking-line';
 import { COMPOSER_AGENT_MODES } from './agent-mode-composer';
 import { normalizeAgentMode } from '../../services/agent-mode';
 import { ConversationDecision, normalizeConversationBlock } from '../../builder-conversation-island';
@@ -31,6 +33,34 @@ describe('agent conversation UI', () => {
     expect(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research'].map(normalizeAgentMode)).toEqual(['auto', 'build', 'plan', 'ask', 'fix', 'review', 'research']);
     expect(normalizeAgentMode('fix')).toBe('fix');
     expect(normalizeAgentMode('research')).toBe('research');
+  });
+
+  /*
+   * The thinking line changes phrase the way a phrase changes, not the way a
+   * variable does.
+   *
+   * `AnimatePresence` only animates a mount or an unmount, and the thinking
+   * line was keyed on the constant string 'activity'. So every step of a run —
+   * "prépare le plan", "installe les dépendances", "construit l'application" —
+   * reused the same element: no exit, no entrance, the text replaced in place
+   * mid-shimmer. Keying on the label is what makes each one a real transition,
+   * and `mode="wait"` is what keeps two of them off the same line at once.
+   */
+  it('gives each activity label its own mount, so the shimmer crossfades', () => {
+    const source = readFileSync(new URL('./agent-message.tsx', import.meta.url), 'utf8');
+    expect(source).toMatch(/<AnimatePresence mode="wait">/);
+    expect(source).toMatch(/key=\{state\.activity \|\| 'thinking'\}/);
+    expect(source).not.toMatch(/key="activity"/);
+  });
+
+  it('shows the real activity label rather than an invented one', () => {
+    // The labels come from boundaries the run actually crossed, so there is
+    // nothing to cycle on a timer: a rotating list of generic phrases would be
+    // progress the run never made.
+    const html = renderToStaticMarkup(React.createElement(AgentThinkingLine, { label: 'Coden installe les dépendances…' }));
+    expect(html).toContain('Coden installe les dépendances…');
+    expect(html).toContain('role="status"');
+    expect(renderToStaticMarkup(React.createElement(AgentThinkingLine, { label: null }))).not.toContain('undefined');
   });
 
   it('keeps a structured decision interactive instead of flattening it into prose', () => {
