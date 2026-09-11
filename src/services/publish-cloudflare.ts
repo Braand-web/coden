@@ -31,7 +31,24 @@ import {
   hostingProviderForTarget,
   resolveCloudflareHostingTarget,
   type CloudflareHostingProvider,
+  type WorkerDeployability,
 } from './cloudflare-hosting-policy.ts';
+
+/**
+ * What the built project can actually do, read off disk.
+ *
+ * The two conditions `runWranglerDeploy` throws on, checked before a target is
+ * chosen rather than after — which is the whole difference between publishing
+ * to Pages and failing with "does not include a pinned Wrangler dependency".
+ */
+function inspectWorkerDeployability(projectDir: string): WorkerDeployability {
+  const executable = process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler';
+  return {
+    hasWranglerBinary: fs.existsSync(path.join(projectDir, 'node_modules', '.bin', executable)),
+    hasWranglerConfig: ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']
+      .some(candidate => fs.existsSync(path.join(projectDir, candidate))),
+  };
+}
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
@@ -273,7 +290,9 @@ export async function publishProjectToCloudflare(params: {
   projectDir: string;
   runtime: GeneratedAppRuntime;
 }): Promise<PublishResult> {
-  const target = resolveCloudflareHostingTarget(params.runtime);
+  // Read from the project on disk, not assumed: this is the check whose
+  // absence made every publish throw before it reached Cloudflare.
+  const target = resolveCloudflareHostingTarget(params.runtime, undefined, inspectWorkerDeployability(params.projectDir));
   if (target === 'workers-fullstack') {
     return publishFullstackProjectToCloudflareWorkers({
       slug: params.slug,

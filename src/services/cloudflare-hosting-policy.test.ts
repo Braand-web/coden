@@ -17,13 +17,36 @@ describe('Cloudflare hosting policy', () => {
     expect(() => resolveCloudflareHostingTarget('node-server', 'cloudflare-pages')).toThrow(/Railway deployment adapter/i);
   });
 
-  it('uses Workers Static Assets by default for static apps', () => {
-    expect(resolveCloudflareHostingTarget('static-assets', '')).toBe('workers-static-assets');
+  /*
+   * A static app goes where it can actually be deployed.
+   *
+   * This used to require Workers by default, and no app Coden generates could
+   * ever satisfy it: `runWranglerDeploy` spawns
+   * `<projectDir>/node_modules/.bin/wrangler` and reads a wrangler config
+   * beside it, while `starters.ts` pins React, Vite, Tailwind and TypeScript
+   * and neither of those. So every publish threw "does not include a pinned
+   * Wrangler dependency" before reaching Cloudflare — deterministically, since
+   * the feature shipped. Zero deployments in the database, and no Coden worker
+   * in the Cloudflare account: the same fact from both ends.
+   */
+  it('sends a static app carrying Wrangler to Workers', () => {
+    const target = resolveCloudflareHostingTarget('static-assets', '', { hasWranglerBinary: true, hasWranglerConfig: true });
+    expect(target).toBe('workers-static-assets');
     expect(hostingProviderForTarget('workers-static-assets')).toBe('cloudflare-workers');
   });
 
-  it('keeps Pages only as an explicit legacy option', () => {
+  it('sends a static app without Wrangler to Pages, which needs nothing installed', () => {
+    expect(resolveCloudflareHostingTarget('static-assets', '')).toBe('pages-legacy');
+    // Half-equipped is not equipped: both are read, and both throw when absent.
+    expect(resolveCloudflareHostingTarget('static-assets', '', { hasWranglerBinary: true, hasWranglerConfig: false })).toBe('pages-legacy');
+    expect(resolveCloudflareHostingTarget('static-assets', '', { hasWranglerBinary: false, hasWranglerConfig: true })).toBe('pages-legacy');
+  });
+
+  // The operator can still pin Pages; they can no longer force a Worker
+  // deployment the project is incapable of performing.
+  it('keeps Pages available as an explicit choice', () => {
     expect(resolveCloudflareHostingTarget('static-assets', 'cloudflare-pages')).toBe('pages-legacy');
+    expect(resolveCloudflareHostingTarget('static-assets', 'cloudflare-pages', { hasWranglerBinary: true, hasWranglerConfig: true })).toBe('pages-legacy');
   });
 
   it('does not invent an invalid workers.dev hostname', () => {
