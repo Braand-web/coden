@@ -71,6 +71,25 @@ const BUILD = { task: 'code_generation' as const, needs: { tools: true } };
 }
 
 /*
+ * Escalation is the one caller that must not degrade.
+ *
+ * Ordinary selection answers "what can I use?", and a weaker answer beats no
+ * answer. Escalation answers "what is stronger than the model that just
+ * failed?" — and a model below the bar there looks identical to success,
+ * sending the autofix loop round again on the model that already failed and
+ * paying twice for the same outcome.
+ *
+ * Caught by `test-model-escalation`, which was right and this generalization
+ * was not: the first version of this fix relaxed the bar for every caller.
+ */
+{
+  const asked = { task: 'code_generation' as const, plan: 'free', credits: 5, complexity: 'extreme' as const, needs: { tools: true } };
+  assert.ok(selectModel(asked).modelId, 'an ordinary selection still answers');
+  assert.throws(() => selectModel({ ...asked, allowDegradation: false }), /No eligible model/,
+    'an escalation that cannot escalate must say so rather than repeat itself');
+}
+
+/*
  * Security stays fail-closed, and it is the one task where that is right.
  *
  * A weaker model returning "nothing found" reads exactly like a real audit

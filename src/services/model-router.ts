@@ -51,7 +51,15 @@ export interface EscalationSignals {
 }
 
 export class ModelRouter {
-  async selectModel(context: RoutingContext, requestedCustomModelId?: string): Promise<AllowedModelId> {
+  async selectModel(
+    context: RoutingContext,
+    requestedCustomModelId?: string,
+    /**
+     * `allowDegradation: false` forbids answering with a model below the
+     * preferred strength. Only escalation sets it — see `selectModelEscalated`.
+     */
+    options?: { allowDegradation?: boolean },
+  ): Promise<AllowedModelId> {
     // 1. Direct validation of custom model choice if in Custom mode
     if (context.mode === 'Custom' && requestedCustomModelId && requestedCustomModelId !== 'auto') {
       validateAllowedModel(requestedCustomModelId);
@@ -139,6 +147,7 @@ export class ModelRouter {
           structuredOutput: context.requiredCapabilities?.structuredOutput,
           longContext: context.requiredCapabilities?.longContext,
         },
+        allowDegradation: options?.allowDegradation,
       });
       this.lastDecision = decision;
       selectedModel = decision.modelId;
@@ -269,7 +278,16 @@ export class ModelRouter {
       taskComplexity: 'extreme',
       requiredCapabilities: { ...context.requiredCapabilities, code: true, reasoning: true },
     };
-    return this.selectModel(escalated, requestedCustomModelId);
+    /*
+     * An escalation that cannot escalate has to say so.
+     *
+     * Ordinary selection degrades on purpose — a weaker answer beats no answer.
+     * This is the opposite question: the caller already ran a model and it
+     * failed, and is asking for something stronger. Handing back a model below
+     * the bar would look identical to success and send the autofix loop round
+     * again on the model that just failed, paying twice for the same outcome.
+     */
+    return this.selectModel(escalated, requestedCustomModelId, { allowDegradation: false });
   }
 
   /**

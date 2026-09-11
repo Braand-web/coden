@@ -69,6 +69,21 @@ export type SelectionRequest = {
   estimatedInputTokens?: number;
   /** Explicit selection remains pinned, but never bypasses access or capabilities. */
   requestedModel?: string;
+  /**
+   * Whether a model below the preferred strength may be returned.
+   *
+   * Default. Refusing a turn because the *best* model is out of reach trades a
+   * weaker answer for no answer, and that trade emptied the product for five
+   * days: every `code_generation` at `complex` needs a frontier model, every
+   * frontier model needs a paid plan, and every organization was on `free`.
+   *
+   * Escalation is the one caller that must set this false. It does not ask
+   * "what can I use?" but "what is stronger than the model that just failed?",
+   * and a `false` that quietly answers with the same model is a retry loop the
+   * caller cannot tell apart from progress — spending money to fail the same
+   * way twice.
+   */
+  allowDegradation?: boolean;
 };
 
 export type SelectionResult = {
@@ -246,7 +261,7 @@ export function selectModel(request: SelectionRequest): SelectionResult {
    * Nowhere else does a weaker answer masquerade as a stronger one — the user
    * can see an application and judge it.
    */
-  if (request.task !== 'security') {
+  if (request.task !== 'security' && request.allowDegradation !== false) {
     const fallback = candidates
       .filter((modelId) => {
         const caps = AI_MODEL_CAPABILITIES[modelId];
