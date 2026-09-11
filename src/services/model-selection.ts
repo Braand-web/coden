@@ -220,12 +220,33 @@ export function selectModel(request: SelectionRequest): SelectionResult {
     };
   }
 
-  // Design and research quality are preference bars, not hard capabilities.
-  // Refusing the whole turn when a user's plan has a capable, tool-compatible
-  // model produced avoidable "No eligible model" failures in production.
-  // Keep architecture and security fail-closed, but use the strongest model
-  // that clears every objective gate for these non-critical tasks.
-  if (request.task === 'design' || request.task === 'research') {
+  /*
+   * The strength bar is a preference. The capability gates are not.
+   *
+   * Everything above this line is objective — the plan grants access or it
+   * does not, the model calls tools or it does not, the context fits or it
+   * does not. The strength bar is different: it says which model would be
+   * *best*, and refusing the turn because the best one is out of reach trades
+   * a weaker answer for no answer at all.
+   *
+   * That trade emptied the product. `code_generation` at `complex` demands a
+   * frontier model, every frontier model needs a paid plan, and every
+   * organization on this deployment is on `free` — so the throw below fired on
+   * every generation for five days, and not one project created in that window
+   * has a file in it.
+   *
+   * So the fallback that already existed for design and research now covers
+   * every task: keep every objective gate, relax only the preference, take the
+   * strongest model that remains, and say so in `reason` so the degradation is
+   * on the record rather than silent.
+   *
+   * `security` stays fail-closed, and it is the one task where that is right:
+   * a weaker model returning "nothing found" reads exactly like a real audit
+   * that found nothing, and a false all-clear is worse than an honest refusal.
+   * Nowhere else does a weaker answer masquerade as a stronger one — the user
+   * can see an application and judge it.
+   */
+  if (request.task !== 'security') {
     const fallback = candidates
       .filter((modelId) => {
         const caps = AI_MODEL_CAPABILITIES[modelId];

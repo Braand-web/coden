@@ -4897,11 +4897,32 @@ function inferAgentTaskComplexity(prompt: string, decision: IntentDecision, file
     return 'extreme';
   }
 
+  /*
+   * Complexity describes the work, not the kind of request.
+   *
+   * `intent === 'build'` and `autoPlanRequired` used to sit in this branch,
+   * and between them they made every single generation "complex" — `build` by
+   * definition, and the router raises `auto_plan_required` on most new
+   * projects. Neither says anything about difficulty: `build` says code will
+   * be written, `autoPlanRequired` says the user should see a plan first,
+   * which is about consent, not capability.
+   *
+   * The cost of that was total. `code_generation` at `complex` needs a
+   * frontier model, every frontier model requires a paid plan, and every
+   * organization here is on `free` — so `selectModel` threw
+   * `No eligible model satisfies code_generation/complex` on the first line of
+   * the pipeline, before the plan, before the sandbox. Production logs show it
+   * verbatim on each attempt, and no project created between 2026-09-06 and
+   * 2026-09-11 has a single file.
+   *
+   * A build now starts at `medium` and is pushed up by the signals that
+   * actually mean difficulty — auth, payments, migrations, a long brief, a
+   * large existing codebase. "Crée une mini to-do list" is not a hard task and
+   * no longer claims to be.
+   */
   if (
     decision.selectedModelPolicy === 'balanced'
-    || decision.autoPlanRequired
     || decision.intent === 'debug_fix'
-    || decision.intent === 'build'
     || riskyTerms.some(term => text.includes(term))
     || files.length > 10
     || text.length > 900
@@ -4910,7 +4931,8 @@ function inferAgentTaskComplexity(prompt: string, decision: IntentDecision, file
   }
 
   if (
-    decision.intent === 'plan'
+    decision.intent === 'build'
+    || decision.intent === 'plan'
     || decision.intent === 'edit'
     || decision.intent === 'verify'
     || text.length > 320

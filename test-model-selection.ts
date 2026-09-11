@@ -22,7 +22,25 @@ assert.equal(selectModel({task:'classification',needs:{vision:true},plan:'free'}
 const complex=selectModel({task:'code_generation',complexity:'complex',plan:'scale'});
 assert.equal(MODEL_REGISTRY.find(m=>m.id===complex.modelId)?.capabilities.codeLevel,'frontier');
 assert.ok(complex.rejected.every(r=>r.because.length>5));
-assert.throws(()=>selectModel({task:'architecture',complexity:'extreme',plan:'free'}),/No eligible/);
+/*
+ * `architecture` degrades; it does not refuse.
+ *
+ * This line used to require a throw, on the reasoning that architecture is too
+ * important to answer with a weaker model. Production disproved the trade:
+ * `architecture` is the task behind `deploy_assist`, so that rule meant a free
+ * user asking "how do I deploy this?" got an exception instead of an answer —
+ * the same silent failure that emptied `code_generation` for five days, in a
+ * quieter corner.
+ *
+ * A weaker answer here is visible and judgeable. `security` is the one place
+ * it is not, and it stays fail-closed below.
+ */
+{
+  const degraded = selectModel({task:'architecture',complexity:'extreme',plan:'free'});
+  assert.ok(degraded.modelId, 'a free user still gets deployment guidance');
+  assert.match(degraded.reason, /best accessible model/, 'and is told it is not the preferred model');
+}
+assert.throws(()=>selectModel({task:'security',complexity:'extreme',plan:'free'}),/No eligible/);
 assert.throws(()=>selectModel({task:'code_generation',complexity:'complex',plan:'enterprise',credits:0}),/No eligible/);
 assert.throws(()=>selectModel({task:'code_generation',plan:'enterprise',estimatedInputTokens:100000000}),/No eligible/);
 for(const task of ['conversation','planning','code_edit','debug','review','architecture','security','design','research'] as const) {
