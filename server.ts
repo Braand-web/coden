@@ -5225,6 +5225,16 @@ async function createAgentTextResponse(input: {
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
   /** Closing recap for a finished run: routing and build policy no longer apply. */
   finalizer?: boolean;
+  /**
+   * Receives the answer as it is written, for a caller that has somewhere to
+   * put it. Given one, the provider streams; without one this stays the
+   * buffered call it has always been.
+   *
+   * The answer is still returned whole and still passes
+   * `sanitizeAssistantOutput` before the caller keeps it — streaming shows the
+   * user the text sooner, it does not decide what the text is.
+   */
+  onToken?: (delta: string) => void;
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -5247,7 +5257,9 @@ async function createAgentTextResponse(input: {
     prompt,
     decision,
     files,
-    stream: false,
+    // Streaming is the caller's choice, because only the caller knows whether
+    // anyone is watching. A background finalizer has nowhere to put tokens.
+    stream: Boolean(input.onToken),
     // This path returns a user-visible answer; it does not run a tool loop.
     // Never tell a model it can call tools unless a matching executor exists.
     allowTools: false,
@@ -5277,9 +5289,33 @@ async function createAgentTextResponse(input: {
   });
 
   try {
-    const result = await providerGateway.chat(
+    const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer });
+    /*
+     * `streamingCompletion` consumes the provider stream and still returns one
+     * atomic result, so the answer is validated and sanitized exactly as
+     * before — `onChunk` only shows the user what has arrived so far.
+     *
+     * It reports the accumulated text, so the delta is the tail since the last
+     * call: sending the accumulation itself would repaint the whole answer on
+     * every token.
+     */
+    let seen = 0;
+    const result = input.onToken
+      ? await providerGateway.streamingCompletion(selectedModel, messages, {
+          timeoutMs: runtimeOptions.runtime.timeoutMs,
+          runtimeConfig: runtimeOptions.providerConfig,
+          runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
+          allowFallback: Boolean(input.allowLocalFallback),
+          signal: input.signal,
+          onChunk: accumulated => {
+            const delta = accumulated.slice(seen);
+            seen = accumulated.length;
+            if (delta) input.onToken?.(delta);
+          },
+        })
+      : await providerGateway.chat(
       selectedModel,
-      buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
+      messages,
       {
         // A retry before anything reaches the browser is safe for every text
         // response, including a normal chat reply. It prevents a transient 5xx
@@ -12548,8 +12584,35 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     let agentText: any;
     let content = '';
     try {
-      agentText = await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
+      /*
+       * Say what is happening, and stream the answer as it is written.
+       *
+       * This path emitted no `activity` event at all — the only ones in the
+       * product come from the multi-agent pipeline — so `AgentMessageState`
+       * kept `activity: null` and the thinking line fell through to its `•••`
+       * placeholder. Every conversation showed three dots and nothing else.
+       *
+       * And it ran with `stream: false`, so those dots sat there until the
+       * whole answer had been generated. Two model calls happen before a user
+       * sees a character: the intent router, then this. Nothing was slow by
+       * accident — the answer was simply withheld until it was complete.
+       */
+      eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden réfléchit…' : 'Coden is thinking…' });
+      let streamedAny = false;
+      agentText = await createAgentTextResponse({
+        project,
+        prompt: agentPromptForText,
+        files: existingFiles,
+        decision,
+        modelId: requestedModelSelection,
+        userCredits: walletForRouting,
+        allowLocalFallback: requestedModelSelection === 'auto',
+        // Only when there is a stream to write to: without one this stays the
+        // buffered call it has always been, and nothing else changes.
+        onToken: eventStream ? delta => { streamedAny = true; eventStream.chat({ type: 'text_delta', delta }); } : undefined,
+      });
       content = agentText.text;
+      if (streamedAny) eventStream?.chat({ type: 'text_end' });
     } catch (error: any) {
       /*
        * A failure that says nothing is the worst kind.
