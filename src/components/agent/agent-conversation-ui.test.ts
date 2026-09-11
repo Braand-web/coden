@@ -100,4 +100,61 @@ describe('agent conversation UI', () => {
     expect(html).toContain('Fonctionnalités prévues');
     expect(html).toContain('Construire ce plan');
   });
+
+  /*
+   * The plan asks one question — build this or not — and the summary answers
+   * it. The card used to lay everything flat: title, summary, then every
+   * section expanded, so six features and three architecture lines stood
+   * between the reader and the button that mattered.
+   *
+   * Title and summary stay visible; the detail folds behind a trigger.
+   */
+  it('keeps the plan decidable at a glance, with the detail one click away', () => {
+    const block = normalizeConversationBlock({
+      type: 'plan',
+      title: 'Plan de conception',
+      summary: 'Une application de tâches sera créée sans modifier le projet avant validation.',
+      sections: [{ id: 'features', label: 'Fonctionnalités prévues', items: ['Ajout rapide de tâches'] }],
+    });
+    const html = renderToStaticMarkup(React.createElement(ConversationDecision, {
+      block: block!,
+      actions: [{ id: 'build', label: 'Construire ce plan', onClick: () => undefined }],
+    }));
+
+    // What decides is always on screen.
+    expect(html).toContain('Plan de conception');
+    expect(html).toContain('sans modifier le projet avant validation');
+
+    // The detail is collapsed, and collapsed properly: `hidden` keeps it out
+    // of the tab order and out of a screen reader's way, not merely unpainted.
+    expect(html).toMatch(/class="coden-plan-content"[^>]*data-open="false"[^>]*hidden/);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toMatch(/aria-controls="coden-plan-[^"]+"/);
+
+    /*
+     * The shortcut hint is only honest if the key is bound. `⌘↩` next to a
+     * button that answers to nothing but a click is the interface telling a
+     * small lie, so the hint and the listener ship together.
+     */
+    expect(html).toMatch(/<kbd>(⌘|Ctrl)↩<\/kbd>/);
+    const source = readFileSync(new URL('../../builder-conversation-island.tsx', import.meta.url), 'utf8');
+    const card = source.slice(source.indexOf('function ConversationPlan('), source.indexOf('function MessageView('));
+    expect(card).toMatch(/event\.key !== "Enter" \|\| !\(event\.metaKey \|\| event\.ctrlKey\)/);
+    expect(card).toMatch(/primaryAction\.onClick\(\)/);
+    // Only the last actionable plan answers, so an older one further up the
+    // conversation cannot approve the one the user is looking at.
+    expect(card).toMatch(/actionable\[actionable\.length - 1\] !== cardRef\.current/);
+  });
+
+  it('renders no shortcut hint when there is no action to trigger', () => {
+    const block = normalizeConversationBlock({
+      type: 'plan',
+      title: 'Plan de conception',
+      summary: 'Un résumé.',
+      sections: [{ id: 'features', label: 'Fonctionnalités', items: ['Une chose'] }],
+    });
+    const html = renderToStaticMarkup(React.createElement(ConversationDecision, { block: block!, actions: [] }));
+    expect(html).not.toContain('<kbd>');
+    expect(html).toContain('data-actionable="false"');
+  });
 });

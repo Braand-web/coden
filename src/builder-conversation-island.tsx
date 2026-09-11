@@ -11,6 +11,7 @@ import "highlight.js/styles/github-dark.css";
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import MarkdownIt from "markdown-it";
+import { ChevronDown, FileText } from "lucide-react";
 import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -844,35 +845,73 @@ function ensureConversationStyles() {
       background: color-mix(in srgb, var(--bg-input) 76%, transparent);
       box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
     }
+    /* Title and summary stay; the detail is what folds away. */
+    .coden-plan-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .coden-plan-heading {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
     .coden-plan-kicker {
-      display: inline-flex;
+      display: flex;
       align-items: center;
       gap: 7px;
-      color: var(--text-sub);
-      font-size: 10px;
-      font-weight: 760;
-      letter-spacing: .07em;
-      text-transform: uppercase;
-    }
-    .coden-plan-kicker span {
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: var(--accent, #3b82f6);
-      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 13%, transparent);
-    }
-    .coden-plan-card h3 {
-      margin: 0;
       color: var(--text);
-      font-size: 14px;
+      font-size: 13.5px;
+      font-weight: 700;
       line-height: 1.3;
       letter-spacing: -.01em;
+    }
+    .coden-plan-kicker svg {
+      flex: none;
+      color: var(--accent, #3b82f6);
     }
     .coden-plan-summary {
       margin: 0;
       color: var(--text-sub);
       font-size: 12px;
       line-height: 1.55;
+    }
+    .coden-plan-trigger {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 27px;
+      border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+      border-radius: 999px;
+      padding: 0 9px;
+      background: transparent;
+      color: var(--text-sub);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 640;
+      cursor: pointer;
+      transition: color .16s ease, border-color .16s ease;
+    }
+    .coden-plan-trigger:hover {
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .coden-plan-trigger svg { transition: transform .2s ease; }
+    .coden-plan-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+    /* 0fr -> 1fr animates the height with no measurement and no layout thrash. */
+    .coden-plan-content {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows .22s ease;
+    }
+    .coden-plan-content[data-open="true"] { grid-template-rows: 1fr; }
+    .coden-plan-content > * { overflow: hidden; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .coden-plan-content, .coden-plan-trigger svg { transition: none; }
     }
     .coden-plan-sections {
       display: grid;
@@ -915,13 +954,26 @@ function ensureConversationStyles() {
       border-radius: 999px;
       background: color-mix(in srgb, var(--accent, #3b82f6) 72%, var(--text-muted));
     }
+    /* Bottom right: where the eye lands after the summary, not before it. */
     .coden-plan-actions {
       display: flex;
       flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 7px;
       padding-top: 1px;
     }
+    .coden-plan-actions kbd {
+      margin-left: 7px;
+      padding: 1px 4px;
+      border-radius: 5px;
+      background: color-mix(in srgb, #000 16%, transparent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 600;
+    }
     .coden-plan-actions button {
+      display: inline-flex;
+      align-items: center;
       min-height: 31px;
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -1070,28 +1122,105 @@ export function ConversationDecision({ block, actions = [] }: { block: CodenConv
   );
 }
 
+/** ⌘ on Apple hardware, Ctrl everywhere else — the hint has to match the key. */
+function primaryModifierLabel() {
+  if (typeof navigator === "undefined") return "Ctrl";
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) ? "⌘" : "Ctrl";
+}
+
+/**
+ * The plan, as something to read before approving rather than a wall to scroll.
+ *
+ * The card used to lay everything flat: kicker, title, summary, then every
+ * section expanded — six features and three architecture lines before the
+ * button that actually matters. The decision a plan asks for is "build this or
+ * not", and the summary answers it; the file list is the detail behind it.
+ *
+ * So: title and summary always visible, detail one click away, action at the
+ * bottom right where the eye lands last.
+ */
 function ConversationPlan({ block, actions = [] }: { block: CodenPlanBlock; actions?: CodenConversationAction[] }) {
+  const [open, setOpen] = useState(false);
+  const cardRef = useRef<HTMLElement | null>(null);
+  const contentId = useMemo(() => `coden-plan-${nanoid(6)}`, []);
+  const primaryAction = actions[0];
+
+  /*
+   * The shortcut is real, because the hint is rendered.
+   *
+   * Showing `⌘↩` next to a button that only responds to a click is an
+   * interface telling a small lie. It is bound globally — hands are in the
+   * composer, not on this card — but only for the last actionable plan on
+   * screen, so an older plan further up the conversation cannot answer for
+   * the one the user is actually looking at.
+   */
+  useEffect(() => {
+    if (!primaryAction) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+      const actionable = document.querySelectorAll('.coden-plan-card[data-actionable="true"]');
+      if (actionable[actionable.length - 1] !== cardRef.current) return;
+      event.preventDefault();
+      primaryAction.onClick();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [primaryAction]);
+
   return (
-    <section className="coden-plan-card" aria-label={block.title || "Plan"}>
-      <div className="coden-plan-kicker"><span aria-hidden="true" />Plan prêt à relire</div>
-      {block.title ? <h3>{block.title}</h3> : null}
-      {block.summary ? <p className="coden-plan-summary">{block.summary}</p> : null}
+    <section
+      ref={cardRef}
+      className="coden-plan-card"
+      data-actionable={primaryAction ? "true" : "false"}
+      aria-label={block.title || "Plan"}
+    >
+      <header className="coden-plan-header">
+        <div className="coden-plan-heading">
+          <div className="coden-plan-kicker">
+            <FileText size={14} aria-hidden="true" />
+            {block.title || "Plan"}
+          </div>
+          {block.summary ? <p className="coden-plan-summary">{block.summary}</p> : null}
+        </div>
+        {block.sections.length ? (
+          <button
+            type="button"
+            className="coden-plan-trigger"
+            aria-expanded={open}
+            aria-controls={contentId}
+            onClick={() => setOpen(value => !value)}
+          >
+            <span>{open ? "Masquer le détail" : "Voir le détail"}</span>
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+        ) : null}
+      </header>
+
       {block.sections.length ? (
-        <div className="coden-plan-sections">
-          {block.sections.map(section => (
-            <section className="coden-plan-section" key={section.id}>
-              <h4>{section.label}</h4>
-              <ul>{section.items.map((item, index) => <li key={`${section.id}-${index}`}>{item}</li>)}</ul>
-            </section>
-          ))}
+        // Collapsed with `grid-template-rows: 0fr`, so the height animates
+        // without measuring anything — and `hidden` keeps the collapsed
+        // content out of the tab order and out of a screen reader's way.
+        <div className="coden-plan-content" id={contentId} data-open={open} hidden={!open}>
+          <div className="coden-plan-sections">
+            {block.sections.map(section => (
+              <section className="coden-plan-section" key={section.id}>
+                <h4>{section.label}</h4>
+                <ul>{section.items.map((item, index) => <li key={`${section.id}-${index}`}>{item}</li>)}</ul>
+              </section>
+            ))}
+          </div>
         </div>
       ) : null}
+
       {actions.length ? (
-        <div className="coden-plan-actions">
+        <footer className="coden-plan-actions">
           {actions.map((action, index) => (
-            <button key={action.id} type="button" className={index === 0 ? "is-primary" : ""} onClick={action.onClick}>{action.label}</button>
+            <button key={action.id} type="button" className={index === 0 ? "is-primary" : ""} onClick={action.onClick}>
+              {action.label}
+              {index === 0 ? <kbd>{primaryModifierLabel()}↩</kbd> : null}
+            </button>
           ))}
-        </div>
+        </footer>
       ) : null}
     </section>
   );
