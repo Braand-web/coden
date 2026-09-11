@@ -47,6 +47,16 @@ export const DEFAULT_AGENT_LOOP_BUDGET: AgentLoopBudget = {
   compactAboveChars: 240_000,
 };
 
+/**
+ * The least time in which a model call could plausibly succeed.
+ *
+ * Below this a step is not a chance worth taking, it is a timeout with extra
+ * steps — and one that gets blamed on the provider. Deliberately generous:
+ * the cost of stopping ten seconds early is a round the run did not need,
+ * while the cost of starting a doomed call is a model closed for everyone.
+ */
+const MIN_VIABLE_CALL_MS = 10_000;
+
 /** What the run actually spent, and what ended it. */
 export type AgentLoopSpend = {
   steps: number;
@@ -214,7 +224,21 @@ export async function runLlmToolLoop(input: {
 
   for (let step = 0; step < maxSteps; step += 1) {
     input.signal?.throwIfAborted();
-    if (Date.now() >= deadline) { stoppedBecause = 'time_budget'; break; }
+    /*
+     * Stop with time left, rather than spending the remainder on a call that
+     * cannot finish.
+     *
+     * The guard used to be `>= deadline`, so a step starting with eight
+     * hundred milliseconds left went ahead anyway — and the timeout handed to
+     * the provider below is whatever remains, so it timed out by construction.
+     * That is not a provider failure, but it was classified as one
+     * (`PROVIDER_TIMEOUT`, `retryable: true`) and counted against the model's
+     * circuit breaker. Three runs reaching their own budget were enough to
+     * close a model for every user of the process.
+     *
+     * A run out of time now says so, which is both true and free.
+     */
+    if (deadline - Date.now() < MIN_VIABLE_CALL_MS) { stoppedBecause = 'time_budget'; break; }
     steps = step + 1;
 
     // Compacted before the call, not after: the request about to be sent is

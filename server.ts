@@ -5229,7 +5229,24 @@ async function createAgentTextResponse(input: {
     // This path returns a user-visible answer; it does not run a tool loop.
     // Never tell a model it can call tools unless a matching executor exists.
     allowTools: false,
-    timeoutMs: decision.intent === 'conversation' ? 12_000 : decision.intent === 'plan' ? 30_000 : 45_000,
+    /*
+     * No timeout named here, so the model's own profile decides.
+     *
+     * These were the last of the hardcoded constants — 12s for a
+     * conversation, 30s for a plan, 45s otherwise — written for whichever
+     * model happened to be default the day they were added and then applied
+     * to whatever the router picked. Twelve seconds is below the first-token
+     * latency of a deliberate model under load, so a conversation on one
+     * failed by construction: `PROVIDER_TIMEOUT`, one attempt
+     * (`maxAttempts: 1` below), no fallback on a pinned model, and a failure
+     * counted against that model's circuit breaker for every other user.
+     *
+     * `buildAIModelRuntimeConfig` falls back to `profile.recommended`
+     * (45s fast, 75s balanced, 120s deliberate, 180s frontier) — numbers
+     * derived from what each model actually needs, which is the only honest
+     * basis for a deadline. Same fix already applied to the planner and the
+     * coder loop.
+     */
     hasVisionInput: Boolean(input.visionInputs?.length),
   });
   assertAgentModelCapabilities(selectedModel, {

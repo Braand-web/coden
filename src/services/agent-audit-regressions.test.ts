@@ -116,11 +116,33 @@ describe('Agent audit regressions', () => {
     const result:any=await createSandboxTools('regression-memory',{signal}).call('run_command',{command:'npm',args:['test']});
     expect(result.ok).toBe(false);expect(result.exitCode).toBe(1);expect(sandbox.runCommand.mock.calls[0]?.[2]).toEqual(expect.objectContaining({signal}));
   });
-  it('passes the remaining deadline to the provider and never reports a late response as answered',async()=>{
-    let timeout=Infinity;
-    const gateway={chat:async(_model:unknown,_messages:unknown,options:any)=>{timeout=options.timeoutMs;await new Promise(resolve=>setTimeout(resolve,20));return {text:'late',model:'mock'};}};
+  /*
+   * A run out of time stops; it does not spend its last moments on a call that
+   * cannot finish.
+   *
+   * This test used to require the opposite — that the leftover milliseconds be
+   * handed to the provider as a timeout. That call expired by construction,
+   * and the gateway could only classify the result as `PROVIDER_TIMEOUT`,
+   * `retryable: true`: a failure charged to the model's circuit breaker, which
+   * is process-wide and keyed by model alone. Three runs reaching their own
+   * budget closed that model for every user — the "modèle temporairement
+   * indisponible" that production showed constantly.
+   *
+   * The half of the old contract that was right is kept below: a call that
+   * does start must still be capped so it cannot outlive the run's deadline.
+   */
+  it('stops on its own time budget instead of starting a call that cannot finish',async()=>{
+    let called=false;
+    const gateway={chat:async()=>{called=true;await new Promise(resolve=>setTimeout(resolve,20));return {text:'late',model:'mock'};}};
     const result=await runLlmToolLoop({gateway:gateway as any,modelId:'mock',messages:[],handlers:{},budget:{maxDurationMs:5}});
-    expect(timeout).toBeLessThanOrEqual(5);expect(result.spend.stoppedBecause).toBe('time_budget');
+    expect(called).toBe(false);expect(result.spend.stoppedBecause).toBe('time_budget');
+  });
+  it('caps a call it does start at the time the run has left',async()=>{
+    let timeout=Infinity;
+    const gateway={chat:async(_model:unknown,_messages:unknown,options:any)=>{timeout=options.timeoutMs;return {text:'done',model:'mock'};}};
+    const budgetMs=30_000;
+    await runLlmToolLoop({gateway:gateway as any,modelId:'mock',messages:[],handlers:{},budget:{maxDurationMs:budgetMs}});
+    expect(timeout).toBeGreaterThan(0);expect(timeout).toBeLessThanOrEqual(budgetMs);
   });
   it('sends source excerpts to the planner',async()=>{
     let observed='';const gateway={chat:async(_model:unknown,messages:unknown)=>{observed=JSON.stringify(messages);return {text:JSON.stringify({summary:'Add cart',files:[{path:'src/App.tsx',action:'edit',rationale:'cart'}]})};}};

@@ -13,7 +13,25 @@ import { ProviderCancelledError, ProviderHttpError, ProviderTimeoutError, isRetr
 type CircuitState = {
   failures: number;
   blockedUntil: number;
+  /**
+   * When the current run of failures started.
+   *
+   * Without it the count had no age: `failures` only ever went up, and only a
+   * success brought it back down. Three failures spread across an afternoon
+   * opened the breaker exactly like three in ten seconds, and a model that had
+   * tripped once stayed one failure away from tripping again forever.
+   */
+  windowStartedAt: number;
 };
+
+/**
+ * How far back a failure still counts against a model.
+ *
+ * A breaker is meant to notice that a provider is failing *now*. Counting
+ * every failure since process start measures something else entirely — how
+ * long the server has been up.
+ */
+const CIRCUIT_WINDOW_MS = 60_000;
 
 type ModelRuntimeMetric = {
   model_id: string;
@@ -430,7 +448,8 @@ export class ProviderGateway {
 
   private getCircuitError(modelId: AllowedModelId): ProviderGatewayError | null {
     const state = this.circuits.get(modelId);
-    if (state && state.blockedUntil > Date.now()) {
+    if (!state) return null;
+    if (state.blockedUntil > Date.now()) {
       return new ProviderGatewayError('The selected AI model is temporarily paused after repeated provider failures. Choose Auto or retry shortly.', {
         diagnosticCode: 'PROVIDER_CIRCUIT_OPEN',
         statusCode: 503,
@@ -438,6 +457,20 @@ export class ProviderGateway {
         modelId,
       });
     }
+    /*
+     * A pause that has run out takes its count with it.
+     *
+     * This is what made the breaker a latch. `failures` was only ever cleared
+     * by a success — and while the breaker is open no request is sent, so no
+     * success is possible. The block expired with the counter still at the
+     * threshold, and the very next failure re-armed another ninety seconds,
+     * indefinitely. One bad minute closed a model for the rest of the day.
+     *
+     * `blockedUntil > 0` is the whole condition: a state still counting
+     * towards the threshold has never blocked, and clearing that one would
+     * mean the breaker could never reach three at all.
+     */
+    if (state.blockedUntil > 0) this.circuits.delete(modelId);
     return null;
   }
 
@@ -448,11 +481,16 @@ export class ProviderGateway {
   private noteFailure(modelId: AllowedModelId, retryable: boolean) {
     if (!retryable) return;
     const threshold = this.options.failureThreshold || 3;
-    const current = this.circuits.get(modelId) || { failures: 0, blockedUntil: 0 };
-    const failures = current.failures + 1;
+    const now = Date.now();
+    const previous = this.circuits.get(modelId);
+    // Failures older than the window describe a provider that has since
+    // recovered. Counting them measures uptime, not health.
+    const withinWindow = previous && now - previous.windowStartedAt < CIRCUIT_WINDOW_MS;
+    const failures = withinWindow ? previous!.failures + 1 : 1;
     this.circuits.set(modelId, {
       failures,
-      blockedUntil: failures >= threshold ? Date.now() + (this.options.breakerMs || 90_000) : 0,
+      blockedUntil: failures >= threshold ? now + (this.options.breakerMs || 90_000) : 0,
+      windowStartedAt: withinWindow ? previous!.windowStartedAt : now,
     });
   }
 
