@@ -2560,7 +2560,22 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
 
   const content = String(payload?.text || '').trim();
   if (!content) throw new Error('The selected AI model returned an empty response.');
-  if (requestedMode === 'plan' && renderPlanResponse(card, content, prompt, speaksFrench)) {
+  /*
+   * A plan is rendered as a plan because it is one, not because the user
+   * asked for one.
+   *
+   * This was gated on `requestedMode === 'plan'` — the mode the composer was
+   * in. But the router raises a plan on its own whenever the request needs one
+   * (`auto_plan_required`), and in Auto the composer never says 'plan'. So the
+   * common case — the user types a request, Coden decides it warrants a plan —
+   * fell straight past this and printed the model's JSON object into the
+   * conversation, braces and all.
+   *
+   * No gate is needed: `parsePlanPresentation` returns null for anything that
+   * is not a plan object, which is exactly what keeps ordinary prose on the
+   * markdown path.
+   */
+  if (renderPlanResponse(card, content, prompt, speaksFrench)) {
     clearMessageShimmer(card);
     return true;
   }
@@ -5016,8 +5031,13 @@ function restoreMessages(payload: ProjectPayload) {
       const role = message.role === 'user' ? 'user' : 'assistant';
       const rawContent = messageTextFromParts(message.parts, message.content || '');
       const speaksFrench = isLikelyFrenchText(rawContent);
-      const isStoredPlan = role === 'assistant' && message.intent === 'plan';
-      const storedPlan = isStoredPlan ? parsePlanPresentation(repairTextEncoding(redactSecrets(rawContent))) : null;
+      // Same rule on reload as when it arrived: the content decides, not the
+      // stored intent. A plan the router raised under Auto is saved with that
+      // run's own intent, so gating on `intent === 'plan'` brought the JSON
+      // back as raw text every time the conversation was reopened.
+      const storedPlan = role === 'assistant'
+        ? parsePlanPresentation(repairTextEncoding(redactSecrets(rawContent)))
+        : null;
       const content = storedPlan
         ? planFallbackMarkdown(storedPlan, speaksFrench)
         : role === 'assistant'
