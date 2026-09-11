@@ -1,4 +1,5 @@
 import {
+  DEFAULT_HARNESS_BUDGET,
   canTransitionItem,
   canTransitionTurn,
   harnessId,
@@ -120,7 +121,7 @@ export class InMemoryAgentHarnessStore implements AgentHarnessStore {
       prompt: input.prompt,
       idempotencyKey: input.idempotencyKey,
       definitionOfDone: input.definitionOfDone || [],
-      budget: { maxToolCalls: 48, maxSubagents: 6, maxRepairAttempts: 3, maxDurationMs: 30 * 60_000, ...input.budget },
+      budget: { ...DEFAULT_HARNESS_BUDGET, ...input.budget },
       budgetUsed: { toolCalls: 0, subagents: 0, repairAttempts: 0, credits: 0 },
       createdAt: now,
       updatedAt: now,

@@ -35,6 +35,8 @@ import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
 import { buildAIModelRuntimeConfig, getAIModelCapabilityProfile } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
 import type { CodenAgentHarness } from './agent-harness/harness.ts';
+import type { HarnessAgentRole } from './agent-harness/contracts.ts';
+import { recordToolCall } from './agent-harness/sandbox-tool-map.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { redactSecrets } from './secret-redaction.ts';
@@ -271,7 +273,14 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    * round that has lost the design rules fixes the type error and flattens the
    * component it touched on the way past.
    */
-  designPolicy?: string }): RepairTurn {
+  designPolicy?: string;
+  /**
+   * The harness, so each tool call is recorded as it happens rather than
+   * summarised after the fact. Absent when the route runs without one, and the
+   * loop behaves exactly as before.
+   */
+  harness?: CodenAgentHarness;
+  harnessTurn?: { turnId: string; role: HarnessAgentRole } }): RepairTurn {
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
@@ -296,7 +305,23 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
-        const result = await call(tool.name, args);
+        /*
+         * Every tool call becomes an item the harness can show.
+         *
+         * `startTool`/`completeTool`/`failTool` have been complete since the
+         * harness was written and called from nowhere: production holds 37
+         * `subagent` items and not one `tool_call`, so the record could say a
+         * subagent ran and never what it did. There was no trace to resume
+         * from, none to explain a run with, none to debug one from.
+         *
+         * Recording can never fail the run — see `recordToolCall`.
+         */
+        const result = await recordToolCall(
+          input.harness || null,
+          input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null,
+          { name: tool.name, args },
+          () => call(tool.name, args),
+        );
         if ((result as any)?.ok === true && !(result as any)?.unchanged && typeof args.path === 'string') {
           const action = ({ read_file: 'read', write_file: knownPaths.has(args.path) ? 'edit' : 'create', edit_file: 'edit', delete_file: 'delete' } as Record<string, import('../lib/agent-chat-protocol.ts').FileAction>)[tool.name];
           if (action) {
@@ -582,6 +607,10 @@ export async function runMultiAgentPipeline(input: {
       visionInputs: input.visionInputs,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
+      // The coder writes as the integrator, which is the role that already
+      // owns `workspace.patch` and `shell.exec` in the tool registry.
+      harness: ctx?.harness,
+      harnessTurn: ctx ? { turnId: ctx.turnId, role: 'integrator' as const } : undefined,
       // Both in the system message, so a repair round cannot lose either one
       // and quietly swap a real query back out for mock data.
       designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,

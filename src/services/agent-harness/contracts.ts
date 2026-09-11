@@ -189,10 +189,29 @@ export type CreateTurnInput = {
   id?: string;
 };
 
+/**
+ * What a turn is allowed to spend, matched to what the pipeline actually does.
+ *
+ * These numbers were written before `budgetForRoute` existed and describe a
+ * system that no longer runs. The most generous route — `new_project` — allows
+ * eight rounds of forty tool calls, so 48 was not a ceiling but a point a
+ * third of the way through a normal build, and `maxRepairAttempts: 3` sat
+ * below the eight rounds the loop is given.
+ *
+ * Nothing depended on the old figures because nothing called `startTool`: the
+ * budget was never charged, so it never bit. Now that every tool call is
+ * recorded it would, and a bookkeeping ceiling silently truncating the record
+ * of a legitimate run is worse than no record — it looks like the run stopped.
+ *
+ * Real enforcement lives where the resources are actually spent:
+ * `budgetForRoute` caps rounds and calls per route, and the run deadline caps
+ * time. These are the harness's own guard rails against a runaway turn, set
+ * just above what the pipeline itself permits.
+ */
 export const DEFAULT_HARNESS_BUDGET: HarnessBudget = {
-  maxToolCalls: 48,
+  maxToolCalls: 320,
   maxSubagents: 6,
-  maxRepairAttempts: 3,
+  maxRepairAttempts: 8,
   maxDurationMs: 30 * 60_000,
 };
 

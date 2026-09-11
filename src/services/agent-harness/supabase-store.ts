@@ -7,7 +7,7 @@ import type {
   HarnessThread,
   HarnessTurn,
 } from './contracts.ts';
-import { harnessId, isTerminalTurnStatus, nowIso } from './contracts.ts';
+import { DEFAULT_HARNESS_BUDGET, harnessId, isTerminalTurnStatus, nowIso } from './contracts.ts';
 import type { AgentHarnessStore } from './store.ts';
 
 type SupabaseResult<T = any> = PromiseLike<{ data: T; error: { message?: string; code?: string } | null }>;
@@ -201,7 +201,7 @@ export class SupabaseAgentHarnessStore implements AgentHarnessStore {
       prompt: input.prompt,
       idempotency_key: input.idempotencyKey,
       definition_of_done: input.definitionOfDone || [],
-      budget: { maxToolCalls: 48, maxSubagents: 6, maxRepairAttempts: 3, maxDurationMs: 30 * 60_000, ...input.budget },
+      budget: { ...DEFAULT_HARNESS_BUDGET, ...input.budget },
       budget_used: { toolCalls: 0, subagents: 0, repairAttempts: 0, credits: 0 },
       created_at: now,
       updated_at: now,
