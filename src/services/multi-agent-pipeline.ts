@@ -41,6 +41,7 @@ import { redactSecrets } from './secret-redaction.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
 import { buildWorldClassUiPolicy } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
+import { describeProjectBackend } from './project-backend-store.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -390,6 +391,16 @@ export async function runMultiAgentPipeline(input: {
    * that never sees the constraint reintroduces what the plan just excluded.
    */
   memoryContext?: string;
+  /**
+   * This project's own Supabase project, as `loadProjectBackendEnv` renders
+   * it. Handed to the sandbox so the scaffold's client points at a real
+   * backend, and described to both agents so they write real queries instead
+   * of a localStorage stand-in next to a client they never call.
+   *
+   * Empty when no backend was provisioned, which is a working application with
+   * one feature unavailable — never a reason to fail the run.
+   */
+  backendEnv?: Record<string, string>;
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
@@ -429,6 +440,10 @@ export async function runMultiAgentPipeline(input: {
   // implements it are designed to the same brief. A planner that has not seen
   // the design system names three files; the coder then designs from nothing.
   const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0);
+  // Undefined when no backend was provisioned, so nothing tells an agent a
+  // database exists when none does — the one failure worse than no backend is
+  // an app written against one that is not there.
+  const backendBriefing = describeProjectBackend(input.backendEnv || {});
 
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
@@ -443,7 +458,10 @@ export async function runMultiAgentPipeline(input: {
       existingFiles: input.existingFiles,
       scaffold: starter ? describeStarter(starter) : undefined,
       memoryContext: input.memoryContext,
-      designPolicy,
+      // The planner needs it before the coder does: a plan written as if there
+      // were no database names a localStorage module, and the coder then
+      // builds what the plan asked for.
+      designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       plan: input.userPlan,
       credits: input.credits,
       signal: input.signal,
@@ -460,6 +478,17 @@ export async function runMultiAgentPipeline(input: {
     projectId: input.projectId,
     userId: input.userId,
     files: launchFiles,
+    /*
+     * The app's backend, in the environment its dev server reads.
+     *
+     * `launchProjectPreview` has always taken this and nothing ever passed it,
+     * so the `react-supabase` scaffold — chosen whenever a prompt mentions
+     * auth, users or a database — built its client from an undefined
+     * `VITE_SUPABASE_URL` and came up printing "Supabase is not configured
+     * yet". The dedicated Supabase project existed; the sandbox was simply
+     * never told about it.
+     */
+    env: input.backendEnv,
     signal: input.signal,
     onEvent: event => {
       input.onSandboxEvent?.(event);
@@ -553,7 +582,9 @@ export async function runMultiAgentPipeline(input: {
       visionInputs: input.visionInputs,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
-      designPolicy,
+      // Both in the system message, so a repair round cannot lose either one
+      // and quietly swap a real query back out for mock data.
+      designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       deadline: runDeadline,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;

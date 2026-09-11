@@ -11188,10 +11188,26 @@ app.post('/api/projects', async (req: any, res: any) => {
           migration: result.migration || null,
           storage: result.storage || null,
         };
+        /*
+         * Written down, not just announced.
+         *
+         * This result used to go into the creation response and nowhere else:
+         * the `coden_cloud_projects` row stayed at `status: 'planned'` with no
+         * credentials, so every later run had no way to know the app had a
+         * backend at all. The dedicated Supabase project existed and was
+         * unreachable from the moment this response was sent.
+         */
+        const stored = await saveProvisionedBackend({
+          client: getSupabase(),
+          projectId: project.id,
+          organizationId: project.organization_id,
+          provisioned: result.project,
+        });
         console.log('[coden:supabase_auto_provisioned]', {
           project_id: project.id,
           supabase_ref: result.project.ref,
           region: result.project.region,
+          persisted: stored,
         });
       } else {
         supabaseProvision = { status: 'skipped', reason: result.reason || result.error || 'unknown' };
@@ -12167,12 +12183,26 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         prompt: agentPrompt,
       });
 
+      /*
+       * And which Supabase project this app belongs to.
+       *
+       * The sandbox's dev server reads these, so the scaffold's client points
+       * at a real backend instead of an undefined URL, and both agents are
+       * told the backend is live so they write real queries rather than a
+       * localStorage stand-in beside a client they never call.
+       */
+      const backendEnv = await loadProjectBackendEnv({
+        client: getSupabase(),
+        projectId: project.id,
+      });
+
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
         userId,
         prompt: agentPrompt,
         memoryContext: projectMemory,
+        backendEnv,
         route: pipelineRoute,
         existingFiles,
         history: recentHistory,
@@ -15093,6 +15123,7 @@ import { repairNarration, writingFileNarration } from './src/services/agent-narr
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
+import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';

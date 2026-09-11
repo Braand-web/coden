@@ -36,7 +36,13 @@ const starters = readFileSync(new URL('./src/services/sandbox/starters.ts', impo
 // Both agents receive it, and for different reasons: the plan decides which
 // screens exist, the coder decides what they look like.
 {
-  assert.match(pipeline, /designPolicy,\n\s*plan: input\.userPlan/, 'the planner must receive it');
+  // Asserted as a fact rather than a spelling: the planner is handed the
+  // design policy. It travels alongside the backend briefing now, so pinning
+  // the shorthand `designPolicy,` would fail on a change that kept the
+  // behaviour intact.
+  const plannerCall = pipeline.slice(pipeline.indexOf('plan = await runPlannerAgent({'), pipeline.indexOf('plan = await runPlannerAgent({') + 900);
+  assert.match(plannerCall, /designPolicy: .*designPolicy/, 'the planner must receive the design policy');
+  assert.match(plannerCall, /plan: input\.userPlan/, 'in the planner call itself');
   assert.match(planner, /designPolicy\?: string/, 'the planner accepts it');
   assert.match(planner, /buildPlannerSystemPrompt\(input\.designPolicy\)/, 'and actually uses it');
 
