@@ -8007,15 +8007,51 @@ async function createAgentRun(project: GeneratedProject, userId: string, request
   return row;
 }
 
+/** Statuses after which a run is over and its duration is a fact. */
+const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'cancelled'];
+
 async function updateAgentRunStatus(runId: string, status: string, extra: Record<string, any> = {}) {
   if (!runId) return;
   const client = requireSupabase('Agent run update');
+  const finishedAt = new Date();
+
+  /*
+   * How long the run took, written where no call site can forget it.
+   *
+   * `duration_ms` is declared on `agent_runs`, and it is null on all 57
+   * recorded runs — as are `tokens_in`, `tokens_out` and `real_cost_usd`. The
+   * column was never written, so there has never been a way to answer "is this
+   * slow?" from the product's own data. Every answer to that question so far,
+   * including mine, has been reasoning about code rather than measurement.
+   *
+   * Derived here from `created_at` rather than passed in, because there are a
+   * dozen terminal call sites and a measurement that depends on each of them
+   * remembering is a measurement that will be missing again in a month. One
+   * extra read, only when a run ends.
+   */
+  let durationMs = extra.duration_ms;
+  if (durationMs === undefined && TERMINAL_RUN_STATUSES.includes(status)) {
+    try {
+      const { data } = await client.from('agent_runs').select('created_at').eq('id', runId).maybeSingle();
+      const startedAt = data?.created_at ? Date.parse(data.created_at) : NaN;
+      // A clock that ran backwards is not a duration; leaving it null is
+      // honest, and a negative number would poison every average built on it.
+      if (Number.isFinite(startedAt) && finishedAt.getTime() >= startedAt) {
+        durationMs = finishedAt.getTime() - startedAt;
+      }
+    } catch {
+      // Measurement is an improvement to a run, never a precondition for
+      // recording that it ended.
+    }
+  }
+
   const update = redactPublicAgentPayload({
     status,
     ...extra,
-    updated_at: new Date().toISOString(),
-    completed_at: ['completed', 'failed'].includes(status) ? new Date().toISOString() : extra.completed_at,
-    cancelled_at: status === 'cancelled' ? new Date().toISOString() : extra.cancelled_at,
+    ...(durationMs === undefined ? {} : { duration_ms: durationMs }),
+    updated_at: finishedAt.toISOString(),
+    completed_at: ['completed', 'failed'].includes(status) ? finishedAt.toISOString() : extra.completed_at,
+    cancelled_at: status === 'cancelled' ? finishedAt.toISOString() : extra.cancelled_at,
   });
   const { error } = await client.from('agent_runs').update(update).eq('id', runId);
   if (error && isMissingAgentV2TableError(error)) return;
@@ -12666,7 +12702,19 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       previewChanged: false,
       qualityStatus: 'not_applicable',
     });
-    await updateAgentRunStatus(agentRunId, 'completed');
+    /*
+     * What the answer actually cost, from the provider's own report.
+     *
+     * `real_cost_usd` is declared and null on all 57 recorded runs, so the
+     * product has never been able to say what a run costs — the credit ledger
+     * knows, but the run itself does not, and the two could drift without
+     * anything noticing. This is the number the provider returned for this
+     * call, recorded against the run that made it.
+     */
+    await updateAgentRunStatus(agentRunId, 'completed', {
+      real_cost_usd: Number(agentText.cost_usd || costRealCostUsd || 0) || null,
+      effective_model: agentText.model || null,
+    });
     return respondJson(200, {
       success: true,
       intent: decision,
