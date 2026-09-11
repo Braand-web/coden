@@ -1,7 +1,10 @@
 import tailwindcss from '@tailwindcss/vite';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import {defineConfig} from 'vite';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function discoverHtmlInputs(root: string) {
   const ignored = new Set(['dist', 'node_modules', '.git', '.vscode', '.railway']);

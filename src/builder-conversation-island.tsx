@@ -40,7 +40,7 @@ export type CodenConversationAction = {
   onClick: () => void;
 };
 
-type CodenConversationBlock = {
+type CodenConfirmationBlock = {
   type: "confirmation";
   title: string;
   body: string;
@@ -48,6 +48,19 @@ type CodenConversationBlock = {
   approveLabel?: string;
   rejectLabel?: string;
 };
+
+type CodenPlanBlock = {
+  type: "plan";
+  title: string;
+  summary: string;
+  sections: Array<{
+    id: "features" | "architecture" | "steps" | "files" | "risks";
+    label: string;
+    items: string[];
+  }>;
+};
+
+type CodenConversationBlock = CodenConfirmationBlock | CodenPlanBlock;
 
 type LiveRunLine = {
   id: string;
@@ -248,21 +261,46 @@ function textFromBlock(block: unknown) {
 export function normalizeConversationBlock(block: unknown): CodenConversationBlock | undefined {
   if (!block || typeof block !== "object") return undefined;
   const record = block as Record<string, unknown>;
-  if (record.type !== "confirmation") return undefined;
-  const title = String(record.title || "").trim();
-  const body = String(record.body || record.content || "").trim();
-  if (!title && !body) return undefined;
-  const state = ["approval-requested", "approved", "rejected"].includes(String(record.state))
-    ? String(record.state) as CodenConversationBlock["state"]
-    : "approval-requested";
-  return {
-    type: "confirmation",
-    title,
-    body,
-    state,
-    approveLabel: String(record.approveLabel || "").trim() || undefined,
-    rejectLabel: String(record.rejectLabel || "").trim() || undefined,
-  };
+  if (record.type === "confirmation") {
+    const title = String(record.title || "").trim();
+    const body = String(record.body || record.content || "").trim();
+    if (!title && !body) return undefined;
+    const state = ["approval-requested", "approved", "rejected"].includes(String(record.state))
+      ? String(record.state) as CodenConfirmationBlock["state"]
+      : "approval-requested";
+    return {
+      type: "confirmation",
+      title,
+      body,
+      state,
+      approveLabel: String(record.approveLabel || "").trim() || undefined,
+      rejectLabel: String(record.rejectLabel || "").trim() || undefined,
+    };
+  }
+
+  if (record.type !== "plan") return undefined;
+  const title = String(record.title || "").trim().slice(0, 160);
+  const summary = String(record.summary || record.body || "").trim().slice(0, 640);
+  const validSectionIds = new Set(["features", "architecture", "steps", "files", "risks"]);
+  const sections = (Array.isArray(record.sections) ? record.sections : [])
+    .flatMap((section) => {
+      if (!section || typeof section !== "object") return [];
+      const item = section as Record<string, unknown>;
+      const id = String(item.id || "");
+      if (!validSectionIds.has(id)) return [];
+      const items = (Array.isArray(item.items) ? item.items : [])
+        .map(value => String(value || "").replace(/\s+/g, " ").trim().slice(0, 360))
+        .filter(Boolean)
+        .slice(0, 8);
+      if (!items.length) return [];
+      return [{
+        id: id as CodenPlanBlock["sections"][number]["id"],
+        label: String(item.label || id).trim().slice(0, 72),
+        items,
+      }];
+    });
+  if (!title && !summary && !sections.length) return undefined;
+  return { type: "plan", title: title || "Plan", summary, sections };
 }
 
 function cloneMessages(messages: CodenConversationMessage[]) {
@@ -797,6 +835,111 @@ function ensureConversationStyles() {
       cursor: pointer;
     }
 
+    .coden-plan-card {
+      display: grid;
+      gap: 12px;
+      padding: 13px;
+      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 38%, var(--border));
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--bg-input) 76%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
+    }
+    .coden-plan-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-sub);
+      font-size: 10px;
+      font-weight: 760;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    .coden-plan-kicker span {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent, #3b82f6);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 13%, transparent);
+    }
+    .coden-plan-card h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.3;
+      letter-spacing: -.01em;
+    }
+    .coden-plan-summary {
+      margin: 0;
+      color: var(--text-sub);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .coden-plan-sections {
+      display: grid;
+      gap: 8px;
+    }
+    .coden-plan-section {
+      padding: 9px 10px;
+      border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--bg) 62%, transparent);
+    }
+    .coden-plan-section h4 {
+      margin: 0 0 6px;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 760;
+      letter-spacing: .035em;
+      text-transform: uppercase;
+    }
+    .coden-plan-section ul {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .coden-plan-section li {
+      display: grid;
+      grid-template-columns: 5px minmax(0, 1fr);
+      gap: 8px;
+      color: var(--text-sub);
+      font-size: 11.5px;
+      line-height: 1.45;
+    }
+    .coden-plan-section li::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      margin-top: 5px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent, #3b82f6) 72%, var(--text-muted));
+    }
+    .coden-plan-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      padding-top: 1px;
+    }
+    .coden-plan-actions button {
+      min-height: 31px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 11px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 11px;
+      font-weight: 720;
+      cursor: pointer;
+    }
+    .coden-plan-actions button.is-primary {
+      border-color: var(--accent, #3b82f6);
+      background: var(--accent, #3b82f6);
+      color: var(--accent-foreground, #fff);
+    }
+    .coden-plan-actions button:hover { filter: brightness(1.04); }
+
     @keyframes coden-message-in {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -904,6 +1047,7 @@ function RichResponse({ content }: { content: string }) {
 }
 
 export function ConversationDecision({ block, actions = [] }: { block: CodenConversationBlock; actions?: CodenConversationAction[] }) {
+  if (block.type === "plan") return <ConversationPlan block={block} actions={actions} />;
   const stateLabel = block.state === "rejected" ? "Annulée" : block.state === "approved" ? "Confirmée" : "Décision requise";
   return (
     <section className="coden-decision-card" data-state={block.state} aria-label={block.title || stateLabel}>
@@ -919,6 +1063,33 @@ export function ConversationDecision({ block, actions = [] }: { block: CodenConv
             <button key={action.id} type="button" className={index === 0 ? "is-primary" : "is-secondary"} onClick={action.onClick}>
               {action.label}
             </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ConversationPlan({ block, actions = [] }: { block: CodenPlanBlock; actions?: CodenConversationAction[] }) {
+  return (
+    <section className="coden-plan-card" aria-label={block.title || "Plan"}>
+      <div className="coden-plan-kicker"><span aria-hidden="true" />Plan prêt à relire</div>
+      {block.title ? <h3>{block.title}</h3> : null}
+      {block.summary ? <p className="coden-plan-summary">{block.summary}</p> : null}
+      {block.sections.length ? (
+        <div className="coden-plan-sections">
+          {block.sections.map(section => (
+            <section className="coden-plan-section" key={section.id}>
+              <h4>{section.label}</h4>
+              <ul>{section.items.map((item, index) => <li key={`${section.id}-${index}`}>{item}</li>)}</ul>
+            </section>
+          ))}
+        </div>
+      ) : null}
+      {actions.length ? (
+        <div className="coden-plan-actions">
+          {actions.map((action, index) => (
+            <button key={action.id} type="button" className={index === 0 ? "is-primary" : ""} onClick={action.onClick}>{action.label}</button>
           ))}
         </div>
       ) : null}
@@ -954,7 +1125,9 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
           {message.block
-            ? <ConversationDecision block={message.block} actions={message.actions} />
+            ? message.block.type === "plan"
+              ? <ConversationPlan block={message.block} actions={message.actions} />
+              : <ConversationDecision block={message.block} actions={message.actions} />
             : message.liveRun?.chat
               ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
               : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}

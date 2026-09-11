@@ -10,12 +10,13 @@ type PublicPrice = {
   plan: 'pro' | 'business';
   credits: number;
   interval: BillingInterval;
-  amountUsd: number;
-  monthlyEquivalentUsd: number;
+  amount: number;
+  monthlyEquivalent: number;
+  currency: 'XAF';
 };
 type BillingCatalogResponse = {
   success?: boolean;
-  catalog?: { annualDiscountPercent?: number; plans?: PricingPlan[]; prices?: PublicPrice[] };
+  catalog?: { currency?: string; annualDiscountPercent?: number; plans?: PricingPlan[]; prices?: PublicPrice[] };
 };
 
 const intervals = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pricing-interval]'));
@@ -24,19 +25,24 @@ const status = document.getElementById('pricing-data-status');
 let selectedInterval: BillingInterval = 'monthly';
 let prices: PublicPrice[] = [];
 
-function usd(value: number) {
-  return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`;
+function money(value: number, currency = 'XAF') {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
 function fallbackPrice(plan: 'pro' | 'business', credits: number, interval: BillingInterval): PublicPrice {
-  const monthly = (plan === 'pro' ? 0.25 : 0.5) * credits;
+  const monthly = (plan === 'pro' ? 150 : 300) * credits;
   const amount = interval === 'annual' ? monthly * 12 * 0.8 : monthly;
   return {
     plan,
     credits,
     interval,
-    amountUsd: Number(amount.toFixed(2)),
-    monthlyEquivalentUsd: Number((interval === 'annual' ? amount / 12 : amount).toFixed(2)),
+    amount: Math.round(amount),
+    monthlyEquivalent: Math.round(interval === 'annual' ? amount / 12 : amount),
+    currency: 'XAF',
   };
 }
 
@@ -59,11 +65,11 @@ function updateCard(plan: 'pro' | 'business') {
   const unitNode = document.querySelector<HTMLElement>(`[data-pricing-price-unit="${plan}"]`);
   const noteNode = document.querySelector<HTMLElement>(`[data-pricing-price-note="${plan}"]`);
   const cta = document.querySelector<HTMLAnchorElement>(`[data-plan-cta="${plan}"]`);
-  if (priceNode) priceNode.textContent = usd(price.monthlyEquivalentUsd);
+  if (priceNode) priceNode.textContent = money(price.monthlyEquivalent, price.currency);
   if (unitNode) unitNode.textContent = selectedInterval === 'annual' ? 'par mois' : 'par mois';
   if (noteNode) {
     noteNode.textContent = selectedInterval === 'annual'
-      ? `Facturé ${usd(price.amountUsd)} par an`
+      ? `Paiement annuel de ${money(price.amount, price.currency)}`
       : 'Facturé mensuellement';
   }
   if (cta) cta.href = planRedirect(plan, credits);

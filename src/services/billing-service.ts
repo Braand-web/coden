@@ -1,8 +1,9 @@
-import Stripe from 'stripe';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
-  ANNUAL_DISCOUNT,
   BILLING_PLANS,
+  BILLING_SETTLEMENT_CURRENCY,
   BILLING_V2_VERSION,
+  BILLING_XAF_PER_USD,
   FREE_ACTIVE_USER_COGS_CAP_USD,
   MINIMUM_PAID_GROSS_MARGIN,
   PUBLIC_PRICES,
@@ -20,7 +21,6 @@ export type PlanKey = BillingPlanKey;
 export type CloudUsageCategory = 'database_server' | 'database_storage' | 'compute' | 'file_storage' | 'live_updates' | 'network' | 'ai_app_usage';
 
 export interface CloudPlanLimits {
-  /** Compatibility fields only. V2 meters these resources against unified grants. */
   balanceUsd: number;
   aiAppBalanceUsd: number;
   databaseStorageGb: number;
@@ -33,7 +33,7 @@ export interface CloudPlanLimits {
 
 export interface PlanConfig {
   id: string; key: PlanKey; name: string; amount: number; annualAmount?: number;
-  annualMonthlyEquivalent?: number; credits: number; creditTiers: readonly number[];
+  annualMonthlyEquivalent?: number; currency: typeof BILLING_SETTLEMENT_CURRENCY; credits: number; creditTiers: readonly number[];
   dailyCredits?: number; monthlyCreditCap?: number | null; maxProjects: number;
   customDomains: number; rollover: 'none' | 'monthly' | 'annual_period'; public: boolean;
   grants: { cloud: number; aiGateway: number; emailCount: number };
@@ -47,7 +47,7 @@ export interface PlanEconomicsGuardrail {
 
 export interface TopupProduct {
   id: string; plan: 'pro' | 'business'; credits: number; price: number;
-  expiresMonths: number; stripePriceEnv: string;
+  settlementAmount: number; currency: typeof BILLING_SETTLEMENT_CURRENCY; expiresMonths: number;
 }
 
 export type AutoTopupConfig = {
@@ -62,8 +62,36 @@ export type AutoTopupConfig = {
   lastError: string | null;
 };
 
-/** Retained as an empty compatibility export. Cloud top-ups are unified credit top-ups in V2. */
 export interface CloudTopupProduct { id: string; amountUsd: number; label: string }
+
+type SaspayCheckout = { id: string; checkout_url: string };
+type SaspayTransaction = {
+  id: string;
+  reference?: string;
+  status?: string;
+  description?: string;
+  requested_amount?: string;
+  amount?: string;
+  net_amount?: string;
+  currency?: string;
+  metadata?: Record<string, unknown>;
+  checkout_session?: string | { id?: string; metadata?: Record<string, unknown> };
+};
+type CheckoutIntent = {
+  id: string;
+  account_id: string;
+  kind: 'subscription' | 'topup';
+  plan_id: string;
+  plan_key: 'pro' | 'business';
+  credit_tier: number;
+  billing_interval: BillingInterval | 'one_time';
+  amount: number;
+  currency: string;
+  price_version_id: string;
+  provider_checkout_id?: string | null;
+  customer_email?: string | null;
+  status: string;
+};
 
 export const PUBLIC_PRICING_PLAN_KEYS = ['free', 'pro', 'business'] as const satisfies readonly PublicPlanKey[];
 export const PAID_PLAN_KEYS = ['pro', 'business', 'enterprise'] as const satisfies readonly PlanKey[];
@@ -76,7 +104,7 @@ const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => ({
   fileStorageGb: 0,
   bandwidthGb: 0,
   topupMinUsd: plan === 'pro' || plan === 'business' ? 0 : null,
-  autoTopupAvailable: plan === 'pro' || plan === 'business' || plan === 'enterprise',
+  autoTopupAvailable: false,
   usageCategories: CLOUD_USAGE_CATEGORIES,
 });
 
@@ -88,9 +116,10 @@ function planConfig(key: PlanKey): PlanConfig {
     id: plan.id,
     key,
     name: plan.name,
-    amount: monthly?.amountUsd || 0,
-    annualAmount: annual?.amountUsd || 0,
-    annualMonthlyEquivalent: annual?.monthlyEquivalentUsd || 0,
+    amount: monthly?.amount || 0,
+    annualAmount: annual?.amount || 0,
+    annualMonthlyEquivalent: annual?.monthlyEquivalent || 0,
+    currency: BILLING_SETTLEMENT_CURRENCY,
     credits: plan.baseCredits,
     creditTiers: plan.tiers,
     dailyCredits: plan.grants.dailyBuildCredits,
@@ -111,14 +140,19 @@ export const SAAS_PLANS: Record<PlanKey, PlanConfig> = {
 
 export const PLAN_ECONOMICS_GUARDRAILS: Record<PlanKey, PlanEconomicsGuardrail> = {
   free: { plan: 'free', grossMarginTarget: 'controlled_acquisition', netMarginTarget: 'loss_limited', maxMonthlyAiCloudExposureUsd: FREE_ACTIVE_USER_COGS_CAP_USD, monetizationPath: ['upgrade_to_pro'], internalNote: 'Free COGS is capped per active user; no paid provider usage is treated as free.' },
-  pro: { plan: 'pro', grossMarginTarget: `${TARGET_GROSS_MARGIN * 100}%`, netMarginTarget: `${MINIMUM_PAID_GROSS_MARGIN * 100}% minimum`, maxMonthlyAiCloudExposureUsd: null, monetizationPath: ['credit_topups', 'auto_topup', 'upgrade_to_business'], internalNote: 'Every settlement prices measured full cost and enforces the paid margin floor.' },
-  business: { plan: 'business', grossMarginTarget: `${TARGET_GROSS_MARGIN * 100}%`, netMarginTarget: `${MINIMUM_PAID_GROSS_MARGIN * 100}% minimum`, maxMonthlyAiCloudExposureUsd: null, monetizationPath: ['larger_credit_tiers', 'auto_topup', 'dedicated_backend', 'enterprise_expansion'], internalNote: 'Premium capabilities remain bounded by measured provider cost and tenant budgets.' },
+  pro: { plan: 'pro', grossMarginTarget: `${TARGET_GROSS_MARGIN * 100}%`, netMarginTarget: `${MINIMUM_PAID_GROSS_MARGIN * 100}% minimum`, maxMonthlyAiCloudExposureUsd: null, monetizationPath: ['credit_topups', 'upgrade_to_business'], internalNote: 'Every settlement prices measured full cost and enforces the paid margin floor.' },
+  business: { plan: 'business', grossMarginTarget: `${TARGET_GROSS_MARGIN * 100}%`, netMarginTarget: `${MINIMUM_PAID_GROSS_MARGIN * 100}% minimum`, maxMonthlyAiCloudExposureUsd: null, monetizationPath: ['larger_credit_tiers', 'dedicated_backend', 'enterprise_expansion'], internalNote: 'Premium capabilities remain bounded by measured provider cost and tenant budgets.' },
   enterprise: { plan: 'enterprise', grossMarginTarget: `${TARGET_GROSS_MARGIN * 100}%`, netMarginTarget: 'contractual', maxMonthlyAiCloudExposureUsd: null, monetizationPath: ['commitment', 'volume_pricing', 'dedicated_infrastructure'], internalNote: 'Enterprise economics are versioned by contract and never inferred from public pricing.' },
 };
 
 export const TOPUP_PRODUCTS: TopupProduct[] = TOPUP_PRODUCTS_V2.map(item => ({
-  id: item.id, plan: item.plan, credits: item.credits, price: item.amountUsd,
-  expiresMonths: item.expiresMonths, stripePriceEnv: item.stripePriceEnv,
+  id: item.id,
+  plan: item.plan,
+  credits: item.credits,
+  price: item.amount,
+  settlementAmount: item.amount,
+  currency: item.currency,
+  expiresMonths: item.expiresMonths,
 }));
 export const CLOUD_TOPUP_PRODUCTS: CloudTopupProduct[] = [];
 
@@ -136,339 +170,361 @@ export function isPaidPlanKey(value: unknown) { const key = normalizePlanKey(val
 export function resolveCheckoutAmount(plan: PlanConfig, billingInterval: BillingInterval, credits = plan.credits) {
   if (plan.key !== 'pro' && plan.key !== 'business') throw new Error('A public paid plan is required.');
   const price = priceFor(plan.key, credits, billingInterval);
-  return { amount: price.amountUsd, recurringInterval: billingInterval === 'annual' ? 'year' as const : 'month' as const, label: `$${price.monthlyEquivalentUsd} / month${billingInterval === 'annual' ? ', billed annually' : ''}`, stripePriceEnv: price.stripePriceEnv };
+  return {
+    amount: price.amount,
+    currency: price.currency,
+    recurringInterval: billingInterval === 'annual' ? 'year' as const : 'month' as const,
+    label: `${price.monthlyEquivalent.toLocaleString('fr-FR')} FCFA / mois${billingInterval === 'annual' ? ', payé annuellement' : ''}`,
+  };
 }
 
-function configuredStripePrice(envName: string) {
-  const value = String(process.env[envName] || '').trim();
-  if (!/^price_[A-Za-z0-9]+$/.test(value)) throw new Error(`Stripe Price is not configured for ${envName}.`);
+export function estimateSaspayNetRevenue(netAmountXaf: number) {
+  const rate = Math.max(1, Number(process.env.SASPAY_XAF_PER_USD || BILLING_XAF_PER_USD));
+  return Number((Math.max(0, netAmountXaf) / rate).toFixed(8));
+}
+
+export function verifySaspayWebhookSignature(rawBody: string | Buffer, signature: string, timestamp: string, secret: string, nowMs = Date.now()) {
+  if (!secret || !/^[a-f0-9]{64}$/i.test(signature) || !/^\d{10,13}$/.test(timestamp)) return false;
+  const seconds = Number(timestamp.length === 13 ? Number(timestamp) / 1000 : timestamp);
+  if (!Number.isFinite(seconds) || Math.abs(Math.floor(nowMs / 1000) - seconds) > 300) return false;
+  const body = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
+  const expected = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+  const actualBytes = Buffer.from(signature.toLowerCase(), 'utf8');
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function addUtcMonths(input: Date, months: number) {
+  const value = new Date(input);
+  const day = value.getUTCDate();
+  value.setUTCDate(1);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0)).getUTCDate();
+  value.setUTCDate(Math.min(day, lastDay));
   return value;
 }
 
-/** Conservative interim net revenue until Stripe balance transactions are reconciled. */
-export function estimateStripeNetRevenue(grossUsd: number) {
-  const percentage = Math.max(0, Number(process.env.STRIPE_EFFECTIVE_FEE_PERCENT || 0.029));
-  const fixed = Math.max(0, Number(process.env.STRIPE_EFFECTIVE_FEE_FIXED_USD || 0.30));
-  return Number(Math.max(0, grossUsd - (grossUsd * percentage) - fixed).toFixed(8));
+function cleanCustomerName(email: string) {
+  const local = String(email || '').split('@')[0]?.replace(/[^a-z0-9]+/gi, ' ').trim();
+  return local || 'Client Coden';
 }
 
-export class StripeService {
-  private readonly stripe: Stripe | null;
-  constructor(private readonly supabase: any) {
-    const stripeKey = process.env.STRIPE_SECRET_KEY;
-    this.stripe = stripeKey ? new Stripe(stripeKey, { apiVersion: '2025-02-18' as any }) : null;
-  }
-  private getStripeClient() { if (!this.stripe) throw new Error('Stripe is not configured.'); return this.stripe; }
+function saspayData<T>(payload: any): T {
+  return (payload && typeof payload === 'object' && payload.data && typeof payload.data === 'object' ? payload.data : payload) as T;
+}
 
-  private async customer(organizationId: string, email: string) {
-    const stripe = this.getStripeClient();
-    await this.ensureAccount(organizationId);
-    const { data } = await this.supabase.from('billing_provider_customers').select('provider_customer_id').eq('account_id', organizationId).eq('provider', 'stripe').maybeSingle();
-    if (data?.provider_customer_id) return String(data.provider_customer_id);
-    const created = await stripe.customers.create({ email, metadata: { organization_id: organizationId } }, { idempotencyKey: `coden-customer-${organizationId}` });
-    const { error } = await this.supabase.from('billing_provider_customers').upsert([{
-      account_id: organizationId,
-      provider: 'stripe',
-      provider_customer_id: created.id,
-      email,
-      updated_at: new Date().toISOString(),
-    }], { onConflict: 'account_id,provider' });
-    if (error) throw new Error(`Stripe customer persistence failed: ${error.message}`);
-    return created.id;
+export class SaspayService {
+  private readonly apiBase = String(process.env.SASPAY_API_URL || 'https://api.saspay.me/api/v1').replace(/\/+$/, '');
+  private readonly apiKey = String(process.env.SASPAY_API_KEY || '').trim();
+
+  constructor(private readonly supabase: any) {}
+
+  private requireApiKey() {
+    if (!/^sk_(?:live|test)_[A-Za-z0-9_-]+$/.test(this.apiKey)) throw new Error('Saspay is not configured. Add SASPAY_API_KEY on the server.');
+    return this.apiKey;
   }
 
-  async createSubscriptionCheckout(organizationId: string, email: string, planValue: string, successUrl: string, cancelUrl: string, billingInterval: BillingInterval = 'monthly', credits?: number, checkoutReference?: string) {
-    const plan = getPlanConfig(planValue);
-    if (!plan || !plan.public || (plan.key !== 'pro' && plan.key !== 'business')) throw new Error(`Unknown public paid plan key: ${planValue}`);
-    const tier = Number(credits || plan.credits);
-    const price = PUBLIC_PRICES.find(item => item.plan === plan.key && item.credits === tier && item.interval === billingInterval);
-    if (!price) throw new Error(`Unsupported ${plan.key} credit tier: ${tier}`);
-    const stripe = this.getStripeClient();
-    const customer = await this.customer(organizationId, email);
-    const metadata = { organization_id: organizationId, plan_key: plan.key, credit_tier: String(tier), billing_interval: billingInterval, price_version: BILLING_V2_VERSION };
-    const session = await stripe.checkout.sessions.create({
-      customer, line_items: [{ price: configuredStripePrice(price.stripePriceEnv), quantity: 1 }], mode: 'subscription',
-      success_url: successUrl, cancel_url: cancelUrl, metadata, subscription_data: { metadata },
-      allow_promotion_codes: false,
-    }, { idempotencyKey: `subscription:${organizationId}:${plan.key}:${tier}:${billingInterval}:${String(checkoutReference || '').trim() || crypto.randomUUID()}` });
-    if (!session.url) throw new Error('Stripe did not return a checkout URL.');
-    return session.url;
+  private async request<T>(method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const response = await fetch(`${this.apiBase}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.requireApiKey()}`,
+          Accept: 'application/json',
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = String(payload?.error?.message || payload?.message || payload?.detail || `HTTP ${response.status}`).slice(0, 300);
+        throw new Error(`Saspay request failed: ${message}`);
+      }
+      return saspayData<T>(payload);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
-
-  async createTopupCheckout(organizationId: string, email: string, productId: string, successUrl: string, cancelUrl: string, checkoutReference?: string) {
-    const item = TOPUP_PRODUCTS.find(product => product.id === productId);
-    if (!item) throw new Error(`Invalid top-up product: ${productId}`);
-    const { data: organization, error: planError } = await this.supabase.from('organizations').select('plan').eq('id', organizationId).maybeSingle();
-    if (planError) throw new Error(`Workspace plan lookup failed: ${planError.message}`);
-    const activePlan = normalizePlanKey(organization?.plan || 'free');
-    if (activePlan !== item.plan) throw new Error(`This top-up is only available on the ${item.plan} plan.`);
-    const stripe = this.getStripeClient();
-    const customer = await this.customer(organizationId, email);
-    const reference = String(checkoutReference || '').trim() || crypto.randomUUID();
-    const session = await stripe.checkout.sessions.create({
-      customer,
-      line_items: [{ price: configuredStripePrice(item.stripePriceEnv), quantity: 1 }], mode: 'payment',
-      success_url: successUrl, cancel_url: cancelUrl,
-      payment_intent_data: { setup_future_usage: 'off_session' },
-      metadata: { organization_id: organizationId, plan_key: item.plan, topup_credits: String(item.credits), topup_product_id: item.id, price_version: BILLING_V2_VERSION },
-    }, { idempotencyKey: `topup:${organizationId}:${productId}:${reference}` });
-    if (!session.url) throw new Error('Stripe did not return a checkout URL.');
-    return session.url;
-  }
-
-  async createCloudTopupCheckout() { throw new Error('Separate Cloud top-ups were retired. Use a unified credit top-up.'); }
 
   private async ensureAccount(accountId: string) {
     const { error } = await this.supabase.from('billing_accounts').upsert([{ id: accountId, organization_id: accountId, owner_user_id: accountId, currency: 'usd', status: 'active' }], { onConflict: 'id' });
     if (error) throw new Error(`Billing account persistence failed: ${error.message}`);
   }
 
-  private async grant(input: { accountId: string; kind: string; restriction: string; credits: number; netRevenueUsd: number; maxCogsUsd?: number; sourceReference: string; expiresAt?: string | null }) {
+  private async createCheckout(input: {
+    accountId: string;
+    email: string;
+    kind: 'subscription' | 'topup';
+    plan: 'pro' | 'business';
+    credits: number;
+    interval: BillingInterval | 'one_time';
+    amount: number;
+    priceVersionId: string;
+    successUrl: string;
+    checkoutReference?: string;
+  }) {
     await this.ensureAccount(input.accountId);
-    const maxCogsUsd = input.maxCogsUsd ?? (input.netRevenueUsd > 0 ? input.netRevenueUsd * (1 - MINIMUM_PAID_GROSS_MARGIN) : 0);
-    const { error } = await this.supabase.rpc('coden_billing_grant', {
-      p_account_id: input.accountId, p_kind: input.kind, p_restriction: input.restriction,
-      p_credits: input.credits, p_net_revenue_usd: input.netRevenueUsd, p_max_cogs_usd: maxCogsUsd,
-      p_expires_at: input.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60_000).toISOString(), p_source_reference: input.sourceReference,
-      p_idempotency_key: input.sourceReference, p_metadata: { provider: 'stripe', price_version: BILLING_V2_VERSION },
-    });
-    if (error) throw new Error(`Credit grant failed: ${error.message}`);
-  }
+    const requestedKey = String(input.checkoutReference || '').trim();
+    const idempotencyKey = /^[A-Za-z0-9:_-]{8,128}$/.test(requestedKey) ? requestedKey : randomUUID();
+    const { data: existing } = await this.supabase.from('billing_checkout_intents').select('checkout_url,status').eq('idempotency_key', idempotencyKey).maybeSingle();
+    if (existing?.checkout_url && existing.status === 'pending') return String(existing.checkout_url);
+    if (existing) throw new Error('This checkout request has already been used. Please try again.');
 
-  async getAutoTopupConfig(accountId: string): Promise<AutoTopupConfig> {
-    await this.ensureAccount(accountId);
-    const { data, error } = await this.supabase.from('auto_topup_configs')
-      .select('enabled,credits_to_add,threshold_credits,monthly_cap_credits,credits_added_this_month,provider_payment_method_id,last_triggered_at,last_error,price_version_id')
-      .eq('account_id', accountId)
-      .maybeSingle();
-    if (error) throw new Error(`Auto top-up lookup failed: ${error.message}`);
-    return {
-      enabled: Boolean(data?.enabled),
-      productId: data?.price_version_id ? String(data.price_version_id) : null,
-      creditsToAdd: Number(data?.credits_to_add || 0),
-      thresholdCredits: Number(data?.threshold_credits || 0),
-      monthlyCapCredits: Number(data?.monthly_cap_credits || 0),
-      creditsAddedThisMonth: Number(data?.credits_added_this_month || 0),
-      hasPaymentMethod: Boolean(data?.provider_payment_method_id),
-      lastTriggeredAt: data?.last_triggered_at ? String(data.last_triggered_at) : null,
-      lastError: data?.last_error ? String(data.last_error) : null,
+    const intentId = randomUUID();
+    const expiresAt = new Date(Date.now() + 60 * 60_000);
+    const intent = {
+      id: intentId,
+      account_id: input.accountId,
+      provider: 'saspay',
+      kind: input.kind,
+      plan_id: SAAS_PLANS[input.plan].id,
+      plan_key: input.plan,
+      credit_tier: input.credits,
+      billing_interval: input.interval,
+      amount: input.amount,
+      currency: BILLING_SETTLEMENT_CURRENCY,
+      price_version_id: input.priceVersionId,
+      customer_email: input.email,
+      status: 'pending',
+      idempotency_key: idempotencyKey,
+      expires_at: expiresAt.toISOString(),
+      metadata: { price_version: BILLING_V2_VERSION },
     };
-  }
+    const { error: intentError } = await this.supabase.from('billing_checkout_intents').insert([intent]);
+    if (intentError) throw new Error(`Checkout intent persistence failed: ${intentError.message}`);
 
-  async configureAutoTopup(accountId: string, input: { enabled: boolean; productId: string; thresholdCredits: number; monthlyCapCredits: number }) {
-    await this.ensureAccount(accountId);
-    const item = TOPUP_PRODUCTS.find(product => product.id === input.productId);
-    if (!item) throw new Error('Unknown auto top-up product.');
-    const { data: organization, error: planError } = await this.supabase.from('organizations').select('plan').eq('id', accountId).maybeSingle();
-    if (planError) throw new Error(`Workspace plan lookup failed: ${planError.message}`);
-    const plan = normalizePlanKey(organization?.plan || 'free');
-    if (plan !== item.plan) throw new Error(`Auto top-up requires the ${item.plan} plan.`);
-    const threshold = Math.max(0, Math.floor(Number(input.thresholdCredits || 0) * 10_000) / 10_000);
-    const monthlyCap = Math.max(0, Math.floor(Number(input.monthlyCapCredits || 0) * 10_000) / 10_000);
-    if (!Number.isFinite(threshold) || !Number.isFinite(monthlyCap) || monthlyCap < item.credits) {
-      throw new Error(`The monthly cap must cover at least one ${item.credits}-credit top-up.`);
-    }
-    const { data: current, error: currentError } = await this.supabase.from('auto_topup_configs')
-      .select('revision,provider_payment_method_id,usage_month,credits_added_this_month')
-      .eq('account_id', accountId)
-      .maybeSingle();
-    if (currentError) throw new Error(`Auto top-up lookup failed: ${currentError.message}`);
-    const hasPaymentMethod = Boolean(current?.provider_payment_method_id);
-    const shouldEnable = Boolean(input.enabled && hasPaymentMethod);
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const sameMonth = String(current?.usage_month || '').slice(0, 7) === currentMonth;
-    const { error } = await this.supabase.from('auto_topup_configs').upsert([{
-      account_id: accountId,
-      revision: Number(current?.revision || 0) + 1,
-      enabled: shouldEnable,
-      credits_to_add: item.credits,
-      threshold_credits: threshold,
-      monthly_cap_credits: monthlyCap,
-      credits_added_this_month: sameMonth ? Number(current?.credits_added_this_month || 0) : 0,
-      usage_month: `${currentMonth}-01`,
-      provider_payment_method_id: current?.provider_payment_method_id || null,
-      in_progress_key: null,
-      in_progress_started_at: null,
-      last_error: input.enabled && !hasPaymentMethod ? 'A saved payment method is required before auto top-up can be enabled.' : null,
-      price_version_id: item.id,
-      updated_at: new Date().toISOString(),
-    }], { onConflict: 'account_id' });
-    if (error) throw new Error(`Auto top-up update failed: ${error.message}`);
-    return { ...(await this.getAutoTopupConfig(accountId)), requiresPaymentMethod: Boolean(input.enabled && !hasPaymentMethod) };
-  }
-
-  private async claimWebhook(event: Stripe.Event) {
-    const row = { provider: 'stripe', event_id: event.id, event_type: event.type, status: 'processing' };
-    const { error } = await this.supabase.from('provider_webhook_events').insert([row]);
-    if (!error) return true;
-    if (error.code === '23505' || /duplicate|unique/i.test(error.message || '')) return false;
-    throw new Error(`Webhook idempotency persistence failed: ${error.message}`);
-  }
-
-  async handleWebhook(rawBody: string | Buffer, signature: string, webhookSecret: string): Promise<{ processed: boolean; reason?: string }> {
-    const stripe = this.getStripeClient();
-    if (!signature || !webhookSecret) throw new Error('Stripe webhook signature configuration is missing.');
-    let event: Stripe.Event;
-    try { event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret); }
-    catch { throw new Error('Stripe signature validation failed.'); }
-    if (!(await this.claimWebhook(event))) return { processed: true, reason: 'Webhook already processed.' };
     try {
-      if (event.type === 'checkout.session.completed') {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const accountId = String(session.metadata?.organization_id || '');
-        if (!accountId) throw new Error('Stripe session has no billing account reference.');
-        if (session.mode === 'payment') {
-          if (session.payment_status !== 'paid') throw new Error('Top-up payment is not confirmed.');
-          const credits = Number(session.metadata?.topup_credits || 0);
-          if (!Number.isFinite(credits) || credits <= 0) throw new Error('Top-up credits are invalid.');
-          const grossRevenueUsd = Number(session.amount_total || 0) / 100;
-          await this.grant({ accountId, kind: 'topup', restriction: 'general', credits, netRevenueUsd: estimateStripeNetRevenue(grossRevenueUsd), sourceReference: `stripe:${session.id}`, expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString() });
-          if (session.payment_intent) {
-            const paymentIntent = await stripe.paymentIntents.retrieve(String(session.payment_intent));
-            const paymentMethodId = typeof paymentIntent.payment_method === 'string' ? paymentIntent.payment_method : paymentIntent.payment_method?.id;
-            if (paymentMethodId) {
-              await this.supabase.from('auto_topup_configs').update({ provider_payment_method_id: paymentMethodId, last_error: null, updated_at: new Date().toISOString() }).eq('account_id', accountId);
-            }
-          }
-        } else if (session.mode === 'subscription' && session.subscription) {
-          const subscription = await stripe.subscriptions.retrieve(String(session.subscription));
-          await this.syncSubscription(accountId, subscription, false);
-        }
-      } else if (event.type === 'customer.subscription.updated') {
-        const subscription = event.data.object as Stripe.Subscription;
-        const accountId = String(subscription.metadata?.organization_id || '');
-        if (accountId) await this.syncSubscription(accountId, subscription, false);
-      } else if (event.type === 'invoice.paid') {
-        const invoice = event.data.object as Stripe.Invoice;
-        const rawInvoice = invoice as any;
-        const subscriptionId = String(rawInvoice.subscription || rawInvoice.parent?.subscription_details?.subscription || '');
-        if (subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          const accountId = String(subscription.metadata?.organization_id || '');
-          if (!accountId) throw new Error('Paid invoice subscription has no billing account reference.');
-          await this.syncSubscription(accountId, subscription, true, `stripe-invoice:${invoice.id}`, estimateStripeNetRevenue(Number(invoice.amount_paid || 0) / 100));
-        }
-      } else if (event.type === 'customer.subscription.deleted') {
-        const subscription = event.data.object as Stripe.Subscription;
-        const accountId = String(subscription.metadata?.organization_id || '');
-        if (accountId) await this.demoteToFreePlan(accountId);
-      }
-      await this.supabase.from('provider_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('provider', 'stripe').eq('event_id', event.id);
-      return { processed: true };
-    } catch (error: any) {
-      await this.supabase.from('provider_webhook_events').update({ status: 'failed', last_error: String(error?.message || error).slice(0, 500) }).eq('provider', 'stripe').eq('event_id', event.id);
+      const country = String(process.env.SASPAY_COUNTRY || '').trim().toUpperCase();
+      const checkout = await this.request<SaspayCheckout>('POST', '/checkout-sessions/', {
+        amount: input.amount.toFixed(2),
+        currency: BILLING_SETTLEMENT_CURRENCY,
+        description: `Coden billing ${intentId}`,
+        customer_email: input.email,
+        customer_name: cleanCustomerName(input.email),
+        return_url: input.successUrl,
+        ...(country ? { country } : {}),
+        metadata: {
+          coden_intent_id: intentId,
+          organization_id: input.accountId,
+          kind: input.kind,
+          plan_key: input.plan,
+          credit_tier: input.credits,
+          billing_interval: input.interval,
+          price_version: BILLING_V2_VERSION,
+        },
+      });
+      if (!checkout?.id || !/^https:\/\//i.test(String(checkout.checkout_url || ''))) throw new Error('Saspay did not return a valid checkout URL.');
+      const { error: updateError } = await this.supabase.from('billing_checkout_intents').update({ provider_checkout_id: checkout.id, checkout_url: checkout.checkout_url, updated_at: new Date().toISOString() }).eq('id', intentId);
+      if (updateError) throw new Error(`Checkout session persistence failed: ${updateError.message}`);
+      return checkout.checkout_url;
+    } catch (error) {
+      await this.supabase.from('billing_checkout_intents').update({ status: 'failed', updated_at: new Date().toISOString() }).eq('id', intentId);
       throw error;
     }
   }
 
-  private async syncSubscription(accountId: string, subscription: Stripe.Subscription, grantCredits: boolean, grantReference?: string, netRevenueOverride?: number) {
-    const plan = getPlanConfig(subscription.metadata?.plan_key) || SAAS_PLANS.pro;
-    const credits = Number(subscription.metadata?.credit_tier || plan.credits);
-    const active = subscription.status === 'active' || subscription.status === 'trialing';
-    await this.ensureAccount(accountId);
-    const firstItem = subscription.items.data[0];
-    const periodStart = Number(firstItem?.current_period_start || 0);
-    const periodEnd = Number(firstItem?.current_period_end || 0);
-    const annual = subscription.metadata?.billing_interval === 'annual';
-    const monthlyGrantExpiry = new Date();
-    monthlyGrantExpiry.setUTCMonth(monthlyGrantExpiry.getUTCMonth() + 1);
-    const listedGrossRevenue = Number(firstItem?.price?.unit_amount || 0) / 100;
-    const monthlyNetRevenue = netRevenueOverride !== undefined
-      ? (annual ? netRevenueOverride / 12 : netRevenueOverride)
-      : (annual ? estimateStripeNetRevenue(listedGrossRevenue) / 12 : estimateStripeNetRevenue(listedGrossRevenue));
-    const { error } = await this.supabase.from('billing_subscriptions_v2').upsert([{
-      account_id: accountId, provider_subscription_id: subscription.id, provider_customer_id: String(subscription.customer),
-      plan_id: plan.id, credit_tier: credits, billing_interval: annual ? 'annual' : 'monthly',
-      status: subscription.status, current_period_start: periodStart ? new Date(periodStart * 1000).toISOString() : null,
-      current_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : null,
-      ...(grantCredits ? { last_credit_grant_at: new Date().toISOString(), next_credit_grant_at: annual ? monthlyGrantExpiry.toISOString() : null } : {}),
-      monthly_net_revenue_usd: monthlyNetRevenue,
-      cancel_at_period_end: subscription.cancel_at_period_end,
-    }], { onConflict: 'provider_subscription_id' });
-    if (error) throw new Error(`Subscription persistence failed: ${error.message}`);
-    await this.supabase.from('organizations').update({ plan: active ? plan.key : 'free', updated_at: new Date().toISOString() }).eq('id', accountId);
-    if (!active || !grantCredits || credits <= 0) return;
-    const reference = grantReference || `stripe:${subscription.id}:${periodStart || subscription.created}`;
-    const expiresAt = annual ? monthlyGrantExpiry.toISOString() : (periodEnd ? new Date(periodEnd * 1000).toISOString() : monthlyGrantExpiry.toISOString());
+  async createSubscriptionCheckout(organizationId: string, email: string, planValue: string, successUrl: string, _cancelUrl: string, billingInterval: BillingInterval = 'monthly', credits?: number, checkoutReference?: string) {
+    const plan = getPlanConfig(planValue);
+    if (!plan || !plan.public || (plan.key !== 'pro' && plan.key !== 'business')) throw new Error(`Unknown public paid plan key: ${planValue}`);
+    const tier = Number(credits || plan.credits);
+    const price = PUBLIC_PRICES.find(item => item.plan === plan.key && item.credits === tier && item.interval === billingInterval);
+    if (!price) throw new Error(`Unsupported ${plan.key} credit tier: ${tier}`);
+    return this.createCheckout({ accountId: organizationId, email, kind: 'subscription', plan: plan.key, credits: tier, interval: billingInterval, amount: price.amount, priceVersionId: price.id, successUrl, checkoutReference });
+  }
+
+  async createTopupCheckout(organizationId: string, email: string, productId: string, successUrl: string, _cancelUrl: string, checkoutReference?: string) {
+    const item = TOPUP_PRODUCTS.find(product => product.id === productId);
+    if (!item) throw new Error(`Invalid top-up product: ${productId}`);
+    const { data: organization, error: planError } = await this.supabase.from('organizations').select('plan').eq('id', organizationId).maybeSingle();
+    if (planError) throw new Error(`Workspace plan lookup failed: ${planError.message}`);
+    const activePlan = normalizePlanKey(organization?.plan || 'free');
+    if (activePlan !== item.plan) throw new Error(`This top-up is only available on the ${item.plan} plan.`);
+    return this.createCheckout({ accountId: organizationId, email, kind: 'topup', plan: item.plan, credits: item.credits, interval: 'one_time', amount: item.settlementAmount, priceVersionId: item.id, successUrl, checkoutReference });
+  }
+
+  async createCloudTopupCheckout() { throw new Error('Separate Cloud top-ups were retired. Use a unified credit top-up.'); }
+
+  private async grant(input: { accountId: string; kind: string; restriction: string; credits: number; netRevenueUsd: number; maxCogsUsd?: number; sourceReference: string; expiresAt?: string | null }) {
+    await this.ensureAccount(input.accountId);
+    const maxCogsUsd = input.maxCogsUsd ?? (input.netRevenueUsd > 0 ? input.netRevenueUsd * (1 - MINIMUM_PAID_GROSS_MARGIN) : 0);
+    const { error } = await this.supabase.rpc('coden_billing_grant', {
+      p_account_id: input.accountId,
+      p_kind: input.kind,
+      p_restriction: input.restriction,
+      p_credits: input.credits,
+      p_net_revenue_usd: input.netRevenueUsd,
+      p_max_cogs_usd: maxCogsUsd,
+      p_expires_at: input.expiresAt || addUtcMonths(new Date(), 1).toISOString(),
+      p_source_reference: input.sourceReference,
+      p_idempotency_key: input.sourceReference,
+      p_metadata: { provider: 'saspay', price_version: BILLING_V2_VERSION },
+    });
+    if (error) throw new Error(`Credit grant failed: ${error.message}`);
+  }
+
+  private async claimWebhook(eventId: string, eventType: string) {
+    const row = { provider: 'saspay', event_id: eventId, event_type: eventType, status: 'processing' };
+    const { error } = await this.supabase.from('provider_webhook_events').insert([row]);
+    if (!error) return true;
+    if (error.code !== '23505' && !/duplicate|unique/i.test(error.message || '')) throw new Error(`Webhook idempotency persistence failed: ${error.message}`);
+    const { data: existing, error: lookupError } = await this.supabase.from('provider_webhook_events').select('status,attempts').eq('provider', 'saspay').eq('event_id', eventId).maybeSingle();
+    if (lookupError) throw new Error(`Webhook idempotency lookup failed: ${lookupError.message}`);
+    if (existing?.status === 'processed') return false;
+    await this.supabase.from('provider_webhook_events').update({ status: 'processing', attempts: Number(existing?.attempts || 1) + 1, last_error: null }).eq('provider', 'saspay').eq('event_id', eventId);
+    return true;
+  }
+
+  private async resolveIntent(data: Record<string, any>): Promise<{ intent: CheckoutIntent; transaction: SaspayTransaction } | null> {
+    const transactionId = String(data.id || data.transaction_id || '').trim();
+    let transaction: SaspayTransaction = data as SaspayTransaction;
+    if (transactionId) transaction = await this.request<SaspayTransaction>('GET', `/transactions/${encodeURIComponent(transactionId)}/`);
+    const metadata = transaction.metadata || (typeof transaction.checkout_session === 'object' ? transaction.checkout_session.metadata : undefined) || data.metadata || {};
+    let intentId = String((metadata as any).coden_intent_id || '').trim();
+    if (!intentId) {
+      const match = String(transaction.description || data.description || '').match(/Coden billing ([0-9a-f-]{36})/i);
+      intentId = match?.[1] || '';
+    }
+    let query = this.supabase.from('billing_checkout_intents').select('*');
+    if (intentId) query = query.eq('id', intentId);
+    else if (typeof transaction.checkout_session === 'string') query = query.eq('provider_checkout_id', transaction.checkout_session);
+    else return null;
+    const { data: intent, error } = await query.maybeSingle();
+    if (error) throw new Error(`Checkout intent lookup failed: ${error.message}`);
+    return intent ? { intent: intent as CheckoutIntent, transaction } : null;
+  }
+
+  private assertPaidAmount(intent: CheckoutIntent, transaction: SaspayTransaction, fallback: Record<string, any>) {
+    const paidAmount = Number(transaction.requested_amount || transaction.amount || fallback.amount || 0);
+    const currency = String(transaction.currency || fallback.currency || '').toUpperCase();
+    if (!Number.isFinite(paidAmount) || Math.abs(paidAmount - Number(intent.amount)) > 0.01) throw new Error('Paid amount does not match the checkout intent.');
+    if (currency !== String(intent.currency).toUpperCase()) throw new Error('Paid currency does not match the checkout intent.');
+  }
+
+  private async grantMonthlyPlanCredits(accountId: string, plan: PlanConfig, credits: number, monthlyNetRevenueUsd: number, reference: string, expiresAt: string) {
     const dailyCreditsBudget = Number(plan.dailyCredits || 0) * 31;
     const totalEntitledCredits = credits + plan.grants.cloud + plan.grants.aiGateway + dailyCreditsBudget;
-    const totalCogsBudget = monthlyNetRevenue * (1 - MINIMUM_PAID_GROSS_MARGIN);
-    const cogsFor = (grantCreditsCount: number) => totalEntitledCredits > 0 ? totalCogsBudget * grantCreditsCount / totalEntitledCredits : 0;
-    await this.grant({ accountId, kind: 'monthly_plan', restriction: 'general', credits, netRevenueUsd: monthlyNetRevenue, maxCogsUsd: cogsFor(credits), sourceReference: reference, expiresAt });
+    const totalCogsBudget = monthlyNetRevenueUsd * (1 - MINIMUM_PAID_GROSS_MARGIN);
+    const cogsFor = (value: number) => totalEntitledCredits > 0 ? totalCogsBudget * value / totalEntitledCredits : 0;
+    await this.grant({ accountId, kind: 'monthly_plan', restriction: 'general', credits, netRevenueUsd: monthlyNetRevenueUsd, maxCogsUsd: cogsFor(credits), sourceReference: reference, expiresAt });
     if (plan.grants.cloud) await this.grant({ accountId, kind: 'monthly_cloud', restriction: 'cloud', credits: plan.grants.cloud, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.cloud), sourceReference: `${reference}:cloud`, expiresAt });
     if (plan.grants.aiGateway) await this.grant({ accountId, kind: 'monthly_ai', restriction: 'ai_gateway', credits: plan.grants.aiGateway, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.aiGateway), sourceReference: `${reference}:ai`, expiresAt });
   }
 
+  private async grantPlan(intent: CheckoutIntent, transaction: SaspayTransaction) {
+    const plan = getPlanConfig(intent.plan_key);
+    if (!plan || (plan.key !== 'pro' && plan.key !== 'business')) throw new Error('Checkout plan is invalid.');
+    const now = new Date();
+    const annual = intent.billing_interval === 'annual';
+    const periodEnd = addUtcMonths(now, annual ? 12 : 1);
+    const monthlyExpiry = addUtcMonths(now, 1);
+    const netAmountXaf = Number(transaction.net_amount || transaction.requested_amount || intent.amount);
+    const totalNetRevenueUsd = estimateSaspayNetRevenue(netAmountXaf);
+    const monthlyNetRevenueUsd = annual ? totalNetRevenueUsd / 12 : totalNetRevenueUsd;
+    const { error } = await this.supabase.from('billing_subscriptions_v2').upsert([{
+      account_id: intent.account_id,
+      provider: 'saspay',
+      provider_subscription_id: intent.provider_checkout_id,
+      provider_customer_id: intent.customer_email || null,
+      plan_id: plan.id,
+      price_version_id: intent.price_version_id,
+      credit_tier: intent.credit_tier,
+      billing_interval: annual ? 'annual' : 'monthly',
+      status: 'active',
+      current_period_start: now.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+      last_credit_grant_at: now.toISOString(),
+      next_credit_grant_at: annual ? monthlyExpiry.toISOString() : null,
+      monthly_net_revenue_usd: monthlyNetRevenueUsd,
+      cancel_at_period_end: true,
+      updated_at: now.toISOString(),
+    }], { onConflict: 'provider_subscription_id' });
+    if (error) throw new Error(`Plan persistence failed: ${error.message}`);
+    await this.supabase.from('organizations').update({ plan: plan.key, updated_at: now.toISOString() }).eq('id', intent.account_id);
+    await this.grantMonthlyPlanCredits(intent.account_id, plan, intent.credit_tier, monthlyNetRevenueUsd, `saspay:${transaction.id}:initial`, monthlyExpiry.toISOString());
+  }
+
+  async handleWebhook(rawBody: string | Buffer, signature: string, timestamp: string, eventHeader: string, webhookSecret: string): Promise<{ processed: boolean; reason?: string }> {
+    if (!verifySaspayWebhookSignature(rawBody, signature, timestamp, webhookSecret)) throw new Error('Saspay webhook signature validation failed.');
+    const raw = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
+    const payload = JSON.parse(raw || '{}');
+    const eventType = String(payload.event || eventHeader || '').trim();
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+    if (!eventType || !data.id) throw new Error('Saspay webhook payload is invalid.');
+    const eventId = `${eventType}:${String(data.id)}`;
+    if (!(await this.claimWebhook(eventId, eventType))) return { processed: true, reason: 'Webhook already processed.' };
+    try {
+      const resolved = await this.resolveIntent(data);
+      if (!resolved) throw new Error('No Coden checkout intent matches this Saspay transaction.');
+      const { intent, transaction } = resolved;
+      if (eventType === 'transaction.success') {
+        this.assertPaidAmount(intent, transaction, data);
+        if (intent.status !== 'paid') {
+          if (intent.kind === 'topup') {
+            await this.grant({ accountId: intent.account_id, kind: 'topup', restriction: 'general', credits: Number(intent.credit_tier), netRevenueUsd: estimateSaspayNetRevenue(Number(transaction.net_amount || intent.amount)), sourceReference: `saspay:${transaction.id}`, expiresAt: addUtcMonths(new Date(), 12).toISOString() });
+          } else {
+            await this.grantPlan(intent, transaction);
+          }
+          await this.supabase.from('billing_checkout_intents').update({ status: 'paid', provider_transaction_id: transaction.id, provider_reference: transaction.reference || null, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', intent.id);
+        }
+      } else if (eventType === 'transaction.failed' || eventType === 'transaction.cancelled') {
+        await this.supabase.from('billing_checkout_intents').update({ status: eventType.endsWith('cancelled') ? 'cancelled' : 'failed', provider_transaction_id: transaction.id, updated_at: new Date().toISOString() }).eq('id', intent.id).neq('status', 'paid');
+      }
+      await this.supabase.from('provider_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('provider', 'saspay').eq('event_id', eventId);
+      return { processed: true };
+    } catch (error: any) {
+      await this.supabase.from('provider_webhook_events').update({ status: 'failed', last_error: String(error?.message || error).slice(0, 500) }).eq('provider', 'saspay').eq('event_id', eventId);
+      throw error;
+    }
+  }
+
   async grantDueAnnualCredits(limit = 100) {
-    const stripe = this.getStripeClient();
-    const now = new Date().toISOString();
+    const now = new Date();
     const { data, error } = await this.supabase.from('billing_subscriptions_v2')
-      .select('provider_subscription_id,next_credit_grant_at,monthly_net_revenue_usd')
+      .select('provider_subscription_id,account_id,plan_id,credit_tier,next_credit_grant_at,current_period_end,monthly_net_revenue_usd')
+      .eq('provider', 'saspay')
       .eq('billing_interval', 'annual')
-      .in('status', ['active', 'trialing'])
-      .lte('next_credit_grant_at', now)
+      .eq('status', 'active')
+      .lte('next_credit_grant_at', now.toISOString())
       .order('next_credit_grant_at', { ascending: true })
       .limit(Math.max(1, Math.min(500, limit)));
     if (error) throw new Error(`Annual grant listing failed: ${error.message}`);
     let granted = 0;
     for (const row of data || []) {
-      if (!row.provider_subscription_id || !row.next_credit_grant_at) continue;
-      const subscription = await stripe.subscriptions.retrieve(String(row.provider_subscription_id));
-      const accountId = String(subscription.metadata?.organization_id || '');
-      if (!accountId) continue;
-      const monthKey = String(row.next_credit_grant_at).slice(0, 10);
-      await this.syncSubscription(accountId, subscription, true, `stripe-annual:${subscription.id}:${monthKey}`, Number(row.monthly_net_revenue_usd || 0) * 12);
+      const periodEnd = new Date(String(row.current_period_end || ''));
+      if (!Number.isFinite(periodEnd.getTime()) || periodEnd <= now) continue;
+      const plan = getPlanConfig(row.plan_id);
+      if (!plan) continue;
+      const grantAt = new Date(String(row.next_credit_grant_at));
+      const nextGrant = addUtcMonths(grantAt, 1);
+      const expiresAt = nextGrant < periodEnd ? nextGrant : periodEnd;
+      const reference = `saspay-annual:${row.provider_subscription_id}:${grantAt.toISOString().slice(0, 10)}`;
+      await this.grantMonthlyPlanCredits(String(row.account_id), plan, Number(row.credit_tier || plan.credits), Number(row.monthly_net_revenue_usd || 0), reference, expiresAt.toISOString());
+      await this.supabase.from('billing_subscriptions_v2').update({ last_credit_grant_at: now.toISOString(), next_credit_grant_at: nextGrant < periodEnd ? nextGrant.toISOString() : null, updated_at: now.toISOString() }).eq('provider_subscription_id', row.provider_subscription_id);
       granted += 1;
     }
     return granted;
   }
 
-  async processDueAutoTopups(limit = 50) {
-    const stripe = this.getStripeClient();
-    const { data, error } = await this.supabase.from('auto_topup_configs')
-      .select('account_id,revision,usage_month,credits_added_this_month')
-      .eq('enabled', true)
-      .is('in_progress_key', null)
-      .limit(Math.max(1, Math.min(200, limit)));
-    if (error) throw new Error(`Auto top-up scan failed: ${error.message}`);
-    const outcomes: Array<{ accountId: string; status: 'paid' | 'skipped' | 'failed'; error?: string }> = [];
-    for (const candidate of data || []) {
-      const accountId = String(candidate.account_id || '');
-      const triggerKey = `auto:${accountId}:${Number(candidate.revision || 1)}:${String(candidate.usage_month || '').slice(0, 10)}:${Number(candidate.credits_added_this_month || 0)}`;
-      let claim: any = null;
-      try {
-        const result = await this.supabase.rpc('coden_claim_auto_topup', { p_account_id: accountId, p_trigger_key: triggerKey });
-        if (result.error) throw new Error(result.error.message);
-        claim = result.data;
-        if (!claim) { outcomes.push({ accountId, status: 'skipped' }); continue; }
-        const item = TOPUP_PRODUCTS.find(product => product.id === String(claim.price_version_id || ''));
-        if (!item || Number(claim.credits_to_add || 0) !== item.credits) throw new Error('The claimed auto top-up price is no longer valid.');
-        const { data: customer, error: customerError } = await this.supabase.from('billing_provider_customers')
-          .select('provider_customer_id').eq('account_id', accountId).eq('provider', 'stripe').maybeSingle();
-        if (customerError || !customer?.provider_customer_id) throw new Error('The Stripe customer is unavailable.');
-        const paymentIntent = await stripe.paymentIntents.create({
-          amount: Math.round(item.price * 100),
-          currency: 'usd',
-          customer: String(customer.provider_customer_id),
-          payment_method: String(claim.provider_payment_method_id),
-          confirm: true,
-          off_session: true,
-          description: `Coden auto top-up: ${item.credits} credits`,
-          metadata: { organization_id: accountId, auto_topup_key: triggerKey, topup_product_id: item.id, topup_credits: String(item.credits), price_version: BILLING_V2_VERSION },
-        }, { idempotencyKey: triggerKey });
-        if (paymentIntent.status !== 'succeeded') throw new Error(`Stripe payment is ${paymentIntent.status}.`);
-        await this.grant({ accountId, kind: 'topup', restriction: 'general', credits: item.credits, netRevenueUsd: estimateStripeNetRevenue(item.price), sourceReference: `stripe:${paymentIntent.id}`, expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString() });
-        const completed = await this.supabase.rpc('coden_complete_auto_topup', { p_account_id: accountId, p_trigger_key: triggerKey, p_credits: item.credits });
-        if (completed.error || completed.data !== true) throw new Error(completed.error?.message || 'Auto top-up completion lock was lost.');
-        outcomes.push({ accountId, status: 'paid' });
-      } catch (cause: any) {
-        const message = String(cause?.message || cause || 'Auto top-up failed').slice(0, 500);
-        if (claim) await this.supabase.rpc('coden_fail_auto_topup', { p_account_id: accountId, p_trigger_key: triggerKey, p_error: message }).catch(() => null);
-        outcomes.push({ accountId, status: 'failed', error: message });
-      }
+  async expireEndedPlans(limit = 500) {
+    const now = new Date().toISOString();
+    const { data, error } = await this.supabase.from('billing_subscriptions_v2').select('id,account_id').eq('provider', 'saspay').eq('status', 'active').lte('current_period_end', now).limit(Math.max(1, Math.min(2_000, limit)));
+    if (error) throw new Error(`Expired plan listing failed: ${error.message}`);
+    for (const row of data || []) {
+      await this.supabase.from('billing_subscriptions_v2').update({ status: 'expired', updated_at: now }).eq('id', row.id);
+      const { data: active } = await this.supabase.from('billing_subscriptions_v2').select('id').eq('account_id', row.account_id).eq('status', 'active').gt('current_period_end', now).limit(1).maybeSingle();
+      if (!active) await this.demoteToFreePlan(String(row.account_id));
     }
-    return outcomes;
+    return (data || []).length;
   }
+
+  async getAutoTopupConfig(_accountId: string): Promise<AutoTopupConfig> {
+    return { enabled: false, productId: null, creditsToAdd: 0, thresholdCredits: 0, monthlyCapCredits: 0, creditsAddedThisMonth: 0, hasPaymentMethod: false, lastTriggeredAt: null, lastError: 'Saspay uses secure manual checkout for each top-up.' };
+  }
+  async configureAutoTopup() { throw new Error('Automatic top-up is not available with Saspay. Use a secure manual checkout.'); }
+  async processDueAutoTopups() { return [] as Array<{ accountId: string; status: 'paid' | 'skipped' | 'failed'; error?: string }>; }
 
   async issueDueIncludedGrants(limit = 500) {
     const now = new Date();
@@ -486,11 +542,7 @@ export class StripeService {
       if (!accountId || !plan.dailyCredits) continue;
       await this.ensureAccount(accountId);
       const monthStart = `${monthKey}-01T00:00:00.000Z`;
-      const { data: dailyRows, error: dailyError } = await this.supabase.from('credit_grants')
-        .select('credits_issued')
-        .eq('account_id', accountId)
-        .eq('kind', 'daily_build')
-        .gte('issued_at', monthStart);
+      const { data: dailyRows, error: dailyError } = await this.supabase.from('credit_grants').select('credits_issued').eq('account_id', accountId).eq('kind', 'daily_build').gte('issued_at', monthStart);
       if (dailyError) throw new Error(`Daily grant lookup failed: ${dailyError.message}`);
       const issuedThisMonth = (dailyRows || []).reduce((sum: number, row: any) => sum + Number(row.credits_issued || 0), 0);
       const remainingCap = plan.monthlyCreditCap == null ? plan.dailyCredits : Math.max(0, plan.monthlyCreditCap - issuedThisMonth);
@@ -499,23 +551,14 @@ export class StripeService {
       let monthlyNetRevenue = 0;
       let monthlyPlanCredits = plan.credits;
       if (planKey === 'pro' || planKey === 'business') {
-        const { data: subscription } = await this.supabase.from('billing_subscriptions_v2')
-          .select('monthly_net_revenue_usd,credit_tier')
-          .eq('account_id', accountId)
-          .in('status', ['active', 'trialing'])
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: subscription } = await this.supabase.from('billing_subscriptions_v2').select('monthly_net_revenue_usd,credit_tier').eq('account_id', accountId).eq('status', 'active').gt('current_period_end', now.toISOString()).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        if (!subscription) continue;
         monthlyNetRevenue = Number(subscription?.monthly_net_revenue_usd || 0);
         monthlyPlanCredits = Number(subscription?.credit_tier || plan.credits);
       }
 
-      const entitlementTotal = planKey === 'free'
-        ? Number(plan.monthlyCreditCap || 0) + plan.grants.cloud + plan.grants.aiGateway
-        : monthlyPlanCredits + (plan.dailyCredits * 31) + plan.grants.cloud + plan.grants.aiGateway;
-      const totalCogsBudget = planKey === 'free'
-        ? FREE_ACTIVE_USER_COGS_CAP_USD
-        : monthlyNetRevenue * (1 - MINIMUM_PAID_GROSS_MARGIN);
+      const entitlementTotal = planKey === 'free' ? Number(plan.monthlyCreditCap || 0) + plan.grants.cloud + plan.grants.aiGateway : monthlyPlanCredits + (plan.dailyCredits * 31) + plan.grants.cloud + plan.grants.aiGateway;
+      const totalCogsBudget = planKey === 'free' ? FREE_ACTIVE_USER_COGS_CAP_USD : monthlyNetRevenue * (1 - MINIMUM_PAID_GROSS_MARGIN);
       const cogsFor = (credits: number) => entitlementTotal > 0 ? totalCogsBudget * credits / entitlementTotal : 0;
 
       if (dailyCredits > 0) {
@@ -537,7 +580,6 @@ export class StripeService {
   }
 
   private async demoteToFreePlan(accountId: string) {
-    await this.supabase.from('billing_subscriptions_v2').update({ status: 'canceled', updated_at: new Date().toISOString() }).eq('account_id', accountId);
     await this.supabase.from('organizations').update({ plan: 'free', updated_at: new Date().toISOString() }).eq('id', accountId);
     await this.supabase.from('credit_grants').update({ frozen_at: new Date().toISOString() }).eq('account_id', accountId).in('kind', ['monthly_plan', 'rollover']);
   }

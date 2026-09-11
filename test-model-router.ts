@@ -95,6 +95,30 @@ assert.equal(
   'Manual selection must respect Enterprise-only Fable access.',
 );
 
+await assert.rejects(
+  () => router.selectModel({
+    plan: 'enterprise',
+    mode: 'Custom',
+    userCredits: 120,
+    taskComplexity: 'medium',
+    requiredCapabilities: { vision: true },
+  }, 'moonshotai/kimi-k3'),
+  (error: any) => error?.diagnosticCode === 'MODEL_CAPABILITY_UNAVAILABLE',
+  'A manual choice cannot bypass a capability the requested task actually needs.',
+);
+
+await assert.rejects(
+  () => router.selectModel({
+    plan: 'enterprise',
+    mode: 'Custom',
+    userCredits: 120,
+    taskComplexity: 'medium',
+    interactive: true,
+  }, 'anthropic/claude-fable-5.1:batch'),
+  (error: any) => error?.diagnosticCode === 'MODEL_DEFERRED_UNAVAILABLE',
+  'The interactive Builder must not route a user to a deferred batch model.',
+);
+
 assert.equal(
   await router.selectModel({
     plan: 'scale',

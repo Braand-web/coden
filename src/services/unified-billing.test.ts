@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BILLING_PLANS, CREDIT_TIERS, PUBLIC_PRICES, TOPUP_PRODUCTS_V2, normalizeBillingPlan, priceFor, topupPriceFor } from '../config/billing-v2';
 import { calculateCreditCharge, completeCostUsd, openRouterTokenCost } from './unified-billing';
-import { CLOUD_TOPUP_PRODUCTS, estimateStripeNetRevenue, getPublicPlans, normalizePlanKey } from './billing-service';
+import { CLOUD_TOPUP_PRODUCTS, estimateSaspayNetRevenue, getPublicPlans, normalizePlanKey, verifySaspayWebhookSignature } from './billing-service';
+import { createHmac } from 'node:crypto';
 
 describe('Coden V4 unified billing', () => {
   it('publishes Free, Pro and Business with Lovable-style credit tiers', () => {
@@ -40,8 +41,18 @@ describe('Coden V4 unified billing', () => {
     expect(() => completeCostUsd({ providerCostUsd: -1 })).toThrow();
   });
 
-  it('reserves Stripe fees before calculating the COGS capacity of paid credits', () => {
-    expect(estimateStripeNetRevenue(25)).toBe(23.975);
-    expect(estimateStripeNetRevenue(31.25)).toBe(30.04375);
+  it('converts the Saspay net settlement to the internal COGS currency', () => {
+    expect(estimateSaspayNetRevenue(15_000)).toBe(25);
+    expect(estimateSaspayNetRevenue(18_750)).toBe(31.25);
+  });
+
+  it('accepts only fresh Saspay webhook signatures', () => {
+    const body = JSON.stringify({ event: 'transaction.success', data: { id: 'tx_1' } });
+    const secret = 'whsec_test_value';
+    const now = Date.UTC(2026, 8, 10, 12, 0, 0);
+    const timestamp = String(Math.floor(now / 1000));
+    const signature = createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+    expect(verifySaspayWebhookSignature(body, signature, timestamp, secret, now)).toBe(true);
+    expect(verifySaspayWebhookSignature(body, signature, String(Number(timestamp) - 301), secret, now)).toBe(false);
   });
 });

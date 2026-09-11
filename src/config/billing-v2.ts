@@ -2,12 +2,14 @@ export type BillingPlanKey = 'free' | 'pro' | 'business' | 'enterprise';
 export type BillingInterval = 'monthly' | 'annual';
 export type UsageRestriction = 'build' | 'cloud' | 'ai_gateway' | 'general' | 'email';
 
-export const BILLING_V2_VERSION = '2026-09-06.v1';
+export const BILLING_V2_VERSION = '2026-09-10.saspay-v1';
 export const TARGET_GROSS_MARGIN = 0.80;
 export const MINIMUM_PAID_GROSS_MARGIN = 0.55;
 export const FREE_ACTIVE_USER_COGS_CAP_USD = 1;
 export const ANNUAL_DISCOUNT = 0.20;
 export const TOPUP_PREMIUM = 0.25;
+export const BILLING_SETTLEMENT_CURRENCY = 'XAF' as const;
+export const BILLING_XAF_PER_USD = 600;
 export const CREDIT_TIERS = [100, 200, 400, 800, 1_200, 2_000, 3_000, 4_000, 5_000, 7_500, 10_000] as const;
 export const TOPUP_TIERS = [50, 100, 150, 200, 250, 300, 400, 500, 1_000, 2_000, 3_000, 5_000, 10_000] as const;
 
@@ -40,7 +42,7 @@ export const BILLING_PLANS: Readonly<Record<BillingPlanKey, BillingPlan>> = {
     id: 'coden_pro_v2', key: 'pro', name: 'Pro', public: true,
     baseCredits: 100, baseMonthlyUsd: 25, tiers: CREDIT_TIERS,
     grants: { dailyBuildCredits: 5, dailyBuildMonthlyCap: null, monthlyCloudCredits: 20, monthlyAiCredits: 4, monthlyEmailCount: 1_000 },
-    capabilities: ['Code editing', 'Custom domains', 'Top-ups', 'Auto top-up', 'Design systems'],
+    capabilities: ['Code editing', 'Custom domains', 'Credit top-ups', 'Design systems', 'Version history'],
   },
   business: {
     id: 'coden_business_v2', key: 'business', name: 'Business', public: true,
@@ -63,7 +65,9 @@ export type PublicPrice = {
   interval: BillingInterval;
   amountUsd: number;
   monthlyEquivalentUsd: number;
-  stripePriceEnv: string;
+  amount: number;
+  monthlyEquivalent: number;
+  currency: typeof BILLING_SETTLEMENT_CURRENCY;
 };
 
 export function priceFor(plan: 'pro' | 'business', credits: number, interval: BillingInterval): PublicPrice {
@@ -78,7 +82,9 @@ export function priceFor(plan: 'pro' | 'business', credits: number, interval: Bi
     interval,
     amountUsd: Number(amountUsd.toFixed(2)),
     monthlyEquivalentUsd: Number((interval === 'annual' ? amountUsd / 12 : amountUsd).toFixed(2)),
-    stripePriceEnv: `STRIPE_PRICE_${plan.toUpperCase()}_${credits}_${interval.toUpperCase()}`,
+    amount: Math.round(amountUsd * BILLING_XAF_PER_USD),
+    monthlyEquivalent: Math.round((interval === 'annual' ? amountUsd / 12 : amountUsd) * BILLING_XAF_PER_USD),
+    currency: BILLING_SETTLEMENT_CURRENCY,
   };
 }
 
@@ -91,8 +97,9 @@ export function topupPriceFor(plan: 'pro' | 'business', credits: number) {
     plan,
     credits,
     amountUsd,
+    amount: Math.round(amountUsd * BILLING_XAF_PER_USD),
+    currency: BILLING_SETTLEMENT_CURRENCY,
     expiresMonths: 12,
-    stripePriceEnv: `STRIPE_PRICE_TOPUP_${plan.toUpperCase()}_${credits}`,
   } as const;
 }
 
@@ -101,6 +108,14 @@ export const PUBLIC_PRICES = (['pro', 'business'] as const).flatMap(plan =>
 );
 
 export const TOPUP_PRODUCTS_V2 = (['pro', 'business'] as const).flatMap(plan => TOPUP_TIERS.map(credits => topupPriceFor(plan, credits)));
+
+export const CREDIT_USAGE_EXAMPLES = [
+  { id: 'plan', label: 'Préparer un plan', credits: 1 },
+  { id: 'small_edit', label: 'Modifier un style ciblé', credits: 0.5 },
+  { id: 'component_edit', label: 'Modifier un composant', credits: 0.9 },
+  { id: 'feature', label: 'Ajouter une fonctionnalité', credits: 1.2 },
+  { id: 'full_page', label: 'Créer une page complète', credits: 1.7 },
+] as const;
 
 export function normalizeBillingPlan(value: unknown): BillingPlanKey | null {
   const key = String(value || '').trim().toLowerCase();
@@ -112,13 +127,15 @@ export function normalizeBillingPlan(value: unknown): BillingPlanKey | null {
 export function publicBillingCatalog() {
   return {
     version: BILLING_V2_VERSION,
-    currency: 'usd',
+    currency: BILLING_SETTLEMENT_CURRENCY.toLowerCase(),
+    provider: 'saspay',
     annualDiscountPercent: ANNUAL_DISCOUNT * 100,
     topupPremiumPercent: TOPUP_PREMIUM * 100,
     creditTiers: [...CREDIT_TIERS],
     topupTiers: [...TOPUP_TIERS],
     plans: [BILLING_PLANS.free, BILLING_PLANS.pro, BILLING_PLANS.business],
-    prices: PUBLIC_PRICES.map(({ stripePriceEnv: _private, ...price }) => price),
-    topups: TOPUP_PRODUCTS_V2.map(({ stripePriceEnv: _private, ...price }) => price),
+    prices: PUBLIC_PRICES.map(({ amountUsd: _internalAmount, monthlyEquivalentUsd: _internalMonthly, ...price }) => price),
+    topups: TOPUP_PRODUCTS_V2.map(({ amountUsd: _internalAmount, ...price }) => price),
+    usageExamples: CREDIT_USAGE_EXAMPLES,
   };
 }

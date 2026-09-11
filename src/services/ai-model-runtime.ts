@@ -525,8 +525,8 @@ export function publicRuntimeErrorMessage(diagnosticCode: string, locale: 'fr' |
   }
   if (/TIMEOUT|UNAVAILABLE|CIRCUIT/i.test(diagnosticCode)) {
     return fr
-      ? 'Ce modèle est temporairement indisponible. Aucun changement de modèle ne sera fait sans votre accord.'
-      : 'This model is temporarily unavailable. No model will be switched without your agreement.';
+      ? 'Ce modèle ne répond pas pour le moment. Coden a déjà réessayé sans modifier votre choix ; votre demande est conservée et peut être relancée.'
+      : 'This model is not responding right now. Coden already retried without changing your selection; your request is kept and can be retried.';
   }
   if (/BAD_REQUEST|UNSUPPORTED|CAPABILITY|MODALITY/i.test(diagnosticCode)) {
     return fr

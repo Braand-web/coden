@@ -3,7 +3,6 @@ import express from 'express';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
-import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
@@ -16,7 +15,7 @@ import { runParallelAgents, mergeAgentOutputs, selectAgentsForContext, type Para
 import { initJobQueue, startJobWorker, enqueueJob, getJobStatus, cancelJob, shouldUseJobQueue, registerJobHandler } from './src/services/async-job-queue.ts';
 import fs from 'fs';
 import path from 'path';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import WebSocket from 'ws';
@@ -73,7 +72,7 @@ import {
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
 import { CODEN_MONETIZATION_ENABLED, CODEN_PUBLIC_ACCESS, CODEN_UNMETERED_USAGE_BUDGET } from './src/config/product-access.ts';
-import { selectModelForAgent } from './src/services/model-selection.ts';
+import { selectModelForAgent, type TaskKind } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
   deriveProjectName,
@@ -103,7 +102,7 @@ import {
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
 import { DomainService, createCloudflareDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
 import {
-  StripeService,
+  SaspayService,
   SAAS_PLANS,
   TOPUP_PRODUCTS,
   PLAN_ECONOMICS_GUARDRAILS,
@@ -333,9 +332,9 @@ const COUNTRY_NAMES: Record<string, string> = {
   ZA: 'South Africa',
 };
 
-// Stripe needs the exact bytes used for its signature. Register this parser
+// Saspay signs the timestamp plus the exact request bytes. Register this parser
 // before the global JSON parser; the route itself still verifies the signature.
-app.use('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '2mb' }));
+app.use('/api/saspay/webhook', express.raw({ type: 'application/json', limit: '2mb' }));
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
@@ -4992,6 +4991,8 @@ function createProviderRuntimeOptions(input: {
   files?: GeneratedFile[];
   mode?: 'text' | 'generation';
   stream?: boolean;
+  /** Only enable tool declarations when this caller owns matching handlers. */
+  allowTools?: boolean;
   timeoutMs?: number;
   maxTokens?: number;
   hasVisionInput?: boolean;
@@ -5009,7 +5010,7 @@ function createProviderRuntimeOptions(input: {
     modelId: input.model,
     task,
     stream: input.stream,
-    allowTools: input.mode !== 'generation',
+    allowTools: input.allowTools ?? input.mode !== 'generation',
     timeoutMs: input.timeoutMs,
     maxTokens: input.maxTokens, // undefined = use profile default (now properly sized)
     hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
@@ -5024,7 +5025,7 @@ function createProviderRuntimeOptions(input: {
       modelId,
       task,
       stream: input.stream,
-      allowTools: input.mode !== 'generation',
+      allowTools: input.allowTools ?? input.mode !== 'generation',
       timeoutMs: input.timeoutMs,
       maxTokens: input.maxTokens,
       hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
@@ -5032,6 +5033,28 @@ function createProviderRuntimeOptions(input: {
       preferStructuredOutput: input.mode === 'generation' ? true : undefined,
     })),
   };
+}
+
+function taskKindForAgentDecision(decision: IntentDecision): TaskKind {
+  switch (decision.intent) {
+    case 'conversation':
+    case 'clarification_required':
+      return 'conversation';
+    case 'plan':
+      return 'planning';
+    case 'build':
+      return 'code_generation';
+    case 'edit':
+      return 'code_edit';
+    case 'debug_fix':
+      return 'debug';
+    case 'verify':
+      return 'review';
+    case 'deploy_assist':
+      return 'architecture';
+    default:
+      return 'summary';
+  }
 }
 
 async function resolveAgentProviderModel(input: {
@@ -5043,43 +5066,57 @@ async function resolveAgentProviderModel(input: {
   userCredits?: number;
   plan?: string;
 }): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number }> {
-  const accessPlan = CODEN_MONETIZATION_ENABLED ? (input.plan || 'free') : 'enterprise';
-  const accessBudget = CODEN_MONETIZATION_ENABLED
-    ? (Number.isFinite(Number(input.userCredits)) ? Number(input.userCredits) : FALLBACK_WALLET_CREDITS)
-    : CODEN_UNMETERED_USAGE_BUDGET;
-  if (input.modelId && input.modelId !== 'auto') {
-    const model = normalizeProviderModelForBackend(input.modelId);
-    validateAllowedModel(model);
-    return {
-      model,
-      autoRouted: false,
-      complexity: inferAgentTaskComplexity(input.prompt, input.decision, input.files || []),
-      mode: 'Custom',
-      plan: accessPlan as RoutingContext['plan'],
-      credits: accessBudget,
-    };
-  }
-
-  const plan = (CODEN_MONETIZATION_ENABLED
+  // Manual choices are still subject to the exact same access, credit and
+  // capability contract as Auto. The old early return skipped this policy and
+  // allowed a hidden mismatch between what Coden promised and what the model
+  // API could perform.
+  const accessPlan = (CODEN_MONETIZATION_ENABLED
     ? (input.plan || await getOrganizationPlan(input.project.organization_id).catch(() => 'free'))
     : 'enterprise') as RoutingContext['plan'];
-  const credits = CODEN_MONETIZATION_ENABLED
+  const accessBudget = CODEN_MONETIZATION_ENABLED
     ? (Number.isFinite(Number(input.userCredits))
       ? Number(input.userCredits)
       : await getWalletWithFallback(getOptionalDbHelpers('model_routing'), input.project.organization_id))
     : CODEN_UNMETERED_USAGE_BUDGET;
   const complexity = inferAgentTaskComplexity(input.prompt, input.decision, input.files || []);
+  const task = taskKindForAgentDecision(input.decision);
+  const requiredCapabilities = requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || []);
+
+  if (input.modelId && input.modelId !== 'auto') {
+    const model = await modelRouter.selectModel({
+      plan: accessPlan,
+      mode: 'Custom',
+      userCredits: accessBudget,
+      task,
+      taskComplexity: complexity,
+      interactive: true,
+      requiredCapabilities,
+    }, normalizeProviderModelForBackend(input.modelId));
+    return {
+      model,
+      autoRouted: false,
+      complexity,
+      mode: 'Custom',
+      plan: accessPlan,
+      credits: accessBudget,
+    };
+  }
+
   const mode = routingModeForPolicy(input.decision.selectedModelPolicy);
   const model = await modelRouter.selectModel({
-    plan,
+    plan: accessPlan,
     mode,
-    userCredits: credits,
+    userCredits: accessBudget,
+    task,
     taskComplexity: complexity,
+    // Every Builder and dashboard turn has a person waiting on it. Never
+    // route it to a deferred tier even when that tier is inexpensive.
+    interactive: true,
     preferredModels: studioPreferredModelsForPrompt(input.prompt),
-    requiredCapabilities: requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || []),
+    requiredCapabilities,
   });
   validateAllowedModel(model);
-  return { model, autoRouted: true, complexity, mode, plan, credits };
+  return { model, autoRouted: true, complexity, mode, plan: accessPlan, credits: accessBudget };
 }
 
 function buildAgentTextMessages(input: {
@@ -5183,15 +5220,21 @@ async function createAgentTextResponse(input: {
     plan: input.plan,
   })).model;
   validateAllowedModel(selectedModel);
-  assertAgentModelCapabilities(selectedModel, { structuredOutput: true, toolCalling: decision.intent !== 'conversation' });
   const runtimeOptions = createProviderRuntimeOptions({
     model: selectedModel,
     prompt,
     decision,
     files,
     stream: false,
+    // This path returns a user-visible answer; it does not run a tool loop.
+    // Never tell a model it can call tools unless a matching executor exists.
+    allowTools: false,
     timeoutMs: decision.intent === 'conversation' ? 12_000 : decision.intent === 'plan' ? 30_000 : 45_000,
     hasVisionInput: Boolean(input.visionInputs?.length),
+  });
+  assertAgentModelCapabilities(selectedModel, {
+    structuredOutput: runtimeOptions.runtime.responseFormat.type !== 'text',
+    toolCalling: runtimeOptions.runtime.tools.length > 0,
   });
 
   try {
@@ -5199,7 +5242,10 @@ async function createAgentTextResponse(input: {
       selectedModel,
       buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer }),
       {
-        maxAttempts: decision.intent === 'conversation' ? 1 : 2,
+        // A retry before anything reaches the browser is safe for every text
+        // response, including a normal chat reply. It prevents a transient 5xx
+        // from surfacing as an avoidable "model unavailable" message.
+        maxAttempts: 2,
         timeoutMs: runtimeOptions.runtime.timeoutMs,
         runtimeConfig: runtimeOptions.providerConfig,
         runtimeConfigForModel: runtimeOptions.runtimeConfigForModel,
@@ -5231,7 +5277,8 @@ async function createAgentTextResponse(input: {
 function detectExternalApiRequirements(prompt: string): ExternalApiRequirement[] {
   const lower = prompt.toLowerCase();
   const services: Array<[string, string, string, string[]]> = [
-    ['Stripe', 'STRIPE_SECRET_KEY', 'Payments and billing operations', ['stripe', 'payment', 'checkout', 'abonnement']],
+    ['Saspay', 'SASPAY_API_KEY', 'Coden payments and credit checkout operations', ['payment', 'paiement', 'checkout', 'abonnement']],
+    ['Stripe', 'STRIPE_SECRET_KEY', 'Explicit Stripe integration requested by the generated app', ['stripe']],
     ['Resend', 'RESEND_API_KEY', 'Transactional emails', ['resend', 'sendgrid', 'email', 'mail']],
     ['Google Maps', 'GOOGLE_MAPS_API_KEY', 'Maps, places and geocoding', ['google maps', 'map', 'maps', 'géolocalisation', 'geolocation']],
     ['Twilio', 'TWILIO_AUTH_TOKEN', 'SMS and WhatsApp messaging', ['twilio', 'whatsapp', 'sms']],
@@ -6517,14 +6564,15 @@ async function generateFilesWithAi(input: {
         hasDatabase: /database|supabase|sql|schema/i.test(input.prompt),
         hasPayments: /stripe|payment|billing|checkout/i.test(input.prompt),
         language: input.deepReasoningContract?.language || 'auto',
-        // ✅ Dynamic model resolution — each agent gets the best model for its tier
+        // Supplementary agents inherit the model already authorized for this
+        // run. They must not quietly spend another plan tier, bypass the
+        // user's manual selection, or turn a healthy primary call into an
+        // unrelated provider failure.
         availableModels: {
-          fast:      'openai/gpt-5.6-luna-pro',
-          balanced:  'moonshotai/kimi-k3',
-          reasoning: selectedModel, // use the already-resolved primary model for reasoning tasks
-          design:    /gemini-3\.7|sonnet-5|opus-5|gpt-5\.6-sol/i.test(selectedModel)
-                       ? selectedModel
-                       : 'anthropic/claude-sonnet-5',
+          fast: selectedModel,
+          balanced: selectedModel,
+          reasoning: selectedModel,
+          design: selectedModel,
         },
       };
       const agentRoles = selectAgentsForContext(agentCtx);
@@ -6540,6 +6588,10 @@ async function generateFilesWithAi(input: {
             files: input.existingFiles,
             mode: 'text',
             stream: false,
+            // These agents provide bounded analysis only. The actual build
+            // loop owns the sandbox tool handlers, so do not expose a second
+            // set of tools that nobody here can execute.
+            allowTools: false,
             timeoutMs: Math.min(15_000, input.skillBudget?.maxDurationMs || 15_000),
             maxTokens: 4_000,
           });
@@ -9477,7 +9529,7 @@ async function ensureUnifiedIncludedGrants(accountId: string) {
     if (error) throw new Error(`Unified grant failed: ${error.message}`);
   };
 
-  // Paid monthly grants come from the Stripe webhook. The free entitlement is
+  // Paid monthly grants come from the Saspay webhook. The free entitlement is
   // safe to issue on demand so a first build never races the hourly scheduler.
   if (planKey === 'free') {
     const dailyCredits = Math.min(Number(plan.grants.dailyBuildCredits || 0), Math.max(0, Number(monthlyCap || 0) - dailyIssued));
@@ -9691,7 +9743,7 @@ app.post('/api/billing/checkout/subscription', async (req, res) => {
   const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
-    const billing = new StripeService(getSupabase());
+    const billing = new SaspayService(getSupabase());
     const redirectUrl = await billing.createSubscriptionCheckout(
       orgId,
       auth.email,
@@ -9716,7 +9768,7 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
   const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
 
   try {
-    const billing = new StripeService(getSupabase());
+    const billing = new SaspayService(getSupabase());
     const redirectUrl = await billing.createTopupCheckout(
       orgId,
       auth.email,
@@ -9733,36 +9785,26 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
 
 // POST /billing/portal
 app.post('/api/billing/portal', async (req, res) => {
-  const orgId = getUserOrgId(req);
-  const client = requireSupabase('Billing portal');
-  
-  if (process.env.STRIPE_SECRET_KEY) {
-    try {
-      const { data } = await client.from('billing_provider_customers').select('provider_customer_id').eq('account_id', orgId).eq('provider', 'stripe').single();
-      if (data?.provider_customer_id) {
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-02-18' as any });
-        const portalSession = await stripe.billingPortal.sessions.create({
-          customer: data.provider_customer_id,
-          return_url: `${req.protocol}://${req.get('host')}/settings`
-        });
-        return res.json({ success: true, url: portalSession.url });
-      }
-    } catch (e: any) {
-      return res.status(503).json({ success: false, error: `Billing portal setup failed: ${e.message}` });
-    }
-  }
-  
-  res.status(503).json({ success: false, error: 'Stripe is not configured. Add STRIPE_SECRET_KEY on Railway.' });
+  getUserOrgId(req);
+  const returnUrl = `${req.protocol}://${req.get('host')}/dashboard.html?settings=billing`;
+  res.json({
+    success: true,
+    url: returnUrl,
+    provider: 'saspay',
+    message: 'Saspay purchases and renewals are managed securely from Coden.',
+  });
 });
 
-// POST /stripe/webhook
-app.post('/api/stripe/webhook', async (req: any, res: any) => {
-  const sig = req.headers['stripe-signature'] as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+// POST /saspay/webhook
+app.post('/api/saspay/webhook', async (req: any, res: any) => {
+  const signature = String(req.headers['x-webhook-signature'] || '');
+  const timestamp = String(req.headers['x-webhook-timestamp'] || '');
+  const eventHeader = String(req.headers['x-webhook-event'] || '');
+  const webhookSecret = process.env.SASPAY_WEBHOOK_SECRET || '';
 
   try {
-    const stripeService = new StripeService(getSupabase());
-    const result = await stripeService.handleWebhook(req.body, sig, webhookSecret);
+    const saspayService = new SaspayService(getSupabase());
+    const result = await saspayService.handleWebhook(req.body, signature, timestamp, eventHeader, webhookSecret);
     res.json({ received: true, ...result });
   } catch (err: any) {
     res.status(400).send(`Webhook Error: ${err.message}`);
@@ -10118,7 +10160,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         user_id: userId,
         role: 'user',
         content: prompt,
-        intent: 'conversation',
+        intent: decision.intent,
         requested_mode: requestedMode,
       }).catch(() => null);
     }
@@ -10145,7 +10187,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         user_id: userId,
         role: 'assistant',
         content,
-        intent: 'conversation',
+        intent: decision.intent,
         requested_mode: requestedMode,
       }).catch(() => null);
     }
@@ -10363,7 +10405,7 @@ function buildAdminHealth() {
   return [
     { id: 'supabase', label: 'Supabase', status: supabaseDiagnostics.project_refs_match ? 'ok' : 'warning', detail: supabaseDiagnostics.project_refs_match ? 'Frontend/backend refs match' : 'Check Supabase env refs' },
     { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'API key configured' : 'Missing provider key' },
-    { id: 'stripe', label: 'Stripe', status: process.env.STRIPE_SECRET_KEY ? 'ok' : 'warning', detail: process.env.STRIPE_SECRET_KEY ? 'Billing key configured' : 'Billing key missing' },
+    { id: 'saspay', label: 'Saspay', status: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'ok' : 'warning', detail: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'Billing key and webhook configured' : 'Billing configuration incomplete' },
     { id: 'admin', label: 'Admin guard', status: 'ok', detail: `${getPlatformAdminEmails().size} admin email${getPlatformAdminEmails().size > 1 ? 's' : ''} configured` },
   ];
 }
@@ -15603,7 +15645,7 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
 app.get('/api/billing/auto-topup', async (req, res) => {
   const orgId = getUserOrgId(req);
   try {
-    const config = await new StripeService(getSupabase()).getAutoTopupConfig(orgId);
+    const config = await new SaspayService(getSupabase()).getAutoTopupConfig(orgId);
     res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
   } catch (error: any) {
     res.status(503).json({ success: false, error: error.message });
@@ -15611,18 +15653,12 @@ app.get('/api/billing/auto-topup', async (req, res) => {
 });
 
 app.put('/api/billing/auto-topup', async (req, res) => {
-  const orgId = getUserOrgId(req);
-  try {
-    const config = await new StripeService(getSupabase()).configureAutoTopup(orgId, {
-      enabled: req.body?.enabled === true,
-      productId: String(req.body?.productId || ''),
-      thresholdCredits: Number(req.body?.thresholdCredits || 0),
-      monthlyCapCredits: Number(req.body?.monthlyCapCredits || 0),
-    });
-    res.json({ success: true, billing_version: BILLING_V2_VERSION, config });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
-  }
+  getUserOrgId(req);
+  res.status(409).json({
+    success: false,
+    billing_version: BILLING_V2_VERSION,
+    error: 'La recharge automatique n’est pas disponible avec Saspay. Utilisez un checkout manuel sécurisé.',
+  });
 });
 
 app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, res: any) => {
@@ -16060,10 +16096,10 @@ const httpServer = app.listen(port, () => {
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');
     if (CODEN_MONETIZATION_ENABLED) {
-      const stripeBilling = new StripeService(supabaseClient);
+      const saspayBilling = new SaspayService(supabaseClient);
       const issueIncludedGrants = async () => {
         try {
-          const issued = await stripeBilling.issueDueIncludedGrants();
+          const issued = await saspayBilling.issueDueIncludedGrants();
           if (issued > 0) console.log('[coden:billing_included_grants]', { issued });
         } catch (error: any) {
           console.warn('[coden:billing_included_grants_failed]', {
@@ -16074,10 +16110,10 @@ const httpServer = app.listen(port, () => {
       void issueIncludedGrants();
       const includedGrantTimer = setInterval(issueIncludedGrants, 60 * 60_000);
       includedGrantTimer.unref?.();
-      if (process.env.STRIPE_SECRET_KEY) {
+      if (process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET) {
         const grantDueAnnualCredits = async () => {
           try {
-            const granted = await stripeBilling.grantDueAnnualCredits();
+            const granted = await saspayBilling.grantDueAnnualCredits();
             if (granted > 0) console.log('[coden:billing_annual_grants]', { granted });
           } catch (error: any) {
             console.warn('[coden:billing_annual_grants_failed]', {
@@ -16088,21 +16124,19 @@ const httpServer = app.listen(port, () => {
         void grantDueAnnualCredits();
         const annualGrantTimer = setInterval(grantDueAnnualCredits, 15 * 60_000);
         annualGrantTimer.unref?.();
-        const processAutoTopups = async () => {
+        const expireEndedPlans = async () => {
           try {
-            const outcomes = await stripeBilling.processDueAutoTopups();
-            const paid = outcomes.filter(item => item.status === 'paid').length;
-            const failed = outcomes.filter(item => item.status === 'failed').length;
-            if (paid || failed) console.log('[coden:billing_auto_topups]', { paid, failed });
+            const expired = await saspayBilling.expireEndedPlans();
+            if (expired > 0) console.log('[coden:billing_plans_expired]', { expired });
           } catch (error: any) {
-            console.warn('[coden:billing_auto_topups_failed]', {
+            console.warn('[coden:billing_plan_expiry_failed]', {
               message: redactSecrets(error?.message || String(error), '[redacted]'),
             });
           }
         };
-        void processAutoTopups();
-        const autoTopupTimer = setInterval(processAutoTopups, 60_000);
-        autoTopupTimer.unref?.();
+        void expireEndedPlans();
+        const planExpiryTimer = setInterval(expireEndedPlans, 15 * 60_000);
+        planExpiryTimer.unref?.();
       }
     }
     if (CODEN_SKILL_FLAGS.scheduledRuns) {

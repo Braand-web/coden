@@ -80,4 +80,24 @@ describe('agent conversation UI', () => {
     expect(html).toContain('<button');
     expect(html).toContain('Continuer');
   });
+
+  it('renders a structured plan as a readable review card', () => {
+    const block = normalizeConversationBlock({
+      type: 'plan',
+      title: 'Plan de conception',
+      summary: 'Une application de tâches sera créée sans modifier le projet avant validation.',
+      sections: [{
+        id: 'features',
+        label: 'Fonctionnalités prévues',
+        items: ['Ajout rapide de tâches', 'Filtrage par statut'],
+      }],
+    });
+    const html = renderToStaticMarkup(React.createElement(ConversationDecision, {
+      block: block!,
+      actions: [{ id: 'build', label: 'Construire ce plan', onClick: () => undefined }],
+    }));
+    expect(html).toContain('coden-plan-card');
+    expect(html).toContain('Fonctionnalités prévues');
+    expect(html).toContain('Construire ce plan');
+  });
 });
