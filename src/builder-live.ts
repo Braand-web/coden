@@ -8006,19 +8006,41 @@ function bindGlobalKeyboardShortcuts() {
   });
 }
 
-function init() {
-initCodenMotion();
-initCodenNavigationTransitions();
+/*
+ * The interface is built before the session is known, because it does not
+ * depend on it.
+ *
+ * Everything below used to run in one `init()` behind `coden:auth-ready` —
+ * and that event waits on `getVerifiedSession({ allowRefresh: true })`, a
+ * network round-trip to Supabase. So for the whole of that round-trip the
+ * composer sat in raw HTML: the mode button had no background (`setChatMode`
+ * paints it), the toolbar was unbuilt, the textarea unsized. Then the session
+ * resolved and every one of them changed shape at once.
+ *
+ * That is the "buttons change shape before settling" the user reports, and it
+ * is not a rendering problem — it is a dependency that was never real. Of all
+ * the calls here, exactly one touches the network (`ensureModelSelector`).
+ * The rest read the DOM and localStorage, and most already guard against
+ * being run twice.
+ *
+ * So the shell is built as soon as the DOM exists, and only the data waits.
+ */
+let shellReady = false;
+
+function initShell() {
+  if (shellReady) return;
+  shellReady = true;
+  initCodenMotion();
+  initCodenNavigationTransitions();
   bindGlobalKeyboardShortcuts();
-  void ensureSettingsPanelLazy();
   ensureConversationApi();
   bindSharedModelSelectionEvents();
+  // The stored mode and model come from localStorage, which is readable
+  // immediately: the composer can be correct on its first paint rather than
+  // corrected after one.
   applySelectedModel(readStoredSelectedModel());
-  normalizeAiChatInputs();
   ensureToolbar();
-  void ensureModelSelector();
   ensurePlanBuildControls();
-  normalizeAiChatInputs();
   ensureDatabaseView();
   ensureResizableSidebar();
   bindProjectMenu();
@@ -8036,14 +8058,31 @@ initCodenNavigationTransitions();
     },
     onNotice: (message, kind) => appendMessage(kind === 'error' ? 'system' : 'system', message),
   });
-  normalizeAiChatInputs();
   bindChat();
   hydrateDashboardPrompt();
+  // Sizing the composer is the last thing the shell does, so it measures a
+  // toolbar that is already built.
+  normalizeAiChatInputs();
+}
+
+let dataReady = false;
+
+function init() {
+  // A page that somehow reaches auth before DOMContentLoaded still gets its
+  // shell; `initShell` is idempotent.
+  initShell();
+  if (dataReady) return;
+  dataReady = true;
+  void ensureSettingsPanelLazy();
+  void ensureModelSelector();
   void loadProject().then(() => {
     applyInitialBuilderLayout();
     maybeStartInitialGeneration();
   });
 }
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initShell, { once: true });
+else initShell();
 
 window.addEventListener('coden:auth-ready', init);
 if (document.documentElement.dataset.authReady === 'true') init();

@@ -45,7 +45,9 @@
       document.documentElement.setAttribute('data-theme', theme);
     })();
   </script>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" crossorigin="anonymous"/>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
   <script type="module" src="/src/auth-guard.ts"></script>
   
   <style>
@@ -371,6 +373,17 @@
       min-width: 0;
       display: grid;
       gap: 2px;
+    }
+
+    /* No scrollbar in the composer.
+       The textarea caps at 200px and still scrolls past it; what goes away is
+       the bar, which on WebKit is drawn inside the padding and made the text
+       jump sideways the moment a fourth line appeared. `scrollbar-width` and
+       `-ms-overflow-style` sit on the element itself; this is the WebKit half. */
+    .chat-input-textarea::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
     }
 
     .project-menu-kicker {
@@ -4732,7 +4745,7 @@
               <span id="coden-workshop-context-label">Coden Design</span>
               <span class="coden-workshop-beta">Beta</span>
             </div>
-            <textarea id="chat-textarea-box" class="chat-input-textarea" placeholder="Demandez à Coden…" style="width: 100%; background: transparent; border: none; outline: none; padding: 12px 14px 0; font-family: 'Instrument Sans', system-ui, sans-serif; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--text); caret-color: var(--accent); resize: none; min-height: 48px; max-height: 200px; display: block;"></textarea>
+            <textarea id="chat-textarea-box" class="chat-input-textarea" placeholder="Demandez à Coden…" style="width: 100%; background: transparent; border: none; outline: none; padding: 12px 14px 0; font-family: 'Instrument Sans', system-ui, sans-serif; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--text); caret-color: var(--text); resize: none; min-height: 48px; max-height: 200px; display: block; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
             
             <div class="input-actions" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px 12px; background: transparent;">
                 <div class="actions-left" style="display: flex; gap: 6px;">
