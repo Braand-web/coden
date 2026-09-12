@@ -2255,11 +2255,42 @@ async function resolveStableProjectSlug(
   return uniqueSlug(nextName, ownerId, project.id);
 }
 
+/**
+ * Files that are part of a project but never part of what it renders.
+ *
+ * A lockfile is not a threat. It is a normal, expected artifact — `npm
+ * install` writes one into every sandbox, so `readAllFiles` snapshots it and
+ * it lands in `project_files` for every generated project that has ever
+ * worked.
+ *
+ * It used to sit in the same list as `..`, `.env` and `.git/`, and that
+ * conflation destroyed every preview in production. `runPreviewPipeline`
+ * treats an unsafe path as a security error and replaces the whole preview
+ * with an error page, so each generated app rendered "Preview indisponible —
+ * Unsafe file path blocked" instead of itself, while the project was still
+ * marked `verified` because the sandbox verification had genuinely passed.
+ * The two disagreed, and the user saw the disagreement.
+ */
+const UNRENDERED_PROJECT_PATHS = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
+
+export function isRenderableProjectFilePath(filePath: string): boolean {
+  return isSafeProjectFilePath(filePath)
+    && !UNRENDERED_PROJECT_PATHS.some(name => filePath === name || filePath.endsWith(`/${name}`));
+}
+
+/**
+ * Whether a path may be written or read at all.
+ *
+ * Only genuine dangers: escaping the project root, an absolute path, secrets,
+ * version-control internals, installed dependencies. Being unrenderable is a
+ * different question, answered by `isRenderableProjectFilePath` — a file can be
+ * perfectly safe and still have no business in a rendered page.
+ */
 function isSafeProjectFilePath(filePath: string): boolean {
   if (!filePath || filePath.length > 180) return false;
   if (filePath.startsWith('/') || filePath.startsWith('\\')) return false;
   if (filePath.includes('..') || filePath.includes('\\')) return false;
-  const blocked = ['.env', '.env.local', 'node_modules/', '.git/', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'];
+  const blocked = ['.env', '.env.local', 'node_modules/', '.git/'];
   return !blocked.some(prefix => filePath === prefix || filePath.startsWith(prefix));
 }
 
@@ -5906,7 +5937,19 @@ function applyGeneratedSupabaseAuthClientFix(files: GeneratedFile[]) {
 
 function runPreviewPipeline(project: GeneratedProject, files: GeneratedFile[]): PreviewBuildResult {
   const errors: any[] = [];
-  for (const file of files) {
+  /*
+   * The preview renders the application, not everything beside it.
+   *
+   * A lockfile is ninety kilobytes of JSON that no page displays, and
+   * embedding it in the preview document would be waste at best. It is
+   * excluded here rather than rejected above: excluding it from a render is
+   * housekeeping, while calling it unsafe raised a security error that
+   * replaced the whole preview with "Preview indisponible — Unsafe file path
+   * blocked", on every generated project, because `npm install` writes one
+   * into every sandbox.
+   */
+  const renderable = files.filter(file => isRenderableProjectFilePath(file.path));
+  for (const file of renderable) {
     if (!isSafeProjectFilePath(file.path)) {
       errors.push({ file: file.path, message: 'Unsafe file path blocked.', severity: 'high' });
     }
@@ -5926,10 +5969,10 @@ function runPreviewPipeline(project: GeneratedProject, files: GeneratedFile[]): 
       });
     }
   }
-  const supabaseAuthIssue = detectGeneratedSupabaseAuthIssue(files);
+  const supabaseAuthIssue = detectGeneratedSupabaseAuthIssue(renderable);
   if (supabaseAuthIssue) errors.push(supabaseAuthIssue);
 
-  const html = renderPreviewHtml(files, project.name, project.id, 'preview', project.prompt || project.name, project.slug || project.id);
+  const html = renderPreviewHtml(renderable, project.name, project.id, 'preview', project.prompt || project.name, project.slug || project.id);
   if (!html.trim()) {
     errors.push({ file: 'index.html', message: 'Preview HTML is empty.', severity: 'high' });
   } else if (/__CODEN_FORCE_ERROR__/i.test(html) && !errors.some(error => error?.diagnostic_code === 'FORCED_RUNTIME_FAILURE_MARKER')) {
