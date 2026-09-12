@@ -5,81 +5,90 @@ const markup = readFileSync(new URL('./builder.html', import.meta.url), 'utf8');
 const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
 
 /*
- * ONE — the upgrade path existed everywhere except where a user could reach it.
+ * ONE — there is one pricing surface, and it is Settings → Facturation.
  *
- * `builder.html` already carried a complete pricing modal: overlay, plan
- * cards, a monthly/annual toggle, CTAs. It opened from `.btn-upgrade` — a
- * class with CSS rules in ten places and markup in none, so
- * `querySelector('.btn-upgrade')` returned null and the whole modal was
- * unreachable. Styled, wired, and dead.
+ * The builder used to carry a second one: a full-screen modal with its own
+ * plan cards and its own price list, which had drifted to hardcoded dollars
+ * while the product settles in XAF. The settings tab already renders the real
+ * plans from `/api/billing/plans` in the plan's own currency, beside the
+ * balance, the top-up selector and the renewal date. Two pricing screens meant
+ * two places to keep correct, and one of them was already wrong.
  */
 {
   assert.match(markup, /id="project-menu-upgrade"/, 'the panel carries an upgrade control');
-  assert.match(live, /getElementById\('project-menu-upgrade'\)\?\.addEventListener\('click'/, 'which is actually bound');
-  assert.match(live, /function openPricingModal\(\): void \{/, 'to something that opens the modal');
-  assert.match(live, /modal\.classList\.add\('active'\)/, 'by the class the overlay already listens for');
+  assert.match(live, /getElementById\('project-menu-upgrade'\)\?\.addEventListener\('click'/, 'which is bound');
+  assert.match(live, /function openUpgradeSettings\(\): void \{/, 'to the settings route');
+  assert.match(live, /new CustomEvent\('coden:open-settings', \{ detail: \{ tab: 'billing' \} \}\)/,
+    "opening the billing tab ('billing' is aliased to 'facturation' by the panel)");
 
-  /*
-   * It must not ALSO carry `btn-upgrade`: the inline script binds that class
-   * too, so both handlers would fire and the funnel event would double-count.
-   */
-  const button = markup.slice(markup.indexOf('id="project-menu-upgrade"') - 120, markup.indexOf('id="project-menu-upgrade"') + 40);
-  assert.doesNotMatch(button, /btn-upgrade/, 'one control, one handler');
+  // The modal is gone entirely: markup, styles and its inline script.
+  assert.doesNotMatch(markup, /pricing-modal/, 'no modal markup or styles survive');
+  assert.doesNotMatch(markup, /p-plans-grid|p-plan-cta|p-billing-toggle/, 'nor any of its parts');
+  assert.doesNotMatch(live, /openPricingModal|hydratePlanPrices/, 'and no code still feeds it');
 }
 
 /*
- * TWO — the price on the card is the price on the invoice.
+ * TWO — the credit counter reports a balance, and tells the badges the plan.
  *
- * The modal hardcoded $25 / $50 monthly and $20 / $40 annual. The product
- * settles in XAF (`BILLING_SETTLEMENT_CURRENCY = 'XAF'`), so a user was shown
- * dollars and charged CFA francs — the same endpoint that prices the checkout
- * was right there and unused.
- */
-{
-  assert.match(live, /apiFetch<any>\('\/api\/billing\/plans'\)/, 'the real plans are fetched');
-  assert.match(live, /element\.dataset\.monthly = money\(plan\.amount\);/, 'and written as the monthly price');
-  assert.match(live, /element\.dataset\.annual = money\(plan\.annualMonthlyEquivalent \|\| plan\.amount\);/, 'and the annual one');
-  assert.match(live, /String\(plan\.currency \|\| 'XAF'\)/, 'in the currency the plan declares');
-
-  // The hardcoded dollar prices are gone from the toggle.
-  const script = markup.slice(markup.indexOf('function updateModalPrices'), markup.indexOf('if (btnMonthly && btnYearly)'));
-  assert.doesNotMatch(script, /\$25|\$50|\$20|\$40/, 'no hardcoded dollar price survives');
-  assert.match(script, /priceText\(pricePro, key\)/, 'the price is read from what the server said');
-
-  /*
-   * And an unanswered request shows "—", not a confident wrong number: a
-   * stale price is worse than a visibly absent one, because the user acts on
-   * it.
-   */
-  assert.match(markup, /return value \? value : "—";/, 'an unknown price stays unknown');
-}
-
-/*
- * The counter itself reports a balance, or says it could not read one.
+ * `currentPlanKey` was declared 'free' and assigned in exactly one place:
+ * inside `syncBuilderPlanBadges`, from the argument it was called with, which
+ * was `currentPlanKey`. A closed loop seeded with 'free'. Every paying
+ * customer's badge read "Free" and every `pane-plan-tag` marked their own
+ * features locked — while the real plan sat on the wallet response this
+ * function already fetched.
  */
 {
   assert.match(live, /async function refreshCreditCounter\(\): Promise<void>/, 'the balance is read');
   assert.match(live, /apiFetch<any>\('\/api\/billing\/wallet'\)/, 'from the wallet the server settles against');
-  assert.match(live, /void refreshCreditCounter\(\);/, 'when the panel opens');
+  assert.match(live, /syncBuilderPlanBadges\(plan\);/, 'and the badges are told the real plan');
 
-  // Zero is a claim ("you are out of credits") that sends the user to buy what
-  // they may already have. An unreadable balance says so instead.
-  const fn = live.slice(live.indexOf('async function refreshCreditCounter'), live.indexOf('/** Write the real plan prices'));
+  // Once per page load, not only when the project menu happens to open.
+  const data = live.slice(live.indexOf('function init() {'), live.indexOf("if (document.readyState === 'loading')"));
+  assert.match(data, /void refreshCreditCounter\(\);/, 'read once at load');
+
+  const fn = live.slice(live.indexOf('async function refreshCreditCounter'), live.indexOf('function openUpgradeSettings'));
   assert.match(fn, /value\.textContent = '—';/, 'a failed read shows no number');
   assert.match(fn, /planLabel\.textContent = 'Solde indisponible';/, 'and says why');
   assert.match(fn, /wallet\?\.unlimited \? 'Illimité'/, 'an unlimited account is not counted down');
-  assert.match(fn, /if \(creditCounterInFlight\) return creditCounterInFlight;/, 'and the panel cannot stack requests');
+  assert.match(fn, /if \(creditCounterInFlight\) return creditCounterInFlight;/, 'and requests cannot stack');
 }
 
 /*
- * THREE — a full-screen modal has a keyboard way out.
+ * THREE — the work is billed.
+ *
+ * The multi-agent branch has run every build, edit and repair since its flag
+ * went on, and carried no charge at all — no reservation, no ledger write.
+ * The conversation branch charges, so the cheap turns were billed and the
+ * expensive ones were free. Production settles it: on 2026-09-12 the ledger
+ * holds three usage rows against nine turns, and all three line up to the
+ * second with "bonjour", "merci" and a question about a competitor. The six
+ * turns that generated and edited an application were not billed.
  */
 {
-  assert.match(markup, /max-width: none;\n      height: 100%;/, 'the pricing modal fills the viewport');
-  assert.match(markup, /\.pricing-modal-content > \* \{/, 'while its content keeps a readable measure');
-  assert.match(live, /if \(modal\?\.classList\.contains\('active'\)\) \{/, 'Escape closes it');
-  assert.match(markup, /\.pricing-modal-content > \.pricing-modal-close \{\n      position: fixed;/,
-    'and the close control cannot scroll away');
+  const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+  const branch = server.slice(
+    server.indexOf("if (process.env.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute)"),
+    server.indexOf('const publicGoal = String(decision.modelObjective?.goal'),
+  );
+
+  assert.match(branch, /await chargeCompletedAgentAction\(/, 'the pipeline charges for its work');
+  assert.match(branch, /pipelineCost\.finalCredits,/, 'the same estimate the other branch uses');
+  assert.match(branch, /providerCostUsd: pipelineProviderCostUsd,/, 'against the measured provider spend');
+
+  // Billed after the files are saved: a user pays for work that reached them.
+  assert.ok(
+    branch.indexOf('await saveProject(updatedProject, pipelineFiles);') < branch.indexOf('chargeCompletedAgentAction'),
+    'the charge follows the save, never precedes it',
+  );
+  // And a billing failure must not destroy work already on disk.
+  assert.match(branch, /\[coden:pipeline_charge_failed\]/, 'a failed charge is logged, not thrown');
+
+  // The measured cost has to reach the caller at all: it was accumulated per
+  // round and reported only to the harness, so there was nothing to bill on.
+  const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
+  assert.match(pipeline, /costUsd: spent\.costUsd,/, 'the run reports what it spent');
+  assert.match(pipeline, /\/\*\* Measured provider spend for the whole run, in USD\. What the caller bills on\. \*\//,
+    'and the type says so');
 }
 
 /*

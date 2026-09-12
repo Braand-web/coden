@@ -2832,6 +2832,17 @@ async function refreshCreditCounter(): Promise<void> {
     try {
       const wallet = await apiFetch<any>('/api/billing/wallet');
       const plan = String(wallet?.plan || 'free');
+      /*
+       * The badge finally learns the real plan.
+       *
+       * `currentPlanKey` was declared `'free'` and assigned in exactly one
+       * place — inside `syncBuilderPlanBadges`, from the argument it was
+       * called with, which was `currentPlanKey`. A closed loop seeded with
+       * 'free'. So every paying customer's badge read "Free", and every
+       * `pane-plan-tag` marked their own features locked. The plan was on the
+       * wallet response this function already fetches.
+       */
+      syncBuilderPlanBadges(plan);
       // An unlimited account has no number to count down, and showing it one
       // would be a lie in the direction that costs the user money.
       value.textContent = wallet?.unlimited ? 'Illimité' : formatCredits(Number(wallet?.balance || 0));
@@ -2852,39 +2863,25 @@ async function refreshCreditCounter(): Promise<void> {
   return creditCounterInFlight;
 }
 
-/** Write the real plan prices onto the modal's price elements. */
-async function hydratePlanPrices(): Promise<void> {
-  const pro = document.getElementById('p-price-pro');
-  const business = document.getElementById('p-price-business');
-  if (!pro && !business) return;
-  try {
-    const payload = await apiFetch<any>('/api/billing/plans');
-    const plans = payload?.plans || {};
-    const write = (element: HTMLElement | null, plan: any) => {
-      if (!element || !plan) return;
-      const currency = String(plan.currency || 'XAF');
-      const money = (amount: number) => `${Number(amount || 0).toLocaleString('fr-FR')} ${currency}`;
-      // The annual price is shown as its monthly equivalent, because the
-      // toggle it sits under says "/mois" either way.
-      element.dataset.monthly = money(plan.amount);
-      element.dataset.annual = money(plan.annualMonthlyEquivalent || plan.amount);
-    };
-    write(pro, plans.pro);
-    write(business, plans.business);
-    document.dispatchEvent(new CustomEvent('coden:plans-loaded'));
-  } catch {
-    // Leaving the data attributes unset is what makes the card read "—".
-    // A stale hardcoded price is the one outcome worth avoiding here.
-  }
-}
-
-function openPricingModal(): void {
-  const modal = document.getElementById('pricing-modal');
-  if (!modal) return;
+/*
+ * Upgrading opens Settings → Facturation, and there is only one pricing
+ * surface now.
+ *
+ * The builder used to carry a second one: a full-screen modal with its own
+ * plan cards and its own price list, which had drifted to hardcoded dollars
+ * while the product settles in XAF. The settings tab already renders the real
+ * plans from `/api/billing/plans`, in the plan's own currency, beside the
+ * balance, the top-up selector and the renewal date — everything a person
+ * deciding to upgrade actually needs. Two pricing screens meant two places to
+ * keep correct, and one of them was already wrong.
+ *
+ * So the modal is gone and this is the single entry point. `billing` is the
+ * canonical tab id; `tabAliases` maps it to the panel's `facturation`.
+ */
+function openUpgradeSettings(): void {
   closeProjectMenu();
-  void hydratePlanPrices();
-  modal.classList.add('active');
   (window as any).codenTrackFunnelEvent?.('upgrade_modal_opened', { surface: 'builder', recommended_plan: 'pro' });
+  document.dispatchEvent(new CustomEvent('coden:open-settings', { detail: { tab: 'billing' } }));
 }
 
 function openProjectMenu() {
@@ -2987,7 +2984,7 @@ function bindProjectMenu() {
   });
   document.getElementById('project-menu-upgrade')?.addEventListener('click', event => {
     event.preventDefault();
-    openPricingModal();
+    openUpgradeSettings();
   });
   document.getElementById('project-name-edit')?.addEventListener('click', () => setProjectNameEditor(true));
   document.getElementById('project-name-save')?.addEventListener('click', () => void saveProjectNameFromMenu());
@@ -3007,16 +3004,7 @@ function bindProjectMenu() {
     closeProjectMenu();
   });
   document.addEventListener('keydown', event => {
-    if (event.key !== 'Escape') return;
-    // Full screen makes Escape the expected way out, and the close button is
-    // no longer the only one: a modal that fills the viewport with no keyboard
-    // exit is a trap.
-    const modal = document.getElementById('pricing-modal');
-    if (modal?.classList.contains('active')) {
-      modal.classList.remove('active');
-      return;
-    }
-    closeProjectMenu();
+    if (event.key === 'Escape') closeProjectMenu();
   });
   window.addEventListener('resize', positionProjectMenu);
 }
@@ -5110,9 +5098,13 @@ async function loadProject() {
     scroll.innerHTML = '';
     scroll.dataset.liveInitialized = 'true';
   }
-  const api = ensureConversationApi();
-  api?.clear();
-  if (scroll) delete scroll.dataset.restored;
+  // The conversation is NOT cleared here. It used to be, and that is what made
+  // conversations disappear: the feed was wiped synchronously, and refilled
+  // only at the end of a chain of awaited network calls. Any failure in
+  // between left the catch showing an error over a chat that had already been
+  // emptied — and the messages were still in the database the whole time.
+  // Clearing now happens next to the restore, below, so the two are one swap.
+  ensureConversationApi();
   const projectName = document.getElementById('project-name');
   const loading = showTransientNotice('Loading project files, timeline and preview...', 0);
   try {
@@ -5168,6 +5160,17 @@ async function loadProject() {
     }
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
+    /*
+     * Replace the conversation, rather than empty it and hope.
+     *
+     * The payload is in hand by this line, so the old feed is only dropped at
+     * the moment there is a new one to put in its place. Until here the reader
+     * keeps seeing the conversation they had — which is both correct (it is
+     * still the truth until the new project arrives) and the difference
+     * between a slow load and a lost history.
+     */
+    ensureConversationApi()?.clear();
+    if (scroll) delete scroll.dataset.restored;
     restoreMessages(payload);
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
     if (!restoredStreamParts) await restoreLatestStreamPartsFromRunHistory(payload);
@@ -8075,6 +8078,11 @@ function init() {
   dataReady = true;
   void ensureSettingsPanelLazy();
   void ensureModelSelector();
+  // Reads the wallet once per load: it is what tells the plan badges which
+  // plan this account is actually on, so a paying customer is not shown a
+  // "Free" badge and locked feature tags until they happen to open the
+  // project menu.
+  void refreshCreditCounter();
   void loadProject().then(() => {
     applyInitialBuilderLayout();
     maybeStartInitialGeneration();

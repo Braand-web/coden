@@ -12461,6 +12461,53 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         updatedProject.preview_html = previewPipeline.html;
 
         await saveProject(updatedProject, pipelineFiles);
+
+        /*
+         * The work is billed, because it was not.
+         *
+         * This branch has run every build, edit and repair since the pipeline
+         * flag went on, and carried no charge of any kind — no reservation, no
+         * ledger write. The conversation branch charges, so the cheap turns
+         * were billed and the expensive ones were free. The ledger for
+         * 2026-09-12 settles it: three usage rows against nine turns, and all
+         * three line up to the second with "bonjour", "merci" and a question
+         * about a competitor. The six turns that generated and edited an
+         * application — a sandbox, npm install, a planner, a coder loop and
+         * its repairs — cost nothing.
+         *
+         * Charged after the files are saved, never before: a user pays for
+         * work that reached their project, and a run that failed earlier
+         * already returned above without passing through here.
+         */
+        const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
+        const pipelineProviderCostUsd = Number(outcome.costUsd || 0);
+        await chargeCompletedAgentAction(
+          helpers,
+          userId,
+          pipelineCost.finalCredits,
+          `AI ${pipelineRoute} with ${outcome.modelId}`,
+          `pipeline_${randomUUID()}`,
+          {
+            projectId: project.id,
+            runId: pipelineRunId || null,
+            category: 'ai_gateway',
+            resource: pipelineRoute,
+            provider: 'openrouter',
+            model: outcome.modelId,
+            providerCostUsd: pipelineProviderCostUsd,
+            completeCostUsd: pipelineProviderCostUsd + 0.0001,
+          },
+        ).catch(error => {
+          // Billing must not destroy work that is already on disk. The run is
+          // recoverable from the ledger gap; the project is not recoverable
+          // from a thrown response.
+          console.error('[coden:pipeline_charge_failed]', {
+            requestId,
+            project_id: project.id,
+            message: redactSecrets(String(error), '[redacted]'),
+          });
+        });
+
         const diff = diffFiles(existingFiles, pipelineFiles);
         await createProjectVersion(updatedProject, pipelineFiles, prompt, {
           ...diff,

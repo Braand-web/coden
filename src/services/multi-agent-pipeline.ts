@@ -74,6 +74,8 @@ export type MultiAgentPipelineOutcome =
       liveState: string;
       modelId: AllowedModelId;
       repairOutcome: RepairOutcome;
+      /** Measured provider spend for the whole run, in USD. What the caller bills on. */
+      costUsd: number;
     };
 
 /**
@@ -753,6 +755,16 @@ export async function runMultiAgentPipeline(input: {
     liveState: status.state,
     modelId,
     repairOutcome,
+    /*
+     * What the run actually cost the provider.
+     *
+     * This was accumulated per round and reported only to the harness, so the
+     * caller had nothing to bill on. Every build and edit since this pipeline
+     * became the live path was therefore free: the ledger for 2026-09-12 shows
+     * three charges against nine turns, and all three were conversations —
+     * the six that generated and edited an application were not billed at all.
+     */
+    costUsd: spent.costUsd,
   };
   } finally {
     releaseRun();
