@@ -179,6 +179,30 @@ export class ProjectSandbox {
     };
   }
 
+  /**
+   * Record that the dev server cannot be reached, even though this object
+   * still believes it is running.
+   *
+   * `child.on('close')` is the only thing that corrects the state, and it
+   * fires only when Node itself reaps the child. A server whose process
+   * survives but whose socket is gone — OOM-killed inside its own tree, a port
+   * taken over, a container that restarted the process group out from under us
+   * — leaves `state: 'running'` and a port pointing at nothing. The proxy then
+   * fails on every request, forever, and `resumeLivePreview` keeps reattaching
+   * to it because the status says running: the one thing that would fix it,
+   * an automatic restart, is never triggered.
+   *
+   * So the proxy tells the sandbox when reality disagrees with it, and the
+   * next status read sends the client down the restart path instead.
+   */
+  markUnreachable(reason: string): void {
+    if (this.state !== 'running' && this.state !== 'starting') return;
+    this.state = 'crashed';
+    this.port = null;
+    this.lastError = reason;
+    this.log('system', `Preview unreachable: ${reason}`);
+  }
+
   getLogs(limit = 120): SandboxLog[] {
     return this.logs.slice(-Math.max(1, limit));
   }

@@ -3026,6 +3026,10 @@ async function resumeLivePreview() {
     // Nothing running: the reader is looking at a saved rendering, and the way
     // back to the application itself is the start control.
     if (projectId !== currentProjectId || revision !== previewRevision) return false;
+    // A crashed or unreachable sandbox must fall through to `ensureLivePreview`
+    // rather than be reattached to. The server now marks a sandbox whose port
+    // stops answering, so this test is what turns that into a restart instead
+    // of an iframe pointed at a dev server that is not there.
     if (!url || status?.state !== 'running') return false;
     activateBuilderView('preview');
     setLivePreview(url);

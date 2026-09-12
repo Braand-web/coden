@@ -57,6 +57,7 @@ export function proxyHttp(
   res: ServerResponse,
   target: ProxyTarget,
   basePath: string,
+  onError?: (error: Error) => void,
 ): void {
   const url = stripBase(req.url || '/', basePath);
   const upstream = http.request(
@@ -91,11 +92,28 @@ export function proxyHttp(
     },
   );
   upstream.on('error', error => {
+    // The caller owns the consequence: this is how a sandbox that still
+    // reports "running" learns that its port answers nothing, so the next
+    // status read can send the client to a restart instead of back here.
+    onError?.(error as Error);
     if (res.headersSent) { res.destroy(); return; }
-    res.writeHead(502, { 'content-type': 'application/json', 'cross-origin-embedder-policy': 'credentialless' });
-    // The dev server being down is a state the interface has to show, not an
-    // opaque failure, so the reason travels with the status.
-    res.end(JSON.stringify({ error: 'preview_unavailable', message: String((error as any)?.message || error) }));
+    // This response is rendered inside an iframe, so it is a document rather
+    // than JSON. A raw `{"error":…}` body is what a user reads as "the app it
+    // generated is broken" — the failure is the sandbox's, but the unstyled
+    // JSON is what they see and what they judge the product by.
+    // The reason stays machine-readable in a header: the document is for the
+    // person looking at the iframe, the header for anything that has to act
+    // on the failure rather than read it.
+    res.writeHead(502, {
+      'content-type': 'text/html; charset=utf-8',
+      'cross-origin-embedder-policy': 'credentialless',
+      'x-coden-preview-error': 'preview_unavailable',
+    });
+    res.end(previewErrorDocument(
+      'Aperçu indisponible',
+      'Le serveur de développement de ce projet ne répond plus. Il va redémarrer automatiquement.',
+      String((error as any)?.message || error),
+    ));
   });
   req.pipe(upstream);
 }
@@ -152,6 +170,41 @@ export function proxyUpgrade(
   upstream.on('response', () => socket.destroy());
   upstream.on('error', () => socket.destroy());
   upstream.end();
+}
+
+/**
+ * What the user sees when the preview cannot be served.
+ *
+ * It is shown inside the builder's iframe, so it has to be a document that
+ * reads as an explanation rather than a payload. The technical detail is kept,
+ * because it is the line that names the failing package or port — but it is
+ * placed under the sentence a non-technical user can act on, not above it.
+ */
+export function previewErrorDocument(title: string, message: string, detail = ''): string {
+  const escape = (value: string) => value.replace(/[&<>"]/g, character =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character] as string);
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escape(title)}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+    font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:#0b0d12; color:#e6e8ee; }
+  @media (prefers-color-scheme: light) { body { background:#f7f8fa; color:#1a1d24; } }
+  .card { max-width:34rem; text-align:center; }
+  h1 { margin:0 0 .5rem; font-size:1.05rem; font-weight:600; }
+  p { margin:0; opacity:.72; }
+  code { display:block; margin-top:1rem; padding:.6rem .75rem; border-radius:8px;
+    background:rgba(127,127,127,.14); font-size:12px; text-align:left;
+    word-break:break-word; opacity:.8; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#d97706;
+    display:inline-block; margin-right:.5rem; vertical-align:middle; }
+</style></head><body><div class="card">
+<h1><span class="dot"></span>${escape(title)}</h1>
+<p>${escape(message)}</p>
+${detail ? `<code>${escape(detail)}</code>` : ''}
+</div></body></html>`;
 }
 
 /** `/preview/abc/src/App.tsx` under base `/preview/abc` becomes `/src/App.tsx`. */

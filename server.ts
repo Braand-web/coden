@@ -12184,6 +12184,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           });
         } : undefined,
       }) : null;
+  // Set by the multi-agent branch; settled by respondJson on the way out.
+  let pipelineRunId = '';
   const respondJson = async (status: number, payload: any) => {
     // The real application must be visible before the model writes its recap.
     // This URL comes from the verified sandbox, not from model-authored prose.
@@ -12241,6 +12243,37 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         status=503;
         payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
       }
+    }
+    /*
+     * The run that did the work records that it happened.
+     *
+     * `createAgentRun` sits ~180 lines below the multi-agent branch, so every
+     * build, edit and repair that goes through the pipeline — which is all of
+     * them, since the flag went on — returned without ever writing an
+     * `agent_runs` row. Production shows it exactly: one session on
+     * 2026-09-12 produced six pieces of work and left a single run row, the
+     * one clarification that took the other branch.
+     *
+     * That is why "everything is slow" still could not be answered from the
+     * product's own data after `duration_ms` was wired: the column was
+     * populated on the path that does not build. This settles the run on the
+     * path that does, through the one funnel every exit of the branch passes.
+     *
+     * Bookkeeping never fails a run: a request that produced an application
+     * must not turn into an error because a metrics row could not be written.
+     */
+    if (pipelineRunId) {
+      try {
+        const terminal = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
+        await updateAgentRunStatus(pipelineRunId, terminal, {
+          verification_status: payload.verification?.status || null,
+          effective_model: payload.model || null,
+          diagnostic_code: payload.diagnostic_code || null,
+        });
+      } catch (error) {
+        console.warn('[coden:pipeline_run_status_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
+      }
+      pipelineRunId = '';
     }
     if (status < 400 && payload.pipeline === 'multi_agent') {
       // Structured verification reports need no extra, unmetered provider call.
@@ -12327,6 +12360,21 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
     try {
       await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
+      /*
+       * Open the run before the work, so a run that never comes back is still
+       * visible as one that started. A row written only on success records
+       * exactly the runs that did not need investigating.
+       */
+      if (AGENT_V2_ENABLED) {
+        try {
+          pipelineRunId = (await createAgentRun(
+            project, userId, requestId, decision, requestedModelSelection,
+            { pipeline: 'multi_agent', route: pipelineRoute }, undefined, undefined, req.body?.workflowId || null,
+          )).id;
+        } catch (error) {
+          console.warn('[coden:pipeline_run_create_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
+        }
+      }
       const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
       const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
 
@@ -15315,7 +15363,32 @@ app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
   const sandbox = sandboxRegistry.peek(grant.projectId);
   const status = sandbox?.status();
   if (!sandbox || !status?.port) {
-    return res.status(503).json({ error: 'preview_not_running', state: status?.state || 'idle', message: status?.lastError || 'The preview is not running.' });
+    /*
+     * This is the ordinary state after every deploy, not an exotic one: the
+     * registry is an in-memory Map, so a restart erases every sandbox while
+     * the builder's iframe still points at this URL. It was answered with raw
+     * JSON, rendered full-bleed inside the iframe — which is precisely the
+     * "the app it generated is broken" a user reports.
+     *
+     * It was also logged nowhere. Not one line about the preview exists in
+     * production's logs, which is why an outage on this path could run
+     * indefinitely with nothing to point at.
+     */
+    console.warn('[coden:preview_not_running]', {
+      project_id: grant.projectId,
+      state: status?.state || 'idle',
+      last_error: status?.lastError || null,
+    });
+    res.status(503);
+    if (String(req.headers.accept || '').includes('text/html') || req.method === 'GET') {
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      return res.end(previewErrorDocument(
+        'Aperçu en cours de démarrage',
+        'Le serveur de développement de ce projet n’est pas encore lancé. Il démarre automatiquement.',
+        status?.lastError || '',
+      ));
+    }
+    return res.json({ error: 'preview_not_running', state: status?.state || 'idle', message: status?.lastError || 'The preview is not running.' });
   }
   sandbox.lastUsedAt = Date.now();
   // Nothing is stripped: the dev server was started with this exact prefix as
@@ -15323,7 +15396,18 @@ app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
   // URL outside its own base, which it answers with a redirect back to the
   // base -- and the browser and the proxy then chase each other until Chrome
   // gives up with ERR_TOO_MANY_REDIRECTS.
-  proxyHttp(req, res, { port: status.port }, status.basePath ? '' : `/preview/${token}`);
+  proxyHttp(req, res, { port: status.port }, status.basePath ? '' : `/preview/${token}`, error => {
+    // A port that refuses the connection while the state still reads "running"
+    // is the loop that made this permanent: the status kept saying running, so
+    // the client kept reattaching instead of restarting. Recording it here is
+    // what lets the next status read send it down the restart path.
+    console.warn('[coden:preview_proxy_failed]', {
+      project_id: grant.projectId,
+      port: status.port,
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+    sandbox.markUnreachable(error?.message || 'The dev server did not answer.');
+  });
 });
 
 app.use(express.static(pathExists(staticRoot) ? staticRoot : __dirname));
@@ -15366,7 +15450,7 @@ import { validateProject, buildRepairInstruction } from './src/services/sandbox/
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';
 import { runMultiAgentPipeline, resolvePipelineRoute, summarizePipelineOutcome } from './src/services/multi-agent-pipeline.ts';
-import { proxyHttp, proxyUpgrade } from './src/services/sandbox/preview-proxy.ts';
+import { proxyHttp, proxyUpgrade, previewErrorDocument } from './src/services/sandbox/preview-proxy.ts';
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject, sourceFiles?: GeneratedFile[]) {

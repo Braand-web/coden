@@ -111,8 +111,14 @@ try {
   await upstream.close();
   const down = await fetch(`${edgeUrl}${BASE}/`);
   assert.equal(down.status, 502);
-  const body = await down.json() as any;
-  assert.equal(body.error, 'preview_unavailable', 'the interface can tell the user why the preview is blank');
+  // The reason is still machine-readable, but the body is now a document:
+  // this response is rendered full-bleed inside the builder's iframe, and a
+  // raw JSON payload there reads as the generated application being broken.
+  assert.equal(down.headers.get('x-coden-preview-error'), 'preview_unavailable',
+    'the interface can tell the user why the preview is blank');
+  const body = await down.text();
+  assert.match(body, /^<!doctype html>/, 'and the reader gets a document rather than a payload');
+  assert.match(body, /Aperçu indisponible/, 'that says what happened');
 
   console.log('preview proxy tests passed');
 } finally {
