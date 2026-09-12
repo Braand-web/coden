@@ -28,7 +28,18 @@ const start = builder.slice(builder.indexOf('async function ensureLivePreview'),
 assert.match(start, /sandbox\/start/, 'by calling the start route');
 assert.match(start, /method: 'POST'/, 'which is a POST');
 assert.match(start, /setLivePreview\(url\)/, 'and the result points the panel at the running server');
-assert.match(builder, /setEmptyPreviewState\('idle'\);\s*await ensureLivePreview\(\)/, 'a missing runtime must restart automatically');
+/*
+ * The restart is started, not awaited.
+ *
+ * This assertion used to pin `await ensureLivePreview()`. The behaviour it
+ * protects — a missing runtime restarts by itself — is right and still holds;
+ * the `await` was incidental to it and turned out to be expensive: that call
+ * runs `npm install` and boots Vite, and awaiting it inside `loadProject` put
+ * the whole install in front of the builder's first layout.
+ */
+assert.match(builder, /setEmptyPreviewState\('idle'\);[\s\S]{0,1400}?void ensureLivePreview\(\)/,
+  'a missing runtime must restart automatically');
+assert.doesNotMatch(builder, /await ensureLivePreview\(\)/, 'without blocking the builder on a dependency install');
 
 // Starting takes a minute; a second click would start it twice.
 assert.match(start, /if \(!currentProjectId \|\| liveStartInFlight\) return/, 'a start already under way must not be started again');

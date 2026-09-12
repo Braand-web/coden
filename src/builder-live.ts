@@ -2522,7 +2522,22 @@ function renderPlanResponse(
 
   if (options.withActions !== false) {
     addInlineAction(card, speaksFrench ? 'Construire ce plan' : 'Build this plan', () => {
-      setChatMode('build');
+      /*
+       * Approving a plan builds it, and then hands the wheel back to Auto.
+       *
+       * This used to leave the composer pinned to `build`: the second argument
+       * below already forces THIS request to build, so the `setChatMode` was
+       * only ever about what happens next — and what happened next was that
+       * every later message was forced through the build route too, whatever
+       * the user actually typed. "merci" and "c'est quoi ce bug ?" went to the
+       * builder because a plan had been approved several turns earlier, and
+       * the only way out was to notice the mode chip and change it by hand.
+       *
+       * Approval is a decision about one plan, not a mode the user is now
+       * stuck in. So Auto resumes immediately, and the intent router picks
+       * the route per message the way it does everywhere else.
+       */
+      setChatMode('auto');
       void generateFromPrompt(prompt, 'build', true, {}, prompt);
     });
     addInlineAction(card, speaksFrench ? 'Ajuster le plan' : 'Adjust plan', () => {
@@ -2783,6 +2798,95 @@ function closeProjectMenu() {
   trigger?.setAttribute('aria-expanded', 'false');
 }
 
+/*
+ * The credit balance, and the way out of running short of it.
+ *
+ * The pricing modal already existed in `builder.html`, fully styled and wired
+ * to `.btn-upgrade` — a class with CSS in ten places and markup in none, so
+ * `querySelector('.btn-upgrade')` returned null and the whole modal was
+ * unreachable. The counter below is where it finally has a button.
+ *
+ * The prices in that modal were hardcoded as $25 / $50, while the product
+ * settles in XAF (`BILLING_SETTLEMENT_CURRENCY`): a user was shown dollars and
+ * charged CFA francs. They now come from the same endpoint that prices the
+ * checkout, so the number on the card is the number on the invoice.
+ */
+const PLAN_LABELS: Record<string, string> = {
+  free: 'Plan gratuit', pro: 'Plan Pro', business: 'Plan Business', enterprise: 'Plan Enterprise',
+};
+
+let creditCounterInFlight: Promise<void> | null = null;
+
+function formatCredits(value: number): string {
+  return Number(value || 0).toLocaleString('fr-FR', { maximumFractionDigits: value < 100 ? 1 : 0 });
+}
+
+async function refreshCreditCounter(): Promise<void> {
+  if (creditCounterInFlight) return creditCounterInFlight;
+  const value = document.getElementById('project-menu-credits-value');
+  const planLabel = document.getElementById('project-menu-credits-plan');
+  const upgrade = document.getElementById('project-menu-upgrade');
+  if (!value || !planLabel) return;
+
+  creditCounterInFlight = (async () => {
+    try {
+      const wallet = await apiFetch<any>('/api/billing/wallet');
+      const plan = String(wallet?.plan || 'free');
+      // An unlimited account has no number to count down, and showing it one
+      // would be a lie in the direction that costs the user money.
+      value.textContent = wallet?.unlimited ? 'Illimité' : formatCredits(Number(wallet?.balance || 0));
+      planLabel.textContent = PLAN_LABELS[plan] || plan;
+      // Nothing to upgrade to on the top plan: the counter stays, the button goes.
+      if (upgrade) upgrade.hidden = plan === 'business' || plan === 'enterprise';
+    } catch {
+      // A balance that could not be read says so. A zero here would read as
+      // "you are out of credits" and send the user to buy what they may
+      // already have.
+      value.textContent = '—';
+      planLabel.textContent = 'Solde indisponible';
+      if (upgrade) upgrade.hidden = false;
+    } finally {
+      creditCounterInFlight = null;
+    }
+  })();
+  return creditCounterInFlight;
+}
+
+/** Write the real plan prices onto the modal's price elements. */
+async function hydratePlanPrices(): Promise<void> {
+  const pro = document.getElementById('p-price-pro');
+  const business = document.getElementById('p-price-business');
+  if (!pro && !business) return;
+  try {
+    const payload = await apiFetch<any>('/api/billing/plans');
+    const plans = payload?.plans || {};
+    const write = (element: HTMLElement | null, plan: any) => {
+      if (!element || !plan) return;
+      const currency = String(plan.currency || 'XAF');
+      const money = (amount: number) => `${Number(amount || 0).toLocaleString('fr-FR')} ${currency}`;
+      // The annual price is shown as its monthly equivalent, because the
+      // toggle it sits under says "/mois" either way.
+      element.dataset.monthly = money(plan.amount);
+      element.dataset.annual = money(plan.annualMonthlyEquivalent || plan.amount);
+    };
+    write(pro, plans.pro);
+    write(business, plans.business);
+    document.dispatchEvent(new CustomEvent('coden:plans-loaded'));
+  } catch {
+    // Leaving the data attributes unset is what makes the card read "—".
+    // A stale hardcoded price is the one outcome worth avoiding here.
+  }
+}
+
+function openPricingModal(): void {
+  const modal = document.getElementById('pricing-modal');
+  if (!modal) return;
+  closeProjectMenu();
+  void hydratePlanPrices();
+  modal.classList.add('active');
+  (window as any).codenTrackFunnelEvent?.('upgrade_modal_opened', { surface: 'builder', recommended_plan: 'pro' });
+}
+
 function openProjectMenu() {
   const panel = document.getElementById('project-menu-panel');
   const trigger = document.getElementById('project-combo-trigger');
@@ -2794,6 +2898,10 @@ function openProjectMenu() {
   }
   setProjectNameDisplay(currentProjectName);
   setProjectNameEditor(false);
+  // The balance is read when the panel opens, not on a timer: it is only ever
+  // looked at here, and a poll would spend a request a minute to keep a number
+  // fresh that nobody is reading.
+  void refreshCreditCounter();
   positionProjectMenu();
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
@@ -2877,6 +2985,10 @@ function bindProjectMenu() {
   document.getElementById('project-menu-dashboard')?.addEventListener('click', () => {
     window.location.href = '/dashboard.html';
   });
+  document.getElementById('project-menu-upgrade')?.addEventListener('click', event => {
+    event.preventDefault();
+    openPricingModal();
+  });
   document.getElementById('project-name-edit')?.addEventListener('click', () => setProjectNameEditor(true));
   document.getElementById('project-name-save')?.addEventListener('click', () => void saveProjectNameFromMenu());
   document.getElementById('project-name-input')?.addEventListener('keydown', event => {
@@ -2895,7 +3007,16 @@ function bindProjectMenu() {
     closeProjectMenu();
   });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closeProjectMenu();
+    if (event.key !== 'Escape') return;
+    // Full screen makes Escape the expected way out, and the close button is
+    // no longer the only one: a modal that fills the viewport with no keyboard
+    // exit is a trap.
+    const modal = document.getElementById('pricing-modal');
+    if (modal?.classList.contains('active')) {
+      modal.classList.remove('active');
+      return;
+    }
+    closeProjectMenu();
   });
   window.addEventListener('resize', positionProjectMenu);
 }
@@ -5025,7 +5146,25 @@ async function loadProject() {
     } else {
       currentPreviewHtml = '';
       setEmptyPreviewState('idle');
-      await ensureLivePreview();
+      /*
+       * Started, not awaited.
+       *
+       * `ensureLivePreview` posts to `/sandbox/start`, which runs `npm
+       * install` and boots Vite — 6.7s for the tiny tree in this repo's own
+       * sandbox test, far more for a real one on a cold container. Awaiting it
+       * here put that entire install in front of `applyInitialBuilderLayout`,
+       * so opening any project without a running sandbox blocked the whole
+       * builder — the chat, the file tree, the toolbar — behind a dependency
+       * install nobody was waiting to watch.
+       *
+       * Nothing below this line reads the live preview, and the function
+       * already owns its own progress: it guards re-entry with
+       * `liveStartInFlight`, points the iframe at the server when it is up,
+       * and reports its own failure. The placeholder above is what the reader
+       * sees meanwhile, which is the honest state — the preview genuinely is
+       * not running yet.
+       */
+      void ensureLivePreview();
     }
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
