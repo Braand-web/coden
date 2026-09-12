@@ -6913,7 +6913,13 @@ async function loadCloudConsoleUsage() {
   try {
     const payload = await apiFetch<any>('/api/users/me/ai-usage');
     const history: any[] = Array.isArray(payload.history) ? payload.history : [];
-    const projectHistory = history.filter(item => item.project_name === currentProjectName);
+    // Grouped by id, not by name: a rename must not erase this project's usage,
+    // and two projects that happen to share a name are still two projects. The
+    // name is kept as a fallback for ledger rows written before the id was
+    // exposed, so existing history does not disappear on this deploy either.
+    const projectHistory = history.filter(item => (
+      item.project_id ? item.project_id === currentProjectId : item.project_name === currentProjectName
+    ));
     const used = projectHistory.reduce((sum, item) => sum + Math.max(0, Number(item.credits_charged || 0)), 0);
     host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Solde disponible</span><strong>${Number(payload.wallet?.balance || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>crédits unifiés</small></article><article class="cloud-summary-card"><span>Usage affiché</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article><article class="cloud-summary-card"><span>Top up</span><strong>${Number(payload.wallet?.topup_credits || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>crédits achetés</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements issus du ledger unifié.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Usage indisponible.')}</div>`; }

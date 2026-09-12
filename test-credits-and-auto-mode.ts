@@ -118,3 +118,26 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
 }
 
 console.log('credits and auto mode tests passed');
+
+/*
+ * SIX — the Cloud tab groups usage by project, not by project name.
+ *
+ * `loadCloudConsoleUsage` filtered the credit ledger with
+ * `item.project_name === currentProjectName`, and the server exposed only the
+ * name even though it already selected `project_id` in the same query. A name
+ * is not an identity: renaming a project made its entire usage history vanish
+ * from the Cloud tab, because the ledger rows keep the name they were written
+ * with — and the rename button sits two rows above the credit counter. Two
+ * projects sharing a name merged into one.
+ */
+{
+  const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+  assert.match(server, /project_id: row\.usage_events\?\.project_id \|\| null,/, 'the ledger row carries the project id');
+
+  const usage = live.slice(live.indexOf('async function loadCloudConsoleUsage'), live.indexOf('async function loadCloudConsoleAnalytics'));
+  assert.match(usage, /item\.project_id === currentProjectId/, 'and the tab groups on it');
+  // Rows written before the id was exposed must not disappear on deploy.
+  assert.match(usage, /: item\.project_name === currentProjectName/, 'older rows still match by name');
+}
+
+console.log('cloud tab identity tests passed');

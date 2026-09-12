@@ -10974,6 +10974,12 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
         mode: row.usage_events?.category || row.usage_events?.resource || (row.entry_type === 'refund' ? 'Refund' : 'Usage'),
         credits_charged: Math.abs(Number(row.amount_credits || 0)),
         model_name: row.usage_events?.model || null,
+        // The id travels with the name because the Cloud tab groups a
+        // project's usage, and a name is not an identity: it was joining on
+        // `project_name`, so renaming a project made its entire usage history
+        // vanish from that tab (the ledger rows keep the name they were
+        // written with) and two projects sharing a name merged into one.
+        project_id: row.usage_events?.project_id || null,
         project_name: row.usage_events?.projects?.name || null,
         status: row.entry_type === 'refund' ? 'refunded' : 'completed',
         created_at: row.created_at,
