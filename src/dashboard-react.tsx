@@ -252,6 +252,58 @@ function Sidebar({
   );
 }
 
+/*
+ * A thumbnail must not need the application to boot successfully.
+ *
+ * The preview frame is sandboxed with `allow-scripts` and deliberately WITHOUT
+ * `allow-same-origin`: granting both to a srcDoc served from our own origin
+ * would let the framed document reach into this page and drop its own sandbox,
+ * which is an absurd price for a picture. The cost of that correct choice is an
+ * opaque origin, where merely touching `localStorage` throws a SecurityError
+ * synchronously — and a generated app that reads storage while mounting dies
+ * before it paints anything.
+ *
+ * That is not hypothetical: the stored preview for this account's most recent
+ * project is 60KB carrying `<script>`, `localStorage` and `sessionStorage`, and
+ * its tile rendered as an empty dark rectangle.
+ *
+ * So the frame gets an in-memory stand-in, installed before the app's own
+ * scripts run. A thumbnail has nothing to persist; it only has to survive
+ * asking.
+ */
+const PREVIEW_STORAGE_SHIM = `<script>(function(){
+  try {
+    var store = function () {
+      var data = Object.create(null);
+      return {
+        getItem: function (k) { return k in data ? data[k] : null; },
+        setItem: function (k, v) { data[k] = String(v); },
+        removeItem: function (k) { delete data[k]; },
+        clear: function () { data = Object.create(null); },
+        key: function (i) { return Object.keys(data)[i] || null; },
+        get length() { return Object.keys(data).length; },
+      };
+    };
+    for (var i = 0; i < 2; i++) {
+      var name = i === 0 ? 'localStorage' : 'sessionStorage';
+      var value = store();
+      try { Object.defineProperty(window, name, { value: value, configurable: true, writable: false }); }
+      catch (e) { try { window[name] = value; } catch (ignored) {} }
+    }
+  } catch (e) {}
+})();</scr` + `ipt>`;
+
+/** Put the shim before anything the document runs of its own. */
+function previewDocumentWithStorageShim(html: string): string {
+  const head = html.search(/<head[^>]*>/i);
+  if (head >= 0) {
+    const insertAt = html.indexOf('>', head) + 1;
+    return html.slice(0, insertAt) + PREVIEW_STORAGE_SHIM + html.slice(insertAt);
+  }
+  // No <head>: the browser builds one, and a leading script still runs first.
+  return PREVIEW_STORAGE_SHIM + html;
+}
+
 function ProjectCard({ project }: { project: DashboardProject }) {
   const previewHtml = project.preview_html?.trim();
   const isErrorPreview = Boolean(previewHtml && /data-coden-preview-error\s*=\s*["']true/i.test(previewHtml));
@@ -268,10 +320,24 @@ function ProjectCard({ project }: { project: DashboardProject }) {
     <article className="coden-dashboard-project-card">
       <a className="coden-dashboard-project-card-link" href={builderUrl(project.id)} aria-label={`Ouvrir le projet ${project.name}`}>
         <span className="coden-dashboard-project-preview">
+          {/*
+            * The placeholder is the floor, not the alternative.
+            *
+            * It used to render only when there was no preview, so a card whose
+            * iframe came up blank — an app whose scripts cannot run under this
+            * sandbox, a document that paints nothing above the fold — showed a
+            * dark hole with a badge floating in it, and read as broken rather
+            * than as pending. Drawing it underneath means the worst a failed
+            * preview can look is the same as one that has not been generated.
+            */}
+          <span className="coden-dashboard-project-fallback" aria-hidden="true">
+            <span><FileCode2 size={25} /></span>
+            <small>{fallbackMessage}</small>
+          </span>
           {hasRenderedPreview ? (
             <iframe
               title={`Aperçu de ${project.name}`}
-              srcDoc={previewHtml}
+              srcDoc={previewDocumentWithStorageShim(previewHtml!)}
               loading="lazy"
               sandbox="allow-scripts"
               tabIndex={-1}
@@ -285,19 +351,25 @@ function ProjectCard({ project }: { project: DashboardProject }) {
               referrerPolicy="no-referrer"
               tabIndex={-1}
             />
-          ) : (
-            <span className="coden-dashboard-project-fallback" aria-hidden="true">
-              <span><FileCode2 size={25} /></span>
-              <strong>{project.name}</strong>
-              <small>{fallbackMessage}</small>
-            </span>
-          )}
-          <span className={`coden-dashboard-project-badge is-${state.key}`}>
-            {hasRenderedPreview || hasLivePreview ? 'Aperçu' : state.label}
-          </span>
+          ) : null}
+          {/*
+            * One badge, one axis: where the project is, never what the tile
+            * happens to be showing. It used to read 'Aperçu' whenever a preview
+            * rendered and the lifecycle state otherwise, so two cards side by
+            * side answered different questions — one told you it had a picture,
+            * the other that it was a draft.
+            */}
+          <span className={`coden-dashboard-project-badge is-${state.key}`}>{state.label}</span>
         </span>
         <span className="coden-dashboard-project-card-meta">
-          <span className="coden-dashboard-project-card-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
+          {/*
+            * The name appeared three times on one card: as the placeholder
+            * title, as the initial in a coloured circle, and here. The circle
+            * and the title are gone — the initial carried nothing the name
+            * beside it did not already say, and dropping it gives the name the
+            * 41px it needs before truncating, which is exactly what "High-end
+            * Premium Minimalist Ui" ran out of.
+            */}
           <span className="coden-dashboard-project-card-copy">
             <strong>{project.name}</strong>
             <small>Modifié {relativeTime(project.updated_at || project.created_at)}</small>

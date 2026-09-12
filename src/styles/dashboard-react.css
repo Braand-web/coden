@@ -771,18 +771,27 @@ body:has(#coden-dashboard-react-root) {
   transform-origin: top left;
 }
 
+/* Sits underneath the iframe rather than instead of it, so a preview that
+   paints nothing falls back to this instead of to a hole. */
 .coden-dashboard-project-fallback {
   position: absolute;
   inset: 0;
+  z-index: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   padding: 18px;
   color: var(--dashboard-muted);
   background: var(--dashboard-surface);
   text-align: center;
+}
+
+/* The rendered preview covers it when there is one. */
+.coden-dashboard-project-preview iframe {
+  position: relative;
+  z-index: 1;
 }
 
 .coden-dashboard-project-fallback > span {
@@ -841,13 +850,16 @@ body:has(#coden-dashboard-react-root) {
   color: #9ebeff;
 }
 
+/* Two columns, not three: the avatar that held the first one was the project's
+   own initial, sitting 9px from the name it was an initial of. Removing it
+   returns 41px to the only part of this row that varies. */
 .coden-dashboard-project-card-meta {
   display: grid;
   min-width: 0;
-  grid-template-columns: 32px minmax(0, 1fr) 17px;
+  grid-template-columns: minmax(0, 1fr) 17px;
   align-items: center;
   gap: 9px;
-  padding: 10px 3px 0;
+  padding: 11px 3px 0;
 }
 
 .coden-dashboard-project-card-avatar {
