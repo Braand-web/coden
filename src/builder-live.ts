@@ -3492,9 +3492,24 @@ function renderDomainSection() {
   `;
 }
 
-function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = false, error = '') {
+/*
+ * Three different situations used to render as the same dead panel.
+ *
+ * With no status the title falls back to "Publication", the button to
+ * "Vérifier d'abord" and the counter to 0 — and that is what a user saw
+ * whether the request was still in flight, had failed, or had come back
+ * without a status. Nothing on the panel said which, so the only available
+ * reading was that publishing is broken, and there was nothing to act on.
+ *
+ * `loading` separates the first case from the other two. The third — a
+ * response that carried no status — is the one that must never be silent
+ * again: it means the server answered without saying anything, and the panel
+ * now says so and offers a retry instead of showing a disabled button.
+ */
+function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = false, error = '', loading = false) {
   const root = ensurePublishPanel();
   const status = payload?.publish || null;
+  const statusMissing = !status && !loading;
   const hasPublishedDeployment = Boolean(
     payload?.deployment &&
     status &&
@@ -3505,15 +3520,27 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const publicUrlLabel = formatPublishUrl(targetUrl);
   const canOpen = Boolean(liveUrl && hasPublishedDeployment);
   const checks = status?.checks || [];
-  const title = publishPanelTitle(status);
-  const primaryLabel = isPublishing ? 'Publication…' : publishPrimaryLabel(status);
+  const title = loading ? 'Publication…' : publishPanelTitle(status);
+  const primaryLabel = isPublishing
+    ? 'Publication…'
+    : loading
+      ? 'Chargement…'
+      : statusMissing
+        ? 'Réessayer'
+        : publishPrimaryLabel(status);
   const passCount = checks.filter(check => check.status === 'pass').length;
   const warnCount = checks.filter(check => check.status === 'warn').length;
   const failCount = checks.filter(check => check.status === 'fail').length;
   const issueCount = failCount + warnCount;
   const visibleCheckCount = issueCount || passCount;
   const canPublish = Boolean(status?.can_publish && !isPublishing);
-  const summary = !status
+  const summary = loading
+    ? 'Lecture de l’état de publication…'
+    : statusMissing
+      ? (error
+        ? 'L’état de publication n’a pas pu être lu. Réessayez.'
+        : 'Le serveur n’a pas renvoyé d’état de publication. Réessayez.')
+    : !status
     ? ''
     : status.state === 'published'
       ? 'La version publique est à jour.'
@@ -3583,7 +3610,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ${detailPanel ? `<div style="margin:0 -16px;">${detailPanel}</div>` : `
         ${summary ? `<p class="cdn-pub__summary">${escapeHtml(summary)}</p>` : ''}
         ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Cloudflare…</div>' : ''}
-        <button type="button" class="cdn-pub__primary" data-publish-action="publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
+        <button type="button" class="cdn-pub__primary" data-publish-action="${statusMissing ? 'reload' : 'publish'}" ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
         <div class="cdn-pub__links">
           <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
             ${failCount ? 'Problèmes' : warnCount ? 'À vérifier' : 'Contrôles'}
@@ -3654,6 +3681,9 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, false, error);
       }
       if (action === 'confirm-publish') void publishCurrentProject(payload);
+      // A panel that could not read the status is not a dead end: asking again
+      // is the whole remedy, and it is the user's only way out of it.
+      if (action === 'reload') void openPublishPanel();
     });
   });
 }
@@ -3665,7 +3695,7 @@ async function openPublishPanel() {
   }
   publishPanelMode = 'main';
   const projectId = currentProjectId;
-  renderPublishPanel(null, Boolean(publishInFlight));
+  renderPublishPanel(null, Boolean(publishInFlight), '', true);
   try {
     const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`);
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {

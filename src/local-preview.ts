@@ -218,20 +218,31 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
   if (path === `/api/projects/${LOCAL_PREVIEW_PROJECT_ID}/workspace-state`) {
     return { handled: true, payload: { success: true, state: localPreviewState, local_preview: true } };
   }
+  // The status is nested under `publish`, because that is where the real route
+  // puts it and where the panel reads it. Returned flat, every field here was
+  // invisible: `payload.publish` was undefined, so the panel rendered its
+  // no-status state and the stub silently described nothing.
   if (isProjectPath(path, '/publish/status')) {
     return {
       handled: true,
       payload: {
         success: true,
-        state: 'not_ready',
-        public_url: '',
-        custom_domain: null,
-        latest_published_at: null,
-        project_updated_at: localPreviewProject.updated_at,
-        badge_required: false,
-        checks: [],
-        can_publish: false,
-        has_unpublished_changes: false,
+        publish: {
+          state: 'not_ready',
+          public_url: '',
+          custom_domain: null,
+          current_visitors: 0,
+          latest_published_at: null,
+          project_updated_at: localPreviewProject.updated_at,
+          badge_required: false,
+          can_publish: false,
+          has_unpublished_changes: false,
+          checks: [
+            { key: 'files', label: 'Fichiers du projet', status: 'fail', detail: 'Génération désactivée dans l’aperçu local.' },
+            { key: 'preview', label: 'Aperçu', status: 'fail', detail: 'Aucun aperçu vérifié dans l’aperçu local.' },
+          ],
+        },
+        deployment: null,
         local_preview: true,
       },
     };

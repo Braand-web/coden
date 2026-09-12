@@ -14813,20 +14813,55 @@ function getPublishPublicUrl(project: GeneratedProject, customDomain: string | n
   return customDomain ? normalizeDomainUrl(customDomain) : getDefaultPublishedUrl(project);
 }
 
+/*
+ * The publish panel's entire state comes from this one route, and it answered
+ * failure with silence.
+ *
+ * Every statement here could throw — `getUserOrgId` when no session resolved,
+ * `loadProjectFiles` on any Supabase error that is not a missing table — and
+ * none was caught. An async Express handler that throws produces an unhandled
+ * rejection, not a response: the request ends with no body, `payload.publish`
+ * is undefined, and the panel renders its null state with nothing to say.
+ *
+ * Auth itself is not the gap — `app.use('/api/projects', …)` already runs
+ * `requireProjectAuthWithTemporaryGeneration` for this path, so the session is
+ * resolved before the handler starts. What was missing is an answer when
+ * anything downstream fails. The catch turns that silence into a status, a
+ * code and a request id, so the same failure is diagnosable from the logs
+ * instead of being read off a screenshot.
+ */
 app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
-  const userId = getUserOrgId(req);
-  const project = await loadProject(req.params.id, userId);
-  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  const context = await createPublishContext(project);
-  res.json({
-    success: true,
-    publish: buildPublishStatus(context),
-    deployment: sanitizeDeploymentForUser(
-      context.latestDeployment,
-      getPublishPublicUrl(project, context.customDomain),
-      context.customDomain,
-    ),
-  });
+  const requestId = `pubstatus_${randomUUID()}`;
+  try {
+    const userId = getUserOrgId(req);
+    const project = await loadProject(req.params.id, userId);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.', request_id: requestId });
+    const context = await createPublishContext(project);
+    return res.json({
+      success: true,
+      publish: buildPublishStatus(context),
+      deployment: sanitizeDeploymentForUser(
+        context.latestDeployment,
+        getPublishPublicUrl(project, context.customDomain),
+        context.customDomain,
+      ),
+    });
+  } catch (error: any) {
+    console.error('[coden:publish_status_failed]', {
+      request_id: requestId,
+      project_id: req.params.id,
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+    return res.status(502).json({
+      success: false,
+      error: 'L’état de publication n’a pas pu être lu. Réessayez dans un instant.',
+      message: 'L’état de publication n’a pas pu être lu. Réessayez dans un instant.',
+      diagnostic_code: 'PUBLISH_STATUS_UNAVAILABLE',
+      request_id: requestId,
+      suggested_action: 'retry',
+      recoverable: true,
+    });
+  }
 });
 
 // GET /projects/:id/deployments
