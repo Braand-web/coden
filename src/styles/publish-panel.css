@@ -178,6 +178,74 @@
   padding: 9px 11px;
 }
 
+/*
+ * The pending URL row.
+ *
+ * The placeholder used to be a bare div tinted `var(--bg-input)`, which on a
+ * dark surface is the panel's own colour: an invisible box, so the panel read
+ * as broken rather than busy. It now keeps the real row's frame and glyph and
+ * animates a bar inside it, so the shape a user is waiting for is the shape
+ * they can already see.
+ */
+.cdn-pub__url--pending { opacity: .72; }
+
+.cdn-pub__shimmer {
+  flex: 1;
+  height: 11px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-muted) 16%, transparent) 0%,
+    color-mix(in srgb, var(--text-muted) 30%, transparent) 50%,
+    color-mix(in srgb, var(--text-muted) 16%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: cdn-pub-shimmer 1.35s ease-in-out infinite;
+}
+
+@keyframes cdn-pub-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cdn-pub__shimmer { animation: none; }
+}
+
+/*
+ * The primary action carries the weight it has earned.
+ *
+ * One full-width filled button rendered identically whether it was about to
+ * publish, could not act at all, or was offering a retry — so the loudest
+ * element on the panel was also the least informative. `go` keeps the filled
+ * treatment, `retry` is an outline (a recovery, not an achievement), and
+ * `idle` recedes to a disabled surface instead of a bright bar the user
+ * cannot press.
+ */
+.cdn-pub__primary[data-variant='retry'] {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.cdn-pub__primary[data-variant='retry']:hover {
+  background: var(--bg-input);
+  border-color: var(--text-muted);
+}
+
+.cdn-pub__primary[data-variant='idle']:disabled {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* A summary that reports a failure is not the same voice as one that reports
+   a state, and the panel has room to say which. */
+.cdn-pub__summary[data-tone='warn'] { color: var(--warning, #d97706); }
+
+.cdn-pub__detail { margin: 0 -16px; }
+
 .cdn-pub__url-text {
   min-width: 0;
   flex: 1;

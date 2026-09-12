@@ -15463,7 +15463,38 @@ app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
   });
 });
 
-app.use(express.static(pathExists(staticRoot) ? staticRoot : __dirname));
+/*
+ * Two lifetimes, because these are two different kinds of file.
+ *
+ * This was one `express.static` with no options, which stamps
+ * `Cache-Control: public, max-age=0` on everything. For the documents that is
+ * right. For `dist/assets/*` it is waste: Vite writes the content hash into
+ * every one of those filenames, so `builder-Dq0kH8VK.js` can never change
+ * meaning — a new build is a new name. Serving them with max-age=0 made the
+ * browser revalidate each one on every single load: eight or more conditional
+ * round-trips standing between a returning user and their first paint, none
+ * of which could ever return anything but 304.
+ *
+ * The documents go the other way and are pinned to `no-cache`. They were
+ * relying on the default, which is correct at the origin but says nothing to
+ * a CDN in front of it — and coden.fun sits behind one. An HTML file cached
+ * there keeps pointing at the previous build's hashed assets, so a deploy
+ * appears not to have happened at all. `no-cache` means revalidate, not
+ * "never store": the 304 is cheap, and it is the one request that must never
+ * be served stale.
+ */
+const staticDir = pathExists(staticRoot) ? staticRoot : __dirname;
+app.use(express.static(staticDir, {
+  setHeaders(res, filePath) {
+    if (/[\\/]assets[\\/]/.test(filePath) && /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return;
+    }
+    if (/\.html?$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 function pathExists(target: string): boolean {
   try {

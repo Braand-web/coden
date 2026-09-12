@@ -3719,15 +3719,33 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
             <span class="cdn-pub__url-text" data-empty="${targetUrl ? 'false' : 'true'}" title="${escapeHtml(targetUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
             <button type="button" class="cdn-pub__icon-btn" data-publish-action="copy" ${liveUrl ? '' : 'disabled'} aria-label="Copier l’URL publique">${publishIcon('copy')}</button>
           </div>
-        ` : '<div class="skeleton" style="height:40px;border-radius:11px;background:var(--bg-input);"></div>'}
-        ${detailPanel ? `<div style="margin:0 -16px;">${detailPanel}</div>` : `
-        ${summary ? `<p class="cdn-pub__summary">${escapeHtml(summary)}</p>` : ''}
+        ` : `
+          <!-- A placeholder has to be visible to mean anything. This one used
+               to be a bare div tinted var(--bg-input) — on a dark surface that
+               is the same colour as the panel, so it read as an empty void and
+               the panel looked broken rather than busy. -->
+          <div class="cdn-pub__url cdn-pub__url--pending" aria-hidden="true">
+            <span class="cdn-pub__glyph">${publishIcon('globe')}</span>
+            <span class="cdn-pub__shimmer"></span>
+          </div>
+        `}
+        ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
+        ${summary ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
         ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Cloudflare…</div>' : ''}
-        <button type="button" class="cdn-pub__primary" data-publish-action="${statusMissing ? 'reload' : 'publish'}" ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
+        <button type="button"
+          class="cdn-pub__primary"
+          data-variant="${statusMissing ? 'retry' : canPublish ? 'go' : 'idle'}"
+          data-publish-action="${statusMissing ? 'reload' : 'publish'}"
+          ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
         <div class="cdn-pub__links">
           <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
             ${failCount ? 'Problèmes' : warnCount ? 'À vérifier' : 'Contrôles'}
-            <span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${visibleCheckCount}</span>
+            ${/* A bare "0" reads as "zero checks ran", which is the one thing
+                  it never means: buildPublishStatus always returns five. The
+                  count is shown only when it counts something. */''}
+            ${status && visibleCheckCount
+              ? `<span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${visibleCheckCount}</span>`
+              : ''}
           </button>
           <button type="button" class="cdn-pub__link" data-publish-action="domain" ${status ? '' : 'disabled'}>Domaine</button>
           <button type="button" class="cdn-pub__link cdn-pub__link--go" data-publish-action="open" ${canOpen ? '' : 'disabled'}>Ouvrir ↗</button>
