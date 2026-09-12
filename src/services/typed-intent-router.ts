@@ -1,4 +1,5 @@
 import type { IntentUnderstanding, UserIntentCategory } from './intent-understanding.ts';
+import { isFrenchText } from './language-detection.ts';
 
 export type TypedPrimaryIntent =
   | 'CHAT'
@@ -137,9 +138,7 @@ function includesAny(text: string, hints: string[]) {
   return hints.some(hint => text.includes(hint));
 }
 
-function isFrench(text: string) {
-  return /\b(le|la|les|un|une|des|je|tu|vous|mon|ma|mes|dans|avec|pour|corrige|cree|genere|publie)\b/i.test(text);
-}
+const isFrench = isFrenchText;
 
 function isDiscussFirst(text: string) {
   return includesAny(text, [

@@ -1,4 +1,5 @@
 import { understandUserIntent, type IntentUnderstanding, type UserIntentCategory } from './intent-understanding.ts';
+import { isFrenchText } from './language-detection.ts';
 
 export type ExecutionContractMode =
   | 'chat'
@@ -136,10 +137,7 @@ function unique<T>(items: T[]) {
   return Array.from(new Set(items));
 }
 
-function speaksFrench(prompt: string) {
-  const text = normalizeExecutionText(prompt);
-  return /\b(le|la|les|un|une|des|je|tu|vous|mon|ma|mes|dans|avec|pour|corrige|cree|genere|publie|ajoute|supprime)\b/i.test(text);
-}
+const speaksFrench = isFrenchText;
 
 function isGreetingOrSimpleConversation(text: string) {
   const direct = new Set([

@@ -44,6 +44,7 @@ import { buildMissionContext } from './agent-mission-context.ts';
 import { buildWorldClassUiPolicy } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
 import { describeProjectBackend } from './project-backend-store.ts';
+import { isFrenchText } from './language-detection.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -81,9 +82,7 @@ export type MultiAgentPipelineOutcome =
  * caller is simpler than promoting either of those private helpers into a
  * shared export for a single additional user.
  */
-function speaksFrench(value: string) {
-  return /\b(le|la|les|un|une|des|je|tu|vous|mon|ma|mes|dans|avec|pour|corrige|cree|genere|publie|ajoute|supprime|modifie)\b/i.test(String(value || ''));
-}
+const speaksFrench = isFrenchText;
 
 /**
  * The client's final assistant message for this pipeline run — a real,

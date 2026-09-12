@@ -1,3 +1,4 @@
+import { isFrenchText } from './language-detection.ts';
 /**
  * Conflict Detector — detects contradicting consecutive requests.
  *
@@ -127,9 +128,7 @@ function normalize(text: string): string {
     .trim();
 }
 
-function isFrench(text: string): boolean {
-  return /\b(je|tu|vous|nous|les|des|mon|ma|mes|dans|avec|pour|cree|genere|ajoute|supprime)\b/i.test(text);
-}
+const isFrench = isFrenchText;
 
 /**
  * Detects conflicts between the new prompt and recent history.

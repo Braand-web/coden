@@ -4839,8 +4839,15 @@ async function resolveAgentDecision(input: AgentDecisionInput) {
   }
 }
 
+/*
+ * This list used to be its own, and it was the only one of six without the
+ * articles or the imperatives users actually type. `ajoute une landing page`
+ * and `change la couleur du bouton` were answered in English to a French user
+ * because of it. It now defers to the shared detector, so the drift that
+ * caused that cannot start again here.
+ */
 function isLikelyFrenchPrompt(prompt: string) {
-  return /\b(je|tu|vous|nous|veux|j'aimerais|crée|cree|corrige|explique|comment|pourquoi|bonjour|salut|merci|projet|application)\b/i.test(repairTextEncoding(prompt));
+  return isFrenchText(repairTextEncoding(prompt));
 }
 
 function summarizeProjectFilesForAgent(files: GeneratedFile[]) {
@@ -12197,9 +12204,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         const pendingChecks = current?.definitionOfDone.filter(check => check.required && check.status !== 'passed') || [];
         if (terminal === 'completed' && pendingChecks.length) {
           terminal = 'blocked';
-          const message = isLikelyFrenchPrompt(prompt)
-            ? 'Le travail est sauvegardé. La validation complète reste à effectuer ; les contrôles non exécutés ne sont pas déclarés réussis.'
-            : 'The work is saved. Full verification is still pending; checks that did not run are not reported as passed.';
+          /*
+           * The caveat is appended to the recap, never substituted for it.
+           *
+           * Overwriting `summary` threw away the only account of what actually
+           * changed — `summarizePipelineOutcome`'s plan text and diff recap —
+           * and replaced it with one fixed sentence. A real session shows the
+           * cost: four consecutive edits ("change la couleur du bouton",
+           * "ajoute une landing page", "continu", "ajoute des animations")
+           * each answered with the identical string, so the user could not
+           * tell the four apart, or tell whether anything had happened at all.
+           *
+           * The pending checks are worth saying. They are not worth saying
+           * *instead* of the work.
+           */
+          const french = isLikelyFrenchPrompt(prompt);
+          const caveat = french
+            ? 'La validation complète reste à effectuer ; les contrôles non exécutés ne sont pas déclarés réussis.'
+            : 'Full verification is still pending; checks that did not run are not reported as passed.';
+          const done = [payload.summary, payload.text, payload.message]
+            .find(value => typeof value === 'string' && value.trim())?.trim()
+            || (french ? 'Le travail est sauvegardé.' : 'The work is saved.');
+          const message = `${done}\n\n${caveat}`;
           payload = { ...payload, success:false, needs_fix:true, diagnostic_code:'VERIFICATION_INCOMPLETE', recoverable:true,
             message, summary:message, verification:{ ...payload.verification, status:'incomplete', pendingCriteria:pendingChecks.map(check=>({id:check.id,label:check.label,status:check.status})) } };
         }
@@ -15335,6 +15361,7 @@ import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/l
 import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
+import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';
 import { sandboxRegistry } from './src/services/sandbox/sandbox-registry.ts';

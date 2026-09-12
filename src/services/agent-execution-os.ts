@@ -1,6 +1,7 @@
 import type { ExecutionContract } from './execution-contract.ts';
 import { normalizeExecutionText } from './execution-contract.ts';
 import { buildExecutionSyncMatrix } from './execution-sync-matrix.ts';
+import { isFrenchText } from './language-detection.ts';
 
 export type ExecutionPhase =
   | 'idle'
@@ -32,10 +33,7 @@ type ReliabilityLike = {
   warnings?: Array<{ message?: string; file?: string | null; source?: string }>;
 };
 
-function speaksFrench(value: string) {
-  const text = normalizeExecutionText(value);
-  return /\b(le|la|les|un|une|des|je|tu|vous|mon|ma|mes|dans|avec|pour|corrige|cree|genere|publie|ajoute|supprime|application|tache|taches)\b/.test(text);
-}
+const speaksFrench = isFrenchText;
 
 function stripMarkdownJsonFence(value: string) {
   return String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
