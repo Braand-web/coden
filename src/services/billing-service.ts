@@ -18,7 +18,17 @@ import {
 export type { BillingInterval };
 export type PublicPlanKey = 'free' | 'pro' | 'business';
 export type PlanKey = BillingPlanKey;
-export type CloudUsageCategory = 'database_server' | 'database_storage' | 'compute' | 'file_storage' | 'live_updates' | 'network' | 'ai_app_usage';
+// Owned by `cloud-metering`, which is what prices each category; re-exported
+// here so existing importers of the billing surface keep working.
+export type { CloudUsageCategory } from './cloud-metering.ts';
+export { CLOUD_USAGE_CATEGORIES } from './cloud-metering.ts';
+import {
+  CLOUD_MARKUP,
+  CLOUD_USAGE_CATEGORIES,
+  USD_PER_CLOUD_CREDIT,
+  rawCloudCostUsd,
+  type CloudUsageCategory,
+} from './cloud-metering.ts';
 
 export interface CloudPlanLimits {
   balanceUsd: number;
@@ -95,18 +105,47 @@ type CheckoutIntent = {
 
 export const PUBLIC_PRICING_PLAN_KEYS = ['free', 'pro', 'business'] as const satisfies readonly PublicPlanKey[];
 export const PAID_PLAN_KEYS = ['pro', 'business', 'enterprise'] as const satisfies readonly PlanKey[];
-export const CLOUD_USAGE_CATEGORIES: CloudUsageCategory[] = ['database_server', 'database_storage', 'compute', 'file_storage', 'live_updates', 'network', 'ai_app_usage'];
 
-const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => ({
-  balanceUsd: 0,
-  aiAppBalanceUsd: 0,
-  databaseStorageGb: 0,
-  fileStorageGb: 0,
-  bandwidthGb: 0,
-  topupMinUsd: plan === 'pro' || plan === 'business' ? 0 : null,
-  autoTopupAvailable: false,
-  usageCategories: CLOUD_USAGE_CATEGORIES,
-});
+
+/*
+ * What the plan's cloud allowance is actually worth.
+ *
+ * Every field here was hardcoded to zero, while the same plans granted
+ * `monthlyCloudCredits: 20` and the interface showed customers a storage and
+ * bandwidth allowance. So the product advertised an entitlement of literally
+ * nothing, and the twenty credits it granted bought nothing that was measured.
+ *
+ * The numbers are now derived from the grant that was already declared, rather
+ * than invented: the monthly cloud credits are converted to money at the Pro
+ * plan's own rate, and the headline GB figures are what that money buys at the
+ * metered price of each resource. Nothing here sets a price — it reports, in
+ * the units a customer thinks in, the allowance the plan already gives.
+ *
+ * `aiAppBalanceUsd` follows `monthlyAiCredits`, which is the third counter:
+ * models called from inside a published app at runtime, not the agent that
+ * built it.
+ */
+const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => {
+  const grants = BILLING_PLANS[plan].grants;
+  const cloudUsd = grants.monthlyCloudCredits * USD_PER_CLOUD_CREDIT;
+  // What the allowance buys if it were spent entirely on one resource. These
+  // are the "up to" figures a pricing page quotes, not separate budgets: one
+  // wallet funds all of them.
+  const buys = (meter: Parameters<typeof rawCloudCostUsd>[0]) => {
+    const perUnit = rawCloudCostUsd(meter, 1) * CLOUD_MARKUP;
+    return perUnit > 0 ? Math.floor(cloudUsd / perUnit) : 0;
+  };
+  return {
+    balanceUsd: Number(cloudUsd.toFixed(2)),
+    aiAppBalanceUsd: Number((grants.monthlyAiCredits * USD_PER_CLOUD_CREDIT).toFixed(2)),
+    databaseStorageGb: buys('database_storage_gb_month'),
+    fileStorageGb: buys('file_storage_gb_month'),
+    bandwidthGb: buys('database_egress_gb'),
+    topupMinUsd: plan === 'pro' || plan === 'business' ? 0 : null,
+    autoTopupAvailable: false,
+    usageCategories: CLOUD_USAGE_CATEGORIES,
+  };
+};
 
 function planConfig(key: PlanKey): PlanConfig {
   const plan = BILLING_PLANS[key];
