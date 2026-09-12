@@ -1867,6 +1867,25 @@ function ensureConversationApi() {
   if (conversationApi) return conversationApi;
   const scroll = chatScroll();
   if (!scroll) return null;
+  /*
+   * React takes ownership of this container, so whatever static markup the
+   * document shipped inside it is cleared HERE — immediately before the mount,
+   * and nowhere else.
+   *
+   * It used to be cleared at the top of `loadProject`, which happened to run
+   * before this mount only because both sat in the same `init()`. Splitting the
+   * shell onto DOMContentLoaded reversed that: the island mounted first, and
+   * `loadProject` then emptied its container with `innerHTML = ''`, deleting
+   * every node React believed it had rendered. The feed showed nothing at all —
+   * no restored history, no streaming — while React reconciled happily against
+   * a tree whose DOM was gone.
+   *
+   * Doing it here makes the order impossible to get wrong again: the container
+   * cannot be emptied after the mount, because the only code that empties it is
+   * the mount.
+   */
+  scroll.innerHTML = '';
+  scroll.dataset.liveInitialized = 'true';
   conversationApi = mountBuilderConversation(scroll, {
     onDecisionSelect: (_decisionId, option) => {
       void sendActiveHarnessInstruction(option.label);
@@ -5112,11 +5131,9 @@ async function loadProject() {
   ensurePlanBuildControls();
   ensureDatabaseView();
   const scroll = chatScroll();
-  if (scroll && scroll.dataset.liveInitialized !== 'true') {
-    scroll.innerHTML = '';
-    scroll.dataset.liveInitialized = 'true';
-  }
-  // The conversation is NOT cleared here. It used to be, and that is what made
+  // The container is emptied by `ensureConversationApi`, before it mounts —
+  // never from here, which now runs after that mount.
+  // The conversation is NOT cleared here either. It used to be, and that is what made
   // conversations disappear: the feed was wiped synchronously, and refilled
   // only at the end of a chain of awaited network calls. Any failure in
   // between left the catch showing an error over a chat that had already been

@@ -12,7 +12,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import { blake3 } from '@noble/hashes/blake3.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   attachWorkerCustomDomain,
   detachWorkerCustomDomain,
@@ -123,6 +124,37 @@ function walkFiles(root: string): Record<string, string> {
 }
 
 /**
+ * The content address Cloudflare Pages gives an asset.
+ *
+ * Every publish through this path died on the line this replaces:
+ *
+ *   crypto.createHash('blake2b256' as any)
+ *
+ * `blake2b256` is not a Node digest. OpenSSL exposes `blake2b512` and
+ * `blake2s256` and nothing between them, so the call threw "Digest method not
+ * supported" on the first file of every deployment — which is why this account
+ * has 63 projects and zero deployments. The `as any` is where it got through:
+ * TypeScript knew the name was wrong and was told to stop objecting.
+ *
+ * The algorithm is BLAKE3, and the input is not the file. Cloudflare hashes
+ * the BASE64 TEXT of the content with the extension appended (no dot), then
+ * keeps the first 32 hex characters — 128 bits, not the digest's full 256.
+ * Getting any of those three wrong produces a well-formed hash that addresses
+ * the wrong asset, so each one is pinned by a test.
+ *
+ * Node has no BLAKE3, hence `@noble/hashes`: pure TypeScript, no native build
+ * to fail on a deploy, and verified here against the published BLAKE3 vectors
+ * rather than trusted.
+ *
+ * Matching wrangler exactly is also what makes `check-missing` do its job: an
+ * unchanged file keeps its address between deployments and is never re-sent.
+ */
+export function pagesAssetHash(base64: string, relativePath: string): string {
+  const extension = path.extname(relativePath).replace(/^\./, '');
+  return bytesToHex(blake3(new TextEncoder().encode(base64 + extension))).slice(0, 32);
+}
+
+/**
  * Direct-upload deployment. Uses the JWT-based direct upload endpoint.
  * Docs: https://developers.cloudflare.com/pages/platform/direct-upload/
  */
@@ -138,10 +170,10 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   const payloads: Record<string, { base64: string; metadata: { contentType: string } }> = {};
   for (const [rel, abs] of Object.entries(files)) {
     const buf = fs.readFileSync(abs);
-    const hash = crypto.createHash('blake2b256' as any).update(buf).digest('hex').slice(0, 32);
-    manifest[rel] = hash;
-    payloads[hash] = {
-      base64: buf.toString('base64'),
+    const base64 = buf.toString('base64');
+    manifest[rel] = pagesAssetHash(base64, rel);
+    payloads[manifest[rel]] = {
+      base64,
       metadata: { contentType: guessContentType(rel) },
     };
   }

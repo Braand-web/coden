@@ -187,3 +187,49 @@ console.log('first paint is stable tests passed');
 }
 
 console.log('publish panel design tests passed');
+
+/*
+ * The conversation container is emptied before React mounts into it, never after.
+ *
+ * This is a regression the shell split caused and a test has to hold shut.
+ * `ensureConversationApi` mounts the island INTO the chat scroll container,
+ * and `loadProject` used to empty that same container with `innerHTML = ''`.
+ * Both lived in one `init()`, so the wipe happened first by accident of
+ * ordering. Moving the shell to DOMContentLoaded reversed it: the island
+ * mounted at DOM-ready, `loadProject` ran later at auth-ready and deleted
+ * every node React believed it had rendered. The feed showed nothing at all —
+ * no restored history, no streaming — while React reconciled against a tree
+ * whose DOM was gone.
+ *
+ * The wipe now lives inside the mount, which is what makes the order
+ * impossible to reverse again: the only code that empties the container is the
+ * code that then fills it.
+ */
+{
+  const mount = live.slice(live.indexOf('function ensureConversationApi()'), live.indexOf('function bindConversationFeedbackBridge'));
+
+  assert.match(mount, /scroll\.innerHTML = '';/, 'the container is emptied at mount time');
+  assert.ok(
+    mount.indexOf("scroll.innerHTML = ''") < mount.indexOf('mountBuilderConversation('),
+    'and emptied BEFORE React is given the container, not after',
+  );
+  assert.match(mount, /if \(conversationApi\) return conversationApi;/, 'a second call never re-empties a live feed');
+
+  // loadProject must not touch it: that is the ordering that broke.
+  const load = live.slice(live.indexOf('async function loadProject()'), live.indexOf('function restoreMessages('));
+  assert.doesNotMatch(load, /scroll\.innerHTML = ''/, 'loadProject no longer empties the conversation container');
+  assert.doesNotMatch(load, /dataset\.liveInitialized = 'true'/, 'nor claims to have initialised it');
+
+  // And the clear-then-restore pair still sits together, so a failed load
+  // cannot leave an emptied feed behind.
+  assert.ok(
+    load.indexOf("ensureConversationApi()?.clear()") < load.indexOf('restoreMessages(payload)'),
+    'the feed is replaced as one swap rather than emptied and hoped for',
+  );
+  assert.ok(
+    load.indexOf('await ensureProject()') < load.indexOf("ensureConversationApi()?.clear()"),
+    'and only once the payload that will replace it is in hand',
+  );
+}
+
+console.log('conversation container ownership tests passed');
