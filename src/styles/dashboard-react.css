@@ -10,6 +10,22 @@
   --dashboard-accent: #4f8cff;
   --dashboard-focus: #82adff;
   --dashboard-sidebar-width: 228px;
+
+  /* Coden's own ground: the blue of the mark, bled into indigo and a cold
+     cyan, over a near-black base. Painted once on the page behind everything
+     so the panel above it can be translucent and pick it up. */
+  --dashboard-ambient:
+    radial-gradient(1120px 640px at 10% -10%, rgba(79, 140, 255, .22), transparent 62%),
+    radial-gradient(920px 580px at 94% 2%, rgba(136, 106, 255, .18), transparent 60%),
+    radial-gradient(820px 560px at 52% 114%, rgba(56, 189, 248, .10), transparent 64%),
+    linear-gradient(176deg, #0a0e14 0%, #0e1116 48%, #11151d 100%);
+  --dashboard-panel: rgba(19, 25, 34, .72);
+  /* Not weaker than .1: below that the panel's edge is a rounded corner with
+     no line in it, and the light theme inherits an invisible border. */
+  --dashboard-panel-border: rgba(255, 255, 255, .1);
+  --dashboard-panel-shadow: 0 24px 64px rgba(0, 0, 0, .34);
+  --dashboard-panel-radius: 20px;
+  --dashboard-gutter: 10px;
 }
 
 html[data-theme="light"] {
@@ -22,6 +38,15 @@ html[data-theme="light"] {
   --dashboard-border: #d9dfe8;
   --dashboard-border-soft: rgba(38, 48, 64, .11);
   --dashboard-focus: #326ee8;
+
+  --dashboard-ambient:
+    radial-gradient(1120px 640px at 10% -10%, rgba(79, 140, 255, .17), transparent 62%),
+    radial-gradient(920px 580px at 94% 2%, rgba(136, 106, 255, .14), transparent 60%),
+    radial-gradient(820px 560px at 52% 114%, rgba(56, 189, 248, .12), transparent 64%),
+    linear-gradient(176deg, #eef1f8 0%, #f7f8fa 50%, #eaeef6 100%);
+  --dashboard-panel: rgba(255, 255, 255, .80);
+  --dashboard-panel-border: rgba(23, 27, 34, .09);
+  --dashboard-panel-shadow: 0 24px 58px rgba(31, 43, 68, .12);
 }
 
 #coden-dashboard-react-root,
@@ -40,14 +65,17 @@ body:has(#coden-dashboard-react-root) {
 body:has(#coden-dashboard-react-root) {
   overflow: hidden;
   background: var(--dashboard-bg);
+  background-image: var(--dashboard-ambient);
+  background-attachment: fixed;
   color: var(--dashboard-text);
   font-family: "Instrument Sans", Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Transparent, so the page's gradient is what shows through the panel. */
 #coden-dashboard-react-root {
   min-height: 100dvh;
-  background: var(--dashboard-bg);
+  background: transparent;
 }
 
 .coden-dashboard-skip-link {
@@ -69,11 +97,16 @@ body:has(#coden-dashboard-react-root) {
   transform: translateY(0);
 }
 
+/* The shell is the gutter. The sidebar rides directly on the gradient and the
+   content is a rounded panel floating on it, so the whole dashboard reads as
+   one object with edges rather than as two flat regions meeting at a seam. */
 .coden-dashboard-shell {
   display: flex;
   height: 100dvh;
   min-height: 100dvh;
-  background: var(--dashboard-bg);
+  padding: var(--dashboard-gutter);
+  gap: var(--dashboard-gutter);
+  background: transparent;
 }
 
 .coden-dashboard-sidebar {
@@ -85,10 +118,10 @@ body:has(#coden-dashboard-react-root) {
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  padding: 12px;
+  padding: 6px 6px 6px 8px;
   overflow: hidden;
-  background: var(--dashboard-sidebar);
-  border-right: 1px solid var(--dashboard-border-soft);
+  background: transparent;
+  border-right: 0;
   transition: flex-basis 180ms ease, width 180ms ease;
 }
 
@@ -444,11 +477,18 @@ body:has(#coden-dashboard-react-root) {
 }
 
 .coden-dashboard-main {
+  position: relative;
   min-width: 0;
   flex: 1;
-  height: 100dvh;
+  height: 100%;
   min-height: 0;
   overflow: auto;
+  background: var(--dashboard-panel);
+  border: 1px solid var(--dashboard-panel-border);
+  border-radius: var(--dashboard-panel-radius);
+  box-shadow: var(--dashboard-panel-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(130%);
+  backdrop-filter: blur(22px) saturate(130%);
 }
 
 .coden-dashboard-topbar {
@@ -610,30 +650,17 @@ body:has(#coden-dashboard-react-root) {
   font-size: 11px;
 }
 
-.coden-dashboard-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.coden-dashboard-heading p {
-  margin: 0 0 7px;
-  color: var(--dashboard-muted);
-  font-size: 12px;
-}
-
-.coden-dashboard-heading h2 {
-  margin: 0;
-  font-size: clamp(26px, 4vw, 32px);
-  line-height: 1.1;
-  letter-spacing: -.035em;
-}
-
-.coden-dashboard-heading > span {
-  padding-bottom: 4px;
-  color: var(--dashboard-muted);
-  font-size: 12px;
+/* The heading is for the outline, not the eye: the toolbar's own first tab
+   already says "Mes projets" in the place a reader is looking. */
+.coden-dashboard-section-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .coden-dashboard-search {
@@ -651,10 +678,19 @@ body:has(#coden-dashboard-react-root) {
 }
 
 .coden-dashboard-project-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 28px;
+  margin-top: 30px;
+}
+
+.coden-dashboard-project-count {
+  margin-left: auto;
+  color: var(--dashboard-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .coden-dashboard-project-toolbar .coden-dashboard-search {
@@ -697,7 +733,6 @@ body:has(#coden-dashboard-react-root) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin-left: auto;
   padding-inline: 7px;
 }
 
@@ -725,13 +760,27 @@ body:has(#coden-dashboard-react-root) {
 .coden-dashboard-project-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px 14px;
-  margin-top: 22px;
+  gap: 16px;
+  margin-top: 20px;
 }
 
+/* The card is the rounded box: one border around the thumbnail and the line
+   beneath it, clipping both, instead of a floating tile with a caption that
+   happened to sit under it. */
 .coden-dashboard-project-card {
   min-width: 0;
   margin: 0;
+  overflow: hidden;
+  background: var(--dashboard-surface);
+  border: 1px solid var(--dashboard-border-soft);
+  border-radius: 16px;
+  transition: transform 170ms cubic-bezier(.22, 1, .36, 1), border-color 170ms ease, box-shadow 170ms ease;
+}
+
+.coden-dashboard-project-card:hover {
+  border-color: var(--dashboard-border);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .20);
+  transform: translateY(-2px);
 }
 
 .coden-dashboard-project-card-link {
@@ -740,7 +789,6 @@ body:has(#coden-dashboard-react-root) {
   flex-direction: column;
   color: var(--dashboard-text);
   text-decoration: none;
-  border-radius: 16px;
   outline: 0;
   transition: color 150ms ease;
 }
@@ -750,16 +798,9 @@ body:has(#coden-dashboard-react-root) {
   display: block;
   aspect-ratio: 16 / 10;
   overflow: hidden;
-  background: var(--dashboard-surface);
-  border: 1px solid var(--dashboard-border-soft);
-  border-radius: 11px;
-  transition: transform 170ms cubic-bezier(.22, 1, .36, 1), border-color 170ms ease, box-shadow 170ms ease;
-}
-
-.coden-dashboard-project-card-link:hover .coden-dashboard-project-preview {
-  border-color: var(--dashboard-border);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, .18);
-  transform: translateY(-2px);
+  background: var(--dashboard-raised);
+  border: 0;
+  border-bottom: 1px solid var(--dashboard-border-soft);
 }
 
 .coden-dashboard-project-preview iframe {
@@ -819,60 +860,90 @@ body:has(#coden-dashboard-react-root) {
   font-size: 10px;
 }
 
+/* Bottom-left, where a reader's eye already is after the thumbnail, and a
+   light pill so it stays legible over whatever the preview happens to paint
+   underneath it — a dark chip disappeared into every dark generated app. */
 .coden-dashboard-project-badge {
   position: absolute;
-  right: 9px;
+  left: 9px;
   bottom: 9px;
-  padding: 5px 7px;
-  color: var(--dashboard-text);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  color: #101521;
   font-size: 9px;
   font-weight: 700;
-  background: rgba(14, 17, 22, .82);
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 6px;
+  letter-spacing: .01em;
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(16, 21, 33, .07);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 
-.coden-dashboard-project-card-link:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--dashboard-focus) 45%, transparent);
-  outline-offset: 4px;
+/* The dot carries the colour so the label keeps its contrast on the pill. */
+.coden-dashboard-project-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  background: currentColor;
+  border-radius: 50%;
+  opacity: .55;
 }
 
+/* The ring goes on the card, not on the link inside it: the card clips its
+   own contents, so an outline drawn within would be cut off on all four
+   sides and the focused card would look exactly like an unfocused one. */
+.coden-dashboard-project-card:has(.coden-dashboard-project-card-link:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--dashboard-focus) 45%, transparent);
+  outline-offset: 3px;
+}
+
+/* Read on a white pill, so these are the dark ends of the same hues the
+   dark-chip version used, not the light ends. */
 .coden-dashboard-project-badge.is-published {
-  color: #8de5ae;
+  color: #0f7a43;
 }
 
 .coden-dashboard-project-badge.is-issue {
-  color: #ff9b9b;
+  color: #b3261e;
 }
 
 .coden-dashboard-project-badge.is-building {
-  color: #9ebeff;
+  color: #1d4ed8;
 }
 
-/* Two columns, not three: the avatar that held the first one was the project's
-   own initial, sitting 9px from the name it was an initial of. Removing it
-   returns 41px to the only part of this row that varies. */
+.coden-dashboard-project-badge.is-ready {
+  color: #2f4056;
+}
+
+/* Avatar, copy, chevron. The avatar column came back once it had something to
+   say that the name beside it does not: whose account the project is in. */
 .coden-dashboard-project-card-meta {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 17px;
+  grid-template-columns: 28px minmax(0, 1fr) 17px;
   align-items: center;
   gap: 9px;
-  padding: 11px 3px 0;
+  padding: 11px 12px;
 }
 
 .coden-dashboard-project-card-avatar {
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  background: var(--dashboard-accent);
+  background: linear-gradient(140deg, var(--dashboard-accent), #8b6aff);
   border-radius: 50%;
+  user-select: none;
 }
 
 .coden-dashboard-project-card-copy {
@@ -1019,6 +1090,19 @@ body:has(#coden-dashboard-react-root) {
 }
 
 @media (max-width: 767px) {
+  /* The gutter is a desktop affordance: on a phone the panel is the screen,
+     and the sidebar is a drawer that must reach the actual edges. */
+  .coden-dashboard-shell {
+    padding: 0;
+    gap: 0;
+  }
+
+  .coden-dashboard-main {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
   .coden-dashboard-sidebar,
   .coden-dashboard-sidebar.is-collapsed {
     position: fixed;
@@ -1026,6 +1110,9 @@ body:has(#coden-dashboard-react-root) {
     width: min(84vw, 260px);
     max-width: 260px;
     flex-basis: auto;
+    padding: 12px;
+    background: var(--dashboard-sidebar);
+    border-right: 1px solid var(--dashboard-border-soft);
     transform: translateX(-100%);
     transition: transform 180ms ease;
   }
@@ -1133,14 +1220,6 @@ body:has(#coden-dashboard-react-root) {
     gap: 7px;
   }
 
-  .coden-dashboard-heading {
-    align-items: flex-start;
-  }
-
-  .coden-dashboard-heading > span {
-    padding-top: 22px;
-  }
-
   .coden-dashboard-search {
     margin-top: 0;
   }
@@ -1163,9 +1242,15 @@ body:has(#coden-dashboard-react-root) {
     flex: 1;
   }
 
+  /* The count is the first thing to go when the row has to wrap: the grid
+     below it answers the same question by being visible. */
+  .coden-dashboard-project-count {
+    display: none;
+  }
+
   .coden-dashboard-project-list {
     grid-template-columns: 1fr;
-    gap: 22px;
+    gap: 14px;
   }
 
   .coden-dashboard-project-main {
@@ -1185,10 +1270,6 @@ body:has(#coden-dashboard-react-root) {
   .coden-dashboard-project-toolbar {
     flex-wrap: wrap;
   }
-
-  .coden-dashboard-browse-all {
-    margin-left: 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1196,6 +1277,7 @@ body:has(#coden-dashboard-react-root) {
   .coden-dashboard-project-main,
   .coden-dashboard-account-menu,
   .coden-dashboard-composer,
+  .coden-dashboard-project-card,
   .coden-dashboard-new-project,
   .coden-dashboard-icon-button,
   .coden-dashboard-project-link {

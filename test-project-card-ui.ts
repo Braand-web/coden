@@ -28,16 +28,28 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
   assert.equal(visibleNames, 1, 'the project name is painted once, not three times');
   assert.ok((component.match(/\$\{project\.name\}/g) || []).length >= 1,
     'while the accessible names that reference it are kept');
-  assert.doesNotMatch(component, /project\.name\.slice\(0, 1\)/, 'the initial-in-a-circle is gone');
   assert.match(component, /<strong>\{project\.name\}<\/strong>/, 'and the surviving one is the meta row');
 
   // aria-label still names the project: removing repetition from the eye must
   // not remove it from a screen reader.
   assert.match(component, /aria-label=\{`Ouvrir le projet \$\{project\.name\}`\}/, 'the link is still named');
 
-  // The freed column is actually reclaimed rather than left as dead space.
-  assert.match(css, /grid-template-columns: minmax\(0, 1fr\) 17px;/, 'the meta row is two columns now');
-  assert.doesNotMatch(css, /grid-template-columns: 32px minmax\(0, 1fr\) 17px;/, 'the avatar column is gone');
+  /*
+   * The circle is allowed back, but only holding a different fact.
+   *
+   * The rule that mattered was never "no circle" — it was that the circle
+   * must not be the first letter of the name printed nine pixels away. Whose
+   * account the project sits in is a separate question, so the avatar column
+   * earns its 28px by answering that one instead.
+   */
+  assert.doesNotMatch(component, /project\.name\.slice\(0, 1\)/, 'the circle is never the project name again');
+  assert.doesNotMatch(component, /project\.name\.charAt/, 'by any spelling');
+  assert.match(component, /className="coden-dashboard-project-card-avatar"[\s\S]{0,160}\{owner\.initial\}/,
+    'it carries the account owner instead');
+  assert.match(component, /title=\{`Projet de \$\{owner\.name\}`\}/, 'and says so on hover');
+  assert.match(card, /accountDisplayName\(profile\)/, 'from the same name the sidebar shows');
+
+  assert.match(css, /grid-template-columns: 28px minmax\(0, 1fr\) 17px;/, 'the meta row makes room for it');
 }
 
 /*

@@ -450,17 +450,26 @@ body[data-coden-surface="dashboard"] {
   --dashboard-border-soft: var(--horizon-border);
   --dashboard-accent: var(--horizon-blue);
   --dashboard-focus: var(--horizon-blue);
+
+  /* The dashboard's ground, in Horizon's own colours: Coden's blue bled into
+     indigo and a cold cyan, laid over the canvas this system already defines.
+     A gradient rather than a flat fill, and still one palette. */
+  --dashboard-ambient:
+    radial-gradient(1120px 640px at 10% -10%, color-mix(in srgb, var(--horizon-blue) 20%, transparent), transparent 62%),
+    radial-gradient(920px 580px at 94% 2%, rgba(136, 106, 255, .16), transparent 60%),
+    radial-gradient(820px 560px at 52% 114%, rgba(56, 189, 248, .10), transparent 64%),
+    /* A flat layer, but still spelled as a gradient: `background-image` takes
+       only images, so a bare colour in the last slot makes the whole
+       declaration invalid and drops every layer above it with it. */
+    linear-gradient(var(--horizon-canvas), var(--horizon-canvas));
+  --dashboard-panel: color-mix(in srgb, var(--horizon-canvas) 72%, transparent);
+  --dashboard-panel-border: var(--horizon-border);
+  --dashboard-panel-shadow: var(--horizon-shadow-float);
 }
 
-body[data-coden-surface="dashboard"] :where(.coden-dashboard-shell, .coden-dashboard-main, #coden-dashboard-react-root) {
-  background: var(--horizon-canvas) !important;
-}
-
-body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
-  padding: 12px;
-  border-color: var(--horizon-border) !important;
-  background: var(--horizon-surface) !important;
-}
+/* The shell, the root and the sidebar are deliberately NOT repainted here.
+   They are transparent so the gradient above shows through, and the only
+   opaque surface is the rounded panel that holds the content. */
 
 body[data-coden-surface="dashboard"] :where(.coden-dashboard-new-project, .coden-dashboard-upgrade) {
   border-color: var(--horizon-border) !important;
@@ -474,17 +483,17 @@ body[data-coden-surface="dashboard"] .coden-dashboard-composer {
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-project-card {
-  overflow: hidden;
-  border: 1px solid var(--horizon-border) !important;
+  border-color: var(--horizon-border) !important;
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-project-card:hover {
   border-color: var(--horizon-border-strong) !important;
-  transform: translateY(-2px);
 }
 
+/* No radius here: the card is the rounded box and clips its own contents, so
+   a second radius on the thumbnail only let the card's background bleed
+   through the corners it left behind. */
 body[data-coden-surface="dashboard"] :where(.coden-dashboard-project-preview, .coden-dashboard-project-fallback) {
-  border-radius: 16px !important;
   background: var(--horizon-input) !important;
 }
 

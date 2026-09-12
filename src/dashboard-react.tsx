@@ -138,6 +138,11 @@ function relativeTime(value?: string) {
   return `il y a ${days} j`;
 }
 
+/** One answer to "whose account is this", so the sidebar and the cards agree. */
+function accountDisplayName(profile?: ProfileResponse | null) {
+  return profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0] || 'Compte';
+}
+
 function projectState(project: DashboardProject) {
   const state = `${project.status || ''} ${project.preview_status || ''} ${project.publish_status || ''}`.toLowerCase();
   if (project.live_url || /publish|deploy|live/.test(state)) return { key: 'published', label: 'En ligne' };
@@ -164,7 +169,7 @@ function Sidebar({
 }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const displayName = profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0] || 'Compte';
+  const displayName = accountDisplayName(profile);
   const email = profile?.user?.email || 'Compte Coden';
 
   useEffect(() => {
@@ -304,7 +309,7 @@ function previewDocumentWithStorageShim(html: string): string {
   return PREVIEW_STORAGE_SHIM + html;
 }
 
-function ProjectCard({ project }: { project: DashboardProject }) {
+function ProjectCard({ project, owner }: { project: DashboardProject; owner: { initial: string; name: string } }) {
   const previewHtml = project.preview_html?.trim();
   const isErrorPreview = Boolean(previewHtml && /data-coden-preview-error\s*=\s*["']true/i.test(previewHtml));
   const hasRenderedPreview = Boolean(previewHtml && !isErrorPreview);
@@ -363,13 +368,18 @@ function ProjectCard({ project }: { project: DashboardProject }) {
         </span>
         <span className="coden-dashboard-project-card-meta">
           {/*
-            * The name appeared three times on one card: as the placeholder
-            * title, as the initial in a coloured circle, and here. The circle
-            * and the title are gone — the initial carried nothing the name
-            * beside it did not already say, and dropping it gives the name the
-            * 41px it needs before truncating, which is exactly what "High-end
-            * Premium Minimalist Ui" ran out of.
+            * The circle holds the OWNER, not the project.
+            *
+            * It used to hold `project.name`'s first letter, nine pixels from
+            * the full name it was the first letter of — the card said the same
+            * thing twice and truncated "High-end Premium Minimalist Ui" to pay
+            * for it. Whose project it is, is a different fact from what it is
+            * called, so the slot survives with the answer to the other
+            * question.
             */}
+          <span className="coden-dashboard-project-card-avatar" title={`Projet de ${owner.name}`} aria-hidden="true">
+            {owner.initial}
+          </span>
           <span className="coden-dashboard-project-card-copy">
             <strong>{project.name}</strong>
             <small>Modifié {relativeTime(project.updated_at || project.created_at)}</small>
@@ -401,6 +411,11 @@ function DashboardHome() {
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
   const projects = projectsQuery.data?.projects || [];
+  const ownerName = accountDisplayName(profile);
+  const owner = useMemo(
+    () => ({ name: ownerName, initial: ownerName.slice(0, 1).toLocaleUpperCase('fr') }),
+    [ownerName],
+  );
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fr');
     return projects.filter((project) => {
@@ -541,15 +556,17 @@ function DashboardHome() {
             </div>
           </section>
 
-          <section className="coden-dashboard-heading">
-            <div>
-              <p>Espace de travail</p>
-              <h2>Mes projets</h2>
-            </div>
-            <span>{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
-          </section>
-
+          {/*
+            * One row, not two.
+            *
+            * A banner reading "Espace de travail / Mes projets" sat above a
+            * toolbar whose first tab also read "Mes projets", so the page
+            * spent 90 vertical pixels and two type sizes saying the same
+            * words twice before showing a single project. The heading stays
+            * for anyone navigating by headings; the eye gets the controls.
+            */}
           <div className="coden-dashboard-project-toolbar">
+            <h2 className="coden-dashboard-section-title">Mes projets</h2>
             <label className="coden-dashboard-search">
               <Search size={17} aria-hidden="true" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher" aria-label="Rechercher un projet" />
@@ -558,6 +575,7 @@ function DashboardHome() {
               <button className={projectView === 'all' ? 'is-active' : ''} type="button" onClick={() => setProjectView('all')}>Mes projets</button>
               <button className={projectView === 'recent' ? 'is-active' : ''} type="button" onClick={() => setProjectView('recent')}>Récemment vus</button>
             </div>
+            <span className="coden-dashboard-project-count">{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
             {filteredProjects.length > 6 && (
               <button className="coden-dashboard-browse-all" type="button" onClick={() => setShowAllProjects((value) => !value)}>
                 {showAllProjects ? 'Réduire' : 'Tout parcourir'}
@@ -576,7 +594,9 @@ function DashboardHome() {
                 <span>Actualisez la page pour réessayer.</span>
               </div>
             )}
-            {!projectsQuery.isLoading && !projectsQuery.isError && visibleProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
+            {!projectsQuery.isLoading && !projectsQuery.isError && visibleProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} owner={owner} />
+            ))}
             {!projectsQuery.isLoading && !projectsQuery.isError && !filteredProjects.length && (
               <div className="coden-dashboard-empty">
                 <strong>{search ? 'Aucun résultat' : 'Aucun projet'}</strong>
