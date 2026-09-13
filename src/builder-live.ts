@@ -6478,6 +6478,23 @@ function dbCloudStatus(rawStatus: string): { kind: DbBadgeKind; label: string } 
   return { kind: 'neutral', label: 'Non détecté' };
 }
 
+/*
+ * A table's worth of placeholder, instead of a sentence.
+ *
+ * Seven places in the Cloud console announced a load as one line of muted
+ * text — "Chargement des tables…" — inside a region about to fill with rows.
+ * A line of text and a table are not the same height, so every one of those
+ * loads ended by shoving the rest of the panel down the page.
+ *
+ * Bars, therefore, in roughly the shape of the rows that replace them. The
+ * label survives for screen readers, where a sentence was the right answer
+ * all along and a row of grey bars says nothing at all.
+ */
+function dbLoadingSkeleton(label: string, rows = 4): string {
+  const bars = Array.from({ length: rows }, () => '<span class="coden-skeleton db-skeleton-row"></span>').join('');
+  return `<div class="db-skeleton" role="status" aria-label="${escapeHtml(label)}">${bars}</div>`;
+}
+
 function dbProviderName(provider: string): string {
   const value = (provider || '').toLowerCase();
   if (value === 'coden_cloud' || !value) return 'Coden Cloud';
@@ -6530,7 +6547,7 @@ function renderDatabaseSection1(db: any): string {
     <div class="db-card">
       <span class="db-card-label">Parcourir les données (lecture seule)</span>
       <div id="db-browser" class="db-browser" data-state="loading">
-        <div class="db-state">Chargement des tables…</div>
+        ${dbLoadingSkeleton('Chargement des tables')}
       </div>
     </div>`;
 
@@ -6597,7 +6614,7 @@ function renderDatabaseSection2(db: any): string {
         <div class="db-card">
           <span class="db-card-label">Utilisateurs finaux</span>
           <div id="db-endusers" class="db-endusers" data-state="loading">
-            <div class="db-state">Chargement des utilisateurs…</div>
+            ${dbLoadingSkeleton('Chargement des utilisateurs')}
           </div>
         </div>
       </div>
@@ -6806,7 +6823,7 @@ function cloudConsoleDatabasePage(db: any) {
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Tables et vues</h2><p>La lecture est limitée aux schémas déclarés par ce projet.</p></div></div>
-      <div id="db-browser" class="db-browser"><div class="db-state">Chargement des tables…</div></div>
+      <div id="db-browser" class="db-browser">${dbLoadingSkeleton('Chargement des tables')}</div>
     </section>`;
 }
 
@@ -6820,7 +6837,7 @@ function cloudConsoleUsersPage(db: any) {
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Utilisateurs finaux</h2><p>Invitations et contrôles d’accès du backend de cette application.</p></div></div>
-      <div id="db-endusers" class="db-endusers"><div class="db-state">Chargement des utilisateurs…</div></div>
+      <div id="db-endusers" class="db-endusers">${dbLoadingSkeleton('Chargement des utilisateurs')}</div>
     </section>`;
 }
 
@@ -6908,7 +6925,7 @@ function cloudConsolePage(db: any) {
   if (cloudConsoleView === 'secrets') return cloudConsoleSecretsPage(db);
   if (cloudConsoleView === 'functions') return cloudConsoleFunctionsPage();
   if (cloudConsoleView === 'logs') return cloudConsoleLogsPage(db);
-  if (cloudConsoleView === 'jobs') return '<div id="cloud-jobs-host" class="cloud-panel"><div class="db-state">Chargement des automatisations…</div></div>';
+  if (cloudConsoleView === 'jobs') return `<div id="cloud-jobs-host" class="cloud-panel">${dbLoadingSkeleton('Chargement des automatisations')}</div>`;
   if (cloudConsoleView === 'usage') return '<div id="cloud-usage-host" class="cloud-console-content"><div class="cloud-console-loading"><span></span><span></span><span></span></div></div>';
   if (cloudConsoleView === 'analytics') return '<div id="cloud-analytics-host" class="cloud-analytics-host"><div class="cloud-console-loading"><span></span><span></span><span></span></div></div>';
   return cloudConsoleAdvancedPage(db);
@@ -7159,7 +7176,7 @@ async function loadProjectDbBrowser() {
     host.innerHTML = `<div class="db-empty">Ouvrez un projet pour parcourir ses tables.</div>`;
     return;
   }
-  host.innerHTML = `<div class="db-state">Chargement des tables…</div>`;
+  host.innerHTML = dbLoadingSkeleton('Chargement des tables');
   try {
     const schemasResp = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/db/schemas`);
     if (schemasResp?.provisioning_required) {
@@ -7222,7 +7239,7 @@ async function renderDbRows() {
   document.querySelectorAll<HTMLButtonElement>('[data-db-table]').forEach(button => {
     button.classList.toggle('active', button.getAttribute('data-db-table') === dbBrowserCurrent!.table);
   });
-  area.innerHTML = `<div class="db-state">Chargement des lignes…</div>`;
+  area.innerHTML = dbLoadingSkeleton('Chargement des lignes', 6);
   try {
     const query = `schema=${encodeURIComponent(dbBrowserCurrent.schema)}&table=${encodeURIComponent(dbBrowserCurrent.table)}&limit=${DB_BROWSER_PAGE}&offset=${dbBrowserOffset}`;
     const data = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/db/rows?${query}`);
@@ -7286,7 +7303,7 @@ async function loadProjectEndUsers() {
     host.innerHTML = `<div class="db-empty">Ouvrez un projet pour gérer ses utilisateurs.</div>`;
     return;
   }
-  host.innerHTML = `<div class="db-state">Chargement des utilisateurs…</div>`;
+  host.innerHTML = dbLoadingSkeleton('Chargement des utilisateurs');
   try {
     const data = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/users`);
     if (data?.auth_configured === false) {

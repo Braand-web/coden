@@ -13,3 +13,131 @@
 
 /* Page transitions are owned by navigation-transitions.ts. Keeping the
    protocol in one place avoids two competing body animations. */
+
+/* ---------------------------------------------------------------------------
+ * Entrance
+ *
+ * Six pixels and 320ms. An entrance is meant to say "this arrived", not to be
+ * watched — anything further or slower turns every load into a performance the
+ * user has to sit through a second time on the next navigation.
+ *
+ * Declared as animations rather than as a class the page toggles on: an
+ * animation runs by itself at first paint, whereas `opacity: 0` waiting for a
+ * script to add `.active` leaves the content permanently invisible if that
+ * script never runs.
+ * ------------------------------------------------------------------------- */
+@keyframes coden-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes coden-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* One element arriving. */
+.coden-enter {
+  animation: coden-rise 320ms var(--ease-out) both;
+}
+
+/*
+ * A list arriving. The stagger is capped at the sixth child on purpose: an
+ * uncapped 20ms step puts the sixty-third project of this account a second and
+ * a quarter behind the first, which is not an entrance, it is a queue. Past the
+ * sixth, everything shares the last delay and arrives together.
+ */
+.coden-enter-stagger > * {
+  animation: coden-rise 320ms var(--ease-out) both;
+}
+
+.coden-enter-stagger > :nth-child(1) { animation-delay: 0ms; }
+.coden-enter-stagger > :nth-child(2) { animation-delay: 24ms; }
+.coden-enter-stagger > :nth-child(3) { animation-delay: 48ms; }
+.coden-enter-stagger > :nth-child(4) { animation-delay: 72ms; }
+.coden-enter-stagger > :nth-child(5) { animation-delay: 96ms; }
+.coden-enter-stagger > :nth-child(n+6) { animation-delay: 120ms; }
+
+/* ---------------------------------------------------------------------------
+ * Reveal on scroll
+ *
+ * The rule that hides anything is gated on html[data-coden-reveal="on"], and
+ * only the script sets that attribute — after it has decided it is going to
+ * reveal. Without JavaScript, with a script that throws before it runs, or
+ * with an older browser lacking IntersectionObserver, nothing is ever hidden
+ * and the page renders complete.
+ *
+ * That ordering is the whole safety argument. `opacity: 0` written
+ * unconditionally in a stylesheet, waiting for a class to arrive from a
+ * script, is how a marketing page ends up permanently blank for the people
+ * whose script never arrived.
+ * ------------------------------------------------------------------------- */
+html[data-coden-reveal="on"] [data-coden-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 520ms var(--ease-out), transform 520ms var(--ease-out);
+}
+
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Skeletons
+ *
+ * A skeleton is only worth having when it occupies the SAME box as the thing
+ * it stands in for. A placeholder of the wrong size does not remove the jump
+ * from empty to full — it just makes the jump prettier, and the layout shift
+ * is the part that actually costs the reader.
+ *
+ * Both tints derive from `currentColor`, so one class works on the sidebar's
+ * light ink and on the panel's dark ink without a palette per surface.
+ * ------------------------------------------------------------------------- */
+@keyframes coden-skeleton-sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.coden-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+  background-image: linear-gradient(
+    100deg,
+    transparent 38%,
+    color-mix(in srgb, currentColor 16%, transparent) 50%,
+    transparent 62%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  border-radius: 8px;
+  animation: coden-skeleton-sweep 1.6s linear infinite;
+}
+
+/*
+ * Reduced motion, for everything declared above.
+ *
+ * Scoped to these names rather than applied as a blanket `*` override: a
+ * global `animation-duration: .01ms !important` also fires every `animationend`
+ * handler in the app a frame after load, which is a behaviour change and not
+ * an accessibility one. A skeleton keeps its tint and loses only the sweep —
+ * it still says "loading", without the part that moves.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .coden-skeleton {
+    background-image: none;
+    animation: none;
+  }
+
+  /*
+   * By animation NAME, not by a selector guess. Anything that opts into
+   * `coden-rise` or `coden-fade` is covered wherever it lives, and nothing
+   * that did not opt in is touched — a `[class*="coden-"]` sweep would also
+   * have silenced animations this block never reviewed.
+   */
+  .coden-enter,
+  .coden-enter-stagger > * {
+    animation: none;
+  }
+}

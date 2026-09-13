@@ -152,7 +152,7 @@ body:has(#coden-dashboard-react-root) {
   overflow: hidden;
   background: transparent;
   border-right: 0;
-  transition: flex-basis 180ms ease, width 180ms ease;
+  transition: flex-basis var(--transition-control), width var(--transition-control);
 }
 
 .coden-dashboard-sidebar.is-collapsed {
@@ -206,7 +206,7 @@ body:has(#coden-dashboard-react-root) {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
+  transition: color var(--transition-control), background-color var(--transition-control);
 }
 
 .coden-dashboard-icon-button:hover {
@@ -244,7 +244,7 @@ body:has(#coden-dashboard-react-root) {
   background: var(--dashboard-surface);
   border: 1px solid var(--dashboard-border);
   border-radius: 9px;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color var(--transition-control), border-color var(--transition-control);
 }
 
 .coden-dashboard-new-project:hover {
@@ -283,7 +283,7 @@ body:has(#coden-dashboard-react-root) {
   font-size: 13px;
   text-decoration: none;
   border-radius: 8px;
-  transition: color 140ms ease, background-color 140ms ease;
+  transition: color var(--transition-control), background-color var(--transition-control);
 }
 
 .coden-dashboard-project-link:hover {
@@ -319,7 +319,7 @@ body:has(#coden-dashboard-react-root) {
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  transition: color 160ms cubic-bezier(.22, 1, .36, 1), background-color 160ms cubic-bezier(.22, 1, .36, 1);
+  transition: color var(--transition-control), background-color var(--transition-control);
 }
 
 .coden-dashboard-account:hover,
@@ -384,7 +384,9 @@ body:has(#coden-dashboard-react-root) {
   border: 1px solid var(--dashboard-border);
   border-radius: 10px;
   box-shadow: 0 16px 38px rgba(0, 0, 0, .28);
-  animation: coden-dashboard-popover-in 160ms cubic-bezier(.22, 1, .36, 1);
+  /* A menu, so --transition-menu (220ms) rather than the control duration.
+     The contract already drew that distinction; nothing had used it yet. */
+  animation: coden-dashboard-popover-in var(--transition-menu) both;
 }
 
 .coden-dashboard-account-menu button {
@@ -585,7 +587,7 @@ body:has(#coden-dashboard-react-root) {
   border-radius: 14px;
   box-shadow: 0 16px 42px rgba(0, 0, 0, .14);
   text-align: left;
-  transition: border-color 170ms cubic-bezier(.22, 1, .36, 1), box-shadow 170ms cubic-bezier(.22, 1, .36, 1);
+  transition: border-color var(--transition-control), box-shadow var(--transition-control);
 }
 
 .coden-dashboard-composer:focus-within {
@@ -641,7 +643,7 @@ body:has(#coden-dashboard-react-root) {
   border: 1px solid transparent;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+  transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control);
 }
 
 .coden-dashboard-composer-icon:hover:not(:disabled) {
@@ -668,11 +670,51 @@ body:has(#coden-dashboard-react-root) {
   border: 0;
   border-radius: 999px;
   cursor: pointer;
-  transition: opacity 150ms ease, transform 150ms cubic-bezier(.22, 1, .36, 1);
+  transition: opacity var(--transition-control), transform var(--transition-control);
 }
 
 .coden-dashboard-composer-footer .coden-dashboard-composer-submit:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+/*
+ * Something happens on the way down, not only on the way back.
+ *
+ * Every control here reacted to hover and to nothing else, so a click had no
+ * acknowledgement between pressing and the page changing — which on a slow
+ * request is the whole interaction. Two percent and no duration: a press
+ * should land on the frame the finger does, and only the release is eased.
+ */
+.coden-dashboard-composer-submit:active:not(:disabled),
+.coden-dashboard-composer-icon:active:not(:disabled),
+.coden-dashboard-icon-button:active,
+.coden-dashboard-new-project:active,
+.coden-dashboard-mobile-new:active,
+.coden-dashboard-project-filters button:active,
+.coden-dashboard-browse-all:active,
+.coden-dashboard-project-more button:active {
+  transform: scale(.98);
+  transition-duration: 0s;
+}
+
+/* The card is bigger, so it moves less. */
+.coden-dashboard-project-card-link:active .coden-dashboard-project-preview {
+  transform: scale(.995);
+  transition-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-dashboard-composer-submit:active:not(:disabled),
+  .coden-dashboard-composer-icon:active:not(:disabled),
+  .coden-dashboard-icon-button:active,
+  .coden-dashboard-new-project:active,
+  .coden-dashboard-mobile-new:active,
+  .coden-dashboard-project-filters button:active,
+  .coden-dashboard-browse-all:active,
+  .coden-dashboard-project-more button:active,
+  .coden-dashboard-project-card-link:active .coden-dashboard-project-preview {
+    transform: none;
+  }
 }
 
 .coden-dashboard-composer-footer .coden-dashboard-composer-submit:disabled {
@@ -763,7 +805,7 @@ body:has(#coden-dashboard-react-root) {
   border: 0;
   border-radius: 999px;
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease;
+  transition: color var(--transition-control), background-color var(--transition-control);
 }
 
 .coden-dashboard-project-filters button:hover {
@@ -832,7 +874,7 @@ body:has(#coden-dashboard-react-root) {
   text-decoration: none;
   border-radius: 14px;
   outline: 0;
-  transition: color 150ms ease;
+  transition: color var(--transition-control);
 }
 
 .coden-dashboard-project-preview {
@@ -843,7 +885,7 @@ body:has(#coden-dashboard-react-root) {
   background: var(--dashboard-raised);
   border: 1px solid var(--dashboard-border-soft);
   border-radius: 12px;
-  transition: transform 170ms cubic-bezier(.22, 1, .36, 1), border-color 170ms ease, box-shadow 170ms ease;
+  transition: transform var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control);
 }
 
 .coden-dashboard-project-card-link:hover .coden-dashboard-project-preview {
@@ -1053,7 +1095,7 @@ body:has(#coden-dashboard-react-root) {
   border: 1px solid var(--dashboard-border);
   border-radius: 9px;
   cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition: border-color var(--transition-control), background-color var(--transition-control);
 }
 
 .coden-dashboard-project-more button:hover {
@@ -1077,7 +1119,7 @@ body:has(#coden-dashboard-react-root) {
   background: var(--dashboard-surface);
   border: 1px solid var(--dashboard-border-soft);
   border-radius: 10px;
-  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+  transition: background-color var(--transition-control), border-color var(--transition-control), transform var(--transition-control);
 }
 
 .coden-dashboard-project-main:hover {
@@ -1140,7 +1182,43 @@ body:has(#coden-dashboard-react-root) {
   color: var(--dashboard-muted);
 }
 
-.coden-dashboard-loading,
+/*
+ * The skeleton's bars are sized NOT to matter.
+ *
+ * The caption row is a 36px avatar beside two lines of text, centred; the real
+ * copy comes to 35px, so the avatar is what sets the row height. Keeping the
+ * bars well under 36px means the same is true while loading, and the row
+ * cannot change height when the text arrives.
+ */
+.coden-dashboard-skeleton-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.coden-dashboard-skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.coden-dashboard-skeleton-line.is-short {
+  width: 56%;
+  height: 10px;
+}
+
+/* Announced, not drawn: a visible line of text here would take a cell of the
+   grid and push the first skeleton card out of place. */
+.coden-dashboard-loading-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .coden-dashboard-empty {
   display: flex;
   min-height: 160px;
@@ -1204,7 +1282,7 @@ body:has(#coden-dashboard-react-root) {
     background: #121c3d;
     border-right: 1px solid var(--dashboard-border-soft);
     transform: translateX(-100%);
-    transition: transform 180ms ease;
+    transition: transform var(--transition-control);
   }
 
   .coden-dashboard-sidebar.is-open {
