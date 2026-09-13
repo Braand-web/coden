@@ -202,6 +202,12 @@ const app: any = (exportedApp as any)?.default || exportedApp;
 
 export default async function handler(req: any, res: any) {
   if (typeof app === 'function') return app(req, res);
+  if (app && typeof app.callback === 'function') return app.callback()(req, res);
+  if (app && typeof app.ready === 'function' && typeof app.routing === 'function') {
+    await app.ready();
+    return app.routing(req, res);
+  }
+  if (app && typeof app.handle === 'function') return app.handle(req, res);
   if (app && typeof app.fetch === 'function') {
     const protocol = String(req.headers?.['x-forwarded-proto'] || 'https');
     const host = String(req.headers?.host || 'localhost');
