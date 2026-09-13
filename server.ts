@@ -12277,6 +12277,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         console.warn('[coden:pipeline_run_status_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
       }
       pipelineRunId = '';
+    }
     if (payload.pipeline === 'multi_agent' && payload.summary) {
       try {
         const streamedText = eventStream?.transcript || '';
