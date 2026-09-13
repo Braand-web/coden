@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
-import { vercelCodenHostForSlug, vercelProjectNameForSlug, vercelProjectUrlForSlug, verifyVercelDeployment } from './src/services/publish-vercel.ts';
+import { createVercelFunctionAdapter, vercelCodenHostForSlug, vercelProjectNameForSlug, vercelProjectUrlForSlug, verifyVercelDeployment } from './src/services/publish-vercel.ts';
 
 assert.equal(vercelProjectNameForSlug('My Cool App!'), 'coden-my-cool-app');
 assert.equal(vercelProjectUrlForSlug('My Cool App!'), 'https://coden-my-cool-app.vercel.app');
 assert.equal(vercelCodenHostForSlug('My Cool App!'), 'my-cool-app.coden.fun');
+
+const adapter = createVercelFunctionAdapter('../server/vercel-entry');
+assert.match(adapter, /export default async function handler/);
+assert.match(adapter, /typeof app === 'function'/);
+assert.match(adapter, /app\.fetch/);
 
 const urls: string[] = [];
 const verification = await verifyVercelDeployment(

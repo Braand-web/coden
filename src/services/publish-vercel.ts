@@ -4,7 +4,8 @@
  * The publisher deliberately uses Vercel's REST API instead of the CLI so the
  * Railway service stays deterministic and does not need to install a second
  * global tool for every deploy. Builds are produced and security-checked by
- * Coden first; only the resulting static output is sent to Vercel.
+ * Coden first; static builds and serverless-compatible source are then sent
+ * to Vercel through the same production deployment path.
  */
 
 import fs from 'node:fs';
@@ -150,6 +151,11 @@ function collectFiles(root: string): Array<{ file: string; data: string; encodin
 
   function visit(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      // Dependencies are installed by Vercel and must never be uploaded from
+      // the Coden build worker. This also keeps the inline deployment below
+      // Vercel's payload limit and prevents generated package code from being
+      // mixed with the host service's modules.
+      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.vercel') continue;
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         visit(absolute);
@@ -167,6 +173,90 @@ function collectFiles(root: string): Array<{ file: string; data: string; encodin
   visit(root);
   if (!output.length) throw new Error('Vercel build output is empty.');
   return output;
+}
+
+function findServerEntry(sourceDir: string): string | null {
+  const candidates = [
+    'api/index.ts', 'api/index.js', 'api/index.mts', 'api/index.mjs',
+    'server/index.ts', 'server/index.js', 'server/server.ts', 'server/server.js',
+    'server/app.ts', 'server/app.js', 'server.ts', 'server.js',
+    'src/server.ts', 'src/server.js',
+  ];
+  return candidates
+    .map(candidate => path.join(sourceDir, candidate))
+    .find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile()) || null;
+}
+
+function stripServerListen(source: string): string {
+  // Generated Node apps conventionally start with app.listen(...). A Vercel
+  // function owns the HTTP socket, so importing that call would bind a second
+  // port and make the function fail. Keep this narrow and line-oriented so
+  // arbitrary business code is not rewritten.
+  return source.replace(/^\s*(?:await\s+)?(?:app|server)\.listen\([\s\S]*?\);?\s*$/gm, '');
+}
+
+export function createVercelFunctionAdapter(importPath: string): string {
+  return `import exportedApp from '${importPath}';
+
+const app: any = (exportedApp as any)?.default || exportedApp;
+
+export default async function handler(req: any, res: any) {
+  if (typeof app === 'function') return app(req, res);
+  if (app && typeof app.fetch === 'function') {
+    const protocol = String(req.headers?.['x-forwarded-proto'] || 'https');
+    const host = String(req.headers?.host || 'localhost');
+    const requestUrl = new URL(String(req.url || '/'), \`${'${'}protocol}://${'${'}host}\`);
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers || {})) {
+      if (Array.isArray(value)) headers.set(key, value.join(', '));
+      else if (value !== undefined) headers.set(key, String(value));
+    }
+    const method = String(req.method || 'GET').toUpperCase();
+    const request = new Request(requestUrl, {
+      method,
+      headers,
+      body: method === 'GET' || method === 'HEAD' ? undefined : req,
+      // Node's IncomingMessage is a readable stream and can be consumed by
+      // Fetch-compatible runtimes without buffering arbitrary request bodies.
+      duplex: 'half' as any,
+    } as any);
+    const response = await app.fetch(request, process.env, {});
+    res.statusCode = response.status;
+    response.headers.forEach((value: string, key: string) => res.setHeader(key, value));
+    res.end(Buffer.from(await response.arrayBuffer()));
+    return;
+  }
+  res.statusCode = 500;
+  res.end('Generated server does not expose an Express or Fetch handler.');
+}
+`;
+}
+
+function prepareVercelSource(sourceDir: string, runtime: string): void {
+  const entry = findServerEntry(sourceDir);
+  const dynamic = /node|server|fullstack|cloudflare|next/i.test(String(runtime || ''));
+  if (!dynamic || !entry) return;
+
+  const relativeEntry = path.relative(sourceDir, entry).split(path.sep).join('/');
+  const existingApiEntry = /^api\/index\.(?:ts|js|mts|mjs)$/i.test(relativeEntry);
+  if (existingApiEntry) return;
+
+  const extension = path.extname(relativeEntry) || '.ts';
+  const entryDirectory = path.dirname(relativeEntry);
+  const adapterName = entryDirectory === '.' ? `server.vercel${extension}` : `${entryDirectory}/vercel-entry${extension}`;
+  const adapterAbsolute = path.join(sourceDir, adapterName);
+  const original = fs.readFileSync(entry, 'utf8');
+  let patched = stripServerListen(original);
+  if (!/export\s+default\s+/m.test(patched) && /(?:const|let|var)\s+app\s*=/.test(patched)) {
+    patched += '\nexport default app;\n';
+  }
+  fs.mkdirSync(path.dirname(adapterAbsolute), { recursive: true });
+  fs.writeFileSync(adapterAbsolute, patched, 'utf8');
+
+  const apiDir = path.join(sourceDir, 'api');
+  fs.mkdirSync(apiDir, { recursive: true });
+  const importPath = `../${adapterName.replace(/\.(?:ts|js|mts|mjs)$/i, '')}`;
+  fs.writeFileSync(path.join(apiDir, 'index.ts'), createVercelFunctionAdapter(importPath), 'utf8');
 }
 
 function verificationList(value: unknown): Array<{ type?: string; domain?: string; value?: string; reason?: string }> {
@@ -258,16 +348,29 @@ export async function publishProjectToVercel(params: {
   slug: string;
   distDir: string;
   runtime: string;
+  sourceDir?: string;
+  outputDirectory?: string;
 }): Promise<VercelPublishResult> {
   const projectName = vercelProjectNameForSlug(params.slug);
-  const files = collectFiles(params.distDir);
+  const deploymentRoot = params.sourceDir || params.distDir;
+  if (params.sourceDir) prepareVercelSource(params.sourceDir, params.runtime);
+  const files = collectFiles(deploymentRoot);
+  const outputDirectory = String(params.outputDirectory || 'dist').replace(/^[/\\]+/, '') || '.';
+  const projectSettings = params.sourceDir
+    ? {
+        framework: null,
+        buildCommand: 'true',
+        installCommand: 'npm install --ignore-scripts --no-audit --no-fund',
+        outputDirectory,
+      }
+    : { framework: null };
   const deployment = await vercelRequest<VercelDeployment>('/v13/deployments', {
     method: 'POST',
     body: JSON.stringify({
       name: projectName,
       target: 'production',
       files,
-      projectSettings: { framework: null },
+      projectSettings,
       meta: { coden: 'true', codenSlug: slugify(params.slug) },
     }),
   }, { forceNew: 1, skipAutoDetectionConfirmation: 1 });

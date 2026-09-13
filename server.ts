@@ -16078,16 +16078,6 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     if (contract.validation.length) {
       return res.status(422).json({ success: false, error: 'Generated app manifest is invalid.', validation: contract.validation, manifest: contract.manifest, request_id: requestId });
     }
-    if (contract.manifest.runtime === 'node-server' || contract.universalManifest.deployment?.target === 'railway') {
-      return res.status(409).json({
-        success: false,
-        error: 'Cette application contient un serveur Node. Le déploiement Vercel statique est bloqué pour ne pas perdre son backend.',
-        message: 'Cette application contient un serveur Node. Le déploiement Vercel statique est bloqué pour ne pas perdre son backend.',
-        diagnostic_code: 'VERCEL_RUNTIME_ADAPTER_REQUIRED',
-        request_id: requestId,
-        suggested_action: 'configure_vercel_runtime_adapter',
-      });
-    }
     const artifactHash = immutableArtifactHash({
       files: contract.files.map(file => ({ path: file.path, content: file.content })),
       manifest: contract.universalManifest,
@@ -16109,6 +16099,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         slug,
         distDir,
         runtime: contract.manifest.runtime,
+        sourceDir: workDir,
+        outputDirectory: contract.manifest.outputDirectory,
       });
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes

@@ -116,7 +116,12 @@ export function validateProjectManifest(value: unknown): ManifestValidation {
     if (item.secret && /^(VITE_|NEXT_PUBLIC_|PUBLIC_)/.test(item.name)) warnings.push(`${item.name} is marked secret but uses a public-client prefix`);
   }
   if (manifest.runtime === 'static' && manifest.deployment?.target === 'railway') warnings.push('static projects should normally deploy to Vercel');
-  if ((manifest.runtime === 'node' || manifest.runtime === 'next' || manifest.runtime === 'fullstack') && manifest.deployment?.target === 'static') errors.push('server runtimes cannot use a static deployment target');
+  // `static` is retained as a legacy value for old rows. The publisher
+  // normalizes every runtime to Vercel, so a legacy target must not prevent a
+  // dynamic app from being published.
+  if ((manifest.runtime === 'node' || manifest.runtime === 'next' || manifest.runtime === 'fullstack') && manifest.deployment?.target === 'static') {
+    warnings.push('legacy static target normalized to Vercel for dynamic runtime');
+  }
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -132,7 +137,10 @@ export function createProjectManifest(input: { projectId: string; name: string; 
       : (map.has('yarn.lock') ? 'yarn install --frozen-lockfile' : 'yarn install');
   const pkg = packageJson(input.files);
   const scripts = pkg?.scripts || {};
-  const deploymentTarget: CodenDeploymentTarget = detected.runtime === 'static' || detected.runtime === 'vite' || detected.runtime === 'cloudflare-worker' ? 'vercel' : 'railway';
+  // Vercel is the single publication target for every generated runtime. The
+  // publisher adapts dynamic Node/Fetch entries into Vercel functions while
+  // static output remains served from the same project and domain.
+  const deploymentTarget: CodenDeploymentTarget = 'vercel';
   return {
     version: '1',
     projectId: input.projectId,
@@ -153,7 +161,7 @@ export function createProjectManifest(input: { projectId: string; name: string; 
     deployment: {
       target: deploymentTarget,
       outputDirectory: detected.runtime === 'vite' ? 'dist' : detected.runtime === 'static' ? '.' : undefined,
-      startCommand: deploymentTarget === 'railway' ? (scripts.start ? `${run} start` : undefined) : undefined,
+      startCommand: undefined,
     },
     environment: [],
     capabilities: { auth: false, database: false, storage: false, realtime: false, payments: false, ai: false, fileUploads: false },
