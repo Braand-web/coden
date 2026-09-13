@@ -9701,6 +9701,58 @@ async function ensureUnifiedIncludedGrants(accountId: string) {
   return client;
 }
 
+/*
+ * What the ledger that will actually debit says is available.
+ *
+ * There are two credit books in this system and they do not agree. The gate in
+ * front of every paid action reads `credit_wallets` — one number for the whole
+ * account. The debit reads `credit_grants`, which is per category and per
+ * expiry, through `coden_billing_reserve`. A gate that reads a different book
+ * from the debit is not a gate: it lets the request through, the model is
+ * called and paid for, and only then does the ledger refuse.
+ *
+ * That is not hypothetical. On 13 September this account's gate saw 30 credits
+ * and let two chats through; its eligible `ai_gateway` grants held 0, because
+ * build credits are re-issued daily and the AI allowance is monthly and had
+ * been spent. OpenRouter was paid twice, the answers were generated, saved,
+ * and then thrown away with "the model is temporarily unavailable".
+ *
+ * The predicate below mirrors the RPC's own WHERE clause exactly, because an
+ * approximation of it would reintroduce the same disagreement in miniature.
+ */
+async function unifiedCategoryCredits(
+  accountId: string,
+  category: UnifiedUsageReservation['category'],
+): Promise<number> {
+  if (!CODEN_MONETIZATION_ENABLED) return Number.POSITIVE_INFINITY;
+  if (hasUnlimitedTestCredits(accountId)) return Number.POSITIVE_INFINITY;
+  try {
+    const client = await ensureUnifiedIncludedGrants(accountId);
+    const { data, error } = await client
+      .from('credit_grants')
+      .select('credits_remaining')
+      .eq('account_id', accountId)
+      .in('usage_restriction', [category, 'general'])
+      .is('frozen_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .gt('credits_remaining', 0);
+    if (error) throw error;
+    return (data || []).reduce((total: number, row: any) => total + Number(row.credits_remaining || 0), 0);
+  } catch (error: any) {
+    /*
+     * Fail open. A read outage on the balance must not lock every customer out
+     * of the product — the reservation still guards the actual debit, so the
+     * worst case here is the behaviour we had before this check existed.
+     */
+    console.error('[coden:unified_balance_unavailable]', {
+      account_id: accountId,
+      category,
+      message: redactSecrets(error?.message || String(error), '[redacted]'),
+    });
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 async function reserveUnifiedUsage(input: {
   accountId: string;
   category: UnifiedUsageReservation['category'];
@@ -10306,9 +10358,20 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   const helpers = getOptionalDbHelpers('assistant_chat');
   const wallet = await getWalletWithFallback(helpers, userId);
   const estimate = estimateActionCost(prompt, decision, selectedModel);
-  if (wallet < estimate.finalCredits) {
+  /*
+   * Both books, before the model is called rather than after.
+   *
+   * The wallet check alone passed while the grant ledger was empty, so the
+   * refusal landed after OpenRouter had been paid and the answer generated —
+   * and surfaced as "the model is temporarily unavailable", which was untrue
+   * and offered two remedies (retry, switch to Auto) that could not work.
+   * Asking the debiting ledger first costs one read and makes the honest
+   * answer, CREDITS_REQUIRED, the one the customer actually sees.
+   */
+  const aiCredits = await unifiedCategoryCredits(userId, 'ai_gateway');
+  if (wallet < estimate.finalCredits || aiCredits < estimate.finalCredits) {
     return res.status(402).json({
-      ...publicCreditGateResponse(),
+      ...publicCreditGateResponse(isLikelyFrenchPrompt(prompt)),
       request_id: requestId,
     });
   }
@@ -10354,15 +10417,41 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     }
     const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
-    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`, {
-      projectId: canPersistConversation ? project.id : null,
-      category: 'ai_gateway',
-      resource: 'conversation',
-      provider: 'openrouter',
-      model: agentText.model,
-      providerCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0),
-      completeCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0) + 0.00005,
-    });
+    /*
+     * The bill is settled after the work, so it can no longer destroy it.
+     *
+     * This await used to be bare. When the ledger refused the reservation the
+     * exception unwound past the response, into the catch below, and the
+     * customer was told the model had failed — after the model had answered,
+     * after OpenRouter had been paid, and after the answer had been written to
+     * the conversation. They lost a reply that already existed and that we had
+     * already spent real money on, twice in two minutes on 13 September.
+     *
+     * A charge that cannot be taken is an accounting problem, and the gate
+     * above is what prevents it. If one still slips through — a grant expiring
+     * between the check and the debit — the honest outcome is to deliver the
+     * work and record the shortfall for an operator, not to throw away
+     * something the customer can see was produced.
+     */
+    try {
+      await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`, {
+        projectId: canPersistConversation ? project.id : null,
+        category: 'ai_gateway',
+        resource: 'conversation',
+        provider: 'openrouter',
+        model: agentText.model,
+        providerCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0),
+        completeCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0) + 0.00005,
+      });
+    } catch (chargeError: any) {
+      console.error('[coden:chat_charge_failed]', {
+        request_id: requestId,
+        account_id: userId,
+        credits: chargedCredits,
+        provider_cost_usd: Number(agentText.cost_usd || estimateRealCostUsd || 0),
+        message: redactSecrets(chargeError?.message || String(chargeError), '[redacted]'),
+      });
+    }
     return res.json({
       success: true,
       request_id: requestId,
