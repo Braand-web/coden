@@ -94,7 +94,12 @@ const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
  */
 {
   assert.match(server, /diagnostic_code: 'CREDITS_REQUIRED'/, 'the honest code still exists');
-  assert.match(server, /\.\.\.publicCreditGateResponse\(isLikelyFrenchPrompt\(prompt\)\),/,
+  /*
+   * Checked as "the locale is derived from the prompt", not as one exact line:
+   * the first version of this assertion pinned the call's formatting and broke
+   * the moment a second argument was added, on behaviour that had not changed.
+   */
+  assert.match(server, /publicCreditGateResponse\(\s*\n?\s*isLikelyFrenchPrompt\(prompt\),/,
     'and the chat gate answers in the language the customer wrote in');
 }
 

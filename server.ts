@@ -5670,19 +5670,40 @@ function sanitizeAiUsageRow(row: any) {
  * interface — and neither carried a `diagnostic_code`, so the harness recorded
  * `turn.failed { diagnostic_code: null }` and the client had nothing to act on.
  */
-function publicCreditGateResponse(french = true) {
+/*
+ * The remedy is only offered when it is one.
+ *
+ * This sentence used to end with "ou choisissez le mode Auto qui sélectionne
+ * un modèle moins coûteux" unconditionally, and on the path where customers
+ * actually see it that clause was inert three times over. The composer offers
+ * exactly two modes, Auto and Plan; Auto is the default and `normalizeAgentMode`
+ * returns to it for anything unrecognised; and for a conversation
+ * `estimateActionCost` never reads the model at all — it is a flat
+ * `minimum_action_credits: 1`. So the advice was "switch to the mode you are
+ * already in", and had they been able to follow it, the price would not have
+ * moved.
+ *
+ * Auto genuinely is cheaper when a specific model has been picked for work
+ * whose floor depends on it, so the clause survives for that case and callers
+ * opt in. The default is off: a remedy that cannot work is worse than no
+ * remedy, because the customer spends their attention on it first.
+ */
+function publicCreditGateResponse(french = true, autoCanHelp = false) {
+  const message = french
+    ? autoCanHelp
+      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
+      : 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde pour continuer.'
+    : autoCanHelp
+      ? 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.'
+      : 'There are not enough credits left for this action. Top up your balance to continue.';
   return {
     success: false,
     event: 'credits_insufficient',
-    error: french
-      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
-      : 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.',
-    message: french
-      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
-      : 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.',
+    error: message,
+    message,
     diagnostic_code: 'CREDITS_REQUIRED',
     action: 'upgrade_required',
-    suggested_action: 'use_auto',
+    suggested_action: autoCanHelp ? 'use_auto' : 'top_up',
   };
 }
 
@@ -10371,7 +10392,16 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   const aiCredits = await unifiedCategoryCredits(userId, 'ai_gateway');
   if (wallet < estimate.finalCredits || aiCredits < estimate.finalCredits) {
     return res.status(402).json({
-      ...publicCreditGateResponse(isLikelyFrenchPrompt(prompt)),
+      /*
+       * Auto is never the answer here. This endpoint serves conversation and
+       * plan; a conversation's cost does not read the model at all, and the
+       * request arrives on 'auto' unless a model was explicitly picked. Both
+       * conditions have to hold before the clause is worth showing.
+       */
+      ...publicCreditGateResponse(
+        isLikelyFrenchPrompt(prompt),
+        selectedModel !== 'auto' && decision.intent !== 'conversation',
+      ),
       request_id: requestId,
     });
   }
@@ -11224,7 +11254,7 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
     const initialEstimate = costEstimator.calculateRequiredCredits(actionCostComp);
     if (balance < initialEstimate.finalCredits) {
-      return res.status(402).json(publicCreditGateResponse());
+      return res.status(402).json(publicCreditGateResponse(true, normalizeModelSelectionId(customModelId || 'auto') !== 'auto'));
     }
 
     // 3. Reserve credits safely. V2 is the only authoritative ledger when it
@@ -12801,7 +12831,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       || /insufficient credit|not enough credit|credit balance|upgrade required/i.test(String(error?.message || ''));
     // The run row does not exist yet at this point; the harness turn is
     // finalized from this payload's own diagnostic_code by `respondJson`.
-    if (insufficientCredits) return respondJson(402, publicCreditGateResponse(frenchActivity));
+    if (insufficientCredits) return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
     console.error('[coden:model_routing_failed]', { requestId, project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
     const diagnostic = diagnoseProviderError(error);
     const routingMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
@@ -12882,8 +12912,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const cost = estimateActionCost(prompt, decision, effectiveModelSelection);
     const wallet = cost.finalCredits > 0 ? walletForRouting : Number.POSITIVE_INFINITY;
     if (wallet < cost.finalCredits) {
-      await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: 'use_auto' });
-      return respondJson(402, publicCreditGateResponse(frenchActivity));
+      // A conversation's price does not read the model, so Auto cannot lower it.
+      const autoCanHelp = requestedModelSelection !== 'auto' && decision.intent !== 'conversation';
+      await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
+      return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
     }
     let agentText: any;
     let content = '';
@@ -13006,8 +13038,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const cost = estimateActionCost(prompt, decision, effectiveModelSelection);
 
   if (wallet < cost.finalCredits) {
-    await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: 'use_auto' });
-    return respondJson(402, publicCreditGateResponse(frenchActivity));
+    // This branch's floor does depend on the chosen model, so Auto is real advice
+    // here — but only for someone who actually picked something other than Auto.
+    // `requestedModelSelection`, not `effectiveModelSelection`: the latter is the
+    // model the router resolved to and is never the string 'auto', so testing it
+    // would have silently switched the advice off on the one path it belongs on.
+    const autoCanHelp = requestedModelSelection !== 'auto';
+    await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
+    return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
   }
 
   const refId = `gen_${randomUUID()}`;
