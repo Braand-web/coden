@@ -72,6 +72,56 @@ document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {
 });
 initPromptInputActions({ persistForBuilder:true, onNotice: announce });
 
+/*
+ * Sections arrive as you reach them.
+ *
+ * This page had no scroll motion at all: the reveal machinery in main.ts
+ * serves the five secondary public pages, and index.html loads landing-v3.ts
+ * instead, so none of it was ever reaching the landing.
+ *
+ * Three deliberate constraints, in order of how badly each would hurt:
+ *
+ *  1. The first section is never hidden. It is the fold — the headline and the
+ *     composer — and hiding it to fade it back in is a blank first paint, paid
+ *     for by every visitor, to animate something they were already looking at.
+ *  2. The attribute that arms the CSS is set from here, not written in the
+ *     stylesheet, so a browser without IntersectionObserver and a reader with
+ *     reduced motion both get the page whole rather than the page hidden.
+ *  3. Anything that ends up on screen without the observer having fired is
+ *     shown anyway a moment later. The net is bounded to what is actually
+ *     visible, so sections further down keep their entrance.
+ */
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (typeof IntersectionObserver !== 'function') return;
+
+  const sections = Array.from(document.querySelectorAll<HTMLElement>('#landing-main > section'));
+  const targets = sections.slice(1);
+  if (!targets.length) return;
+
+  for (const section of targets) section.setAttribute('data-coden-reveal', '');
+  document.documentElement.dataset.codenReveal = 'on';
+
+  const reveal = (element: Element) => element.classList.add('is-revealed');
+  const observer = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      reveal(entry.target);
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0.08, rootMargin: '0px 0px -8% 0px' });
+
+  for (const section of targets) observer.observe(section);
+
+  window.setTimeout(() => {
+    const fold = window.innerHeight || document.documentElement.clientHeight;
+    for (const section of targets) {
+      if (section.classList.contains('is-revealed')) continue;
+      if (section.getBoundingClientRect().top < fold) reveal(section);
+    }
+  }, 1200);
+})();
+
 document.querySelectorAll<HTMLAnchorElement>('[data-start-from]').forEach(link => {
   link.addEventListener('click', event => {
     event.preventDefault();

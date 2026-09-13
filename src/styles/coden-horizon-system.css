@@ -4,6 +4,15 @@
  * reference while retaining Coden's blue signature and both theme modes.
  */
 
+/*
+ * The motion contract rides with the design system, because this is the one
+ * stylesheet every surface imports. It was reaching only the landing page
+ * (via index.css) and the builder (via coden-shell.css) — the dashboard and
+ * landing-v3 loaded neither, so `var(--transition-control)` there resolved to
+ * nothing and every duration in those files had to be written by hand.
+ */
+@import "./motion-tokens.css";
+
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
@@ -204,7 +213,7 @@ body {
   .modal-content, .modal-container, .pricing-modal-content,
   .project-menu-panel, .publish-popover, .coden-ui-overlay-panel,
   .coden-dashboard-composer,
-  .coden-dashboard-empty, .coden-dashboard-loading
+  .coden-dashboard-empty
 ) {
   /* `.coden-dashboard-project-card` is deliberately not in this list. It is
      not a surface: it is a rounded thumbnail with a caption under it, and a

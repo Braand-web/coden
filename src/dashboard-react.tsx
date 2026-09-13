@@ -391,6 +391,35 @@ function ProjectCard({ project, owner }: { project: DashboardProject; owner: { i
   );
 }
 
+/*
+ * The same box as a real card, drawn empty.
+ *
+ * The grid used to load behind a 160px dashed rectangle reading "Chargement
+ * des projets…", which was then replaced by three columns of cards — so every
+ * single load ended in a layout jump, and the placeholder had no relationship
+ * to what it was a placeholder for.
+ *
+ * The geometry is what makes this worth having, and it is exact: the tile
+ * keeps the card's own 16/10 aspect ratio, and the caption row is driven by
+ * the 36px avatar in both states — the two text bars are deliberately shorter
+ * than that, so they cannot be what decides the row's height. Same box before
+ * and after, nothing moves when the data lands.
+ */
+function ProjectCardSkeleton() {
+  return (
+    <article className="coden-dashboard-project-card" aria-hidden="true">
+      <span className="coden-dashboard-project-preview coden-skeleton" />
+      <span className="coden-dashboard-project-card-meta">
+        <span className="coden-skeleton coden-dashboard-skeleton-avatar" />
+        <span className="coden-dashboard-project-card-copy">
+          <span className="coden-skeleton coden-dashboard-skeleton-line" />
+          <span className="coden-skeleton coden-dashboard-skeleton-line is-short" />
+        </span>
+      </span>
+    </article>
+  );
+}
+
 function DashboardHome() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -614,9 +643,17 @@ function DashboardHome() {
             )}
           </div>
 
-          <section className="coden-dashboard-project-list" aria-label="Liste des projets" aria-live="polite">
+          <section className="coden-dashboard-project-list coden-enter-stagger" aria-label="Liste des projets" aria-live="polite">
             {projectsQuery.isLoading && (
-              <div className="coden-dashboard-loading" role="status">Chargement des projets…</div>
+              <>
+                {/*
+                  * Six, because six is what the grid shows before the cap —
+                  * a skeleton that stands in for a different number of cards
+                  * reintroduces the shift it exists to remove.
+                  */}
+                <span className="coden-dashboard-loading-label" role="status">Chargement des projets…</span>
+                {Array.from({ length: 6 }, (_, index) => <ProjectCardSkeleton key={index} />)}
+              </>
             )}
             {projectsQuery.isError && (
               <div className="coden-dashboard-empty" role="alert">

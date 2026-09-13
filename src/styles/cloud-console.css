@@ -561,6 +561,14 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-file-actions a { color: var(--horizon-blue, var(--accent-blue)); font-size: 12px; line-height: 16px; }
 .db-empty,
 .db-state { padding: 16px 0; color: var(--horizon-muted, var(--text-muted)); font-size: 14px; line-height: 20px; }
+
+/* Roughly the shape of the rows it stands in for, so the panel below does not
+   move when they arrive. The first bar is a header, the last one runs short
+   the way a final row usually does. */
+.db-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; }
+.db-skeleton-row { display: block; height: 14px; border-radius: 7px; }
+.db-skeleton-row:first-child { width: 38%; height: 11px; }
+.db-skeleton-row:last-child { width: 62%; }
 .db-note,
 .cloud-inline-note { display: flex; align-items: flex-start; gap: 8px; padding: 12px; color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
 .db-note svg { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px; }

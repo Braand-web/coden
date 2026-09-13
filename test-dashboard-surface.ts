@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+/*
+ * A rule block, found by its selector standing at the start of a line.
+ *
+ * `indexOf('.x {')` also matches `.y:active .x {`, so adding any descendant
+ * rule earlier in the file silently repointed these lookups at the wrong
+ * block — and the assertion then failed on code that was perfectly correct.
+ */
+function block(css: string, selector: string): string {
+  const at = css.search(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{`, 'm'));
+  assert.ok(at >= 0, `the rule for ${selector} exists`);
+  return css.slice(at, css.indexOf('}', at));
+}
+
 const tsx = readFileSync(new URL('./src/dashboard-react.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta.url), 'utf8');
 const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', import.meta.url), 'utf8');
@@ -24,9 +37,7 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   const shell = css.slice(css.indexOf('.coden-dashboard-shell {'));
   assert.match(shell.slice(0, 260), /background: transparent;/, 'so does the shell');
 
-  const sidebarAt = css.indexOf('.coden-dashboard-sidebar {');
-  assert.ok(sidebarAt > 0, 'the sidebar is styled');
-  assert.match(css.slice(sidebarAt, css.indexOf('}', sidebarAt)), /background: transparent;/, 'so does the sidebar');
+  assert.match(block(css, '.coden-dashboard-sidebar'), /background: transparent;/, 'so does the sidebar');
 
   /*
    * Exactly one definition, so there is nothing to keep in sync. The mesh is
@@ -125,11 +136,9 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
  * that ignores the theme needs ink that ignores it too.
  */
 {
-  const at = css.indexOf('.coden-dashboard-sidebar {');
-  assert.ok(at > 0, 'the sidebar is styled');
-  const block = css.slice(at, css.indexOf('}', at));
+  const sidebarBlock = block(css, '.coden-dashboard-sidebar');
   for (const token of ['--dashboard-text', '--dashboard-muted', '--dashboard-border', '--dashboard-surface']) {
-    assert.match(block, new RegExp(`${token}:`), `${token} is redefined for the sidebar`);
+    assert.match(sidebarBlock, new RegExp(`${token}:`), `${token} is redefined for the sidebar`);
   }
 
   /*
@@ -137,11 +146,11 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
    * restate the dark-on-light values would satisfy "it is redefined" and fix
    * nothing. Both must be near-white.
    */
-  assert.match(block, /--dashboard-text: #f4f7ff;/, 'and the text is light');
-  assert.match(block, /--dashboard-muted: rgba\(226, 233, 255, \.74\);/, 'as are the muted labels');
+  assert.match(sidebarBlock, /--dashboard-text: #f4f7ff;/, 'and the text is light');
+  assert.match(sidebarBlock, /--dashboard-muted: rgba\(226, 233, 255, \.74\);/, 'as are the muted labels');
 
   // Unconditionally — a theme-scoped fix leaves the other theme broken.
-  assert.doesNotMatch(block, /data-theme/, 'unconditionally, not per theme');
+  assert.doesNotMatch(sidebarBlock, /data-theme/, 'unconditionally, not per theme');
 
   /*
    * The drawer is the same sidebar, so it keeps the same ink — which means it
@@ -166,11 +175,9 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
 
 /* The content sits in one rounded panel with a gutter around it. */
 {
-  const mainAt = css.indexOf('.coden-dashboard-main {');
-  assert.ok(mainAt > 0, 'the content panel is styled');
-  const block = css.slice(mainAt, css.indexOf('}', mainAt));
-  assert.match(block, /border-radius: var\(--dashboard-panel-radius\);/, 'the panel has rounded edges');
-  assert.match(block, /background: var\(--dashboard-panel\);/, 'and is the one opaque surface');
+  const mainBlock = block(css, '.coden-dashboard-main');
+  assert.match(mainBlock, /border-radius: var\(--dashboard-panel-radius\);/, 'the panel has rounded edges');
+  assert.match(mainBlock, /background: var\(--dashboard-panel\);/, 'and is the one opaque surface');
   assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--dashboard-gutter\);/,
     'with room around it for the gradient to show');
 
@@ -197,11 +204,9 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
 
   assert.match(tsx, /<h2 className="coden-dashboard-section-title">Mes projets<\/h2>/,
     'the section still has a heading');
-  const titleAt = css.indexOf('.coden-dashboard-section-title {');
-  assert.ok(titleAt > 0, 'and the heading is styled rather than left unstyled');
-  const block = css.slice(titleAt, css.indexOf('}', titleAt));
-  assert.match(block, /clip-path: inset\(50%\);/, 'hidden from the eye');
-  assert.doesNotMatch(block, /display: none/, 'but never from the accessibility tree');
+  const titleBlock = block(css, '.coden-dashboard-section-title');
+  assert.match(titleBlock, /clip-path: inset\(50%\);/, 'hidden from the eye');
+  assert.doesNotMatch(titleBlock, /display: none/, 'but never from the accessibility tree');
 
   /*
    * Search and the tabs are one control. They narrow the same list, so two
@@ -252,15 +257,13 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
  * legible over both.
  */
 {
-  const badgeAt = css.indexOf('.coden-dashboard-project-badge {');
-  assert.ok(badgeAt > 0, 'the badge is still styled');
-  const block = css.slice(badgeAt, css.indexOf('}', badgeAt));
-  assert.match(block, /left: 9px;/, 'anchored to the left edge');
-  assert.match(block, /bottom: 9px;/, 'and to the bottom');
-  assert.doesNotMatch(block, /right:/, 'and not still pinned right as well');
-  assert.match(block, /background: rgba\(255, 255, 255, \.92\);/, 'a light pill');
-  assert.match(block, /border-radius: 999px;/, 'actually a pill');
-  assert.match(block, /z-index: 2;/, 'above the frame it labels');
+  const badgeBlock = block(css, '.coden-dashboard-project-badge');
+  assert.match(badgeBlock, /left: 9px;/, 'anchored to the left edge');
+  assert.match(badgeBlock, /bottom: 9px;/, 'and to the bottom');
+  assert.doesNotMatch(badgeBlock, /right:/, 'and not still pinned right as well');
+  assert.match(badgeBlock, /background: rgba\(255, 255, 255, \.92\);/, 'a light pill');
+  assert.match(badgeBlock, /border-radius: 999px;/, 'actually a pill');
+  assert.match(badgeBlock, /z-index: 2;/, 'above the frame it labels');
 
   /*
    * The state colours had to follow it. Kept as the dark end of the same
@@ -283,16 +286,12 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
  * it should be carrying.
  */
 {
-  const cardAt = css.indexOf('.coden-dashboard-project-card {');
-  assert.ok(cardAt > 0, 'the card is styled');
-  const block = css.slice(cardAt, css.indexOf('}', cardAt));
-  assert.match(block, /background: transparent;/, 'the card itself paints nothing');
-  assert.match(block, /border: 0;/, 'and draws no frame');
-  assert.doesNotMatch(block, /overflow: hidden;/, 'so it has nothing to clip');
+  const cardBlock = block(css, '.coden-dashboard-project-card');
+  assert.match(cardBlock, /background: transparent;/, 'the card itself paints nothing');
+  assert.match(cardBlock, /border: 0;/, 'and draws no frame');
+  assert.doesNotMatch(cardBlock, /overflow: hidden;/, 'so it has nothing to clip');
 
-  const previewAt = css.indexOf('.coden-dashboard-project-preview {');
-  assert.ok(previewAt > 0, 'the thumbnail is styled');
-  const previewBlock = css.slice(previewAt, css.indexOf('}', previewAt));
+  const previewBlock = block(css, '.coden-dashboard-project-preview');
   assert.match(previewBlock, /border-radius: 12px;/, 'the thumbnail is the rounded object');
   assert.match(previewBlock, /overflow: hidden;/, 'and clips the frame inside it');
 
