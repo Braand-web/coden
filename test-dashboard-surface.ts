@@ -24,8 +24,9 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   const shell = css.slice(css.indexOf('.coden-dashboard-shell {'));
   assert.match(shell.slice(0, 260), /background: transparent;/, 'so does the shell');
 
-  const sidebar = css.slice(css.indexOf('.coden-dashboard-sidebar {'));
-  assert.match(sidebar.slice(0, 420), /background: transparent;/, 'so does the sidebar');
+  const sidebarAt = css.indexOf('.coden-dashboard-sidebar {');
+  assert.ok(sidebarAt > 0, 'the sidebar is styled');
+  assert.match(css.slice(sidebarAt, css.indexOf('}', sidebarAt)), /background: transparent;/, 'so does the sidebar');
 
   /*
    * Exactly one definition, so there is nothing to keep in sync. The mesh is
@@ -111,6 +112,56 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
       }
     }
   }
+}
+
+/*
+ * The sidebar's ink stopped following the theme, because its ground did.
+ *
+ * Every label, link and button in there takes its colour from
+ * --dashboard-text and --dashboard-muted, which are per-theme: near-black and
+ * mid-grey, chosen for the near-white canvas the sidebar used to sit on. The
+ * mesh underneath it is deep blue in BOTH themes, so in light mode the entire
+ * sidebar became dark ink on saturated indigo and could not be read. A ground
+ * that ignores the theme needs ink that ignores it too.
+ */
+{
+  const at = css.indexOf('.coden-dashboard-sidebar {');
+  assert.ok(at > 0, 'the sidebar is styled');
+  const block = css.slice(at, css.indexOf('}', at));
+  for (const token of ['--dashboard-text', '--dashboard-muted', '--dashboard-border', '--dashboard-surface']) {
+    assert.match(block, new RegExp(`${token}:`), `${token} is redefined for the sidebar`);
+  }
+
+  /*
+   * Light ink, checked rather than assumed: a redefinition that happened to
+   * restate the dark-on-light values would satisfy "it is redefined" and fix
+   * nothing. Both must be near-white.
+   */
+  assert.match(block, /--dashboard-text: #f4f7ff;/, 'and the text is light');
+  assert.match(block, /--dashboard-muted: rgba\(226, 233, 255, \.74\);/, 'as are the muted labels');
+
+  // Unconditionally — a theme-scoped fix leaves the other theme broken.
+  assert.doesNotMatch(block, /data-theme/, 'unconditionally, not per theme');
+
+  /*
+   * The drawer is the same sidebar, so it keeps the same ink — which means it
+   * cannot keep --dashboard-sidebar as its panel colour, a near-white in the
+   * light theme that would be white text on white.
+   */
+  const mobile = css.slice(css.indexOf('@media (max-width: 767px)'));
+  const drawer = mobile.slice(mobile.indexOf('.coden-dashboard-sidebar,'));
+  assert.doesNotMatch(drawer.slice(0, drawer.indexOf('}')), /background: var\(--dashboard-sidebar\)/,
+    'the drawer does not fall back to the theme surface');
+  assert.match(drawer.slice(0, drawer.indexOf('}')), /background: #121c3d;/, 'it stays dark');
+
+  /*
+   * And the design system stopped forcing a near-white field colour onto the
+   * two buttons that live in there.
+   */
+  const scoped = horizon.slice(horizon.indexOf('body[data-coden-surface="dashboard"]'));
+  assert.doesNotMatch(scoped.replace(/\/\*[\s\S]*?\*\//g, ''),
+    /\.coden-dashboard-new-project[^{]*\{[^}]*var\(--horizon-input\)/,
+    'the sidebar buttons are not repainted with a light-theme input colour');
 }
 
 /* The content sits in one rounded panel with a gutter around it. */

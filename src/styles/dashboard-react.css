@@ -118,7 +118,28 @@ body:has(#coden-dashboard-react-root) {
   background: transparent;
 }
 
+/*
+ * The sidebar carries its own palette, and it does not follow the theme.
+ *
+ * Everything in here reads its colour from --dashboard-text and
+ * --dashboard-muted, which are theme-dependent: near-black text and mid-grey
+ * labels, chosen for the near-white canvas the sidebar used to sit on. It now
+ * sits on the mesh, which is deep blue in BOTH themes — so in light mode the
+ * whole sidebar was dark ink on saturated indigo and simply could not be
+ * read. The ground stopped following the theme, so the ink on it has to stop
+ * too. Redefined as custom properties rather than as rules, so every
+ * descendant inherits them without a selector per element.
+ */
 .coden-dashboard-sidebar {
+  --dashboard-text: #f4f7ff;
+  --dashboard-muted: rgba(226, 233, 255, .74);
+  /* Floors at .1 like the panel border: the light-theme audit bans a weaker
+     white for a reason, and .01 buys nothing visible here. */
+  --dashboard-surface: rgba(255, 255, 255, .1);
+  --dashboard-raised: rgba(255, 255, 255, .14);
+  --dashboard-border: rgba(255, 255, 255, .18);
+  --dashboard-border-soft: rgba(255, 255, 255, .13);
+  --dashboard-focus: #b9cfff;
   position: relative;
   z-index: 5;
   display: flex;
@@ -342,6 +363,13 @@ body:has(#coden-dashboard-react-root) {
 .coden-dashboard-account-copy small {
   color: var(--dashboard-muted);
   font-size: 10px;
+}
+
+/* A menu has to be opaque enough to read: the translucent --dashboard-raised
+   the sidebar uses for hover states would leave the mesh legible through it. */
+.coden-dashboard-sidebar .coden-dashboard-account-menu {
+  background: #16203f;
+  border-color: rgba(255, 255, 255, .16);
 }
 
 .coden-dashboard-account-menu {
@@ -1170,7 +1198,10 @@ body:has(#coden-dashboard-react-root) {
     max-width: 260px;
     flex-basis: auto;
     padding: 12px;
-    background: var(--dashboard-sidebar);
+    /* Solid, and taken from the mesh's own base rather than from
+       --dashboard-sidebar: the drawer keeps the sidebar's light-on-dark ink,
+       so a theme-coloured panel would be white text on white here. */
+    background: #121c3d;
     border-right: 1px solid var(--dashboard-border-soft);
     transform: translateX(-100%);
     transition: transform 180ms ease;

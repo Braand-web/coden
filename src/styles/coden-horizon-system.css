@@ -467,10 +467,11 @@ body[data-coden-surface="dashboard"] {
    They are transparent so the gradient above shows through, and the only
    opaque surface is the rounded panel that holds the content. */
 
-body[data-coden-surface="dashboard"] :where(.coden-dashboard-new-project, .coden-dashboard-upgrade) {
-  border-color: var(--horizon-border) !important;
-  background: var(--horizon-input) !important;
-}
+/* `.coden-dashboard-new-project` and `.coden-dashboard-upgrade` are NOT
+   repainted here. Both live in the sidebar, which sits on the mesh and
+   carries its own light-on-dark palette; `--horizon-input` is a near-white
+   field colour in the light theme, and forcing it here put white label text
+   on a white button. */
 
 body[data-coden-surface="dashboard"] .coden-dashboard-composer {
   border: 1px solid var(--horizon-border) !important;
