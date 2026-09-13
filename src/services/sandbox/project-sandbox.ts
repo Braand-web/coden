@@ -57,6 +57,16 @@ const DEFAULT_INSTALL_TIMEOUT_MS = 180_000;
 const DEFAULT_START_TIMEOUT_MS = 90_000;
 const MAX_LOG_LINES = 400;
 
+function hostSandboxExecutionAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.CODEN_SANDBOX_ISOLATION === 'container';
+}
+
+function assertHostSandboxExecutionAllowed(): void {
+  if (!hostSandboxExecutionAllowed()) {
+    throw new Error('SECURE_SANDBOX_REQUIRED: generated code execution needs an isolated container or VM runner.');
+  }
+}
+
 /**
  * The URL a dev server prints when it is ready.
  *
@@ -295,6 +305,7 @@ export class ProjectSandbox {
     args: readonly string[],
     options: { timeoutMs?: number; allowReview?: boolean; signal?: AbortSignal } = {},
   ): Promise<{ code: number | null; output: string; timedOut: boolean }> {
+    assertHostSandboxExecutionAllowed();
     options.signal?.throwIfAborted();
     const decision = decideCommand(binary, args);
     if (decision.verdict === 'blocked' || (decision.verdict === 'review' && !options.allowReview)) {
@@ -353,7 +364,9 @@ export class ProjectSandbox {
       this.lastError = null;
       this.log('system', 'Installing dependencies...');
       const useCi = await this.hasFile('package-lock.json');
-      const args = useCi ? ['ci'] : ['install', '--no-audit', '--no-fund'];
+      // Generated package lifecycle hooks are untrusted code. They must not
+      // execute while dependencies are installed in the host process.
+      const args = useCi ? ['ci', '--ignore-scripts'] : ['install', '--no-audit', '--no-fund', '--ignore-scripts'];
       try {
         const result = await this.runCommand('npm', args, {
           timeoutMs: options.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS,
@@ -386,6 +399,7 @@ export class ProjectSandbox {
    */
   start(options: { script?: string; timeoutMs?: number; basePath?: string; signal?: AbortSignal } = {}): Promise<SandboxStatus> {
     return this.serialise(async () => {
+      assertHostSandboxExecutionAllowed();
       options.signal?.throwIfAborted();
       if (this.child && this.state === 'running') return this.status();
       await this.stopProcess();

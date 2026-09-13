@@ -100,7 +100,7 @@ import {
   type ModelProvider,
 } from './src/config/ai-models.ts';
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
-import { DomainService, createCloudflareDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
+import { DomainService, createVercelDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
 import {
   SaspayService,
   SAAS_PLANS,
@@ -284,6 +284,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.disable('x-powered-by');
 const port = Number(process.env.PORT || 3000);
 const staticRoot = path.join(__dirname, 'dist');
 
@@ -338,6 +339,19 @@ app.use('/api/saspay/webhook', express.raw({ type: 'application/json', limit: '2
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
+
+// Baseline browser hardening. The generated-app response adds its own opaque
+// sandbox CSP below; this middleware stays compatible with the Builder and
+// marketing pages while removing easy fingerprinting and MIME/referrer leaks.
+app.use((_req: any, res: any, next: any) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), geolocation=(), payment=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
 
 // The Builder is a code-execution surface and needs cross-origin isolation for
 // its WebContainer sandbox. Keep the policy scoped to the Builder document so
@@ -518,7 +532,12 @@ function getOptionalAuthState(req: any) {
   };
 }
 
-const DEFAULT_PLATFORM_ADMIN_EMAILS = ['novacore629@gmail.com'];
+// Production admin access must be explicitly provisioned through Supabase
+// app_metadata or an environment variable. A built-in email is an account
+// takeover risk if that address is ever registered by somebody else.
+const DEFAULT_PLATFORM_ADMIN_EMAILS = process.env.NODE_ENV === 'production'
+  ? []
+  : ['novacore629@gmail.com'];
 const unlimitedTestCreditUserIds = new Set<string>();
 
 function rememberUnlimitedTestCreditUser(user: any) {
@@ -747,53 +766,14 @@ app.get('/api/debug/auth-session', requireAuth, (req: any, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
-  const supabaseDiagnostics = getSupabaseRuntimeDiagnostics();
-  const deployedCommit =
-    process.env.CODEN_BUILD_COMMIT ||
-    process.env.RAILWAY_GIT_COMMIT_SHA ||
-    process.env.VERCEL_GIT_COMMIT_SHA ||
-    process.env.GIT_COMMIT ||
-    null;
+  // Keep the liveness contract public, but do not disclose commit topology,
+  // branch names, Supabase project refs, or which provider credentials exist.
+  // Detailed diagnostics belong behind the platform-admin boundary.
   res.json({
     success: true,
     status: 'ok',
     service: 'coden-saas',
     time: new Date().toISOString(),
-    static_dist: pathExists(staticRoot),
-    deployment: {
-      commit: deployedCommit,
-      commit_short: deployedCommit ? deployedCommit.slice(0, 7) : null,
-      branch:
-        process.env.CODEN_BUILD_BRANCH ||
-        process.env.RAILWAY_GIT_BRANCH ||
-        process.env.VERCEL_GIT_COMMIT_REF ||
-        null,
-      environment:
-        process.env.RAILWAY_ENVIRONMENT_NAME ||
-        process.env.VERCEL_ENV ||
-        process.env.NODE_ENV ||
-        null,
-    },
-    project_refs_match: supabaseDiagnostics.project_refs_match,
-    integrations: {
-      supabase_url: Boolean(process.env.SUPABASE_URL),
-      supabase_service_role: supabaseDiagnostics.service_role_project_api_key,
-      openrouter: Boolean(getOpenRouterApiKey()),
-      cloudflare: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN),
-      generated_app_hosting: process.env.CODEN_STATIC_HOSTING_PROVIDER === 'cloudflare-pages'
-        ? 'cloudflare-pages-legacy'
-        : 'cloudflare-workers',
-      monetization: CODEN_MONETIZATION_ENABLED ? 'v2' : 'v2-shadow',
-      agent_harness: 'coden-harness/v3',
-      agent_harness_persistence: Boolean(
-        process.env.CODEN_SUPABASE_MGMT_TOKEN ||
-        process.env.SUPABASE_MANAGEMENT_TOKEN ||
-        process.env.SUPABASE_ACCESS_TOKEN
-      ) ? 'managed_migration' : 'service_role_with_memory_fallback',
-    },
-    diagnostics: {
-      supabase: supabaseDiagnostics,
-    },
   });
 });
 
@@ -865,6 +845,33 @@ app.options('/api/analytics/collect', (_req, res) => {
 function requireBillingAuth(req: any, res: any, next: any) {
   if (req.method === 'GET' && req.path === '/plans') return next();
   return requireAuth(req, res, next);
+}
+
+function analyticsSigningSecret(): string {
+  return String(
+    process.env.CODEN_ANALYTICS_SIGNING_SECRET ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    '',
+  ).trim();
+}
+
+function analyticsTokenForProject(projectId: string, environment: 'preview' | 'production'): string {
+  const secret = analyticsSigningSecret();
+  if (!secret) return '';
+  return createHmac('sha256', secret)
+    .update(`coden-analytics:v1:${projectId}:${environment}`)
+    .digest('hex');
+}
+
+function hasValidAnalyticsToken(projectId: string, environment: 'preview' | 'production', token: unknown): boolean {
+  const expected = analyticsTokenForProject(projectId, environment);
+  const provided = Buffer.from(String(token || '').trim(), 'utf8');
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  return Boolean(
+    expectedBytes.length > 0 &&
+    provided.length === expectedBytes.length &&
+    timingSafeEqual(provided, expectedBytes),
+  );
 }
 
 app.use('/api/billing', requireBillingAuth);
@@ -1118,26 +1125,26 @@ function diagnosePublishError(error: any) {
       status: statusCode,
     };
   }
-  if (/CLOUDFLARE_(ACCOUNT_ID|API_TOKEN|ZONE_ID_CODEN_FUN)|Missing environment variable/i.test(message)) {
+  if (/VERCEL_TOKEN|Missing VERCEL_|Missing environment variable/i.test(message)) {
     return {
-      message: 'Publishing is not configured on the server. Configure the required Cloudflare credentials, redeploy, then retry.',
-      diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED',
-      suggested_action: 'configure_cloudflare',
+      message: 'La publication Vercel n’est pas configurée sur le serveur. Ajoutez VERCEL_TOKEN, redéployez, puis réessayez.',
+      diagnostic_code: 'VERCEL_NOT_CONFIGURED',
+      suggested_action: 'configure_vercel',
       status: 503,
     };
   }
   if ([401, 403].includes(statusCode) || /401|403|unauthorized|forbidden|invalid token|authentication error/i.test(message)) {
     return {
-      message: 'Cloudflare rejected the publish credentials. Update the Cloudflare API token and redeploy.',
-      diagnostic_code: 'CLOUDFLARE_TOKEN_INVALID',
-      suggested_action: 'update_cloudflare_token',
+      message: 'Vercel a refusé les identifiants de publication. Vérifiez le token Vercel et redéployez le serveur.',
+      diagnostic_code: 'VERCEL_TOKEN_INVALID',
+      suggested_action: 'update_vercel_token',
       status: 503,
     };
   }
   if (/rate limit|too many requests|429/i.test(message)) {
     return {
-      message: 'Cloudflare rate limited the publish request. Wait a moment, then click Update again.',
-      diagnostic_code: 'CLOUDFLARE_RATE_LIMITED',
+      message: 'Vercel limite temporairement les publications. Attendez un instant puis réessayez.',
+      diagnostic_code: 'VERCEL_RATE_LIMITED',
       suggested_action: 'retry_later',
       status: 429,
     };
@@ -1152,16 +1159,16 @@ function diagnosePublishError(error: any) {
   }
   if (/bad request|invalid|400|files/i.test(message)) {
     return {
-      message: 'Cloudflare rejected the deployment payload. Coden kept the live app unchanged; rebuild the preview and try Publish again.',
-      diagnostic_code: 'CLOUDFLARE_BAD_REQUEST',
+      message: 'Vercel a refusé le contenu du déploiement. L’application en ligne n’a pas été modifiée ; reconstruisez l’aperçu puis réessayez.',
+      diagnostic_code: 'VERCEL_BAD_REQUEST',
       suggested_action: 'rebuild_then_publish',
       status: 502,
     };
   }
   if (/fetch failed|network|timeout|ENOTFOUND|ECONNRESET|5\d\d|unavailable/i.test(message)) {
     return {
-      message: 'Cloudflare is temporarily unavailable or unreachable. The live app was not changed; retry in a moment.',
-      diagnostic_code: 'CLOUDFLARE_UNAVAILABLE',
+      message: 'Vercel est temporairement indisponible ou inaccessible. L’application en ligne n’a pas été modifiée ; réessayez dans un instant.',
+      diagnostic_code: 'VERCEL_UNAVAILABLE',
       suggested_action: 'retry',
       status: 502,
     };
@@ -2948,6 +2955,7 @@ function injectAnalyticsSnippet(html: string, projectId?: string, environment: '
   const snippet = buildAnalyticsSnippet({
     projectId,
     environment,
+    token: analyticsTokenForProject(projectId, environment),
     apiBase: process.env.CODEN_PUBLIC_API_URL || '',
   });
   if (!snippet) return html;
@@ -2983,9 +2991,10 @@ function getPublishedProjectPath(project: Pick<GeneratedProject, 'id' | 'slug'>)
 }
 
 function getDefaultPublishedUrl(project: Pick<GeneratedProject, 'id' | 'slug'>): string {
-  // Must resolve through the same helper the Cloudflare deploy uses, otherwise
-  // Coden advertises a hostname that Cloudflare never serves.
-  return `https://${codenHostForSlug(String(project.slug || project.id || 'app'))}`;
+  // Vercel owns the active publication path. The exact deployment URL is
+  // persisted after a successful publish; this stable project URL is only a
+  // safe fallback while the status panel is loading or before first publish.
+  return vercelProjectUrlForSlug(String(project.slug || project.id || 'app'));
 }
 
 function isFreePlanKey(plan: string | null | undefined): boolean {
@@ -3019,8 +3028,8 @@ function sanitizeDeploymentForUser(deployment: any, publicUrl: string, customDom
     id: deployment.id,
     provider: 'coden',
     status,
-    deployment_url: isReady ? publicUrl : '',
-    public_url: isReady ? publicUrl : '',
+    deployment_url: isReady ? String(deployment.deployment_url || publicUrl || '') : '',
+    public_url: isReady ? String(deployment.public_url || deployment.deployment_url || publicUrl || '') : '',
     custom_domain: customDomain,
     badge_required: Boolean(deployment.badge_required),
     commit_hash: deployment.commit_hash || null,
@@ -3175,7 +3184,9 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
   const securityScan = scanGeneratedSecurity(files);
   const securityBlocking = securityScan.findings.filter(item => item.status === 'fail');
   const securityWarnings = securityScan.findings.filter(item => item.status === 'warn');
-  const publicUrl = customDomain ? normalizeDomainUrl(customDomain) : getDefaultPublishedUrl(project);
+  const publicUrl = customDomain
+    ? normalizeDomainUrl(customDomain)
+    : String(latestDeployment?.public_url || latestDeployment?.deployment_url || getDefaultPublishedUrl(project));
   const state: PublishStatus['state'] = !previewReady || !hasFiles
     ? 'not_ready'
     : !publishedDeployment
@@ -4864,7 +4875,7 @@ function buildExistingFilesContextForGeneration(files: GeneratedFile[], prompt?:
     // Vite config and an entry point on every new project -- tokens spent to
     // reproduce a fixture, with a fresh chance each time of a version that does
     // not match its plugin.
-    if (process.env.CODEN_LIVE_SANDBOX === '1' && prompt) {
+    if (LIVE_SANDBOX_ENABLED && prompt) {
       return describeStarter(selectStarter(prompt));
     }
     return 'No existing files yet.';
@@ -10663,7 +10674,7 @@ function sanitizeAdminDeployment(row: any) {
     status: row?.status || row?.deployment_status || 'unknown',
     url: row?.url || row?.deployment_url || row?.live_url || row?.published_url || null,
     domain: row?.domain || row?.custom_domain || null,
-    provider: row?.provider || 'cloudflare',
+    provider: row?.provider || 'vercel',
     created_at: row?.created_at || null,
     updated_at: row?.updated_at || null,
   };
@@ -11353,6 +11364,14 @@ app.post('/api/analytics/collect', async (req: any, res: any) => {
       return res.status(400).json({ success: false, error: 'A valid project_id is required.' });
     }
 
+    const environment = normalizeAnalyticsEnvironment(req.body?.environment);
+    if (!hasValidAnalyticsToken(projectId, environment, req.body?.analytics_token)) {
+      return res.status(403).json({ success: false, error: 'Invalid analytics token.' });
+    }
+    if (!enforceRateLimit(`analytics:${projectId}:${req.ip || 'unknown'}`, 120, 60_000)) {
+      return res.status(429).json({ success: false, error: 'Too many analytics events.' });
+    }
+
     const project = await loadProjectForAnalytics(projectId);
     if (!project) {
       return res.status(404).json({ success: false, error: 'Project not found.' });
@@ -11367,7 +11386,7 @@ app.post('/api/analytics/collect', async (req: any, res: any) => {
       page_path: normalizeAnalyticsPath(req.body?.page_path),
       source: normalizeAnalyticsSource(req.body?.source),
       duration_seconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
-      environment: normalizeAnalyticsEnvironment(req.body?.environment),
+      environment,
       country_code: country.country_code,
       country_name: country.country_name,
       device: detectAnalyticsDevice(req.headers['user-agent']),
@@ -13413,7 +13432,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     let sandboxValidation: Awaited<ReturnType<typeof validateProject>> | null = null;
     let sandboxRepairInstruction = '';
     let sandboxRepair: Awaited<ReturnType<typeof runRepairLoop>> | null = null;
-    if (process.env.CODEN_LIVE_SANDBOX === '1' && finalFiles.length) {
+    if (LIVE_SANDBOX_ENABLED && finalFiles.length) {
       try {
         // On a first build the scaffold goes under whatever the model wrote,
         // and the paths it owns win: a model that rewrites the build config or
@@ -14968,16 +14987,12 @@ app.get('/api/projects/:id/domains', async (req: any, res) => {
 });
 
 /**
- * The Cloudflare host for one project's domains.
- *
- * The five `/domains` routes used to build a Vercel proxy, which threw
- * "not configured" on every request because VERCEL_TOKEN was never set. They
- * now use the same target the project is actually published to.
+ * The Vercel host for one project's domains. Domain operations must use the
+ * same provider as publication; otherwise the UI can report a domain attached
+ * while the live app is still owned by another host.
  */
 async function createProjectDomainProvider(project: GeneratedProject) {
-  const contract = await readGeneratedRuntimeContract(project);
-  const cfName = projectSlugToCfName(String(project.slug || project.id));
-  return createCloudflareDomainProvider(cfName, contract.manifest.runtime);
+  return createVercelDomainProvider(vercelProjectNameForSlug(String(project.slug || project.id)));
 }
 
 // POST /projects/:id/domains
@@ -15208,12 +15223,33 @@ function rewritePublishedHtmlForProxy(html: string, project: GeneratedProject, d
   return output;
 }
 
+function isAllowedPublishedUpstreamUrl(project: GeneratedProject, candidate: string): boolean {
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:') return false;
+    const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+    const defaultHost = new URL(getDefaultPublishedUrl(project)).hostname.toLowerCase().replace(/\.$/, '');
+    const configuredHosts = String(process.env.CODEN_PUBLISHED_UPSTREAM_HOSTS || '')
+      .split(',')
+      .map(value => value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, ''))
+      .filter(Boolean);
+    return hostname === defaultHost
+      || configuredHosts.includes(hostname)
+      || hostname.endsWith('.vercel.app')
+      || hostname.endsWith('.workers.dev')
+      || hostname.endsWith('.pages.dev');
+  } catch {
+    return false;
+  }
+}
+
 function buildPublishedProxyTargets(project: GeneratedProject, deploymentUrl: string, requestPath: string) {
   const safePath = requestPath && requestPath.startsWith('/') ? requestPath : `/${requestPath || ''}`;
-  // The fallback used to be a .vercel.app hostname, which nothing has served
-  // since publishing moved to Cloudflare — a proxy retry that could only 404.
+  // Vercel is the active host. Keep the stored deployment URL first and the
+  // stable project URL second so a transient alias change never breaks the
+  // Coden snapshot proxy.
   const candidates = [deploymentUrl, getDefaultPublishedUrl(project)].filter(Boolean);
-  const unique = Array.from(new Set(candidates));
+  const unique = Array.from(new Set(candidates)).filter(candidate => isAllowedPublishedUpstreamUrl(project, candidate));
   return unique.map(candidate => {
     const url = new URL(candidate);
     const requestUrl = new URL(`https://coden.local${safePath}`);
@@ -15224,12 +15260,18 @@ function buildPublishedProxyTargets(project: GeneratedProject, deploymentUrl: st
 }
 
 async function servePublishedSnapshot(project: GeneratedProject, deployment: any, res: any, proxyBasePath = '') {
+  if (!deployment || !isPublishedDeploymentReady(deployment)) {
+    return res.status(404).send('This app has not been published yet.');
+  }
   const files = await loadProjectFiles(project.id);
   const html = getProjectPreviewHtml(project, files, 'production');
   if (!html.trim()) return res.status(404).send('This published app has no saved snapshot yet.');
   res.status(200);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+  res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'none'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Coden-Published-App', project.id);
   res.setHeader('X-Coden-Published-Source', 'snapshot');
   return res.send(rewritePublishedHtmlForProxy(html, project, deployment, proxyBasePath));
@@ -15263,9 +15305,12 @@ async function proxyPublishedDeployment(project: GeneratedProject, deployment: a
     res.status(upstream.status);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', cacheControl);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Coden-Published-App', project.id);
 
     if (contentType.includes('text/html')) {
+      res.setHeader('Content-Security-Policy', "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'none'");
       const html = await upstream.text();
       return res.send(upstream.ok ? rewritePublishedHtmlForProxy(html, project, deployment, proxyBasePath) : html);
     }
@@ -15284,6 +15329,7 @@ app.use('/p/:slug', async (req: any, res: any, next: any) => {
     const project = await loadPublicProjectBySlug(req.params.slug);
     if (!project) return res.status(404).send('Published app not found.');
     const deployment = await getLatestPublishedDeployment(project.id);
+    if (!deployment || !isPublishedDeploymentReady(deployment)) return res.status(404).send('Published app not found.');
     return proxyPublishedDeployment(project, deployment, req, res, `/p/${encodeURIComponent(req.params.slug)}`);
   } catch (error: any) {
     res.status(500).send(escapeHtml(redactSecrets(error?.message || 'Unable to load published app.')));
@@ -15430,6 +15476,7 @@ app.use(async (req, res, next) => {
     const project = await loadPublicProjectByCustomDomain(host);
     if (!project) return next();
     const deployment = await getLatestPublishedDeployment(project.id);
+    if (!deployment || !isPublishedDeploymentReady(deployment)) return next();
     return proxyPublishedDeployment(project, deployment, req, res);
   } catch (error: any) {
     return res.status(500).send(escapeHtml(redactSecrets(error?.message || 'Unable to load custom domain app.')));
@@ -15533,7 +15580,12 @@ app.use((req, res, next) => {
   next();
 });
 
-const LIVE_SANDBOX_ENABLED = process.env.CODEN_LIVE_SANDBOX === '1';
+// The current ProjectSandbox is a host-process compatibility runner, not a
+// container/VM boundary. Never enable it in production unless the deployment
+// explicitly declares that an external isolation boundary is in place.
+const LIVE_SANDBOX_ENABLED = process.env.CODEN_LIVE_SANDBOX === '1' && (
+  process.env.NODE_ENV !== 'production' || process.env.CODEN_SANDBOX_ISOLATION === 'container'
+);
 
 function requireLiveSandbox(res: any): boolean {
   if (LIVE_SANDBOX_ENABLED) return true;
@@ -15641,20 +15693,20 @@ function pathExists(target: string): boolean {
 }
 
 // ============================================================
-// Cloudflare Pages publish routes (coden.fun)
+// Vercel publish routes (coden.fun)
 // ============================================================
 import {
-  publishProjectToCloudflare,
-  attachUserCustomDomain,
-  getCustomDomainStatus,
-  removePublication,
-  projectSlugToCfName,
-  cloudflareWorkerNameForSlug,
-  rollbackCloudflareWorkerDeployment,
-  verifyCloudflareDeployment,
-} from './src/services/publish-cloudflare.ts';
+  publishProjectToVercel,
+  attachVercelCustomDomain,
+  getVercelCustomDomainStatus,
+  removeVercelCustomDomain,
+  vercelProjectNameForSlug,
+  vercelProjectUrlForSlug,
+  vercelCodenHostForSlug,
+  verifyVercelDeployment,
+  promoteVercelDeployment,
+} from './src/services/publish-vercel.ts';
 import { buildStaticSource } from './src/services/build-runner.ts';
-import { codenHostForSlug } from './src/services/cloudflare-hosting-policy.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
@@ -15956,7 +16008,7 @@ async function verifyProjectPreviewWithRealBuild(project: GeneratedProject, file
 
 const activePublishOperations = new Map<string, string>();
 
-async function publishCloudflareProjectForRequest(req: any, res: any) {
+async function publishVercelProjectForRequest(req: any, res: any) {
   const requestId = `pub_${randomUUID()}`;
   const projectId = String(req.params.id || '');
   let publishLockKey = '';
@@ -16029,11 +16081,11 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     if (contract.manifest.runtime === 'node-server' || contract.universalManifest.deployment?.target === 'railway') {
       return res.status(409).json({
         success: false,
-        error: 'This standalone Node application requires the Railway deployment adapter; static Cloudflare publication is blocked to preserve its backend.',
-        message: 'This standalone Node application requires the Railway deployment adapter; static Cloudflare publication is blocked to preserve its backend.',
-        diagnostic_code: 'RAILWAY_DEPLOYMENT_ADAPTER_REQUIRED',
+        error: 'Cette application contient un serveur Node. Le déploiement Vercel statique est bloqué pour ne pas perdre son backend.',
+        message: 'Cette application contient un serveur Node. Le déploiement Vercel statique est bloqué pour ne pas perdre son backend.',
+        diagnostic_code: 'VERCEL_RUNTIME_ADAPTER_REQUIRED',
         request_id: requestId,
-        suggested_action: 'configure_railway_deployment',
+        suggested_action: 'configure_vercel_runtime_adapter',
       });
     }
     const artifactHash = immutableArtifactHash({
@@ -16044,7 +16096,7 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
       securityBlockers: [],
     });
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
-    let result: Awaited<ReturnType<typeof publishProjectToCloudflare>>;
+    let result: Awaited<ReturnType<typeof publishProjectToVercel>>;
     try {
       const distDir = await buildStaticSource({ files: extractStaticFiles(project, contract.files) }, {
         slug,
@@ -16053,10 +16105,9 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
         outputDirectory: contract.manifest.outputDirectory,
       });
       await persistGeneratedRuntimeContract(project, contract.manifest);
-      result = await publishProjectToCloudflare({
+      result = await publishProjectToVercel({
         slug,
         distDir,
-        projectDir: workDir,
         runtime: contract.manifest.runtime,
       });
       const publicRoutes = Array.isArray(contract.manifest.routes)
@@ -16064,11 +16115,11 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
             .filter((route: any) => route?.kind === 'public')
             .map((route: any) => String(route.path || '/'))
         : ['/'];
-      const deploymentVerification = await verifyCloudflareDeployment(result, publicRoutes);
+      const deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
       if (!deploymentVerification.verified) {
         const lastCheck = deploymentVerification.checks.at(-1);
         throw new Error(
-          `Cloudflare deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
+          `Vercel deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
         );
       }
     } finally {
@@ -16082,8 +16133,8 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
       provider: result.provider,
       provider_deployment_id: result.deploymentId,
       deployment_url: result.deploymentUrl || result.defaultUrl,
-      public_url: result.codenUrl || publishStatus.public_url,
-      custom_domain: publishStatus.custom_domain,
+      public_url: result.codenUrl || result.defaultUrl || publishStatus.public_url,
+      custom_domain: publishStatus.custom_domain || result.customDomain,
       badge_required: publishStatus.badge_required,
       status: 'ready',
       commit_hash: artifactHash,
@@ -16095,16 +16146,54 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     await saveDeploymentRecord(deploy);
     const client = getSupabase();
     if (client) {
-      await requireDatabaseResult(client.from('publications').upsert([{
-        project_id: project.id,
-        slug,
-        cf_pages_project: result.cfName,
-        default_url: result.defaultUrl,
-        coden_subdomain: codenHostForSlug(slug),
-        last_deployment_id: result.deploymentId,
-        published_at: createdAt,
-        status: 'ready',
-      }], { onConflict: 'project_id' }), 'save publication');
+      // The publication pointer is a compatibility cache, not the source of
+      // truth: `deployments` already contains the provider result. Older
+      // Supabase instances do not have this optional table (or still expose
+      // the old Cloudflare column), so never turn a successful Vercel deploy
+      // into a user-visible failure because this cache cannot be updated.
+      const publicationCandidates = [
+        {
+          project_id: project.id,
+          slug,
+          vercel_project: result.projectName,
+          default_url: result.codenUrl || result.defaultUrl,
+          coden_subdomain: vercelCodenHostForSlug(slug),
+          last_deployment_id: result.deploymentId,
+          published_at: createdAt,
+          status: 'ready',
+        },
+        {
+          project_id: project.id,
+          slug,
+          cf_pages_project: result.projectName,
+          default_url: result.codenUrl || result.defaultUrl,
+          coden_subdomain: vercelCodenHostForSlug(slug),
+          last_deployment_id: result.deploymentId,
+          published_at: createdAt,
+          status: 'ready',
+        },
+        {
+          project_id: project.id,
+          slug,
+          default_url: result.codenUrl || result.defaultUrl,
+          last_deployment_id: result.deploymentId,
+          published_at: createdAt,
+          status: 'ready',
+        },
+      ];
+      let publicationSaved = false;
+      for (const candidate of publicationCandidates) {
+        const { error } = await client.from('publications').upsert([candidate], { onConflict: 'project_id' });
+        if (!error) {
+          publicationSaved = true;
+          break;
+        }
+        if (!isSchemaShapeError(error)) {
+          console.warn('[coden:publish_publication_cache_skipped]', { message: error.message });
+          break;
+        }
+      }
+      if (!publicationSaved) console.warn('[coden:publish_publication_cache_skipped]', { message: 'Optional publication cache is unavailable.' });
     }
     const nextStatus = buildPublishStatus({ ...context, latestDeployment: deploy });
     return res.json({
@@ -16114,7 +16203,7 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
     });
   } catch (e: any) {
     const diagnostic = diagnosePublishError(e);
-    console.error('[coden:publish-cf]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e) });
+    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e) });
     return res.status(diagnostic.status).json({
       success: false,
       error: diagnostic.message,
@@ -16130,12 +16219,14 @@ async function publishCloudflareProjectForRequest(req: any, res: any) {
   }
 }
 
-app.post('/api/projects/:id/publish', requireAuth, publishCloudflareProjectForRequest);
-app.post('/api/projects/:id/publish-cf', requireAuth, publishCloudflareProjectForRequest);
-app.post('/api/projects/:id/deploy', requireAuth, publishCloudflareProjectForRequest);
+app.post('/api/projects/:id/publish', requireAuth, publishVercelProjectForRequest);
+// Kept as a compatibility alias for older clients. It is intentionally wired
+// to Vercel too; no request can re-enter the retired Cloudflare publisher.
+app.post('/api/projects/:id/publish-cf', requireAuth, publishVercelProjectForRequest);
+app.post('/api/projects/:id/deploy', requireAuth, publishVercelProjectForRequest);
 app.post('/api/projects/:id/deployments', requireAuth, async (req: any, res: any) => {
   if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.deploymentAdapters, 'deployment_adapters')) return;
-  return publishCloudflareProjectForRequest(req, res);
+  return publishVercelProjectForRequest(req, res);
 });
 
 app.get('/api/projects/:id/deployments/:deploymentId', requireAuth, async (req: any, res: any) => {
@@ -16161,10 +16252,10 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   const client = requireSupabase('Deployment rollback');
   const { data: target, error } = await client.from('deployments').select('*').eq('project_id', project.id).eq('id', req.params.deploymentId).maybeSingle();
   if (error || !target || !isPublishedDeploymentReady(target)) return res.status(404).json({ success: false, error: 'A ready rollback deployment was not found.' });
-  if (target.provider !== 'cloudflare-workers' || !target.provider_deployment_id) {
+  if (target.provider !== 'vercel' || !target.provider_deployment_id) {
     return res.status(409).json({
       success: false,
-      error: 'This historical deployment cannot be restored automatically on its original provider.',
+      error: 'Cette ancienne publication n’est pas une publication Vercel et ne peut pas être restaurée automatiquement.',
       diagnostic_code: 'ROLLBACK_PROVIDER_UNSUPPORTED',
     });
   }
@@ -16177,46 +16268,38 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   }
   activePublishOperations.set(project.id, rollbackLockToken);
   try {
-  const workerName = cloudflareWorkerNameForSlug(String(project.slug || project.id));
-  let providerRollback: Awaited<ReturnType<typeof rollbackCloudflareWorkerDeployment>>;
+  const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
   try {
-    providerRollback = await rollbackCloudflareWorkerDeployment(workerName, String(target.provider_deployment_id));
+    await promoteVercelDeployment(projectName, String(target.provider_deployment_id));
   } catch (rollbackError: any) {
     return res.status(502).json({
       success: false,
-      error: rollbackError?.message || 'Cloudflare could not restore the selected deployment.',
+      error: rollbackError?.message || 'Vercel n’a pas pu restaurer la publication sélectionnée.',
       diagnostic_code: 'ROLLBACK_PROVIDER_FAILED',
     });
   }
-  const productionHealth = await verifyCloudflareDeployment({
-    provider: 'cloudflare-workers', runtime: 'static-assets', cfName: workerName,
-    subdomain: codenHostForSlug(String(project.slug || project.id)),
-    defaultUrl: healthUrl, codenUrl: healthUrl, deploymentUrl: healthUrl,
-    deploymentId: providerRollback.deploymentId,
-  }, ['/']);
   const rollback = {
     ...target,
     id: randomUUID(),
-    status: productionHealth.verified ? 'ready' : 'failed',
-    provider_deployment_id: providerRollback.deploymentId,
+    status: 'ready',
+    provider: 'vercel',
+    provider_deployment_id: target.provider_deployment_id,
     created_at: new Date().toISOString(),
     commit_hash: target.commit_hash || null,
     branch: target.branch || 'main',
   };
   delete (rollback as any).updated_at;
   await saveDeploymentRecord(rollback);
-  await requireDatabaseResult(client.from('publications').update({
-    last_deployment_id: providerRollback.deploymentId,
+  const { error: rollbackPublicationError } = await client.from('publications').update({
+    last_deployment_id: target.provider_deployment_id,
     default_url: target.deployment_url,
-    status: rollback.status,
+    status: 'ready',
     published_at: rollback.created_at,
-  }).eq('project_id', project.id), 'save rollback publication');
-  if (!productionHealth.verified) {
-    return res.status(502).json({
-      success: false,
-      error: 'Cloudflare restored the selected version, but the production healthcheck failed.',
-      diagnostic_code: 'ROLLBACK_HEALTHCHECK_FAILED',
-      provider_deployment_id: providerRollback.deploymentId,
+  }).eq('project_id', project.id);
+  if (rollbackPublicationError) {
+    console.warn('[coden:rollback_publication_cache_skipped]', {
+      projectId: project.id,
+      message: rollbackPublicationError.message,
     });
   }
   const domain = await getPrimaryCustomDomain(project.id);
@@ -16225,7 +16308,7 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
     rollback_of: target.id,
     deployment: sanitizeDeploymentForUser(rollback, getPublishPublicUrl(project, domain), domain),
     artifact_hash: rollback.commit_hash,
-    provider_deployment_id: providerRollback.deploymentId,
+    provider_deployment_id: target.provider_deployment_id,
   });
   } finally {
     if (activePublishOperations.get(project.id) === rollbackLockToken) activePublishOperations.delete(project.id);
@@ -16258,12 +16341,8 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
     const auth = getRequiredAuth(req);
     const project = await loadProjectForPublish(req.params.id, auth.userId, req);
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const contract = await readGeneratedRuntimeContract(project);
-    if (contract.validation.length) {
-      return res.status(422).json({ error: 'Generated app manifest is invalid.', validation: contract.validation });
-    }
-    const cfName = projectSlugToCfName(String(project.slug || project.id));
-    const result = await attachUserCustomDomain(cfName, domain, contract.manifest.runtime);
+    const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
+    const result = await attachVercelCustomDomain(projectName, domain);
     const client = getSupabase();
     if (client) {
       await client.from('publications').update({
@@ -16273,9 +16352,7 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
       await Promise.resolve(client.from('deployment_domains').upsert({
         project_id: project.id,
         organization_id: project.organization_id,
-        provider: contract.manifest.runtime === 'cloudflare-workers' || process.env.CODEN_STATIC_HOSTING_PROVIDER !== 'cloudflare-pages'
-          ? 'cloudflare-workers'
-          : 'cloudflare-pages',
+        provider: 'vercel',
         hostname: domain,
         domain_type: 'custom',
         status: 'pending',
@@ -16295,14 +16372,10 @@ app.get('/api/projects/:id/publish-cf/domain/verify', requireAuth, async (req: a
     const auth = getRequiredAuth(req);
     const project = await loadProjectForPublish(req.params.id, auth.userId, req);
     if (!requireProjectCapability(req, res, 'view', project)) return;
-    const contract = await readGeneratedRuntimeContract(project);
-    if (contract.validation.length) {
-      return res.status(422).json({ error: 'Generated app manifest is invalid.', validation: contract.validation });
-    }
-    const cfName = projectSlugToCfName(String(project.slug || project.id));
     const domain = String(req.query.domain || '');
     if (!domain) return res.status(400).json({ error: 'domain query param required' });
-    const status = await getCustomDomainStatus(cfName, domain, contract.manifest.runtime);
+    const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
+    const status = await getVercelCustomDomainStatus(projectName, domain);
     const client = getSupabase();
     if (client) {
       await client.from('publications').update({
@@ -16327,13 +16400,9 @@ app.delete('/api/projects/:id/publish-cf', requireAuth, async (req: any, res: an
     const auth = getRequiredAuth(req);
     const project = await loadProjectForPublish(req.params.id, auth.userId, req);
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const slug = String(project.slug || project.id).toLowerCase();
-    const cfName = projectSlugToCfName(slug);
-    const contract = await readGeneratedRuntimeContract(project);
-    if (contract.validation.length) {
-      return res.status(422).json({ error: 'Generated app manifest is invalid.', validation: contract.validation });
-    }
-    await removePublication(cfName, slug, contract.manifest.runtime);
+    const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
+    const domain = await getPrimaryCustomDomain(project.id);
+    if (domain) await removeVercelCustomDomain(projectName, domain).catch(() => null);
     const client = getSupabase();
     if (client) {
       await client.from('publications').delete().eq('project_id', project.id);

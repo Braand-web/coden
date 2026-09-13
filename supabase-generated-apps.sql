@@ -71,7 +71,7 @@ create table if not exists public.deployments (
   id uuid primary key default uuid_generate_v4(),
   organization_id uuid,
   project_id uuid not null references public.projects(id) on delete cascade,
-  provider text default 'cloudflare' not null,
+  provider text default 'vercel' not null,
   provider_deployment_id text,
   deployment_url text,
   status text not null default 'unknown',
@@ -94,7 +94,7 @@ create table if not exists public.agent_events (
 );
 
 alter table public.deployments add column if not exists organization_id uuid;
-alter table public.deployments add column if not exists provider text default 'cloudflare';
+alter table public.deployments add column if not exists provider text default 'vercel';
 alter table public.deployments add column if not exists provider_deployment_id text;
 alter table public.deployments add column if not exists deployment_url text;
 alter table public.deployments add column if not exists public_url text;

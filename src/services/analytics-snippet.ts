@@ -25,6 +25,8 @@
 export type AnalyticsSnippetInput = {
   projectId: string;
   environment: 'preview' | 'production';
+  /** Project-bound HMAC. It is public by design, but cannot be reused for another project. */
+  token?: string;
   apiBase?: string;
 };
 
@@ -33,6 +35,7 @@ export function buildAnalyticsSnippet(input: AnalyticsSnippetInput): string {
   const projectId = String(input.projectId || '');
   if (!projectId) return '';
   const environment = input.environment === 'production' ? 'production' : 'preview';
+  const token = String(input.token || '');
   const apiBase = String(input.apiBase || '').replace(/\/$/, '');
 
   const body = `
@@ -40,6 +43,7 @@ export function buildAnalyticsSnippet(input: AnalyticsSnippetInput): string {
   try {
     const projectId = ${JSON.stringify(projectId)};
     const environment = ${JSON.stringify(environment)};
+    const analyticsToken = ${JSON.stringify(token)};
     const apiBase = ${JSON.stringify(apiBase)};
     const origin = (() => { try { return String(window.location.origin || ''); } catch (e) { return ''; } })();
     // An opaque origin ("null") gives no endpoint to report to, and requesting
@@ -85,6 +89,7 @@ export function buildAnalyticsSnippet(input: AnalyticsSnippetInput): string {
           source,
           duration_seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
           environment,
+          analytics_token: analyticsToken,
         };
         const requestBody = JSON.stringify(payload);
         if (navigator.sendBeacon) {

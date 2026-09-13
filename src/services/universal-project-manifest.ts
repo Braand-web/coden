@@ -1,7 +1,7 @@
 export type CodenRuntime = 'static' | 'vite' | 'node' | 'next' | 'cloudflare-worker' | 'fullstack';
 export type CodenFramework = 'html' | 'react' | 'vue' | 'svelte' | 'next' | 'express' | 'hono' | 'other';
 export type CodenPackageManager = 'npm' | 'pnpm' | 'yarn';
-export type CodenDeploymentTarget = 'static' | 'cloudflare' | 'railway' | 'external';
+export type CodenDeploymentTarget = 'static' | 'vercel' | 'cloudflare' | 'railway' | 'external';
 
 export type CodenProjectManifest = {
   version: '1';
@@ -115,7 +115,7 @@ export function validateProjectManifest(value: unknown): ManifestValidation {
     seen.add(item.name);
     if (item.secret && /^(VITE_|NEXT_PUBLIC_|PUBLIC_)/.test(item.name)) warnings.push(`${item.name} is marked secret but uses a public-client prefix`);
   }
-  if (manifest.runtime === 'static' && manifest.deployment?.target === 'railway') warnings.push('static projects should normally deploy to Cloudflare');
+  if (manifest.runtime === 'static' && manifest.deployment?.target === 'railway') warnings.push('static projects should normally deploy to Vercel');
   if ((manifest.runtime === 'node' || manifest.runtime === 'next' || manifest.runtime === 'fullstack') && manifest.deployment?.target === 'static') errors.push('server runtimes cannot use a static deployment target');
   return { valid: errors.length === 0, errors, warnings };
 }
@@ -132,7 +132,7 @@ export function createProjectManifest(input: { projectId: string; name: string; 
       : (map.has('yarn.lock') ? 'yarn install --frozen-lockfile' : 'yarn install');
   const pkg = packageJson(input.files);
   const scripts = pkg?.scripts || {};
-  const deploymentTarget: CodenDeploymentTarget = detected.runtime === 'static' || detected.runtime === 'vite' || detected.runtime === 'cloudflare-worker' ? 'cloudflare' : 'railway';
+  const deploymentTarget: CodenDeploymentTarget = detected.runtime === 'static' || detected.runtime === 'vite' || detected.runtime === 'cloudflare-worker' ? 'vercel' : 'railway';
   return {
     version: '1',
     projectId: input.projectId,

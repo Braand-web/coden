@@ -1,21 +1,17 @@
 /**
  * Custom domains for published projects.
  *
- * This used to talk to Vercel. Coden publishes to Cloudflare, `VERCEL_TOKEN`
- * has never been set on the deployment, and the `domains` table is empty — so
- * every one of the five `/api/projects/:id/domains` routes answered
- * "Vercel domain operations are not configured" to any user who tried to add
- * a domain, while the working Cloudflare functions sat on different routes.
+ * Coden publishes to Vercel. Domain operations use the same Vercel project as
+ * the deployment, so the UI never reports a domain attached to another host.
  *
- * The provider is now a port with one Cloudflare implementation. What is kept
+ * The provider is a small host port. What is kept
  * is everything that was never provider-specific and is worth keeping: reserved
  * subdomains, per-plan limits, cross-tenant uniqueness, and the Supabase record
  * of what was asked for.
  */
 
 import { UserPlan } from '../config/ai-models.ts';
-import type { GeneratedAppRuntime } from './generated-app-runtime.ts';
-import { attachUserCustomDomain, getCustomDomainStatus, removeCustomDomain } from './publish-cloudflare.ts';
+import { attachVercelCustomDomain, getVercelCustomDomainStatus, removeVercelCustomDomain } from './publish-vercel.ts';
 
 export const RESERVED_SUBDOMAINS = new Set([
   'admin', 'api', 'www', 'app', 'billing', 'support', 'assets', 'jobs', 'portal',
@@ -55,22 +51,19 @@ export function domainStateLabel(state: DomainState, language: 'fr' | 'en' = 'fr
   return DOMAIN_STATE_LABELS[state][language];
 }
 
-/** The host that actually serves the domain. One implementation: Cloudflare. */
+/** The host that actually serves the domain. */
 export interface DomainHostProvider {
   attach(domain: string): Promise<{ instructions: DNSRecordInstruction[] }>;
   status(domain: string): Promise<{ active: boolean; detail: string | null; certificate: string | null }>;
   detach(domain: string): Promise<void>;
 }
 
-/** Cloudflare, for one published project. */
-export function createCloudflareDomainProvider(
-  cfName: string,
-  runtime: GeneratedAppRuntime = 'static-assets',
-): DomainHostProvider {
-  if (!cfName) throw new Error('This project has no published deployment yet, so a domain cannot be attached to it.');
+/** Vercel, for one published project. */
+export function createVercelDomainProvider(projectName: string): DomainHostProvider {
+  if (!projectName) throw new Error('This project has no Vercel project yet, so a domain cannot be attached to it.');
   return {
     async attach(domain: string) {
-      const result = await attachUserCustomDomain(cfName, domain, runtime);
+      const result = await attachVercelCustomDomain(projectName, domain);
       return {
         instructions: (result.instructions || []).map(record => ({
           type: (record.type as DNSRecordInstruction['type']) || 'CNAME',
@@ -81,7 +74,7 @@ export function createCloudflareDomainProvider(
       };
     },
     async status(domain: string) {
-      const result: any = await getCustomDomainStatus(cfName, domain, runtime);
+      const result: any = await getVercelCustomDomainStatus(projectName, domain);
       const raw = String(result?.status || '').toLowerCase();
       return {
         active: raw === 'active' || raw === 'verified' || raw === 'succeeded',
@@ -90,7 +83,7 @@ export function createCloudflareDomainProvider(
       };
     },
     async detach(domain: string) {
-      await removeCustomDomain(cfName, domain, runtime);
+      await removeVercelCustomDomain(projectName, domain);
     },
   };
 }
