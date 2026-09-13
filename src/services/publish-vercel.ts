@@ -232,7 +232,7 @@ export default async function handler(req: any, res: any) {
 `;
 }
 
-function prepareVercelSource(sourceDir: string, runtime: string): void {
+export function prepareVercelSource(sourceDir: string, runtime: string): void {
   const entry = findServerEntry(sourceDir);
   const dynamic = /node|server|fullstack|cloudflare|next/i.test(String(runtime || ''));
   if (!dynamic || !entry) return;
@@ -247,8 +247,9 @@ function prepareVercelSource(sourceDir: string, runtime: string): void {
   const adapterAbsolute = path.join(sourceDir, adapterName);
   const original = fs.readFileSync(entry, 'utf8');
   let patched = stripServerListen(original);
-  if (!/export\s+default\s+/m.test(patched) && /(?:const|let|var)\s+app\s*=/.test(patched)) {
-    patched += '\nexport default app;\n';
+  if (!/export\s+default\s+/m.test(patched)) {
+    const appName = patched.match(/(?:const|let|var)\s+(app|server)\s*=/)?.[1];
+    if (appName) patched += `\nexport default ${appName};\n`;
   }
   fs.mkdirSync(path.dirname(adapterAbsolute), { recursive: true });
   fs.writeFileSync(adapterAbsolute, patched, 'utf8');
