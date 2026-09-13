@@ -61,7 +61,13 @@ type CodenPlanBlock = {
   }>;
 };
 
-type CodenConversationBlock = CodenConfirmationBlock | CodenPlanBlock;
+type CodenRecoveryBlock = {
+  type: "recovery";
+  title: string;
+  body: string;
+};
+
+type CodenConversationBlock = CodenConfirmationBlock | CodenPlanBlock | CodenRecoveryBlock;
 
 type LiveRunLine = {
   id: string;
@@ -122,6 +128,7 @@ export type CodenConversationApi = {
   failLiveRun: (id: string, message: string, status?: 'failed' | 'cancelled' | 'incomplete') => void;
   removeMessage: (id: string) => void;
   addAction: (id: string, label: string, onClick: () => void) => void;
+  clearActions: (id: string) => void;
   clear: () => void;
   messages: () => CodenConversationMessage[];
 };
@@ -279,6 +286,13 @@ export function normalizeConversationBlock(block: unknown): CodenConversationBlo
     };
   }
 
+  if (record.type === "recovery") {
+    const title = String(record.title || "").trim().slice(0, 160);
+    const body = String(record.body || record.content || "").trim().slice(0, 640);
+    if (!title && !body) return undefined;
+    return { type: "recovery", title, body };
+  }
+
   if (record.type !== "plan") return undefined;
   const title = String(record.title || "").trim().slice(0, 160);
   const summary = String(record.summary || record.body || "").trim().slice(0, 640);
@@ -318,7 +332,7 @@ function cloneMessages(messages: CodenConversationMessage[]) {
   }));
 }
 
-function createStore() {
+export function createStore() {
   let messages: CodenConversationMessage[] = [];
   const listeners = new Set<() => void>();
   let raf = 0;
@@ -397,6 +411,9 @@ function createStore() {
         const message = find(id);
         if (!message) return;
         message.content = content;
+        if (content && message.liveRun?.chat && !message.liveRun.chat.parts.some(part => part.type === 'text' && part.text.trim())) {
+          message.liveRun.chat.parts = [...message.liveRun.chat.parts, { id: 'final-text', type: 'text', text: content, done: true }];
+        }
         if (content) message.working = false;
       });
     },
@@ -466,7 +483,10 @@ function createStore() {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        ensureLiveRun(message, meta);
+        message.liveRun = undefined;
+        message.content = '';
+        const run = ensureLiveRun(message, meta);
+        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId };
       });
     },
     applyChatEvent(id, event) {
@@ -476,6 +496,8 @@ function createStore() {
         if (!message) return;
         const run = ensureLiveRun(message);
         run.chat = reduceAgentMessage(run.chat || { ...EMPTY_MESSAGE, parts: [], runId: event.runId }, event.payload, event.seq);
+        const streamedText = run.chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n');
+        if (streamedText) message.content = streamedText;
         message.working = run.chat.status === 'streaming';
       });
     },
@@ -486,6 +508,12 @@ function createStore() {
         const run = ensureLiveRun(message);
         run.status = run.status === "failed" ? "failed" : "done";
         run.summary = summary || run.summary;
+        if (run.chat) {
+          if (!run.chat.parts.some(part => part.type === 'text' && part.text.trim()) && run.summary) {
+            run.chat.parts = [...run.chat.parts, { id: 'final-text', type: 'text', text: run.summary, done: true }];
+          }
+          run.chat = reduceAgentMessage(run.chat, { type: 'run_finished', reason: 'completed' });
+        }
         message.working = false;
         if (!message.content && run.summary) message.content = run.summary;
       });
@@ -515,6 +543,13 @@ function createStore() {
         if (!message) return;
         message.actions ||= [];
         message.actions.push({ id: nanoid(), label, onClick });
+      });
+    },
+    clearActions(id) {
+      mutate(() => {
+        const message = find(id);
+        if (!message) return;
+        message.actions = [];
       });
     },
     clear() {
@@ -992,6 +1027,71 @@ function ensureConversationStyles() {
     }
     .coden-plan-actions button:hover { filter: brightness(1.04); }
 
+    .coden-recovery-card {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 28%, var(--border));
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, #000 8%, transparent);
+    }
+    .coden-recovery-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-sub);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .coden-recovery-kicker span {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent, #3b82f6);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+    }
+    .coden-recovery-card h3 {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.3;
+      letter-spacing: -.01em;
+    }
+    .coden-recovery-card p {
+      margin: 0;
+      color: var(--text-sub);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .coden-recovery-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .coden-recovery-actions button {
+      min-height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 180ms cubic-bezier(0.32,0.72,0,1), background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1);
+    }
+    .coden-recovery-actions button.is-primary {
+      border-color: var(--accent, #3b82f6);
+      background: var(--accent, #3b82f6);
+      color: var(--accent-foreground, #fff);
+    }
+    .coden-recovery-actions button:hover { background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent); }
+    .coden-recovery-actions button.is-primary:hover { background: var(--accent, #3b82f6); filter: brightness(1.04); }
+    .coden-recovery-actions button:active { transform: scale(.98); }
+    .coden-recovery-actions button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+
     @keyframes coden-message-in {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -1100,6 +1200,7 @@ function RichResponse({ content }: { content: string }) {
 
 export function ConversationDecision({ block, actions = [] }: { block: CodenConversationBlock; actions?: CodenConversationAction[] }) {
   if (block.type === "plan") return <ConversationPlan block={block} actions={actions} />;
+  if (block.type === "recovery") return <ConversationRecovery block={block} actions={actions} />;
   const stateLabel = block.state === "rejected" ? "Annulée" : block.state === "approved" ? "Confirmée" : "Décision requise";
   return (
     <section className="coden-decision-card" data-state={block.state} aria-label={block.title || stateLabel}>
@@ -1139,6 +1240,23 @@ function primaryModifierLabel() {
  * So: title and summary always visible, detail one click away, action at the
  * bottom right where the eye lands last.
  */
+function ConversationRecovery({ block, actions = [] }: { block: CodenRecoveryBlock; actions?: CodenConversationAction[] }) {
+  return (
+    <section className="coden-recovery-card" aria-label={block.title || "Relance disponible"}>
+      <div className="coden-recovery-kicker"><span aria-hidden="true" />Relance disponible</div>
+      {block.title ? <h3>{block.title}</h3> : null}
+      {block.body ? <p>{block.body}</p> : null}
+      {actions.length ? (
+        <div className="coden-recovery-actions">
+          {actions.map((action, index) => (
+            <button key={action.id} type="button" className={index === 0 ? "is-primary" : ""} onClick={action.onClick}>{action.label}</button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ConversationPlan({ block, actions = [] }: { block: CodenPlanBlock; actions?: CodenConversationAction[] }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
@@ -1254,9 +1372,7 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
           {message.block
-            ? message.block.type === "plan"
-              ? <ConversationPlan block={message.block} actions={message.actions} />
-              : <ConversationDecision block={message.block} actions={message.actions} />
+            ? <ConversationDecision block={message.block} actions={message.actions} />
             : message.liveRun?.chat
               ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
               : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}

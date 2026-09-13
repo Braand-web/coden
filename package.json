@@ -40,6 +40,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.18.1",
     "@webcontainer/api": "^1.6.1",
+    "blake3-wasm": "2.1.5",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.11",
     "dotenv": "^17.4.2",

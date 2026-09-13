@@ -1,5 +1,9 @@
 import { getVerifiedSession, refreshVerifiedSession } from './supabase-browser';
 import { getLocalPreviewApiResult, isLocalPreviewEnabled } from '../local-preview';
+import {
+  isRuntimeRecoveryDiagnostic,
+  publicRuntimeErrorMessage,
+} from './runtime-error-presentation';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -15,23 +19,27 @@ export class ApiError extends Error {
   }
 }
 
-function extractApiMessage(payload: unknown, fallback: string): string {
+function browserLocale() {
+  return typeof navigator !== 'undefined' && /^en\b/i.test(navigator.language || '') ? 'en' as const : 'fr' as const;
+}
+
+export function extractApiMessage(payload: unknown, fallback: string): string {
   if (typeof payload === 'object' && payload) {
     const record = payload as { error?: unknown; message?: unknown; diagnostic_code?: unknown; request_id?: unknown };
+    const diagnosticCode = typeof record.diagnostic_code === 'string' ? record.diagnostic_code.trim() : '';
+    // Provider diagnostics and request ids are useful to Coden's logs, not to
+    // somebody trying to continue their work. Preserve the payload on ApiError
+    // for the recovery UI, but never concatenate those internal fields into
+    // visible prose.
+    if (diagnosticCode && isRuntimeRecoveryDiagnostic(diagnosticCode)) {
+      return publicRuntimeErrorMessage(diagnosticCode, browserLocale());
+    }
     const base = typeof record.message === 'string' && record.message.trim()
       ? record.message.trim()
       : typeof record.error === 'string' && record.error.trim()
         ? record.error.trim()
         : '';
-    if (base) {
-      const diagnostic = typeof record.diagnostic_code === 'string' && record.diagnostic_code.trim()
-        ? ` Code: ${record.diagnostic_code.trim()}.`
-        : '';
-      const requestId = typeof record.request_id === 'string' && record.request_id.trim()
-        ? ` Request ID: ${record.request_id.trim()}.`
-        : '';
-      return `${base}${diagnostic}${requestId}`;
-    }
+    if (base) return base;
   }
   if (/failed with 5\d\d/i.test(fallback)) {
     return 'The request could not be completed. Please retry in a moment. If it keeps happening, check the server logs for the request ID.';

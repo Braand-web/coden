@@ -1126,7 +1126,7 @@ function diagnosePublishError(error: any) {
       status: 503,
     };
   }
-  if (/401|403|unauthorized|forbidden|invalid token/i.test(message)) {
+  if ([401, 403].includes(statusCode) || /401|403|unauthorized|forbidden|invalid token|authentication error/i.test(message)) {
     return {
       message: 'Cloudflare rejected the publish credentials. Update the Cloudflare API token and redeploy.',
       diagnostic_code: 'CLOUDFLARE_TOKEN_INVALID',
@@ -1167,7 +1167,7 @@ function diagnosePublishError(error: any) {
     };
   }
   return {
-    message: message || 'Publish failed. The live app was not changed.',
+    message: 'La publication n’a pas pu être confirmée. Votre projet est conservé ; réessayez dans un instant.',
     diagnostic_code: 'PUBLISH_FAILED',
     suggested_action: 'retry',
     status: statusCode >= 400 && statusCode < 600 ? statusCode : 500,
@@ -10323,7 +10323,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         content: prompt,
         intent: decision.intent,
         requested_mode: requestedMode,
-      }).catch(() => null);
+      });
     }
 
     const agentText = await createAgentTextResponse({
@@ -10350,7 +10350,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         content,
         intent: decision.intent,
         requested_mode: requestedMode,
-      }).catch(() => null);
+      });
     }
     const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
@@ -12241,9 +12241,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           await harnessContext.harness.transitionItem(harnessContext.assistantItemId, terminal, { source:payload.assistant_source || 'system', diagnostic_code:payload.diagnostic_code || null });
           await harnessContext.harness.transitionTurn(harnessContext.turn.id, terminal, { diagnostic_code:payload.diagnostic_code || null });
         }
-        if (payload.pipeline === 'multi_agent' && payload.summary) {
-          await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:payload.summary,intent:payload.intent?.intent,requested_mode:requestedMode});
-        }
       } catch (error) {
         console.error('[coden:harness_finalize_failed]', {requestId,message:redactSecrets(String(error))});
         status=503;
@@ -12280,6 +12277,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         console.warn('[coden:pipeline_run_status_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
       }
       pipelineRunId = '';
+    if (payload.pipeline === 'multi_agent' && payload.summary) {
+      try {
+        const streamedText = eventStream?.transcript || '';
+        const assistantContent = streamedText.endsWith(payload.summary) ? streamedText : [streamedText, payload.summary].filter(Boolean).join('\n\n');
+        await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:redactSecrets(assistantContent),intent:payload.intent?.intent,requested_mode:requestedMode});
+      } catch (error) {
+        console.error('[coden:assistant_persistence_failed]', {requestId,message:redactSecrets(String(error))});
+        status = 503;
+        payload = {...payload, success:false, diagnostic_code:'CHAT_PERSISTENCE_FAILED', recoverable:true,
+          error:'La réponse n’a pas pu être sauvegardée. Les fichiers existants sont conservés.'};
+      }
     }
     if (status < 400 && payload.pipeline === 'multi_agent') {
       // Structured verification reports need no extra, unmetered provider call.

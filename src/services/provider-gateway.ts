@@ -332,7 +332,8 @@ export class ProviderGateway {
         // since a handover after that would replay text already on screen.
         // `enforceModelCapabilities` throws before the request is sent, so the
         // case that matters here is always the silent one.
-        if (isModelSpecificFailure(classified.diagnosticCode) && !emittedAnyChunk) continue;
+        if (emittedAnyChunk) throw classified;
+        if (isModelSpecificFailure(classified.diagnosticCode)) continue;
         if (!classified.retryable) throw classified;
       }
     }
@@ -765,7 +766,12 @@ function isModelSpecificFailure(diagnosticCode: string): boolean {
     // The live catalogue can be briefly stale, or an upstream provider can
     // reject an option it advertised. Do not weaken the request; Auto may
     // hand it to the next compatible candidate before anything is visible.
-    || diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG';
+    || diagnosticCode === 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG'
+    // A 402 can be scoped to one upstream model or its provider route. Auto
+    // is allowed to try its already-authorized compatible candidates before
+    // surfacing it. A manually selected model never reaches this branch with
+    // a fallback candidate, so its choice remains pinned.
+    || diagnosticCode === 'PROVIDER_QUOTA_OR_BILLING';
 }
 
 /**

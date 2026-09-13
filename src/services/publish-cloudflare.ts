@@ -54,7 +54,7 @@ function inspectWorkerDeployability(projectDir: string): WorkerDeployability {
 const CF_API = 'https://api.cloudflare.com/client/v4';
 
 function env(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing environment variable ${name}`);
   return value;
 }
@@ -162,7 +162,20 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   if (!fs.existsSync(distDir)) throw new Error(`dist directory not found: ${distDir}`);
 
   // Step 1: obtain upload JWT
-  const jwt = await cf<string>(`/accounts/${accountId()}/pages/projects/${cfName}/upload-token`);
+  const { jwt } = await cf<{ jwt: string }>(`/accounts/${accountId()}/pages/projects/${cfName}/upload-token`);
+  if (typeof jwt !== 'string' || !jwt.trim()) throw new Error('Cloudflare upload token missing');
+  const assets = async (endpoint: string, body: unknown) => {
+    const response = await fetch(`${CF_API}/pages/assets/${endpoint}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data: any = await response.json();
+    if (!response.ok || data?.success === false) {
+      throw new Error(data?.errors?.[0]?.message || `Cloudflare asset upload failed (${response.status})`);
+    }
+    return data.result;
+  };
 
   // Step 2: hash + prepare manifest
   const files = walkFiles(distDir);
@@ -179,11 +192,10 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   }
 
   // Step 3: check which files are missing
-  const missing = await fetch(`${CF_API}/pages/assets/check-missing`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hashes: Object.values(manifest) }),
-  }).then(r => r.json()).then((j: any) => j?.result || []);
+  const missing = await assets('check-missing', { hashes: Object.values(manifest) });
+  if (!Array.isArray(missing) || missing.some(hash => typeof hash !== 'string' || !Object.hasOwn(payloads, hash))) {
+    throw new Error('Invalid Cloudflare missing-assets response');
+  }
 
   // Step 4: upload missing in batches
   const batchSize = 5;
@@ -194,12 +206,7 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
       metadata: payloads[h].metadata,
       base64: true,
     }));
-    const upRes = await fetch(`${CF_API}/pages/assets/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payload: batch }),
-    });
-    if (!upRes.ok) throw new Error(`Asset upload failed: ${upRes.status} ${await upRes.text()}`);
+    await assets('upload', batch);
   }
 
   // Step 5: create deployment (multipart) — trigger deployment referencing manifest
@@ -216,7 +223,14 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   if (!deployRes.ok || deployJson?.success === false) {
     throw new Error(deployJson?.errors?.[0]?.message || `Deployment failed: ${deployRes.status}`);
   }
-  const dep = deployJson.result;
+  let dep = deployJson.result;
+  if (!dep?.id || !dep?.url) throw new Error('Cloudflare deployment identity missing');
+  for (let attempt = 0; dep.latest_stage?.status !== 'success'; attempt += 1) {
+    if (dep.latest_stage?.status === 'failure' || dep.latest_stage?.status === 'canceled') throw new Error('Cloudflare deployment failed');
+    if (attempt >= 30) throw new Error('Cloudflare deployment is not ready yet');
+    await wait(2_000);
+    dep = await cf(`/accounts/${accountId()}/pages/projects/${cfName}/deployments/${dep.id}`);
+  }
   return { id: dep.id, url: dep.url };
 }
 
@@ -275,13 +289,14 @@ export async function verifyCloudflareDeployment(
   routePaths: string[] = ['/'],
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ verified: boolean; baseUrl: string; checks: DeploymentHttpCheck[] }> {
-  const bases = Array.from(new Set([
-    result.deploymentUrl,
-    result.defaultUrl,
-    result.codenUrl,
-  ].filter(Boolean).map(value => String(value).replace(/\/$/, ''))));
+  const publicUrl = new URL(result.codenUrl);
+  if (publicUrl.protocol !== 'https:' || publicUrl.username || publicUrl.password || publicUrl.port ||
+      !publicUrl.hostname.endsWith(`.${CODEN_ROOT_DOMAIN}`)) {
+    throw new Error('Invalid Coden publication domain');
+  }
+  const bases = [publicUrl.origin];
   const routes = Array.from(new Set(['/', ...routePaths]))
-    .filter(route => route.startsWith('/') && !route.includes(':') && !route.includes('*'))
+    .filter(route => /^\/(?!\/)/.test(route) && !/[\\:*]/.test(route))
     .slice(0, 4);
   const checks: DeploymentHttpCheck[] = [];
 
@@ -295,11 +310,12 @@ export async function verifyCloudflareDeployment(
         try {
           const response = await fetchImpl(url, {
             method: 'GET',
-            redirect: 'follow',
+            redirect: 'manual',
             signal: controller.signal,
             headers: { 'user-agent': 'Coden-Deployment-Verifier/1.0' },
           });
-          attemptChecks.push({ url, status: response.status, ok: response.status >= 200 && response.status < 400 });
+          attemptChecks.push({ url, status: response.status, ok: response.status >= 200 && response.status < 300 });
+          await response.body?.cancel();
         } catch (error: any) {
           attemptChecks.push({ url, status: 0, ok: false, error: String(error?.message || error) });
         } finally {

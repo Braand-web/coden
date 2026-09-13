@@ -16,6 +16,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   let finalized = false; let closing = false; let transportOpen = true; let textOpen = false;
   let pending: Promise<void> = Promise.resolve();
   let textBuffer = '';
+  let transcript = '';
   let textTimer: ReturnType<typeof setTimeout> | undefined;
   const messageId = options.messageId || runId;
   res.status(200).set({
@@ -59,11 +60,13 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     if (finalized) return;
     if (event.type !== 'text_delta' && event.type !== 'heartbeat') endText();
     if (event.type === 'text_delta') {
+      transcript += event.delta;
       textOpen = true; textBuffer += event.delta;
       if (textBuffer.length >= 12000) flushText();
       else if (!textTimer) textTimer = setTimeout(flushText, 40);
       return;
     }
+    if (event.type === 'text_end' && transcript && !transcript.endsWith('\n\n')) transcript += '\n\n';
     flushText();
     send('chat', event);
   };
@@ -79,6 +82,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     workspace,
     drain: () => { flushText(); return pending; },
     get lastSequence() { return seq; },
+    get transcript() { return transcript.trim(); },
     async finish(payload: any, status: number) {
       if (finalized || closing) return;
       closing = true;

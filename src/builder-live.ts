@@ -8,7 +8,7 @@ import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
-import { apiFetch } from './lib/api';
+import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
@@ -32,6 +32,10 @@ import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
 import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-mode';
 import { parsePlanPresentation, type PlanSectionId } from './lib/plan-presentation';
+import {
+  getRuntimeRecoveryPresentation,
+  normalizeRuntimeDiagnosticCode,
+} from './lib/runtime-error-presentation';
 
 initThemeController();
 import {
@@ -2510,6 +2514,79 @@ function planFallbackMarkdown(plan: NonNullable<ReturnType<typeof parsePlanPrese
   ].filter(Boolean).join('\n\n');
 }
 
+function runtimeDiagnosticCodeFromError(error: unknown) {
+  if (error instanceof ApiError && error.payload && typeof error.payload === 'object') {
+    const payload = error.payload as { diagnostic_code?: unknown; diagnosticCode?: unknown };
+    const diagnostic = payload.diagnostic_code || payload.diagnosticCode;
+    if (diagnostic) return normalizeRuntimeDiagnosticCode(diagnostic);
+  }
+  if (error && typeof error === 'object') {
+    const record = error as { diagnosticCode?: unknown; diagnostic_code?: unknown; message?: unknown };
+    const diagnostic = record.diagnosticCode || record.diagnostic_code;
+    if (diagnostic) return normalizeRuntimeDiagnosticCode(diagnostic);
+    const fromMessage = String(record.message || '').match(/(?:diagnostic(?:_code)?|code)\s*[:=]\s*([A-Z][A-Z0-9_]{2,})/i);
+    if (fromMessage?.[1]) return normalizeRuntimeDiagnosticCode(fromMessage[1]);
+  }
+  return '';
+}
+
+function safeBuilderFailureText(error: unknown, speaksFrench: boolean) {
+  const diagnostic = runtimeDiagnosticCodeFromError(error);
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
+  if (recovery) return `${recovery.title}. ${recovery.body}`;
+  const raw = String(error instanceof Error ? error.message : error || '').trim()
+    .replace(/\s*(?:diagnostic(?:_code)?|code)\s*[:=]\s*[A-Z][A-Z0-9_]{2,}\.?/gi, '')
+    .replace(/\s*request\s*id\s*[:=]\s*[^.\s]+\.?/gi, '')
+    .trim();
+  if (!raw || /openrouter|anthropic|provider|api[_ ]?key|billing|quota|request id/i.test(raw)) {
+    return speaksFrench
+      ? 'La demande ne peut pas être terminée pour le moment. Elle est conservée et peut être relancée.'
+      : 'The request cannot be completed right now. It is kept and can be retried.';
+  }
+  return raw;
+}
+
+function clearMessageActions(card: HTMLElement | null) {
+  const id = messageHandleId(card);
+  if (id && conversationApi?.clearActions) conversationApi.clearActions(id);
+}
+
+function prepareMessageForRun(card: HTMLElement | null, label: string) {
+  setMessageBlock(card, null);
+  clearMessageActions(card);
+  setMessageShimmer(card, label);
+}
+
+function showRuntimeRecovery(
+  card: HTMLElement | null,
+  error: unknown,
+  speaksFrench: boolean,
+  actions: { retry?: () => void; useAuto?: () => void } = {},
+) {
+  const diagnostic = runtimeDiagnosticCodeFromError(error);
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
+  if (!recovery) return false;
+
+  const fallbackText = `${recovery.title}. ${recovery.body}`;
+  clearMessageShimmer(card);
+  updateMessage(card, fallbackText);
+  setMessageBlock(card, {
+    type: 'recovery',
+    title: recovery.title,
+    body: recovery.body,
+  });
+  clearMessageActions(card);
+  if (recovery.canRetry && actions.retry) {
+    addInlineAction(card, speaksFrench ? 'Réessayer' : 'Retry', actions.retry);
+  }
+  // Switching from a pinned model to Auto is never silent. This button is the
+  // user's explicit agreement to let the router select another compatible one.
+  if (recovery.shouldOfferAuto && selectedModel() !== 'auto' && actions.useAuto) {
+    addInlineAction(card, speaksFrench ? 'Utiliser Auto' : 'Use Auto', actions.useAuto);
+  }
+  return true;
+}
+
 function renderPlanResponse(
   card: HTMLElement | null,
   rawContent: string,
@@ -2590,7 +2667,7 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
   if (payload?.runId) lastAgentRunId = String(payload.runId);
   if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
   if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
-  if (payload?.success === false) throw new Error(payload.message || payload.error || 'Assistant response failed.');
+  if (payload?.success === false) throw new ApiError(payload.message || payload.error || 'Assistant response failed.', 503, payload);
 
   const content = String(payload?.text || '').trim();
   if (!content) throw new Error('The selected AI model returned an empty response.');
@@ -2695,20 +2772,20 @@ async function requestProjectGeneration(
 
 async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto') {
   setBusy(true);
+  prepareMessageForRun(card, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
   startLiveRun(card, { mode: requestedMode, model: selectedModel(), intent: prompt });
   try {
     // One request, one answer. A failed request stays an honest failure,
     // never a hidden second run.
     await requestSimpleConversation(card, prompt, speaksFrench, requestedMode);
   } catch (error) {
-    const message = error instanceof Error && error.message.trim()
-      ? error.message.trim()
-      : 'The selected AI model did not return a usable response.';
-    updateMessage(card, message);
-    if (/temporarily unavailable|temporairement indisponible|ne répond pas pour le moment|not responding right now|timed out|délai|timeout/i.test(message)) {
-      addInlineAction(card, speaksFrench ? 'Réessayer' : 'Retry', () => {
-        void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
-      });
+    const retry = () => void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
+    const useAuto = () => {
+      applySelectedModel('auto', { persist: true, saveWorkspace: true });
+      void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
+    };
+    if (!showRuntimeRecovery(card, error, speaksFrench, { retry, useAuto })) {
+      updateMessage(card, safeBuilderFailureText(error, speaksFrench));
     }
   } finally {
     setBusy(false);
@@ -2780,6 +2857,11 @@ function addInlineAction(card: HTMLElement | null, label: string, action: () => 
 
 function formatAgentErrorMessage(event: any) {
   const payload = event?.payload || {};
+  const recovery = getRuntimeRecoveryPresentation(
+    payload.diagnostic_code || payload.diagnosticCode,
+    'fr',
+  );
+  if (recovery) return `${recovery.title}. ${recovery.body}`;
   const base = String(event?.message || payload.message || 'Generation failed.').trim();
   if (/generation failed or empty response/i.test(base)) {
     return 'Coden n’a pas reçu de fichiers valides à afficher. Le travail reste récupérable et une nouvelle tentative peut repartir proprement.';
@@ -2787,16 +2869,7 @@ function formatAgentErrorMessage(event: any) {
   if (/preview contains a known forced runtime failure marker/i.test(base)) {
     return 'La preview contient encore un marqueur de crash. Coden doit le retirer, reconstruire, puis retester avant de livrer.';
   }
-  const diagnostic = typeof payload.diagnostic_code === 'string' && payload.diagnostic_code.trim()
-    ? ` Code: ${payload.diagnostic_code.trim()}.`
-    : '';
-  const action = typeof payload.suggested_action === 'string' && payload.suggested_action.trim()
-    ? ` Suggested action: ${payload.suggested_action.trim().replace(/_/g, ' ')}.`
-    : '';
-  const requestId = typeof payload.request_id === 'string' && payload.request_id.trim()
-    ? ` Request ID: ${payload.request_id.trim()}.`
-    : '';
-  return `${base}${diagnostic}${action}${requestId}`;
+  return safeBuilderFailureText(base, true);
 }
 
 function positionProjectMenu() {
@@ -3648,8 +3721,8 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
     (status.state === 'published' || status.state === 'changes_unpublished')
   );
   const targetUrl = status?.public_url || '';
-  const liveUrl = hasPublishedDeployment ? targetUrl : '';
-  const publicUrlLabel = formatPublishUrl(targetUrl);
+  const liveUrl = hasPublishedDeployment && !isPublishing && !error ? targetUrl : '';
+  const publicUrlLabel = liveUrl ? formatPublishUrl(liveUrl) : 'L’adresse sera disponible après la publication.';
   const canOpen = Boolean(liveUrl && hasPublishedDeployment);
   const checks = status?.checks || [];
   const title = loading ? 'Publication…' : publishPanelTitle(status);
@@ -3660,6 +3733,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       : statusMissing
         ? 'Réessayer'
         : publishPrimaryLabel(status);
+  const effectiveTitle = isPublishing ? 'Publication en cours' : error ? 'Publication interrompue' : title;
   const passCount = checks.filter(check => check.status === 'pass').length;
   const warnCount = checks.filter(check => check.status === 'warn').length;
   const failCount = checks.filter(check => check.status === 'fail').length;
@@ -3712,7 +3786,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? `
           <div class="cdn-pub__confirm">
             <strong>${status.state === 'published' || status.state === 'changes_unpublished' ? 'Mettre à jour cette application ?' : 'Publier cette application ?'}</strong>
-            <p>La version vérifiée sera rendue publique sur <span>${escapeHtml(publicUrlLabel)}</span>.</p>
+            <p>La version vérifiée sera publiée sous le domaine Coden. Son adresse sera affichée une fois le déploiement vérifié.</p>
             <div class="cdn-pub__actions-row">
               <button type="button" class="cdn-pub__secondary" data-publish-action="main" ${isPublishing ? 'disabled' : ''}>Annuler</button>
               <button type="button" class="cdn-pub__primary" data-publish-action="confirm-publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
@@ -3726,7 +3800,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       <div class="cdn-pub__head">
         <div class="cdn-pub__title">
           <span class="cdn-pub__dot${hasPublishedDeployment ? ' cdn-pub__dot--live' : ''}"></span>
-          <h3>${escapeHtml(title)}</h3>
+          <h3>${escapeHtml(effectiveTitle)}</h3>
         </div>
         <button type="button" class="cdn-pub__icon-btn" data-publish-action="close" aria-label="Fermer">${publishIcon('fail')}</button>
       </div>
@@ -3735,7 +3809,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ${status ? `
           <div class="cdn-pub__url">
             <span class="cdn-pub__glyph">${publishIcon('globe')}</span>
-            <span class="cdn-pub__url-text" data-empty="${targetUrl ? 'false' : 'true'}" title="${escapeHtml(targetUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
+            <span class="cdn-pub__url-text" data-empty="${liveUrl ? 'false' : 'true'}" title="${escapeHtml(liveUrl || publicUrlLabel)}">${escapeHtml(publicUrlLabel)}</span>
             <button type="button" class="cdn-pub__icon-btn" data-publish-action="copy" ${liveUrl ? '' : 'disabled'} aria-label="Copier l’URL publique">${publishIcon('copy')}</button>
           </div>
         ` : `
@@ -5693,6 +5767,8 @@ function applyInitialBuilderLayout() {
 async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLastPlan = false, extra: Record<string, unknown> = {}, displayText = prompt) {
   const safePrompt = repairTextEncoding(redactSecrets(prompt)).trim();
   const safeDisplayText = repairTextEncoding(redactSecrets(displayText));
+  const { __codenRetry, ...requestExtra } = extra;
+  const isRecoveryRetry = Boolean(__codenRetry);
   if (isGenerating || !safePrompt) return;
   // First send from the resting landing: drop the composer to the bottom and open
   // the conversation BEFORE rendering the message (state 1 -> state 2).
@@ -5701,12 +5777,12 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   const promptUiContext = extra.confirmedCriticalAction ? 'project_mission' : classifyPromptUiContext(safePrompt, requestedMode);
   const handoff = getInitialBuilderHandoff();
   const effectiveExtra = {
-    ...extra,
-    ...(extra.studioContext === undefined && activeWorkshop !== 'chat' ? { studioContext: studioPromptContextPayload() } : {}),
-    ...(extra.importContext === undefined && handoff.importContext ? { importContext: handoff.importContext } : {}),
+    ...requestExtra,
+    ...(requestExtra.studioContext === undefined && activeWorkshop !== 'chat' ? { studioContext: studioPromptContextPayload() } : {}),
+    ...(requestExtra.importContext === undefined && handoff.importContext ? { importContext: handoff.importContext } : {}),
   };
   clearInlineBlocks();
-  appendMessage('user', safeDisplayText);
+  if (!isRecoveryRetry) appendMessage('user', safeDisplayText);
 
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
@@ -6148,7 +6224,11 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       // Treating it as a transport failure discarded all of that work and
       // surfaced the misleading "Generation failed with 200" message.
       if (statusCode >= 400 || (payload?.success === false && !payload?.needs_fix)) {
-        throw new Error(String(payload?.message || payload?.error || `Generation failed with ${statusCode}`));
+        throw new ApiError(
+          String(payload?.message || payload?.error || `Generation failed with ${statusCode}`),
+          statusCode,
+          payload,
+        );
       }
     }
 
@@ -6274,7 +6354,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       failLiveRun(status, stoppedText, 'cancelled');
       if (generationTouchesPreview) setEmptyPreviewState('idle', stopRequested ? 'Generation stopped' : 'Build cancelled');
     } else {
-      const errorText = error instanceof Error ? error.message : 'Generation failed.';
+      const errorText = safeBuilderFailureText(error, speaksFrench);
       const runStatus = 'failed';
       clearMessageShimmer(status);
       if (useAgentFlow) {
@@ -6290,6 +6370,18 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       journal.finalText = errorText;
       scheduleJournal(true);
       failLiveRun(status, errorText, runStatus);
+      const retry = () => void generateFromPrompt(
+        safePrompt,
+        requestedMode,
+        useLastPlan,
+        { ...effectiveExtra, __codenRetry: true },
+        safeDisplayText,
+      );
+      const useAuto = () => {
+        applySelectedModel('auto', { persist: true, saveWorkspace: true });
+        retry();
+      };
+      showRuntimeRecovery(status, error, speaksFrench, { retry, useAuto });
       if (generationTouchesPreview) setEmptyPreviewState('idle', 'Preview non vérifiée');
     }
   } finally {
