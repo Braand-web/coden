@@ -430,6 +430,34 @@ function DashboardHome() {
   }, [projects, projectView, search]);
   const visibleProjects = showAllProjects ? filteredProjects : filteredProjects.slice(0, 6);
 
+  /*
+   * Which filter is hiding the rest, if any. Checked in the order a user
+   * would undo them: the query they typed, then the tab they clicked, then
+   * the cap they never chose.
+   */
+  const hiddenProjects = useMemo(() => {
+    if (projects.length <= visibleProjects.length) return null;
+    if (search.trim()) {
+      return {
+        reason: `Il ne correspond pas à « ${search.trim()} ».`,
+        action: 'Effacer la recherche',
+        onReveal: () => setSearch(''),
+      };
+    }
+    if (projectView === 'recent') {
+      return {
+        reason: 'Cet onglet ne montre que les sept derniers jours.',
+        action: 'Voir tous les projets',
+        onReveal: () => setProjectView('all'),
+      };
+    }
+    return {
+      reason: `${projects.length - visibleProjects.length} autre${projects.length - visibleProjects.length === 1 ? '' : 's'} projet${projects.length - visibleProjects.length === 1 ? '' : 's'} ne tiennent pas dans cette grille.`,
+      action: 'Tout parcourir',
+      onReveal: () => setShowAllProjects(true),
+    };
+  }, [projects.length, visibleProjects.length, projectView, search]);
+
   const createFromPrompt = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const request = prompt.trim();
@@ -567,15 +595,17 @@ function DashboardHome() {
             */}
           <div className="coden-dashboard-project-toolbar">
             <h2 className="coden-dashboard-section-title">Mes projets</h2>
-            <label className="coden-dashboard-search">
-              <Search size={17} aria-hidden="true" />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher" aria-label="Rechercher un projet" />
-            </label>
-            <div className="coden-dashboard-project-filters" role="group" aria-label="Filtrer les projets">
-              <button className={projectView === 'all' ? 'is-active' : ''} type="button" onClick={() => setProjectView('all')}>Mes projets</button>
-              <button className={projectView === 'recent' ? 'is-active' : ''} type="button" onClick={() => setProjectView('recent')}>Récemment vus</button>
+            {/* One pill: both of these narrow the same list. */}
+            <div className="coden-dashboard-project-controls">
+              <label className="coden-dashboard-search">
+                <Search size={16} aria-hidden="true" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} type="search" placeholder="Rechercher" aria-label="Rechercher un projet" />
+              </label>
+              <div className="coden-dashboard-project-filters" role="group" aria-label="Filtrer les projets">
+                <button className={projectView === 'all' ? 'is-active' : ''} type="button" onClick={() => setProjectView('all')}>Mes projets</button>
+                <button className={projectView === 'recent' ? 'is-active' : ''} type="button" onClick={() => setProjectView('recent')}>Récemment vus</button>
+              </div>
             </div>
-            <span className="coden-dashboard-project-count">{projects.length} projet{projects.length === 1 ? '' : 's'}</span>
             {filteredProjects.length > 6 && (
               <button className="coden-dashboard-browse-all" type="button" onClick={() => setShowAllProjects((value) => !value)}>
                 {showAllProjects ? 'Réduire' : 'Tout parcourir'}
@@ -605,6 +635,23 @@ function DashboardHome() {
               </div>
             )}
           </section>
+
+          {/*
+            * Where the rest of them are.
+            *
+            * Three things can hide a project from this grid — a search, the
+            * seven-day filter, and the six-tile cap — and all three leave the
+            * same impression that a project is missing. The note names which
+            * one is doing it and hands over the control that undoes it,
+            * rather than telling a user their project is elsewhere.
+            */}
+          {!projectsQuery.isLoading && !projectsQuery.isError && hiddenProjects && (
+            <section className="coden-dashboard-project-more">
+              <strong>Vous cherchez un autre projet&nbsp;?</strong>
+              <span>{hiddenProjects.reason}</span>
+              <button type="button" onClick={hiddenProjects.onReveal}>{hiddenProjects.action}</button>
+            </section>
+          )}
         </div>
       </main>
     </div>

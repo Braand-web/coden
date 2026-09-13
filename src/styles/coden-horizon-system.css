@@ -203,9 +203,12 @@ body {
   .admin-card, .db-section, .db-card, .settings-section, .settings-block,
   .modal-content, .modal-container, .pricing-modal-content,
   .project-menu-panel, .publish-popover, .coden-ui-overlay-panel,
-  .coden-dashboard-composer, .coden-dashboard-project-card,
+  .coden-dashboard-composer,
   .coden-dashboard-empty, .coden-dashboard-loading
 ) {
+  /* `.coden-dashboard-project-card` is deliberately not in this list. It is
+     not a surface: it is a rounded thumbnail with a caption under it, and a
+     forced opaque background plus a 24px radius put a solid box around both. */
   border-color: var(--horizon-border) !important;
   border-radius: 24px !important;
   background: var(--horizon-surface) !important;
@@ -451,20 +454,13 @@ body[data-coden-surface="dashboard"] {
   --dashboard-accent: var(--horizon-blue);
   --dashboard-focus: var(--horizon-blue);
 
-  /* The dashboard's ground, in Horizon's own colours: Coden's blue bled into
-     indigo and a cold cyan, laid over the canvas this system already defines.
-     A gradient rather than a flat fill, and still one palette. */
-  --dashboard-ambient:
-    radial-gradient(1120px 640px at 10% -10%, color-mix(in srgb, var(--horizon-blue) 20%, transparent), transparent 62%),
-    radial-gradient(920px 580px at 94% 2%, rgba(136, 106, 255, .16), transparent 60%),
-    radial-gradient(820px 560px at 52% 114%, rgba(56, 189, 248, .10), transparent 64%),
-    /* A flat layer, but still spelled as a gradient: `background-image` takes
-       only images, so a bare colour in the last slot makes the whole
-       declaration invalid and drops every layer above it with it. */
-    linear-gradient(var(--horizon-canvas), var(--horizon-canvas));
-  --dashboard-panel: color-mix(in srgb, var(--horizon-canvas) 72%, transparent);
+  /* `--dashboard-ambient` is deliberately NOT redefined here. The mesh is one
+     theme-independent value owned by dashboard-react.css; this block would
+     only shadow it with a copy to keep in sync. The panel that sits on the
+     mesh does take Horizon's palette, because that one is per-theme. */
+  --dashboard-panel: color-mix(in srgb, var(--horizon-canvas) 88%, transparent);
   --dashboard-panel-border: var(--horizon-border);
-  --dashboard-panel-shadow: var(--horizon-shadow-float);
+  --dashboard-panel-shadow: 0 30px 80px rgba(6, 10, 24, .45);
 }
 
 /* The shell, the root and the sidebar are deliberately NOT repainted here.
@@ -482,17 +478,16 @@ body[data-coden-surface="dashboard"] .coden-dashboard-composer {
   box-shadow: var(--horizon-shadow-float) !important;
 }
 
-body[data-coden-surface="dashboard"] .coden-dashboard-project-card {
+/* The thumbnail is the rounded object on this card, so it is the one that
+   carries the frame — and the placeholder underneath shares its ground. */
+body[data-coden-surface="dashboard"] .coden-dashboard-project-preview {
   border-color: var(--horizon-border) !important;
 }
 
-body[data-coden-surface="dashboard"] .coden-dashboard-project-card:hover {
+body[data-coden-surface="dashboard"] .coden-dashboard-project-card-link:hover .coden-dashboard-project-preview {
   border-color: var(--horizon-border-strong) !important;
 }
 
-/* No radius here: the card is the rounded box and clips its own contents, so
-   a second radius on the thumbnail only let the card's background bleed
-   through the corners it left behind. */
 body[data-coden-surface="dashboard"] :where(.coden-dashboard-project-preview, .coden-dashboard-project-fallback) {
   background: var(--horizon-input) !important;
 }

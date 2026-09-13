@@ -28,11 +28,18 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   assert.match(sidebar.slice(0, 420), /background: transparent;/, 'so does the sidebar');
 
   /*
-   * Both themes, because a gradient defined only in the dark block leaves the
-   * light theme painting `var(--dashboard-ambient)` as nothing at all.
+   * Exactly one definition, so there is nothing to keep in sync. The mesh is
+   * the same page in both themes — only the panel on top of it changes — and
+   * the design system's own dashboard block must not shadow it with a copy.
    */
-  const light = css.slice(css.indexOf('html[data-theme="light"] {'));
-  assert.match(light.slice(0, light.indexOf('}')), /--dashboard-ambient:/, 'the light theme has its own');
+  assert.equal((css.match(/--dashboard-ambient:/g) || []).length, 1, 'the mesh is defined once');
+  assert.doesNotMatch(horizon, /--dashboard-ambient:/, 'and the design system does not shadow it');
+
+  /* A background nobody can see is a flat fill with extra steps. */
+  const stops = (css.match(/--dashboard-ambient:[\s\S]*?;\s*\n/) || [''])[0];
+  assert.ok((stops.match(/radial-gradient/g) || []).length >= 3, 'it is a mesh, not one wash');
+  assert.doesNotMatch(stops, /rgba\([^)]*,\s*\.[0-2]\d*\)\s*,\s*transparent/,
+    'and its colours are saturated rather than a near-invisible tint');
 }
 
 /*
@@ -53,9 +60,22 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   assert.doesNotMatch(scoped, /\.coden-dashboard-sidebar\s*\{[^}]*background:[^}]*!important/,
     'nor the sidebar');
 
-  // It still owns the palette — that is its job, and the gradient uses it.
-  assert.match(scoped, /--dashboard-ambient:/, 'it supplies the gradient in its own colours');
-  assert.match(scoped, /var\(--horizon-canvas\)/, 'built on the canvas it already defines');
+  // It still owns the palette — that is its job — and the panel uses it.
+  assert.match(scoped, /--dashboard-panel: color-mix\(in srgb, var\(--horizon-canvas\)/,
+    'the panel still takes its colour from the system');
+
+  /*
+   * And the project card is out of the generic "every card is a surface"
+   * list. That rule forced `background: var(--horizon-surface) !important`
+   * and a 24px radius onto it, which put a solid box around a thumbnail and
+   * its caption — the exact look the card is meant not to have.
+   */
+  const surfaces = horizon.slice(horizon.indexOf('.auth-card, .project-card'));
+  // Prose stripped: the comment inside the block necessarily names the
+  // selector it exists to explain the absence of.
+  const selectors = surfaces.slice(0, surfaces.indexOf('}')).replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(selectors, /\.coden-dashboard-project-card\b/,
+    'the project card is not forced to be an opaque surface');
 }
 
 /*
@@ -132,8 +152,44 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   assert.match(block, /clip-path: inset\(50%\);/, 'hidden from the eye');
   assert.doesNotMatch(block, /display: none/, 'but never from the accessibility tree');
 
-  // The count it used to carry survives rather than being dropped on the floor.
-  assert.match(tsx, /className="coden-dashboard-project-count"/, 'the project count moved into the toolbar');
+  /*
+   * Search and the tabs are one control. They narrow the same list, so two
+   * adjacent bordered boxes read as two unrelated widgets; "Tout parcourir"
+   * stays outside, because it leaves the list rather than narrowing it.
+   */
+  const toolbar = tsx.slice(tsx.indexOf('coden-dashboard-project-toolbar'), tsx.indexOf('coden-dashboard-project-list'));
+  const controlsAt = toolbar.indexOf('coden-dashboard-project-controls');
+  assert.ok(controlsAt > 0, 'the pill exists');
+  assert.ok(controlsAt < toolbar.indexOf('coden-dashboard-search'), 'search is inside it');
+  assert.ok(controlsAt < toolbar.indexOf('coden-dashboard-project-filters'), 'and so are the tabs');
+  assert.ok(toolbar.indexOf('coden-dashboard-browse-all') > toolbar.indexOf('</div>'), 'browse-all is outside it');
+  assert.match(css, /\.coden-dashboard-browse-all \{[^}]*margin-left: auto;/, 'pushed to the far right');
+}
+
+/*
+ * A grid that hides projects says which filter is hiding them.
+ *
+ * Three things can drop a project out of this grid — a search, the seven-day
+ * tab, and the six-tile cap — and all three leave the identical impression
+ * that a project has gone missing. The note names the one that is doing it
+ * and hands over the control that undoes it.
+ */
+{
+  assert.match(tsx, /className="coden-dashboard-project-more"/, 'the grid explains what it is not showing');
+  assert.match(tsx, /Vous cherchez un autre projet/, 'in the user\'s words');
+  for (const cause of [
+    /Il ne correspond pas à/,        // the query
+    /que les sept derniers jours/,    // the tab
+    /ne tiennent pas dans cette grille/, // the cap
+  ]) {
+    assert.match(tsx, cause, `one branch per cause: ${cause}`);
+  }
+  assert.match(tsx, /hiddenProjects\.onReveal/, 'and each hands back the control that undoes it');
+
+  // Never shown when nothing is hidden — an explanation for an absence that
+  // is not happening is just noise under every full grid.
+  assert.match(tsx, /if \(projects\.length <= visibleProjects\.length\) return null;/,
+    'and it is absent when the grid is complete');
 }
 
 /*
@@ -167,33 +223,30 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
 }
 
 /*
- * The card is one box.
+ * The card is a picture with a caption, not a box.
  *
- * The thumbnail carried the border and the caption floated underneath it
- * unenclosed, so a row of cards read as a row of pictures with loose text
- * between them. One rounded, clipping container holds both.
+ * The rounded object is the thumbnail; the avatar and the name sit on the
+ * panel beneath it with nothing drawn around them. An enclosing frame here
+ * would turn a grid of previews into a grid of outlined rectangles, and the
+ * preview — the only part with anything to look at — would lose the emphasis
+ * it should be carrying.
  */
 {
   const cardAt = css.indexOf('.coden-dashboard-project-card {');
   assert.ok(cardAt > 0, 'the card is styled');
   const block = css.slice(cardAt, css.indexOf('}', cardAt));
-  assert.match(block, /overflow: hidden;/, 'the card clips its contents');
-  assert.match(block, /border-radius: 16px;/, 'with rounded edges');
-  assert.match(block, /border: 1px solid var\(--dashboard-border-soft\);/, 'and a single border');
+  assert.match(block, /background: transparent;/, 'the card itself paints nothing');
+  assert.match(block, /border: 0;/, 'and draws no frame');
+  assert.doesNotMatch(block, /overflow: hidden;/, 'so it has nothing to clip');
 
   const previewAt = css.indexOf('.coden-dashboard-project-preview {');
   assert.ok(previewAt > 0, 'the thumbnail is styled');
   const previewBlock = css.slice(previewAt, css.indexOf('}', previewAt));
-  assert.match(previewBlock, /border: 0;/, 'so the thumbnail inside it carries none of its own');
+  assert.match(previewBlock, /border-radius: 12px;/, 'the thumbnail is the rounded object');
+  assert.match(previewBlock, /overflow: hidden;/, 'and clips the frame inside it');
 
-  /*
-   * A clipping box eats an inner outline, so the focus ring had to move out
-   * with it — otherwise a focused card looked exactly like an unfocused one.
-   */
-  assert.match(css, /\.coden-dashboard-project-card:has\(\.coden-dashboard-project-card-link:focus-visible\) \{/,
-    'the focus ring is drawn on the card');
-  assert.doesNotMatch(css, /\.coden-dashboard-project-card-link:focus-visible \{/,
-    'and not inside where it would be clipped away');
+  // The meta row has room for a 36px avatar beside the name.
+  assert.match(css, /grid-template-columns: 36px minmax\(0, 1fr\) 17px;/, 'the caption is avatar, copy, chevron');
 }
 
 console.log('dashboard surface tests passed');

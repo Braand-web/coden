@@ -49,7 +49,7 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
   assert.match(component, /title=\{`Projet de \$\{owner\.name\}`\}/, 'and says so on hover');
   assert.match(card, /accountDisplayName\(profile\)/, 'from the same name the sidebar shows');
 
-  assert.match(css, /grid-template-columns: 28px minmax\(0, 1fr\) 17px;/, 'the meta row makes room for it');
+  assert.match(css, /grid-template-columns: 36px minmax\(0, 1fr\) 17px;/, 'the meta row makes room for it');
 }
 
 /*
