@@ -1025,6 +1025,52 @@ function getBuilderPreviewTheme(): 'light' | 'dark' {
   return 'light';
 }
 
+const PREVIEW_SCROLLBAR_STYLE = `
+  html, body {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  html::-webkit-scrollbar, body::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+`;
+
+function withHiddenPreviewScrollbars(html: string) {
+  if (!html.trim() || html.includes('data-coden-preview-scrollbars="hidden"')) return html;
+  const style = `<style data-coden-preview-scrollbars="hidden">${PREVIEW_SCROLLBAR_STYLE}</style>`;
+  const head = html.match(/<head(?:\s[^>]*)?>/i);
+  if (head) return html.replace(head[0], `${head[0]}${style}`);
+  return `${style}${html}`;
+}
+
+function setPreviewSourceDocument(frame: HTMLIFrameElement, html: string) {
+  frame.srcdoc = withHiddenPreviewScrollbars(html);
+}
+
+function hideLivePreviewScrollbars(frame: HTMLIFrameElement) {
+  try {
+    const documentElement = frame.contentDocument;
+    if (!documentElement || documentElement.getElementById('coden-preview-scrollbars-style')) return;
+    const style = documentElement.createElement('style');
+    style.id = 'coden-preview-scrollbars-style';
+    style.textContent = PREVIEW_SCROLLBAR_STYLE;
+    (documentElement.head || documentElement.documentElement).appendChild(style);
+  } catch {
+    // Cross-origin previews cannot be styled from the Builder shell. They keep
+    // their normal document scrolling rather than failing the preview.
+  }
+}
+
+function bindPreviewScrollbarGuard() {
+  const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
+  if (!frame || frame.dataset.codenScrollbarGuard === 'true') return;
+  frame.dataset.codenScrollbarGuard = 'true';
+  frame.addEventListener('load', () => hideLivePreviewScrollbars(frame));
+  hideLivePreviewScrollbars(frame);
+}
+
 function syncInternalPreviewTheme() {
   const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
   if (!frame) return;
@@ -1033,7 +1079,7 @@ function syncInternalPreviewTheme() {
   if (frame.dataset.emptyPreview === 'true') {
     frame.dataset.previewShellTheme = theme;
     const mode: EmptyPreviewMode = emptyPreviewMode === 'working' ? 'working' : 'idle';
-    frame.srcdoc = centeredPreviewLoaderHtml(mode, emptyPreviewLabel);
+    setPreviewSourceDocument(frame, centeredPreviewLoaderHtml(mode, emptyPreviewLabel));
     return;
   }
   if (frame.dataset.designPreview === 'true' && activeWorkshop === 'design' && !isUsablePreviewHtml(currentPreviewHtml)) {
@@ -1278,7 +1324,7 @@ function setEmptyPreviewState(mode: EmptyPreviewMode = 'idle', label = '') {
   frame.dataset.emptyPreview = 'true';
   frame.dataset.emptyPreviewMode = mode;
   frame.dataset.previewShellTheme = getBuilderPreviewTheme();
-  frame.srcdoc = centeredPreviewLoaderHtml(mode, resolvedLabel);
+  setPreviewSourceDocument(frame, centeredPreviewLoaderHtml(mode, resolvedLabel));
   setPreviewDevice(selectedPreviewDevice, false);
   syncPreviewAddress(null);
   syncPreviewToolbarControls();
@@ -1338,7 +1384,7 @@ function setMediaPreviewHtml(html: string, addressLabel = 'media.coden.local / l
   frame.dataset.previewShellTheme = getBuilderPreviewTheme();
   frame.removeAttribute('data-design-preview');
   frame.removeAttribute('data-empty-preview');
-  frame.srcdoc = html;
+  setPreviewSourceDocument(frame, html);
   currentPreviewStatus = 'idle';
   setPreviewDevice(selectedPreviewDevice, false);
   void addressLabel;
@@ -1410,7 +1456,7 @@ function setDesignPreviewHtml(html: string, addressLabel = 'design.coden.local /
   frame.dataset.previewShellTheme = getBuilderPreviewTheme();
   frame.removeAttribute('data-media-preview');
   frame.removeAttribute('data-empty-preview');
-  frame.srcdoc = html;
+  setPreviewSourceDocument(frame, html);
   currentPreviewStatus = 'idle';
   setPreviewDevice(selectedPreviewDevice, false);
   void addressLabel;
@@ -3345,7 +3391,7 @@ function setPreview(html: string, status = 'unknown') {
         void ensureLivePreview();
         return;
       }
-      frame.srcdoc = html;
+      setPreviewSourceDocument(frame, html);
     });
     requestAnimationFrame(() => {
       frame.style.opacity = '1';
@@ -3379,7 +3425,7 @@ function refreshPreviewFrame() {
     const html = currentPreviewHtml;
     frame.srcdoc = '';
     window.setTimeout(() => {
-      frame.srcdoc = html;
+      setPreviewSourceDocument(frame, html);
       showTransientNotice('Preview refreshed.');
     }, 45);
     return;
@@ -8195,6 +8241,7 @@ function initShell() {
   bindConnectorsButton();
   syncBuilderPlanBadges(currentPlanKey);
   bindPreviewDeviceToggle();
+  bindPreviewScrollbarGuard();
   bindPreviewThemeSync();
   bindMobileBuilderShell();
   initStudioWorkshops();

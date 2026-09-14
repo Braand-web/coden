@@ -139,24 +139,18 @@
 
     * {
       box-sizing: border-box;
-      scrollbar-width: thin !important;
-      scrollbar-color: var(--border-mid) transparent !important;
+      /* Keep scrolling available without exposing the browser's heavy native
+         rails in the workspace. The chat, code editor and preview still scroll
+         with wheel, touch, keyboard and assistive technology. */
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
 
-    /* Make all vertical and horizontal scrollbars almost invisible */
+    /* Hide the visual rail in every Builder-owned scroll container. */
     ::-webkit-scrollbar {
-      width: 3px !important;
-      height: 3px !important;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent !important;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: var(--border-mid) !important;
-      border-radius: 99px !important;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--border-focus, var(--border-mid)) !important;
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
     }
 
     body {
@@ -1546,7 +1540,9 @@
       overflow-x: hidden;
       scroll-behavior: auto;
       overscroll-behavior-y: contain;
-      scrollbar-gutter: stable;
+      scrollbar-gutter: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
       padding: 24px 22px;
       display: flex;
       flex-direction: column;
@@ -2760,7 +2756,11 @@
       display: flex;
       justify-content: center;
       align-items: stretch;
-      overflow: auto;
+      /* The preview document owns its scroll. Keeping the stage clipped avoids
+         a second full-height rail beside the app preview. */
+      overflow: hidden;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
       background:
         radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-blue, #3b82f6) 3%, transparent), transparent 40%),
         var(--preview-stage-bg, var(--bg-panel));
@@ -2809,6 +2809,8 @@
       height: 100%;
       min-height: 0;
       background: var(--bg-surface);
+      scrollbar-width: none;
+      -ms-overflow-style: none;
     }
 
     :root[data-theme="light"] {
