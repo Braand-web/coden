@@ -353,11 +353,11 @@ app.use((_req: any, res: any, next: any) => {
   next();
 });
 
-// The Builder is a code-execution surface and needs cross-origin isolation for
-// its WebContainer sandbox. Keep the policy scoped to the Builder document so
-// landing/auth pages and OAuth popups retain their normal browser behavior.
-// Set CODEN_WEBCONTAINER_PREVIEW=0 only as an emergency rollback.
-if (process.env.CODEN_WEBCONTAINER_PREVIEW !== '0') {
+// WebContainer is an opt-in experiment. It requires cross-origin isolation and
+// a Service Worker, which browsers may block inside an embedded/partitioned
+// preview. The normal Builder preview and the server sandbox do not need these
+// headers, so only add them when WebContainer was explicitly enabled.
+if (process.env.CODEN_WEBCONTAINER_PREVIEW === '1') {
   app.use((req: any, res: any, next: any) => {
     if (/^\/builder\.html\/?$/i.test(String(req.path || ''))) {
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');

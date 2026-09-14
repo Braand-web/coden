@@ -11,8 +11,8 @@
 //       Cross-Origin-Embedder-Policy: require-corp
 //   - The @webcontainer/api dependency.
 //
-// Gated by CODEN_WEBCONTAINER_PREVIEW so the existing Babel preview stays the
-// default until this is validated in a real build.
+// Gated by an explicit opt-in so the existing Coden preview stays the default
+// when a browser blocks Service Workers in an embedded/partitioned context.
 //
 // The file→tree conversion is a pure function and is unit-tested; the boot path
 // runs only in a cross-origin-isolated browser.
@@ -67,7 +67,6 @@ export function webContainersSupported(): boolean {
 export function webContainerPreviewEnabled(): boolean {
   if (typeof window === 'undefined') return false;
   if ((window as any).__CODEN_FLAGS__?.webcontainerPreview) return true;
-  if ((globalThis as any).crossOriginIsolated === true) return true;
   try {
     const meta = document.querySelector('meta[name="coden-webcontainer-preview"]') as HTMLMetaElement | null;
     if (meta && meta.content === '1') return true;

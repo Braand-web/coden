@@ -3337,11 +3337,12 @@ function setPreview(html: string, status = 'unknown') {
       if (booted) return;
       if (requiresLiveRuntimePreview(currentFiles)) {
         currentPreviewHtml = '';
-        currentPreviewStatus = 'needs_fix';
-        setEmptyPreviewState('idle', 'Full-stack preview could not start');
+        currentPreviewStatus = 'building';
+        setEmptyPreviewState('working', 'Starting live preview');
         syncProjectReadinessClass();
-        syncPreviewToolbarControls();
-        showTransientNotice('The full-stack runtime did not start. Static fallback was blocked.');
+        // The server sandbox is same-origin with the Builder and does not
+        // depend on a third-party Service Worker or storage partitioning.
+        void ensureLivePreview();
         return;
       }
       frame.srcdoc = html;
