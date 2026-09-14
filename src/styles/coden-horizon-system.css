@@ -178,6 +178,28 @@ body {
 
 :where(button, [role="button"]):active:not(:disabled) { transform: scale(.98); }
 
+/* One scrolling contract across the product shell. Native browser rails were
+   appearing at full width in the dashboard and inside long composer values,
+   which made the surfaces look like unrelated legacy pages. Keep every
+   container scrollable, but let the shell provide the visual context instead
+   of a second heavy rail. The landing page keeps its own visual treatment. */
+:where(
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
+) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+:where(
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
+)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Product controls use the rounded, compact interaction language. */
 :where(
   .btn-primary, .btn-secondary, .btn-outline, .btn-solid, .btn-publish,
@@ -470,6 +492,36 @@ body[data-coden-surface="dashboard"] {
   --dashboard-panel: color-mix(in srgb, var(--horizon-canvas) 88%, transparent);
   --dashboard-panel-border: var(--horizon-border);
   --dashboard-panel-shadow: 0 30px 80px rgba(6, 10, 24, .45);
+}
+
+/* Keep the dashboard's established surface palette, but share the same
+   scrolling and interaction contract as the other product surfaces. */
+body[data-coden-surface="dashboard"] .coden-dashboard-main {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: auto;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-backdrop {
+  animation: coden-dashboard-backdrop-in var(--transition-drawer) both;
+}
+
+@keyframes coden-dashboard-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-coden-surface="dashboard"] .coden-dashboard-backdrop {
+    animation: none;
+  }
 }
 
 /* The shell, the root and the sidebar are deliberately NOT repainted here.

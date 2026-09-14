@@ -35,6 +35,9 @@ import {
 import { AgentModeComposer } from './components/agent/agent-mode-composer';
 import type { AgentMode } from './services/agent-mode';
 import { initPromptInputActions } from './prompt-input-actions';
+import { initCodenMotion } from './coden-motion';
+import { initCodenNavigationTransitions } from './navigation-transitions';
+import { initThemeController } from './theme-controller';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
@@ -67,6 +70,13 @@ const queryClient = new QueryClient({
 });
 
 const isLocal = isLocalPreviewEnabled();
+
+// The dashboard is a React entrypoint, so it does not pass through the public
+// page bootstrap. Install the same motion, navigation and theme contract here
+// before the first route is rendered.
+initCodenMotion();
+initCodenNavigationTransitions();
+initThemeController();
 
 function RootLayout() {
   return (
