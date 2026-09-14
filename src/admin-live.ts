@@ -3,9 +3,13 @@ import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
 import './styles/coden-horizon-system.css';
+import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
+import { initThemeController } from './theme-controller';
 
+initCodenMotion();
 initCodenNavigationTransitions();
+initThemeController();
 
 type JsonRecord = Record<string, any>;
 
