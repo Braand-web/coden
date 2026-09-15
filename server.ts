@@ -12454,6 +12454,51 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     return res.status(status).json(payload);
   };
+  /*
+   * A refusal is still part of the conversation.
+   *
+   * Model routing happens before the ordinary user-message write below. That
+   * meant a depleted wallet, an unavailable provider, or a routing failure
+   * briefly appeared in the Builder and then vanished on reload. Preserve the
+   * request and the human-readable outcome together, without ever storing a
+   * provider exception or a secret.
+   */
+  const persistRejectedAgentTurn = async (
+    message: string,
+    diagnosticCode: string,
+    intent?: string,
+    options: { userAlreadyPersisted?: boolean } = {},
+  ) => {
+    const safeMessage = redactSecrets(String(message || '').trim());
+    if (!safeMessage) return;
+    const shared = {
+      organization_id: project.organization_id,
+      project_id: project.id,
+      user_id: userId,
+      requested_mode: requestedMode,
+      ...(intent ? { intent } : {}),
+    };
+    try {
+      if (!options.userAlreadyPersisted) {
+        await saveProjectMessage({ ...shared, role: 'user', content: prompt });
+      }
+      await saveProjectMessage({
+        ...shared,
+        role: 'assistant',
+        content: safeMessage,
+        metadata: { outcome: 'blocked', diagnostic_code: diagnosticCode },
+      });
+    } catch (error: any) {
+      // The response itself remains useful even if the history store is
+      // temporarily unavailable. The failure is observable without exposing
+      // either the request or provider details to the UI.
+      console.warn('[coden:rejected_turn_persistence_failed]', {
+        requestId,
+        project: project.id,
+        message: redactSecrets(error?.message || String(error), '[redacted]'),
+      });
+    }
+  };
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
   if (harnessContext) eventStream?.workspace({type:'run_acknowledged',threadId:harnessContext.thread.id,turnId:harnessContext.turn.id,runId:harnessContext.turn.id});
 
@@ -12477,11 +12522,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     });
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
+    const decisionErrorMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
+    await persistRejectedAgentTurn(decisionErrorMessage, diagnostic.diagnostic_code);
     return respondJson(diagnostic.status, {
       success: false,
       needs_fix: true,
-      error: diagnostic.message,
-      message: diagnostic.message,
+      error: decisionErrorMessage,
+      message: decisionErrorMessage,
       diagnostic_code: diagnostic.diagnostic_code,
       request_id: requestId,
       suggested_action: diagnostic.suggested_action,
@@ -12863,10 +12910,15 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       || /insufficient credit|not enough credit|credit balance|upgrade required/i.test(String(error?.message || ''));
     // The run row does not exist yet at this point; the harness turn is
     // finalized from this payload's own diagnostic_code by `respondJson`.
-    if (insufficientCredits) return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
+    if (insufficientCredits) {
+      const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+      await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
+      return respondJson(402, creditGate);
+    }
     console.error('[coden:model_routing_failed]', { requestId, project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
     const diagnostic = diagnoseProviderError(error);
     const routingMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
+    await persistRejectedAgentTurn(routingMessage, diagnostic.diagnostic_code, decision.intent);
     return respondJson(diagnostic.status >= 400 ? diagnostic.status : 502, {
       success: false,
       error: routingMessage,
@@ -12947,7 +12999,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       // A conversation's price does not read the model, so Auto cannot lower it.
       const autoCanHelp = requestedModelSelection !== 'auto' && decision.intent !== 'conversation';
       await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
-      return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
+      const creditGate = publicCreditGateResponse(frenchActivity, autoCanHelp);
+      await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
+      return respondJson(402, creditGate);
     }
     let agentText: any;
     let content = '';
@@ -12997,6 +13051,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const diagnostic = diagnoseProviderError(error);
       await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: diagnostic.diagnostic_code, suggested_action: diagnostic.suggested_action });
       const message = publicRuntimeErrorMessage(diagnostic.diagnostic_code, frenchActivity ? 'fr' : 'en');
+      await persistRejectedAgentTurn(message, diagnostic.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
       return respondJson(diagnostic.status >= 400 ? diagnostic.status : 502, {
         success: false,
         error: message,

@@ -106,6 +106,24 @@ assert.doesNotMatch(
   );
 }
 
+// A rejection can happen before the normal user-message write. Both sides of
+// that terminal turn must survive a reload, and only the public sentence (not
+// the provider exception) belongs in the transcript.
+{
+  assert.match(server, /const persistRejectedAgentTurn = async/, 'early agent refusals need one durable chat path');
+  assert.match(server, /role: 'user', content: prompt/, 'the rejected request itself must be retained');
+  assert.match(server, /role: 'assistant',[\s\S]*?metadata: \{ outcome: 'blocked', diagnostic_code: diagnosticCode \}/, 'the public refusal must be retained with a safe diagnostic');
+  const routing = server.slice(server.indexOf('modelRouting = await resolveAgentProviderModel('));
+  const handler = routing.slice(0, routing.indexOf('const effectiveModelSelection'));
+  assert.match(handler, /await persistRejectedAgentTurn\(creditGate\.message, creditGate\.diagnostic_code, decision\.intent\)/, 'a credit gate before model execution must persist the turn');
+  assert.match(handler, /await persistRejectedAgentTurn\(routingMessage, diagnostic\.diagnostic_code, decision\.intent\)/, 'a routing failure before model execution must persist the turn');
+  const decisionFailure = server.slice(server.indexOf('initialDecision = await resolveAgentDecision('), server.indexOf('const decision: IntentDecision = initialDecision;'));
+  assert.match(decisionFailure, /await persistRejectedAgentTurn\(decisionErrorMessage, diagnostic\.diagnostic_code\)/, 'a decision-provider failure must persist the turn too');
+  const conversationStart = server.indexOf("if (decision.intent === 'conversation'", server.indexOf('const effectiveModelSelection = modelRouting.model;'));
+  const conversation = server.slice(conversationStart, server.indexOf("if (decision.requiresFileChanges && !hasProjectCapability", conversationStart));
+  assert.match(conversation, /userAlreadyPersisted: true/, 'the late credit gate must retain the user message without duplicating it');
+}
+
 // A credit refusal names itself, in the user's language, with a real status.
 {
   const gate = server.slice(server.indexOf('function publicCreditGateResponse('), server.indexOf('function countLineDiffStats('));
