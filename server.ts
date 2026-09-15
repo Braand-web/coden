@@ -14121,6 +14121,50 @@ app.get('/api/projects/:id/agent/threads/:threadId', async (req: any, res: any) 
   return res.json({ success: true, harness_version: 'coden-harness/v3', thread: resolved.thread, active_turn: activeTurn });
 });
 
+/**
+ * Approval requests are durable harness events, not chat prose.  Keeping a
+ * small read endpoint for them lets the Builder recover the exact action card
+ * after a refresh or a dropped SSE connection without trusting model text.
+ */
+app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/approvals', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const turn = await resolved.harness.store.getTurn(req.params.turnId);
+  if (!turn || turn.threadId !== resolved.thread.id || turn.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent turn not found.' });
+  }
+
+  const events = await resolved.harness.store.listEvents(resolved.thread.id, 0, 2_000);
+  const approvals = new Map<string, any>();
+  for (const event of events) {
+    if (event.turnId !== turn.id || !event.itemId) continue;
+    if (event.type === 'approval.requested') {
+      approvals.set(event.itemId, {
+        item_id: event.itemId,
+        turn_id: turn.id,
+        action: String(event.payload?.action || '').trim(),
+        summary: String(event.payload?.summary || '').trim(),
+        state: 'pending',
+        created_at: event.createdAt,
+      });
+    } else if (event.type === 'approval.resolved') {
+      const current = approvals.get(event.itemId);
+      if (current) current.state = event.payload?.approved === true ? 'approved' : 'rejected';
+    }
+  }
+  return res.json({
+    success: true,
+    harness_version: 'coden-harness/v3',
+    turn_status: turn.status,
+    approvals: [...approvals.values()].slice(-20),
+  });
+});
+
 app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);

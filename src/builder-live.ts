@@ -314,6 +314,8 @@ let lastBuildSessionId = '';
 let lastAgentRunId = '';
 let activeHarnessThreadId = '';
 let activeHarnessTurnId = '';
+let harnessApprovalPollTimer: ReturnType<typeof setInterval> | null = null;
+const harnessApprovalMessageIds = new Map<string, string>();
 let activeGenerationTouchesPreview = false;
 let activeAbort: AbortController | null = null;
 let stopRequested = false;
@@ -1940,6 +1942,7 @@ function ensureConversationApi() {
     onDecisionSelect: (_decisionId, option) => {
       void sendActiveHarnessInstruction(option.label);
     },
+    onApprovalDecision: (itemId, approved) => resolveHarnessApproval(itemId, approved),
   });
   bindConversationFeedbackBridge();
   return conversationApi;
@@ -2152,6 +2155,85 @@ function setMessageBlock(card: HTMLElement | null, block: CodenConversationBlock
   if (id && conversationApi?.setBlock) {
     conversationApi.setBlock(id, block);
   }
+}
+
+type HarnessApprovalView = {
+  item_id: string;
+  turn_id: string;
+  action: string;
+  summary: string;
+  state: 'pending' | 'approved' | 'rejected';
+};
+
+function stopHarnessApprovalPolling() {
+  if (harnessApprovalPollTimer) {
+    clearInterval(harnessApprovalPollTimer);
+    harnessApprovalPollTimer = null;
+  }
+}
+
+async function refreshHarnessApprovals(fallbackCard: HTMLElement | null = null) {
+  if (!currentProjectId || !activeHarnessThreadId || !activeHarnessTurnId || !conversationApi) return;
+  const endpoint = `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/approvals`;
+  try {
+    const payload = await apiFetch<{ approvals?: HarnessApprovalView[]; turn_status?: string }>(endpoint);
+    const approvals = Array.isArray(payload.approvals) ? payload.approvals : [];
+    for (const approval of approvals) {
+      const itemId = String(approval.item_id || '').trim();
+      if (!itemId) continue;
+      const existingMessageId = harnessApprovalMessageIds.get(itemId);
+      let card = existingMessageId ? createMessageHandle(existingMessageId) : fallbackCard;
+      const fallbackMessageId = messageHandleId(card);
+      if (!card || !fallbackMessageId || (!existingMessageId && [...harnessApprovalMessageIds.values()].includes(fallbackMessageId))) {
+        card = appendMessage('assistant', '');
+      }
+      const messageId = messageHandleId(card);
+      if (!messageId) continue;
+      harnessApprovalMessageIds.set(itemId, messageId);
+      setMessageBlock(card, {
+        type: 'approval',
+        itemId,
+        action: repairTextEncoding(approval.action || 'Action de l’agent'),
+        summary: repairTextEncoding(approval.summary || ''),
+        state: approval.state === 'approved' || approval.state === 'rejected' ? approval.state : 'pending',
+      });
+    }
+    const terminal = ['completed', 'failed', 'cancelled', 'blocked'].includes(String(payload.turn_status || ''));
+    if (terminal || (approvals.length > 0 && approvals.every(item => item.state !== 'pending'))) stopHarnessApprovalPolling();
+  } catch {
+    // Approval polling is a recovery path. The primary stream remains the
+    // source of truth, so a transient read failure must not overwrite chat.
+  }
+}
+
+async function restoreHarnessApprovalState() {
+  if (!currentProjectId || !conversationApi) return;
+  try {
+    const payload = await apiFetch<{ threads?: Array<{ id?: string; activeTurnId?: string }> }>(
+      `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads?limit=5`,
+    );
+    const thread = (payload.threads || []).find(item => item?.id && item.activeTurnId);
+    if (!thread?.id || !thread.activeTurnId) return;
+    activeHarnessThreadId = String(thread.id);
+    activeHarnessTurnId = String(thread.activeTurnId);
+    startHarnessApprovalPolling();
+  } catch {
+    // Older projects may not have a harness thread yet; normal chat history
+    // remains fully usable in that case.
+  }
+}
+
+function startHarnessApprovalPolling(card: HTMLElement | null = null) {
+  stopHarnessApprovalPolling();
+  void refreshHarnessApprovals(card);
+  harnessApprovalPollTimer = setInterval(() => void refreshHarnessApprovals(card), 1_200);
+}
+
+async function resolveHarnessApproval(itemId: string, approved: boolean) {
+  if (!currentProjectId || !activeHarnessThreadId || !activeHarnessTurnId) throw new Error('Cette approbation n’est plus active.');
+  const endpoint = `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/approvals/${encodeURIComponent(itemId)}`;
+  await apiFetch(endpoint, { method: 'POST', body: JSON.stringify({ approved }) });
+  await refreshHarnessApprovals();
 }
 
 type CodenStreamEntry = {
@@ -2778,6 +2860,7 @@ async function requestProjectGeneration(
     const turnHeader = response.headers.get('x-coden-turn-id');
     if (threadHeader) activeHarnessThreadId = threadHeader;
     if (turnHeader) { activeHarnessTurnId = turnHeader; lastAgentRunId = turnHeader; streamRunId ||= turnHeader; }
+    if (activeHarnessThreadId && activeHarnessTurnId) startHarnessApprovalPolling(card || null);
     return response.headers.get('content-type')?.includes('text/event-stream')
       ? consumeAgentStream(response, applyEvent, { afterSequence: replay ? lastSequence : undefined, expectedRunId: replay ? streamRunId : undefined, requireResult: !replay })
       : response.json();
@@ -5328,6 +5411,7 @@ async function loadProject() {
     ensureConversationApi()?.clear();
     if (scroll) delete scroll.dataset.restored;
     restoreMessages(payload);
+    void restoreHarnessApprovalState();
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
     if (!restoredStreamParts) await restoreLatestStreamPartsFromRunHistory(payload);
     const activeTab = payload.workspace_state?.active_tab || userWorkspaceState?.builder_active_tab;
@@ -6259,11 +6343,14 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     activeHarnessThreadId = '';
     activeHarnessTurnId = '';
     lastAgentRunId = '';
+    stopHarnessApprovalPolling();
+    harnessApprovalMessageIds.clear();
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
     let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal, status);
     if (payload?.runId) lastAgentRunId = String(payload.runId);
     if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
     if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
+    if (activeHarnessThreadId && activeHarnessTurnId) startHarnessApprovalPolling(status);
     {
       const statusCode = Number(payload?.status_code || 200);
       // A recoverable draft deliberately returns success:false + needs_fix so

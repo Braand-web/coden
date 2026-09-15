@@ -50,6 +50,14 @@ type CodenConfirmationBlock = {
   rejectLabel?: string;
 };
 
+type CodenApprovalBlock = {
+  type: "approval";
+  itemId: string;
+  action: string;
+  summary: string;
+  state: "pending" | "approved" | "rejected";
+};
+
 type CodenPlanBlock = {
   type: "plan";
   title: string;
@@ -67,7 +75,7 @@ type CodenRecoveryBlock = {
   body: string;
 };
 
-type CodenConversationBlock = CodenConfirmationBlock | CodenPlanBlock | CodenRecoveryBlock;
+type CodenConversationBlock = CodenConfirmationBlock | CodenApprovalBlock | CodenPlanBlock | CodenRecoveryBlock;
 
 type LiveRunLine = {
   id: string;
@@ -136,6 +144,7 @@ export type CodenConversationApi = {
 type ConversationCallbacks = {
   onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void;
   onArtifactOpen?: (artifactId: string) => void;
+  onApprovalDecision?: (itemId: string, approved: boolean) => void | Promise<void>;
 };
 
 const markdown = new MarkdownIt({
@@ -284,6 +293,17 @@ export function normalizeConversationBlock(block: unknown): CodenConversationBlo
       approveLabel: String(record.approveLabel || "").trim() || undefined,
       rejectLabel: String(record.rejectLabel || "").trim() || undefined,
     };
+  }
+
+  if (record.type === "approval") {
+    const itemId = String(record.itemId || "").trim();
+    const action = String(record.action || record.title || "").trim();
+    const summary = String(record.summary || record.body || record.content || "").trim();
+    if (!itemId || (!action && !summary)) return undefined;
+    const state = ["pending", "approved", "rejected"].includes(String(record.state))
+      ? String(record.state) as CodenApprovalBlock["state"]
+      : "pending";
+    return { type: "approval", itemId, action, summary, state };
   }
 
   if (record.type === "recovery") {
@@ -871,6 +891,91 @@ function ensureConversationStyles() {
       cursor: pointer;
     }
 
+    .coden-approval-card {
+      display: grid;
+      gap: 11px;
+      padding: 15px;
+      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 42%, var(--border));
+      border-radius: 15px;
+      background: color-mix(in srgb, var(--bg-input) 82%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
+    }
+    .coden-approval-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-sub);
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+    }
+    .coden-approval-kicker > span {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #e7a32e;
+      box-shadow: 0 0 0 4px color-mix(in srgb, #e7a32e 14%, transparent);
+    }
+    .coden-approval-card[data-state="approved"] .coden-approval-kicker > span { background: #22c55e; }
+    .coden-approval-card[data-state="rejected"] .coden-approval-kicker > span { background: #ef4444; }
+    .coden-approval-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .coden-approval-heading h3 {
+      min-width: 0;
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.3;
+      overflow-wrap: anywhere;
+    }
+    .coden-approval-source {
+      flex: 0 0 auto;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 650;
+    }
+    .coden-approval-card > p,
+    .coden-approval-result {
+      margin: 0;
+      color: var(--text-sub);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .coden-approval-actions {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .coden-approval-actions button {
+      min-height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 0 12px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 11.5px;
+      font-weight: 720;
+      cursor: pointer;
+      transition: transform 180ms cubic-bezier(.32,.72,0,1), background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
+    }
+    .coden-approval-actions button.is-primary {
+      border-color: var(--accent, #3b82f6);
+      background: var(--accent, #3b82f6);
+      color: var(--accent-foreground, #fff);
+    }
+    .coden-approval-actions button:hover:not(:disabled) { filter: brightness(1.04); }
+    .coden-approval-actions button:active:not(:disabled) { transform: scale(.98); }
+    .coden-approval-actions button:disabled { cursor: wait; opacity: .55; }
+    .coden-approval-actions button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+
     .coden-plan-card {
       display: grid;
       gap: 12px;
@@ -1198,7 +1303,8 @@ function RichResponse({ content }: { content: string }) {
   return <div className="coden-rich-response" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-export function ConversationDecision({ block, actions = [] }: { block: CodenConversationBlock; actions?: CodenConversationAction[] }) {
+export function ConversationDecision({ block, actions = [], callbacks = {} }: { block: CodenConversationBlock; actions?: CodenConversationAction[]; callbacks?: ConversationCallbacks }) {
+  if (block.type === "approval") return <ConversationApproval block={block} onDecision={callbacks.onApprovalDecision} />;
   if (block.type === "plan") return <ConversationPlan block={block} actions={actions} />;
   if (block.type === "recovery") return <ConversationRecovery block={block} actions={actions} />;
   const stateLabel = block.state === "rejected" ? "Annulée" : block.state === "approved" ? "Confirmée" : "Décision requise";
@@ -1219,6 +1325,39 @@ export function ConversationDecision({ block, actions = [] }: { block: CodenConv
           ))}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function ConversationApproval({ block, onDecision }: { block: CodenApprovalBlock; onDecision?: ConversationCallbacks['onApprovalDecision'] }) {
+  const [busy, setBusy] = useState(false);
+  const resolved = block.state !== "pending";
+  const stateLabel = block.state === "approved" ? "Approuvée" : block.state === "rejected" ? "Refusée" : "Action requise";
+  const decide = async (approved: boolean) => {
+    if (!onDecision || busy || resolved) return;
+    setBusy(true);
+    try {
+      await onDecision(block.itemId, approved);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="coden-approval-card" data-state={block.state} aria-label={block.action || "Approbation requise"}>
+      <div className="coden-approval-kicker"><span aria-hidden="true" />{stateLabel}</div>
+      <div className="coden-approval-heading">
+        <h3>{block.action || "Action de l’agent"}</h3>
+        <span className="coden-approval-source">Harness Coden</span>
+      </div>
+      {block.summary ? <p>{block.summary}</p> : null}
+      {!resolved ? (
+        <div className="coden-approval-actions">
+          <button type="button" className="is-secondary" disabled={busy} onClick={() => void decide(false)}>Refuser</button>
+          <button type="button" className="is-primary" disabled={busy} onClick={() => void decide(true)}>{busy ? "Enregistrement…" : "Continuer"}</button>
+        </div>
+      ) : (
+        <p className="coden-approval-result">{block.state === "approved" ? "L’agent peut reprendre cette étape." : "L’agent ne poursuivra pas cette étape."}</p>
+      )}
     </section>
   );
 }
@@ -1372,7 +1511,7 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
           {message.block
-            ? <ConversationDecision block={message.block} actions={message.actions} />
+            ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
             : message.liveRun?.chat
               ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
               : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}

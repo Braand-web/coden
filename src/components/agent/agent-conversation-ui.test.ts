@@ -35,6 +35,25 @@ describe('agent conversation UI', () => {
     expect(normalizeAgentMode('research')).toBe('research');
   });
 
+  it('renders a durable harness approval as an explicit action card', () => {
+    const block = normalizeConversationBlock({
+      type: 'approval',
+      itemId: 'item_publish_1',
+      action: 'deployment.publish',
+      summary: 'Publier la version vérifiée sur le domaine Coden.',
+      state: 'pending',
+    });
+    expect(block).toBeTruthy();
+    const html = renderToStaticMarkup(React.createElement(ConversationDecision, {
+      block: block!,
+    }));
+    expect(html).toContain('coden-approval-card');
+    expect(html).toContain('deployment.publish');
+    expect(html).toContain('Publier la version vérifiée');
+    expect(html).toContain('Continuer');
+    expect(html).toContain('Refuser');
+  });
+
   /*
    * The thinking line changes phrase the way a phrase changes, not the way a
    * variable does.
