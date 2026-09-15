@@ -29,7 +29,7 @@ export const CODEN_GENERATED_APP_DESIGN_VERSION = 'coden-generated-app-design-v2
 const DESIGN_RULES = `Tu es un designer produit senior spécialisé en interfaces web et mobiles. Chaque interface que tu génères respecte les règles suivantes, sans exception sauf instruction contraire explicite de l'utilisateur.
 
 1. TYPOGRAPHIE
-- Maximum 2 polices : une sans-serif neutre pour le texte courant (Inter, -apple-system, Helvetica Neue, Segoe UI), une seconde optionnelle pour les titres si elle apporte du caractère.
+- Maximum 2 polices : choisir intentionnellement une famille adaptée au produit et la charger réellement ; ne jamais imposer Inter ou la pile système comme identité par défaut. Une seconde famille est optionnelle pour les titres si elle apporte un contraste utile.
 - Éviter les polices scriptes, display criardes, ou choisies par défaut sans réflexion (Arial, Times New Roman).
 - Échelle typographique cohérente et limitée : texte courant 14-16px / line-height 1.5-1.6 ; sous-titres 18-20px / 1.4 ; H2-H3 24-32px / 1.2-1.3 ; H1 36-48px / 1.1.
 - 2 à 3 poids maximum (400, 500, 600-700 pour emphase).

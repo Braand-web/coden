@@ -10,6 +10,7 @@ export const CODEN_AGENT_FEATURE_FLAG_NAMES = [
   'CODEN_USER_STEERING',
   'CODEN_DEPLOYMENT_ADAPTERS',
   'CODEN_INDEPENDENT_REVIEW',
+  'CODEN_MULTI_AGENT_PIPELINE',
 ] as const;
 
 export type CodenAgentFeatureFlagName = typeof CODEN_AGENT_FEATURE_FLAG_NAMES[number];
@@ -26,6 +27,7 @@ export type CodenAgentFeatureFlags = {
   userSteering: boolean;
   deploymentAdapters: boolean;
   independentReview: boolean;
+  multiAgentPipeline: boolean;
 };
 
 function readBooleanFlag(env: Record<string, string | undefined>, key: CodenAgentFeatureFlagName, fallback = true) {
@@ -49,6 +51,11 @@ export function readCodenAgentFeatureFlags(
     userSteering: readBooleanFlag(env, 'CODEN_USER_STEERING'),
     deploymentAdapters: readBooleanFlag(env, 'CODEN_DEPLOYMENT_ADAPTERS'),
     independentReview: readBooleanFlag(env, 'CODEN_INDEPENDENT_REVIEW'),
+    // The tool-driven pipeline is the canonical build engine. Keep the
+    // legacy blob generator available only as an explicit emergency rollback
+    // (`CODEN_MULTI_AGENT_PIPELINE=0`) instead of silently selecting it when
+    // Railway omits a rollout variable.
+    multiAgentPipeline: readBooleanFlag(env, 'CODEN_MULTI_AGENT_PIPELINE'),
   };
 }
 

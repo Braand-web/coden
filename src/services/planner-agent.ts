@@ -174,19 +174,24 @@ export type PlannerAgentInput = {
   designPolicy?: string;
   plan: UserPlan | string;
   credits?: number;
+  /** A manual selection pins planning to the same model as implementation. */
+  selectedModel?: import('../config/ai-models.ts').AllowedModelId;
+  /** Auto may recover through the configured compatible model chain. */
+  allowFallback?: boolean;
   signal?: AbortSignal;
 };
 
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPlan & { risks: string[] }> {
-  const modelId = selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
+  const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
   const systemPrompt = buildPlannerSystemPrompt(input.designPolicy);
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
-  const runtimeConfig = buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true}));
+  const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true}));
+  const runtimeConfig = runtimeFor(modelId);
 
   const result = await input.gateway.chat(modelId, [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
-  ], { maxAttempts: 2, signal: input.signal, runtimeConfig });
+  ], { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
 
   const parsed = await parseOrRepairStructuredObject(result.text, isBuildPlan, async invalidText => {
     // The repair reshapes text that already exists into valid JSON — it is not
@@ -196,7 +201,7 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPl
     const repaired = await input.gateway.chat(modelId, [
       { role: 'system', content: `${PLAN_JSON_CONTRACT}\n\nRepair the invalid plan below. Return one valid JSON object only, matching the required contract.` },
       { role: 'user', content: String(invalidText || '').slice(0, 8_000) },
-    ], { maxAttempts: 1, signal: input.signal, runtimeConfig });
+    ], { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
     return repaired.text;
   });
 

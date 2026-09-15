@@ -78,18 +78,31 @@ export interface GeneratedDesignBrief {
   risk_flags: string[];
 }
 
+export interface GeneratedDesignDna {
+  seed: string;
+  compositionCandidates: string[];
+  selectedComposition: string;
+  typographyPair: string;
+  paletteCharacter: string;
+  shapeLanguage: string;
+  densityRhythm: string;
+  motionSignature: string;
+}
+
 export interface WorldClassUiPolicy {
   appType: GeneratedAppType;
   designDirection: DesignDirection;
   appTypeRules: string[];
   platformIntelligence: PlatformIntelligence;
   designBrief: GeneratedDesignBrief;
+  designDna: GeneratedDesignDna;
   systemPrompt: string;
   userContext: {
     appType: GeneratedAppType;
     designDirection: DesignDirection;
     platformIntelligence: PlatformIntelligence;
     designBrief: GeneratedDesignBrief;
+    designDna: GeneratedDesignDna;
     antiAiDesignRules: string[];
     appTypeRules: string[];
     selfAudit: string[];
@@ -990,16 +1003,91 @@ function bulletList(title: string, items: string[]) {
   return [title, ...items.map(item => `- ${item}`)].join('\n');
 }
 
+const COMPOSITION_FAMILIES = [
+  'asymmetric editorial split with one dominant work area and a narrow contextual rail',
+  'command-center shell with compact navigation, a strong primary canvas, and progressive detail drawers',
+  'layered timeline composition with actions embedded beside the content they affect',
+  'modular studio layout with one irregular feature block and smaller supporting modules',
+  'calm document-first layout with generous reading width and contextual tools that appear on demand',
+  'catalogue composition with strong filtering hierarchy and varied item proportions instead of a uniform card grid',
+  'mobile-first task flow with a persistent action zone and shallow, focused screens',
+  'data narrative layout that moves from headline insight to evidence to actionable detail',
+] as const;
+
+const TYPOGRAPHY_PAIRS = [
+  'Manrope for interface text + Fraunces for selective display moments',
+  'IBM Plex Sans for interface text + IBM Plex Serif for editorial emphasis',
+  'DM Sans for interface text + Newsreader for expressive headings',
+  'Geist for interface text + Instrument Serif for restrained contrast',
+  'Source Sans 3 for interface text + Source Serif 4 for long-form hierarchy',
+  'Space Grotesk for interface text + Lora for human warmth',
+  'Public Sans for interface text + Libre Baskerville for trust-focused headings',
+  'a deliberate system sans stack with a compact mono accent for data and identifiers',
+] as const;
+
+function stableDesignHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+export function buildGeneratedDesignDna(input: {
+  prompt: string;
+  appType: GeneratedAppType;
+  designDirection: DesignDirection;
+  seed?: string;
+}): GeneratedDesignDna {
+  const source = `${input.seed || ''}|${input.appType}|${input.designDirection}|${input.prompt.trim().toLowerCase()}`;
+  const hash = stableDesignHash(source);
+  const candidates = Array.from({ length: 3 }, (_, offset) =>
+    COMPOSITION_FAMILIES[(hash + offset * 3) % COMPOSITION_FAMILIES.length]);
+  return {
+    seed: (input.seed || hash.toString(36)).slice(0, 48),
+    compositionCandidates: [...new Set(candidates)],
+    selectedComposition: candidates[0],
+    typographyPair: TYPOGRAPHY_PAIRS[(hash >>> 3) % TYPOGRAPHY_PAIRS.length],
+    paletteCharacter: [
+      'mineral neutrals with one precise cool accent',
+      'warm paper neutrals with a deep ink accent',
+      'low-chroma night surfaces with one luminous functional accent',
+      'soft daylight surfaces with a botanical functional accent',
+      'graphite and mist with a restrained electric accent',
+    ][(hash >>> 6) % 5],
+    shapeLanguage: [
+      'mostly squared controls with softened 8–14px corners',
+      'compact controls, 10px cards, and one larger-radius focal surface',
+      'subtle 6px controls with crisp dividers and almost no decorative containers',
+      '14px tactile controls with restrained pill shapes reserved for status only',
+    ][(hash >>> 9) % 4],
+    densityRhythm: [
+      'compact operational spacing with 4/8/12/20/32 rhythm',
+      'balanced product spacing with 4/8/16/24/40 rhythm',
+      'editorial breathing room with 6/12/20/32/56 rhythm',
+    ][(hash >>> 12) % 3],
+    motionSignature: [
+      'fast 140–220ms state transitions with one staged entrance for the primary surface',
+      'quiet crossfades and short directional slides; no decorative looping motion',
+      'spring-like micro feedback on direct manipulation, with reduced-motion parity',
+      'near-static presentation with motion reserved for progress and spatial navigation',
+    ][(hash >>> 15) % 4],
+  };
+}
+
 export function buildWorldClassUiPolicy(input: {
   prompt: string;
   appType?: GeneratedAppType;
   designDirection?: DesignDirection;
+  seed?: string;
 }): WorldClassUiPolicy {
   const appType = input.appType || classifyGeneratedAppType(input.prompt);
   const designDirection = input.designDirection || chooseDesignDirection(appType, input.prompt);
   const rules = getAppTypeUxRules(appType);
   const intelligence = getPlatformIntelligence(appType);
   const designBrief = buildGeneratedDesignBrief({ prompt: input.prompt, appType, designDirection });
+  const designDna = buildGeneratedDesignDna({ prompt: input.prompt, appType, designDirection, seed: input.seed });
 
   const systemPrompt = [
     'CODEN DESIGN SYSTEM PROMPT v26. Design and build the visual and interaction layer of the generated app.',
@@ -1010,6 +1098,10 @@ export function buildWorldClassUiPolicy(input: {
     '',
     'Structured design brief to follow before coding:',
     JSON.stringify(designBrief, null, 2),
+    '',
+    'Project-specific Design DNA (stable for this project, deliberately different across products):',
+    JSON.stringify(designDna, null, 2),
+    'Sketch the three composition candidates mentally, select the one that best serves the core journey, then implement one coherent direction. The selected composition is the default, not an excuse to ignore a clearly better candidate. Do not collapse the result into a centered hero followed by equal cards.',
     '',
     'Platform intelligence:',
     `- Design strategy: ${intelligence.designStrategy}`,
@@ -1040,12 +1132,14 @@ export function buildWorldClassUiPolicy(input: {
     appTypeRules: rules,
     platformIntelligence: intelligence,
     designBrief,
+    designDna,
     systemPrompt,
     userContext: {
       appType,
       designDirection,
       platformIntelligence: intelligence,
       designBrief,
+      designDna,
       antiAiDesignRules,
       appTypeRules: rules,
       selfAudit,

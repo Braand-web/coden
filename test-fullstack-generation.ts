@@ -54,7 +54,7 @@ assert.equal(localExpressRequirement.needs_database, false);
 assert.equal(
   shouldApplyCodenFullstackKit({ prompt: localExpressPrompt, files: localExpressFiles, requirement: localExpressRequirement }),
   false,
-  'A real local Node backend must not be replaced by the Supabase/TanStack/Cloudflare kit.',
+  'A real local Node backend must not be replaced by the managed Supabase/TanStack kit.',
 );
 
 // Deterministic, blueprint-driven detection: any prompt the production blueprint
@@ -93,7 +93,8 @@ assert.ok(byPath.has('src/router.tsx'));
 assert.ok(byPath.has('src/routeTree.gen.ts'));
 assert.ok(byPath.has('src/routes/__root.tsx'));
 assert.ok(byPath.has('src/routes/index.tsx'));
-assert.ok(byPath.has('wrangler.jsonc'));
+assert.ok(byPath.has('vercel.json'));
+assert.ok(!byPath.has('wrangler.jsonc'));
 assert.match(byPath.get('tsconfig.json') || '', /"moduleResolution": "Bundler"/);
 assert.ok(byPath.has('src/lib/appData.ts'));
 assert.ok(byPath.has('src/lib/validation.ts'));
@@ -109,7 +110,10 @@ assert.match(byPath.get('package.json') || '', /@tanstack\/react-start/);
 assert.match(byPath.get('package.json') || '', /@tanstack\/react-router/);
 assert.match(byPath.get('package.json') || '', /@tanstack\/react-query/);
 assert.match(byPath.get('vite.config.ts') || '', /tanstackStart\(\)/);
-assert.match(byPath.get('vite.config.ts') || '', /cloudflare\(/);
+assert.match(byPath.get('vite.config.ts') || '', /nitro\(\)/);
+assert.match(byPath.get('package.json') || '', /"nitro"/);
+assert.doesNotMatch(byPath.get('package.json') || '', /wrangler|@cloudflare\/vite-plugin/);
+assert.match(byPath.get('vercel.json') || '', /"framework": "tanstack-start"/);
 assert.match(byPath.get('src/routeTree.gen.ts') || '', /rootRoute\.addChildren\(\[indexRoute\]\)/);
 assert.equal(resolveGeneratedAppProfile({ prompt, files, requirement }), 'tanstack-fullstack');
 assert.match(byPath.get('package.json') || '', /@types\/node/);

@@ -30,8 +30,8 @@ npm run build
 ## Production
 
 Railway must receive the server-only OpenRouter, Supabase service-role and
-Cloudflare deployment credentials. Only the Supabase URL and publishable key
-may use the `VITE_` prefix. The canonical public URL is `https://coden.fun`.
+Vercel deployment credentials. Only the Supabase URL and publishable key may
+use the `VITE_` prefix. The canonical public URL is `https://coden.fun`.
 
 Apply the versioned files in `supabase/migrations/` to the selected Coden
 Supabase project before enabling authenticated production traffic. Payment

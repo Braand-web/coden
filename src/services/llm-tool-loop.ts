@@ -172,6 +172,10 @@ export async function runLlmToolLoop(input: {
   timeoutMs?: number;
   maxSteps?: number;
   maxToolCalls?: number;
+  /** Retry transient failures on the selected model before ending the run. */
+  maxModelAttempts?: number;
+  /** Cross-model recovery is allowed only when the caller represents Auto. */
+  allowFallback?: boolean;
   /** Resource budget for this loop. Anything omitted takes the default. */
   budget?: Partial<AgentLoopBudget>;
   /**
@@ -261,15 +265,15 @@ export async function runLlmToolLoop(input: {
     const filter = createNarrationFilter();
     let seen = 0;
     const options = {
-      maxAttempts: 1,
+      maxAttempts: Math.max(1, input.maxModelAttempts ?? 2),
       timeoutMs: Math.max(1, Math.min(input.timeoutMs ?? Infinity, deadline - Date.now())),
       runtimeConfig: input.runtimeConfig,
       runtimeConfigForModel,
+      allowFallback: input.allowFallback === true,
       signal: input.signal,
     };
     result = input.onTextDelta ? await input.gateway.streamingCompletion(input.modelId, messages, {
       ...options,
-      allowFallback: false,
       onChunk: accumulated => {
         const delta = filter(accumulated.slice(seen)); seen = accumulated.length;
         if (delta) input.onTextDelta?.(delta);

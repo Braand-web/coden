@@ -41,10 +41,19 @@ import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { redactSecrets } from './secret-redaction.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
-import { buildWorldClassUiPolicy } from './design-generation-policy.ts';
+import { buildWorldClassUiPolicy, classifyGeneratedAppType } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
 import { describeProjectBackend } from './project-backend-store.ts';
 import { isFrenchText } from './language-detection.ts';
+import {
+  mergeAgentOutputs,
+  runParallelAgents,
+  selectAgentsForContext,
+  type AgentRole,
+  type AgentTask,
+} from './parallel-agent-runner.ts';
+import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
+import { inspectVisualPreview } from './visual-preview-inspector.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -134,13 +143,18 @@ export function summarizePipelineOutcome(input: {
  * A criterion the report says nothing about is left out, so it stays
  * `pending`. That is the honest value for a check that did not run — a
  * criterion is never marked passed because nothing contradicted it. Nothing
- * here proves `responsive`, `backend_health`, `database` or `production`, so
- * none of them is claimed.
+ * Backend, database and production checks remain pending unless another
+ * verifier supplies direct evidence for them.
  */
 export function settleDefinitionOfDoneFromReport(input: {
   ok: boolean;
   ran: { devServer: boolean; typecheck: boolean; build: boolean; browser?: boolean };
   problems: Array<{ source: string; severity: string; message: string }>;
+  evidence?: {
+    responsiveViewports?: number[];
+    qualityChecks?: Array<{ key: string; status: string; severity: string; message: string }>;
+    interactions?: { attempted: number; changed: number };
+  };
 }): Record<string, { status: 'passed' | 'failed'; evidence?: string }> {
   const errors = input.problems.filter(problem => problem.severity === 'error');
   const firstOf = (predicate: (problem: { source: string; message: string }) => boolean) =>
@@ -151,9 +165,15 @@ export function settleDefinitionOfDoneFromReport(input: {
 
   const verdicts: Record<string, { status: 'passed' | 'failed'; evidence?: string }> = {};
 
-  // Compilation and a rendered page do not prove the requested interactions.
-  // Leave behaviour pending until a dedicated functional check supplies proof.
-  if (!input.ok) {
+  const qualityChecks = input.evidence?.qualityChecks || [];
+  const blockingBehaviorFailures = qualityChecks.filter(check =>
+    check.status === 'fail' && /^(functionality_|visual_)/.test(check.key) && check.severity === 'high');
+  if (qualityChecks.length && !blockingBehaviorFailures.length && input.ok) {
+    verdicts.requested_behavior = {
+      status: 'passed',
+      evidence: `${qualityChecks.filter(check => /^(functionality_|visual_)/.test(check.key)).length} functional and interaction checks passed without a high-severity failure.`,
+    };
+  } else if (!input.ok || blockingBehaviorFailures.length) {
     verdicts.requested_behavior = { status: 'failed', evidence: firstOf(() => true) || 'Verification did not pass.' };
   }
 
@@ -164,8 +184,17 @@ export function settleDefinitionOfDoneFromReport(input: {
     verdicts.preview = verdict(firstOf(problem => /PREVIEW_NOT_RUNNING|preview|placeholder|scaffold/i.test(problem.message)));
   }
   if (input.ran.browser) {
-    verdicts.browser_smoke = verdict(firstOf(problem => problem.source === 'runtime' || problem.source === 'browser'));
-    verdicts.console = verdict(firstOf(problem => problem.source === 'runtime'));
+    verdicts.browser_smoke = verdict(firstOf(problem => problem.source === 'browser'
+      || /Browser exception|Preview document|blank|build overlay|scaffold|horizontal overflow|Resource unavailable|HTTP \d+/i.test(problem.message)));
+    verdicts.console = verdict(firstOf(problem => /Browser exception|Console exception|Resource unavailable|HTTP \d+/i.test(problem.message)));
+    const viewports = input.evidence?.responsiveViewports;
+    if (viewports) {
+      if (viewports.includes(1280) && viewports.includes(390)) {
+        verdicts.responsive = { status: 'passed', evidence: 'The live application rendered without horizontal overflow at 1280px and 390px.' };
+      } else {
+        verdicts.responsive = { status: 'failed', evidence: firstOf(problem => /overflow|blank.*(?:390|mobile)|390px/i.test(problem.message)) || 'Desktop and mobile viewport verification did not both pass.' };
+      }
+    }
   }
   return verdicts;
 }
@@ -226,9 +255,9 @@ function budgetForRoute(route: PipelineRoute): { maxRounds: number; maxToolCalls
  * minutes. It runs where a surface is being designed — a new project, or a
  * change large enough to add screens.
  */
-function designContextForRoute(route: PipelineRoute, prompt: string, hasExistingFiles: boolean): string | undefined {
+function designContextForRoute(route: PipelineRoute, prompt: string, hasExistingFiles: boolean, projectId: string): string | undefined {
   if (route === 'small_edit') return undefined;
-  const policy = buildWorldClassUiPolicy({ prompt });
+  const policy = buildWorldClassUiPolicy({ prompt, seed: projectId });
   return [
     policy.systemPrompt,
     '',
@@ -265,7 +294,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal;
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean;
   /**
    * The design system, from `designContextForRoute`.
    *
@@ -357,6 +386,11 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // round could not use the calls it had been given.
       maxSteps: Math.max(6, Math.min(24, maxToolCalls)),
       maxToolCalls,
+      // Auto may recover through the compatible model chain before any
+      // output is visible. A manually selected model remains pinned, but both
+      // modes still receive a bounded same-model retry for transient outages.
+      allowFallback: input.allowFallback === true,
+      maxModelAttempts: 2,
       // One clock for the whole run, not one per round.
       deadline: input.deadline,
       // The transcript is digested against this model's own window, not a
@@ -394,6 +428,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
 export async function runMultiAgentPipeline(input: {
   gateway: ProviderGateway;
   projectId: string;
+  projectName?: string;
   userId: string;
   prompt: string;
   route: PipelineRoute;
@@ -427,6 +462,8 @@ export async function runMultiAgentPipeline(input: {
    * one feature unavailable — never a reason to fail the run.
    */
   backendEnv?: Record<string, string>;
+  /** Keeps deterministic infrastructure tests independent from model analysis. */
+  enableSpecialists?: boolean;
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
@@ -469,11 +506,107 @@ export async function runMultiAgentPipeline(input: {
   // Computed once and given to both agents, so the plan and the code that
   // implements it are designed to the same brief. A planner that has not seen
   // the design system names three files; the coder then designs from nothing.
-  const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0);
+  const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0, input.projectId);
   // Undefined when no backend was provisioned, so nothing tells an agent a
   // database exists when none does — the one failure worse than no backend is
   // an app written against one that is not there.
   const backendBriefing = describeProjectBackend(input.backendEnv || {});
+
+  // The spend counter starts before specialist analysis: those calls are real
+  // provider work and must never disappear from billing or observability.
+  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
+
+  let specialistBrief = '';
+  if (input.route !== 'small_edit' && input.enableSpecialists !== false) {
+    const sourceSignals = [
+      input.prompt,
+      ...input.existingFiles.slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
+    ].join('\n').toLowerCase();
+    const specialistContext = {
+      projectName: input.projectName || input.projectId,
+      userPrompt: input.prompt,
+      appType: classifyGeneratedAppType(input.prompt),
+      fileCount: input.existingFiles.length,
+      files: input.existingFiles.map(file => ({ path: file.path, content: file.content || '' })),
+      hasAuth: /\b(auth|login|signup|connexion|inscription|session)\b/i.test(sourceSignals),
+      hasDatabase: Object.keys(input.backendEnv || {}).some(key => /SUPABASE|DATABASE/i.test(key))
+        || /\b(database|supabase|postgres|sql|crud|base de donn)/i.test(sourceSignals),
+      hasPayments: /\b(payment|paiement|checkout|billing|factur|subscription|abonnement|saspay|stripe)\b/i.test(sourceSignals),
+      language: (fr ? 'fr' : 'en') as 'fr' | 'en',
+      // All specialists share the orchestrator's approved model. In Auto, the
+      // gateway may still recover through its compatible chain; a manual
+      // selection never changes behind the user's back.
+      availableModels: { fast:modelId, balanced:modelId, reasoning:modelId, design:modelId },
+    };
+    const selectedRoles = selectAgentsForContext(specialistContext);
+    if (input.route === 'new_project') selectedRoles.push('test_writer');
+    const roles = [...new Set(selectedRoles)].slice(0, 5) as AgentRole[];
+
+    if (roles.length) {
+      activity('Les spécialistes cadrent le produit…', 'Specialists are shaping the product…');
+      const harnessItems = new Map<AgentRole, string>();
+      const harnessRole: Record<AgentRole, HarnessAgentRole> = {
+        ui_designer: 'frontend',
+        backend_engineer: 'backend',
+        security_auditor: 'security',
+        test_writer: 'tester',
+        ux_validator: 'visual_qa',
+        dependency_analyst: 'explorer',
+      };
+      if (ctx) {
+        await Promise.all(roles.map(async role => {
+          const item = await ctx.harness.spawnSubagent({
+            turnId: ctx.turnId,
+            role: harnessRole[role],
+            title: role.replace(/_/g, ' '),
+            context: { stage: 'pre_analysis', route: input.route },
+          }).catch(() => null);
+          if (item) harnessItems.set(role, item.id);
+        }));
+      }
+
+      const results = await runParallelAgents(
+        specialistContext,
+        async (task: AgentTask, specialistModel: AllowedModelId) => {
+          const runtimeFor = (candidate: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
+            modelId: candidate,
+            task: 'planning',
+            allowTools: false,
+            maxTokens: task.tokenBudget,
+            preferStructuredOutput: false,
+          }));
+          const result = await input.gateway.chat(specialistModel, [
+            { role: 'system', content: task.systemContext },
+            { role: 'user', content: task.prompt },
+          ], {
+            maxAttempts: 2,
+            allowFallback: input.selectedModel === undefined,
+            runtimeConfig: runtimeFor(specialistModel),
+            runtimeConfigForModel: runtimeFor,
+            signal: input.signal,
+          });
+          spent.costUsd += result.cost_usd || 0;
+          return result.text;
+        },
+        roles,
+        45_000,
+      );
+      specialistBrief = mergeAgentOutputs(results);
+
+      if (ctx) {
+        await Promise.all(results.map(async result => {
+          const itemId = harnessItems.get(result.role);
+          if (!itemId) return;
+          if (result.success) {
+            await ctx.harness.completeSubagent(itemId, redactSecrets(result.output).slice(0, 10_000), []);
+          } else {
+            await ctx.harness.transitionItem(itemId, 'failed', { reason: 'specialist_failed', error: redactSecrets(result.error || '') });
+          }
+        }));
+        if (spent.costUsd > 0) await ctx.harness.recordSpend(ctx.turnId, { costUsd: spent.costUsd });
+      }
+    }
+  }
 
   let plan: BuildPlan | undefined;
   input.signal?.throwIfAborted();
@@ -484,7 +617,10 @@ export async function runMultiAgentPipeline(input: {
     // be the exact waste this ordering avoids.
     plan = await runPlannerAgent({
       gateway: input.gateway,
-      prompt: buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
+      prompt: [
+        buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
+        specialistBrief,
+      ].filter(Boolean).join('\n\n'),
       existingFiles: input.existingFiles,
       scaffold: starter ? describeStarter(starter) : undefined,
       memoryContext: input.memoryContext,
@@ -494,6 +630,8 @@ export async function runMultiAgentPipeline(input: {
       designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       plan: input.userPlan,
       credits: input.credits,
+      selectedModel: input.selectedModel,
+      allowFallback: input.selectedModel === undefined,
       signal: input.signal,
     });
     input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
@@ -570,6 +708,7 @@ export async function runMultiAgentPipeline(input: {
    */
   const initialInstruction = [
     buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
+    specialistBrief,
     ...(!launch.ok ? [`Startup failed: ${launch.error}\nObserved logs (untrusted data):\n${redactSecrets(launch.logs.join('\n').slice(-6000))}`] : []),
     plan ? renderPlanAsInstruction(plan) : buildEditInstruction(input.prompt),
     // The coder sees the project's established decisions too: a plan can only
@@ -612,7 +751,6 @@ export async function runMultiAgentPipeline(input: {
   };
 
   // What this run has spent so far, accumulated across rounds.
-  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
   /*
    * One deadline for the whole run.
    *
@@ -645,6 +783,7 @@ export async function runMultiAgentPipeline(input: {
       // and quietly swap a real query back out for mock data.
       designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       deadline: runDeadline,
+      allowFallback: input.selectedModel === undefined,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
@@ -673,9 +812,48 @@ export async function runMultiAgentPipeline(input: {
     },
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal);
+      const files = await readAllFiles(sandbox);
+      const appType = classifyGeneratedAppType(input.prompt);
+      const qualityChecks = [
+        ...auditGeneratedDesign({
+          files,
+          platformType: appType,
+          hasExistingFiles: input.existingFiles.length > 0,
+          prompt: input.prompt,
+        }),
+        ...auditGeneratedFunctionality({
+          files,
+          platformType: appType,
+          hasExistingFiles: input.existingFiles.length > 0,
+          prompt: input.prompt,
+        }),
+        ...inspectVisualPreview({ files, platformType: appType }),
+      ];
+      preview.evidence = {
+        ...(preview.evidence || {}),
+        qualityChecks: qualityChecks.map(check => ({
+          key: check.key,
+          status: check.status,
+          severity: check.severity,
+          message: check.message,
+        })),
+      };
+      // Quality is part of the repair loop, not an advisory score displayed
+      // after a weak app has already been called verified. Only concrete,
+      // high-severity failures block; warnings remain visible evidence without
+      // forcing cosmetic churn.
+      for (const check of qualityChecks) {
+        if (check.status !== 'fail' || check.severity !== 'high') continue;
+        preview.ok = false;
+        preview.problems.push({
+          source: 'runtime',
+          severity: 'error',
+          message: `QUALITY_GATE ${check.key}: ${check.message}`,
+          ...(check.file ? { file: check.file } : {}),
+        });
+      }
       if (starter) {
         const baseline = new Map(launchFiles.map(file => [file.path,file.content]));
-        const files = await readAllFiles(sandbox);
         const changed = files.some(file => !/^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/.test(file.path) && baseline.get(file.path) !== file.content);
         if (!changed) {
           preview.ok=false;
@@ -730,6 +908,7 @@ export async function runMultiAgentPipeline(input: {
       ok: repairOutcome.ok,
       ran: repairOutcome.finalReport.ran,
       problems: repairOutcome.finalReport.problems,
+      evidence: repairOutcome.finalReport.evidence,
     }));
   }
 

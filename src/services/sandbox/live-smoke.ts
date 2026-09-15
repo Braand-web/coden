@@ -5,7 +5,7 @@ import type { ValidationReport } from './validate.ts';
 /** Read-only render check of the running app, never setContent or a fabricated preview. */
 export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortSignal): Promise<ValidationReport> {
   const started = Date.now();
-  const report: ValidationReport = { ok:false, problems:[], ran:{devServer:false,typecheck:false,build:false,browser:false}, durationMs:0 };
+  const report: ValidationReport = { ok:false, problems:[], ran:{devServer:false,typecheck:false,build:false,browser:false}, durationMs:0, evidence:{ responsiveViewports:[] } };
   const fail = (message: string) => report.problems.push({ source:'runtime', severity:'error', message:message.slice(0,500) });
   const state = sandbox.status();
   if (state.state !== 'running' || !state.port) {
@@ -35,6 +35,9 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
     });
     const page = await context.newPage();
     page.on('pageerror', error => fail(`Browser exception: ${error.message}`));
+    page.on('console', message => {
+      if (message.type() === 'error') fail(`Console exception: ${message.text()}`);
+    });
     page.on('response', response => {
       if (response.status() >= 400 && ['document','script','stylesheet','fetch','xhr'].includes(response.request().resourceType())) fail(`HTTP ${response.status()}: ${new URL(response.url()).pathname}`);
     });
@@ -62,6 +65,7 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       if (!result.visible || result.overlay) fail(`Preview is blank or displays a build overlay at ${width}px.`);
       if (result.scaffold) fail('Preview still renders the Building scaffold. Implement the requested application in its actual entrypoint; a compiling placeholder is not a completed application.');
       if (result.overflow) fail(`Horizontal overflow at ${width}px.`);
+      if (result.visible && !result.overlay && !result.overflow) report.evidence?.responsiveViewports?.push(width);
     }
     report.ran.browser = true;
     report.ok = report.problems.every(problem => problem.severity !== 'error');

@@ -225,6 +225,7 @@ export class ProviderGateway {
    */
   async streamingCompletion(modelId: string, messages: ChatMessage[], options: {
     timeoutMs?: number;
+    maxAttempts?: number;
     runtimeConfig?: ProviderRequestConfig;
     runtimeConfigForModel?: (modelId: AllowedModelId) => ProviderRequestConfig | undefined;
     allowFallback?: boolean;
@@ -314,27 +315,31 @@ export class ProviderGateway {
         continue;
       }
 
-      const startedAt = Date.now();
-      this.noteRequest(candidate);
-      try {
-        const result = await collect(candidate, candidateRuntimeConfig);
-        options.validateResult?.(result);
-        this.noteMetricSuccess(candidate, Date.now() - startedAt);
-        this.noteSuccess(candidate);
-        return result;
-      } catch (error: any) {
-        lastError = error;
-        let classified = this.classifyError(error, candidate);
-        this.noteFailure(candidate, classified.retryable);
-        this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
-        // A capability this model does not have is the other candidates' cue,
-        // exactly as in `chat` — but only while nothing has reached the caller,
-        // since a handover after that would replay text already on screen.
-        // `enforceModelCapabilities` throws before the request is sent, so the
-        // case that matters here is always the silent one.
-        if (emittedAnyChunk) throw classified;
-        if (isModelSpecificFailure(classified.diagnosticCode)) continue;
-        if (!classified.retryable) throw classified;
+      const maxAttempts = Math.max(1, options.maxAttempts || 2);
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const startedAt = Date.now();
+        this.noteRequest(candidate);
+        try {
+          const result = await collect(candidate, candidateRuntimeConfig);
+          options.validateResult?.(result);
+          this.noteMetricSuccess(candidate, Date.now() - startedAt);
+          this.noteSuccess(candidate);
+          return result;
+        } catch (error: any) {
+          lastError = error;
+          const classified = this.classifyError(error, candidate);
+          this.noteFailure(candidate, classified.retryable);
+          this.noteMetricFailure(candidate, classified.diagnosticCode, Date.now() - startedAt);
+          // Once a token reached the progress callback, restarting would
+          // duplicate visible prose. Before that point, a transient 429/5xx or
+          // timeout is safe to retry against the same pinned model.
+          if (emittedAnyChunk) throw classified;
+          if (isModelSpecificFailure(classified.diagnosticCode)) break;
+          if (!classified.retryable) throw classified;
+          if (attempt >= maxAttempts) break;
+          this.noteRetry(candidate);
+          await sleep(250 * attempt);
+        }
       }
     }
 

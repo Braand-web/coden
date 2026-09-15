@@ -3871,7 +3871,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         `}
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
         ${summary ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
-        ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Cloudflare…</div>' : ''}
+        ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Vercel…</div>' : ''}
         <button type="button"
           class="cdn-pub__primary"
           data-variant="${statusMissing ? 'retry' : canPublish ? 'go' : 'idle'}"

@@ -125,22 +125,17 @@ const starters = readFileSync(new URL('./src/services/sandbox/starters.ts', impo
 }
 
 /*
- * The scaffold loads the font it names.
- *
- * `index.css` has always set `font-family: Inter` and nothing ever fetched
- * Inter — no @font-face, no stylesheet link, no @fontsource dependency. Every
- * generated application fell through to the next entry in the stack, so the
- * typography half of the design contract was decided by whichever operating
- * system happened to open the preview.
+ * Typography belongs to the generated project's Design DNA, not the starter.
+ * A hard-coded font made every application visually resemble the same template
+ * and also made a remote font request a hidden preview dependency.
  */
 {
   const indexHtml = starters.slice(starters.indexOf('const INDEX_HTML ='), starters.indexOf('const MAIN_TSX ='));
-  assert.match(indexHtml, /fonts\.googleapis\.com\/css2\?family=Inter/, 'the scaffold must actually load Inter');
-  assert.match(indexHtml, /display=swap/, 'and stay readable from the first paint whether or not it arrives');
-  assert.match(indexHtml, /rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin/, 'with the connection open before the CSS asks for the file');
+  assert.doesNotMatch(indexHtml, /fonts\.googleapis\.com|family=Inter/i, 'the neutral scaffold must not impose a remote Inter template');
 
   const css = starters.slice(starters.indexOf('const INDEX_CSS ='), starters.indexOf('const TAILWIND_CONFIG ='));
-  assert.match(css, /font-family: Inter/, 'and the family it loads is the one it names');
+  assert.match(css, /font-family: var\(--font-body,/, 'the scaffold must expose a per-project typography token');
+  assert.doesNotMatch(css, /font-family:\s*Inter/i, 'Inter must not become a hidden universal default');
 }
 
 // The policy still produces a real brief through the path the pipeline uses —

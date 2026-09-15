@@ -25,6 +25,8 @@ export interface BuildOptions {
   runViteBuild?: boolean;       // if true, runs `npm run build` in workDir
   slug: string;
   outputDirectory?: string;     // manifest-controlled production output directory
+  /** Explicit browser-safe values required while Vite builds the user app. */
+  publicEnv?: Record<string, string>;
 }
 
 function ensureCleanDir(dir: string) {
@@ -60,7 +62,25 @@ const INSTALL_NETWORK_ENV_KEYS = [
   'npm_config_proxy', 'npm_config_https_proxy', 'npm_config_noproxy', 'npm_config_cafile', 'npm_config_strict_ssl',
 ];
 
-function buildEnv(includeInstallNetwork = false): NodeJS.ProcessEnv {
+const PUBLIC_BUILD_ENV_NAME = /^(?:VITE_|PUBLIC_|NEXT_PUBLIC_)[A-Z0-9_]+$/;
+const FORBIDDEN_PUBLIC_ENV_NAME = /(?:SERVICE_ROLE|SECRET|PRIVATE_KEY|PASSWORD|DATABASE_URL|OPENAI|ANTHROPIC|OPENROUTER|VERCEL_TOKEN|CLOUDFLARE|SASPAY)/i;
+
+/**
+ * Only explicitly supplied, browser-safe variables can enter generated code.
+ * The Coden host process contains provider, database and billing secrets; a
+ * generated `vite.config` must never be able to read them during its build.
+ */
+export function sanitizePublicBuildEnv(values: Record<string, string> = {}): Record<string, string> {
+  const safe: Record<string, string> = {};
+  for (const [name, rawValue] of Object.entries(values)) {
+    if (!PUBLIC_BUILD_ENV_NAME.test(name) || FORBIDDEN_PUBLIC_ENV_NAME.test(name)) continue;
+    const value = String(rawValue ?? '');
+    if (value) safe[name] = value;
+  }
+  return safe;
+}
+
+function buildEnv(includeInstallNetwork = false, publicEnv: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const key of [...BASE_BUILD_ENV_KEYS, ...(includeInstallNetwork ? INSTALL_NETWORK_ENV_KEYS : [])]) {
     if (process.env[key]) env[key] = process.env[key];
@@ -72,6 +92,7 @@ function buildEnv(includeInstallNetwork = false): NodeJS.ProcessEnv {
   env.npm_config_fund = 'false';
   env.npm_config_update_notifier = 'false';
   env.npm_config_ignore_scripts = 'true';
+  Object.assign(env, sanitizePublicBuildEnv(publicEnv));
   return env;
 }
 
@@ -122,7 +143,7 @@ export async function buildStaticSource(src: StaticSource, opts: BuildOptions): 
     // Keep them off during dependency installation and never inherit Coden's
     // provider, database, hosting or billing environment variables.
     await run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts'], workDir, buildEnv(true));
-    await run('npm', ['run', 'build'], workDir, buildEnv(false));
+    await run('npm', ['run', 'build'], workDir, buildEnv(false, opts.publicEnv));
     const outputDirectory = String(opts.outputDirectory || 'dist').replace(/^[/\\]+/, '');
     const outputPath = path.resolve(workDir, outputDirectory);
     if (!outputPath.startsWith(`${path.resolve(workDir)}${path.sep}`) || !fs.existsSync(outputPath)) {

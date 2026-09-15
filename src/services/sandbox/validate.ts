@@ -35,6 +35,11 @@ export type ValidationReport = {
   problems: ValidationProblem[];
   ran: { devServer: boolean; typecheck: boolean; build: boolean; browser?: boolean };
   durationMs: number;
+  evidence?: {
+    responsiveViewports?: number[];
+    qualityChecks?: Array<{ key: string; status: string; severity: string; message: string }>;
+    interactions?: { attempted: number; changed: number };
+  };
 };
 
 /** `src/App.tsx(12,5): error TS2307: Cannot find module './Header'.` */

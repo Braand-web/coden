@@ -69,7 +69,8 @@ const tanstackManifest = createGeneratedAppManifest({
 });
 assert.equal(tanstackManifest.profile, 'tanstack-fullstack');
 assert.equal(tanstackManifest.framework, 'tanstack-start');
-assert.equal(tanstackManifest.runtime, 'cloudflare-workers');
+assert.equal(tanstackManifest.runtime, 'vercel-functions');
+assert.equal(tanstackManifest.outputDirectory, '.output');
 assert.equal(tanstackManifest.capabilities.ssr, true);
 assert.equal(tanstackManifest.capabilities.serverFunctions, true);
 assert.deepEqual(validateGeneratedAppManifest(tanstackManifest), []);
@@ -115,8 +116,8 @@ for (const [label, markup] of [
 // to carry backend configuration it never uses.
 assert.equal(staticManifest.requiredPublicEnv.length, 0);
 
-// The tanstack-fullstack profile commits the app to the Workers runtime and
-// makes Router, Query and Wrangler mandatory. A stray mention of createServerFn
+// The tanstack-fullstack profile commits the app to Vercel Functions and
+// makes Router, Query and Nitro mandatory. A stray mention of createServerFn
 // in a comment used to select it and then fail the whole generation, so the
 // evidence must be a real dependency or a real import.
 const incidentalServerFnFiles = [
@@ -129,7 +130,7 @@ assert.doesNotThrow(() => manifestFile({ files: incidentalServerFnFiles }));
 
 // A real TanStack Start app must still be recognised, whether the evidence is
 // the declared dependency or the import. Misclassifying it would strip its
-// server runtime on publish, which cloudflare-hosting-policy forbids.
+// server runtime on publish.
 assert.equal(resolveGeneratedAppProfile({ files: tanstackFiles }), 'tanstack-fullstack');
 const tanstackByImportOnly = [
   {

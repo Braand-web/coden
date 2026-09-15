@@ -83,7 +83,20 @@ const VALID_PLAN = JSON.stringify({
   risks: [],
 });
 
-const COUNTER_APP = 'export default function App() {\n  return <button>Count: 0</button>;\n}\n';
+const COUNTER_APP = `import { useState } from 'react';
+
+export default function App() {
+  const [count, setCount] = useState(0);
+  return (
+    <main>
+      <h1>Counter workspace</h1>
+      <p>Use the primary control to update the visible result. The current value is Count: 0 until you start.</p>
+      <output aria-live="polite">Count: {count}</output>
+      <button aria-label="Increment counter" onClick={() => setCount(value => value + 1)}>Increment</button>
+    </main>
+  );
+}
+`;
 
 async function cleanup(projectId: string) {
   await sandboxRegistry.peek(projectId)?.destroy().catch(() => null);
@@ -110,6 +123,7 @@ try {
     const outcome = await runMultiAgentPipeline({
       gateway,
       projectId: 'pipeline-new-project',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'build a counter app',
       route: 'new_project',
@@ -138,7 +152,7 @@ try {
     assert.equal(outcome.plan!.summary, 'A single counter page.');
     assert.ok(outcome.files.some(file => file.path === 'package.json'), 'the starter scaffold must back a new project');
     assert.ok(outcome.files.some(file => file.path === 'src/App.tsx' && file.content === COUNTER_APP), 'the coder\'s write must reach the returned files');
-    assert.equal(outcome.ok, true);
+    assert.equal(outcome.ok, true, JSON.stringify(outcome, null, 2));
     assert.equal(provider.chatCalls.length, 3, 'one planner call plus the two-step tool loop, no more');
   }
 
@@ -152,6 +166,7 @@ try {
     const outcome = await runMultiAgentPipeline({
       gateway,
       projectId: 'pipeline-small-edit',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'change the counter to start at 1',
       route: 'small_edit',
@@ -177,6 +192,7 @@ try {
     const outcome = await runMultiAgentPipeline({
       gateway,
       projectId: 'pipeline-bad-install',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'add a feature',
       route: 'large_change',
@@ -206,6 +222,7 @@ try {
     const outcome = await runMultiAgentPipeline({
       gateway,
       projectId: 'pipeline-harness',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'change something',
       route: 'small_edit',
@@ -242,6 +259,7 @@ try {
     const editOutcome = await runMultiAgentPipeline({
       gateway: new ProviderGateway(editProvider.service),
       projectId: 'pipeline-cost-edit',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'bump the counter',
       route: 'small_edit',
@@ -259,6 +277,7 @@ try {
     const buildOutcome = await runMultiAgentPipeline({
       gateway: new ProviderGateway(buildProvider.service),
       projectId: 'pipeline-cost-build',
+      enableSpecialists: false,
       userId: 'user-1',
       prompt: 'build a whole new dashboard',
       route: 'large_change',

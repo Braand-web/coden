@@ -93,28 +93,15 @@ export default defineConfig({
 `;
 
 /*
- * The font is loaded, not merely named.
- *
- * `index.css` sets `font-family: Inter` and nothing ever fetched Inter — no
- * `@font-face`, no stylesheet link, no `@fontsource` dependency. Every
- * generated application silently fell through to the next entry in the stack
- * and rendered in the visitor's system font, so the typography half of the
- * design contract was decided by whichever OS opened the preview.
- *
- * A stylesheet link rather than an npm package: it costs no install time on a
- * project that would otherwise need no dependencies at all, and `display=swap`
- * means text is readable from the first paint whether or not the font arrives.
- * The `preconnect` pair opens the two connections the CSS will need before the
- * CSS itself has finished parsing.
+ * The starter deliberately carries no brand font. The per-project Design DNA
+ * must choose and load typography that fits the product instead of making
+ * every generated application inherit the same recognizable AI template.
  */
 const INDEX_HTML = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>App</title>
   </head>
   <body>
@@ -264,11 +251,23 @@ body {
   margin: 0;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: Inter, ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: var(--font-body, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+:where(button, input, select, textarea) {
+  min-height: 44px;
+}
+
+:where(button, [role="button"], select, summary) {
+  cursor: pointer;
+}
+
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
 }
 
 /* Focus is never removed, only restyled — the contract makes it non-negotiable. */

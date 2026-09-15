@@ -768,12 +768,15 @@ app.get('/api/debug/auth-session', requireAuth, (req: any, res) => {
 app.get('/api/health', (_req, res) => {
   // Keep the liveness contract public, but do not disclose commit topology,
   // branch names, Supabase project refs, or which provider credentials exist.
-  // Detailed diagnostics belong behind the platform-admin boundary.
+  // A ref-match boolean is safe to expose and lets the browser distinguish a
+  // configuration mismatch from a transient authentication failure.
+  const supabaseDiagnostics = getSupabaseRuntimeDiagnostics();
   res.json({
     success: true,
     status: 'ok',
     service: 'coden-saas',
     time: new Date().toISOString(),
+    project_refs_match: supabaseDiagnostics.project_refs_match,
   });
 });
 
@@ -3184,9 +3187,14 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
   const securityScan = scanGeneratedSecurity(files);
   const securityBlocking = securityScan.findings.filter(item => item.status === 'fail');
   const securityWarnings = securityScan.findings.filter(item => item.status === 'warn');
-  const publicUrl = customDomain
-    ? normalizeDomainUrl(customDomain)
-    : String(latestDeployment?.public_url || latestDeployment?.deployment_url || getDefaultPublishedUrl(project));
+  // An address is a publication result, not a prediction. Showing a computed
+  // subdomain before Vercel has built and Coden has verified it made failed
+  // attempts look live in both the API and the publish panel.
+  const publicUrl = publishedDeployment
+    ? customDomain
+      ? normalizeDomainUrl(customDomain)
+      : String(publishedDeployment.public_url || publishedDeployment.deployment_url || '')
+    : '';
   const state: PublishStatus['state'] = !previewReady || !hasFiles
     ? 'not_ready'
     : !publishedDeployment
@@ -3232,7 +3240,11 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
         key: 'domain',
         label: 'Adresse publique',
         status: customDomain ? 'pass' : 'warn',
-        detail: customDomain ? `Domaine personnalisé : ${customDomain}` : `Adresse Coden par défaut : ${publicUrl}`,
+        detail: customDomain
+          ? `Domaine personnalisé : ${customDomain}`
+          : publicUrl
+            ? `Adresse Coden : ${publicUrl}`
+            : 'L’adresse Coden sera affichée après une publication vérifiée.',
       },
       {
         key: 'badge',
@@ -12509,7 +12521,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * intents fall through completely unaffected, flag or no flag.
    */
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
-  if (process.env.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute) {
+  if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute) {
     if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
     try {
       await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
@@ -12563,6 +12575,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
+        projectName: project.name,
         userId,
         prompt: agentPrompt,
         memoryContext: projectMemory,
@@ -15726,11 +15739,33 @@ import { proxyHttp, proxyUpgrade, previewErrorDocument } from './src/services/sa
 import { issuePreviewToken, readPreviewToken } from './src/services/sandbox/preview-token.ts';
 
 async function readGeneratedRuntimeContract(project: GeneratedProject, sourceFiles?: GeneratedFile[]) {
-  const files = sourceFiles || await loadProjectFiles(project.id);
-  const manifestEntry = files.find(file => file.path.replace(/\\/g, '/') === 'coden/app-manifest.json');
+  let files = sourceFiles || await loadProjectFiles(project.id);
+  let manifestEntry = files.find(file => file.path.replace(/\\/g, '/') === 'coden/app-manifest.json');
   let manifest: any = null;
   if (manifestEntry) {
     try { manifest = JSON.parse(manifestEntry.content); } catch { manifest = null; }
+  }
+  if (manifest?.runtime === 'cloudflare-workers') {
+    const prompt = project.prompt || project.name;
+    const requirement = detectCodenCloudRequirements(prompt);
+    const migrated = applyCodenFullstackKit({
+      files,
+      projectName: project.name,
+      prompt,
+      requirement,
+    });
+    files = migrated.filter(file => !/(?:^|\/)(?:wrangler\.jsonc|wrangler\.toml)$/i.test(file.path.replace(/\\/g, '/')));
+    manifest = createGeneratedAppManifest({ prompt, files, requirement });
+    const nextManifestFile = manifestFile({ prompt, files, requirement });
+    files = [
+      ...files.filter(file => file.path.replace(/\\/g, '/') !== nextManifestFile.path),
+      nextManifestFile as GeneratedFile,
+    ];
+    manifestEntry = nextManifestFile as GeneratedFile;
+    // This compatibility migration is intentionally persisted once: old
+    // projects then preview, rebuild and publish through the same Vercel
+    // contract as newly generated applications.
+    await saveProject({ ...project, updated_at: new Date().toISOString() }, files);
   }
   if (!manifest) {
     manifest = createGeneratedAppManifest({ prompt: project.prompt || project.name, files });
@@ -16013,6 +16048,10 @@ async function publishVercelProjectForRequest(req: any, res: any) {
   const projectId = String(req.params.id || '');
   let publishLockKey = '';
   let publishLockToken = '';
+  let publishProjectRecord: GeneratedProject | null = null;
+  let publishArtifactHash = '';
+  let publishAttemptStarted = false;
+  let publishProviderResult: Awaited<ReturnType<typeof publishProjectToVercel>> | null = null;
   try {
     const auth = getRequiredAuth(req);
     if (!enforceRateLimit(`publish:${auth.userId}`, 6, 60_000)) {
@@ -16027,6 +16066,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
 
     const project = await loadProjectForPublish(projectId, auth.userId, req);
+    publishProjectRecord = project;
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
     const context = await createPublishContext(project);
     const publishStatus = buildPublishStatus(context);
@@ -16085,30 +16125,67 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       verificationPassed: publishStatus.can_publish,
       securityBlockers: [],
     });
+    publishArtifactHash = artifactHash;
+    const backendEnv = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
+    const publicBuildEnv: Record<string, string> = {
+      ...backendEnv,
+      ...(backendEnv.VITE_SUPABASE_URL ? {
+        VITE_CODEN_CLOUD_SUPABASE_URL: backendEnv.VITE_SUPABASE_URL,
+      } : {}),
+      ...(backendEnv.VITE_SUPABASE_ANON_KEY ? {
+        VITE_CODEN_CLOUD_SUPABASE_ANON_KEY: backendEnv.VITE_SUPABASE_ANON_KEY,
+      } : {}),
+    };
+    const missingPublicEnv = (contract.manifest.requiredPublicEnv || [])
+      .filter((item: any) => item?.required && !publicBuildEnv[String(item.name || '')])
+      .map((item: any) => String(item.name || ''));
+    if (missingPublicEnv.length) {
+      return res.status(409).json({
+        success: false,
+        error: 'Le backend de cette application doit être connecté avant la publication.',
+        message: 'Le backend de cette application doit être connecté avant la publication.',
+        diagnostic_code: 'PUBLISH_PUBLIC_ENV_MISSING',
+        missing: missingPublicEnv,
+        request_id: requestId,
+        suggested_action: 'connect_backend_then_publish',
+      });
+    }
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
     let result: Awaited<ReturnType<typeof publishProjectToVercel>>;
     try {
+      publishAttemptStarted = true;
       const distDir = await buildStaticSource({ files: extractStaticFiles(project, contract.files) }, {
         slug,
         workDir,
         runViteBuild: true,
         outputDirectory: contract.manifest.outputDirectory,
+        publicEnv: publicBuildEnv,
       });
       await persistGeneratedRuntimeContract(project, contract.manifest);
       result = await publishProjectToVercel({
         slug,
         distDir,
         runtime: contract.manifest.runtime,
-        sourceDir: workDir,
+        sourceDir: contract.manifest.runtime === 'static-assets' ? undefined : workDir,
         outputDirectory: contract.manifest.outputDirectory,
+        publicEnv: publicBuildEnv,
       });
+      publishProviderResult = result;
+      if (!result.codenUrl) {
+        throw createPublicError(
+          'Le déploiement Vercel est prêt, mais le sous-domaine Coden n’est pas encore confirmé. Vérifiez la configuration du domaine générique dans Vercel puis réessayez.',
+          503,
+          'VERCEL_CODEN_DOMAIN_PENDING',
+          'configure_vercel_domain',
+        );
+      }
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes
             .filter((route: any) => route?.kind === 'public')
             .map((route: any) => String(route.path || '/'))
         : ['/'];
       const deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
-      if (!deploymentVerification.verified) {
+      if (!deploymentVerification.verified || deploymentVerification.baseUrl !== result.codenUrl) {
         const lastCheck = deploymentVerification.checks.at(-1);
         throw new Error(
           `Vercel deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
@@ -16125,7 +16202,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       provider: result.provider,
       provider_deployment_id: result.deploymentId,
       deployment_url: result.deploymentUrl || result.defaultUrl,
-      public_url: result.codenUrl || result.defaultUrl || publishStatus.public_url,
+      public_url: result.codenUrl,
       custom_domain: publishStatus.custom_domain || result.customDomain,
       badge_required: publishStatus.badge_required,
       status: 'ready',
@@ -16148,7 +16225,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
           project_id: project.id,
           slug,
           vercel_project: result.projectName,
-          default_url: result.codenUrl || result.defaultUrl,
+          default_url: result.codenUrl,
           coden_subdomain: vercelCodenHostForSlug(slug),
           last_deployment_id: result.deploymentId,
           published_at: createdAt,
@@ -16157,17 +16234,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         {
           project_id: project.id,
           slug,
-          cf_pages_project: result.projectName,
-          default_url: result.codenUrl || result.defaultUrl,
-          coden_subdomain: vercelCodenHostForSlug(slug),
-          last_deployment_id: result.deploymentId,
-          published_at: createdAt,
-          status: 'ready',
-        },
-        {
-          project_id: project.id,
-          slug,
-          default_url: result.codenUrl || result.defaultUrl,
+          default_url: result.codenUrl,
           last_deployment_id: result.deploymentId,
           published_at: createdAt,
           status: 'ready',
@@ -16196,6 +16263,28 @@ async function publishVercelProjectForRequest(req: any, res: any) {
   } catch (e: any) {
     const diagnostic = diagnosePublishError(e);
     console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e) });
+    if (publishAttemptStarted && publishProjectRecord) {
+      await saveDeploymentRecord({
+        id: randomUUID(),
+        organization_id: publishProjectRecord.organization_id,
+        project_id: publishProjectRecord.id,
+        provider: 'vercel',
+        provider_deployment_id: publishProviderResult?.deploymentId || null,
+        deployment_url: '',
+        public_url: '',
+        status: 'failed',
+        commit_hash: publishArtifactHash || null,
+        branch: req.body?.branch || 'main',
+        diagnostic_code: diagnostic.diagnostic_code,
+        error_message: diagnostic.message,
+        created_at: new Date().toISOString(),
+      }).catch((persistenceError: any) => {
+        console.warn('[coden:failed_deployment_persistence_skipped]', {
+          request_id: requestId,
+          message: redactSecrets(persistenceError?.message || String(persistenceError), '[redacted]'),
+        });
+      });
+    }
     return res.status(diagnostic.status).json({
       success: false,
       error: diagnostic.message,

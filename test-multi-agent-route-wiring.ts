@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
  *
  * A behavioural test would need a live model — the proxy in this environment
  * blocks OpenRouter — and would pass against a broken branch whenever the
- * flag happened to be off, which is the default. What matters here is
+ * canonical pipeline was accidentally disabled. What matters here is
  * structural: the branch exists, it is gated behind the flag, it runs before
  * any legacy blob logic could, it resolves the route from real decision
  * fields rather than re-reading the prompt, and every path out of it either
@@ -19,11 +19,16 @@ const generateStart = server.indexOf("app.post('/api/projects/:id/generate'");
 assert.ok(generateStart > 0, 'the generate route must be findable');
 const route = server.slice(generateStart, server.indexOf('\napp.post(', generateStart + 100));
 
-// -- the branch exists, gated behind the flag, and asks the real classifier -
+// -- the branch exists, is governed by the central rollout flag, and asks the
+// real classifier. The pipeline is on by default; only an explicit emergency
+// rollback may disable it.
 assert.match(route, /const pipelineRoute = resolvePipelineRoute\(\{ intent: decision\.intent, nextAction: decision\.nextAction, hasFiles: existingFiles\.length > 0 \}\);/,
   'the route must be resolved from the real decision, not re-derived from the prompt text');
-assert.match(route, /if \(process\.env\.CODEN_MULTI_AGENT_PIPELINE === '1' && pipelineRoute\) \{/,
-  'the branch must be gated behind an explicit flag, defaulting off since the env var is unset by default');
+assert.match(route, /if \(CODEN_AGENT_FLAGS\.multiAgentPipeline && pipelineRoute\) \{/,
+  'the canonical branch must use the central rollout flag instead of an ad-hoc environment check');
+const featureFlags = readFileSync('./src/config/coden-agent-feature-flags.ts', 'utf8');
+assert.match(featureFlags, /multiAgentPipeline:\s*readBooleanFlag\(env, 'CODEN_MULTI_AGENT_PIPELINE'\)/,
+  'the pipeline must be enabled by the normal feature-flag mechanism and retain an explicit rollback switch');
 
 // -- it runs before the ~1200 lines of legacy branching, not after ----------
 const pipelineBranch = route.indexOf('const pipelineRoute = resolvePipelineRoute(');

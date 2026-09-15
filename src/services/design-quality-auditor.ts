@@ -64,7 +64,10 @@ const RESTAURANT_APP_RE = /\b(restaurant|menu|reservation|réservation|booking|h
 const AUTH_APP_RE = /\b(login|signup|sign in|sign up|auth|password|forgot|register|connexion|inscription)\b/i;
 const OPERATIONAL_APP_RE = /\b(dashboard|admin|crm|erp|analytics|kpi|table|pipeline|invoice|inventory|settings)\b/i;
 const AI_TOOL_APP_RE = /\b(ai tool|prompt|message|stream|preview|output|model selector|assistant)\b/i;
-const EMOJI_ICON_RE = /[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/;
+// Extended_Pictographic catches actual emoji while avoiding the enormous
+// U+2011–U+26FF range, which also contains ordinary dashes, arrows and many
+// punctuation marks used legitimately in source comments and UI copy.
+const EMOJI_ICON_RE = /\p{Extended_Pictographic}/u;
 
 const appRequiredComponentKeywords: Partial<Record<GeneratedAppType, string[]>> = {
   landing_page: ['hero', 'cta', 'proof', 'pricing', 'testimonial', 'faq', 'prompt'],

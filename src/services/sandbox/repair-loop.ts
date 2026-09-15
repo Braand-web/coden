@@ -260,7 +260,14 @@ export async function runCoderLoop(input: {
     input.signal?.throwIfAborted();
     if (report.ok && input.verifyPreview) {
       const preview = await input.verifyPreview();
-      report = { ...report, ok:preview.ok, problems:[...report.problems,...preview.problems], ran:{...report.ran,browser:preview.ran.browser}, durationMs:report.durationMs+preview.durationMs };
+      report = {
+        ...report,
+        ok:preview.ok,
+        problems:[...report.problems,...preview.problems],
+        ran:{...report.ran,browser:preview.ran.browser},
+        durationMs:report.durationMs+preview.durationMs,
+        evidence:{ ...(report.evidence || {}), ...(preview.evidence || {}) },
+      };
     }
     const hasActualChanges = initialFiles && currentFiles && [...new Set([...initialFiles.keys(), ...currentFiles.keys()])]
       .some(path => initialFiles.get(path) !== currentFiles.get(path));

@@ -90,7 +90,7 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
     'it is no longer the else-branch of having a preview');
 
   assert.match(css, /\.coden-dashboard-project-fallback \{[\s\S]*?z-index: 0;/, 'and sits below');
-  assert.match(css, /\.coden-dashboard-project-preview iframe \{\n  position: relative;\n  z-index: 1;\n\}/,
+  assert.match(css, /\.coden-dashboard-project-preview iframe \{\r?\n  position: relative;\r?\n  z-index: 1;\r?\n\}/,
     'while a working preview covers it');
 }
 

@@ -1,6 +1,12 @@
 export type GeneratedAppProfile = 'tanstack-fullstack' | 'node-fullstack' | 'vite-static' | 'legacy-vite-fullstack';
 export type GeneratedAppFramework = 'tanstack-start' | 'vite-react';
-export type GeneratedAppRuntime = 'cloudflare-workers' | 'node-server' | 'static-assets';
+/**
+ * `cloudflare-workers` remains in the TypeScript union only so historical
+ * deployment records and the retired Cloudflare rollback helpers can still be
+ * read safely. New manifests cannot select it: the schema and profile resolver
+ * below only emit Vercel Functions, Node or static assets.
+ */
+export type GeneratedAppRuntime = 'vercel-functions' | 'node-server' | 'static-assets' | 'cloudflare-workers';
 
 export type GeneratedAppCapability = {
   ssr: boolean;
@@ -45,7 +51,7 @@ const generatedAppManifestSchema = z.object({
   schemaVersion: z.literal(1),
   profile: z.enum(['tanstack-fullstack', 'node-fullstack', 'vite-static', 'legacy-vite-fullstack']),
   framework: z.enum(['tanstack-start', 'vite-react']),
-  runtime: z.enum(['cloudflare-workers', 'node-server', 'static-assets']),
+  runtime: z.enum(['vercel-functions', 'node-server', 'static-assets']),
   backend: z.enum(['coden-cloud-supabase', 'node-api', 'none']),
   buildCommand: z.string().trim().min(1),
   devCommand: z.string().trim().min(1),
@@ -128,8 +134,8 @@ function contains(files: GeneratedRuntimeFile[], pattern: RegExp) {
 }
 
 /**
- * Selecting this profile commits the app to the Cloudflare Workers runtime and
- * makes Router, Query and a Wrangler config mandatory, so the evidence has to be
+ * Selecting this profile commits the app to Vercel Functions through Nitro and
+ * makes Router, Query and the Nitro Vite plugin mandatory, so the evidence has to be
  * a real dependency or a real import. A bare mention of `createServerFn` — in a
  * comment, a string or leftover scaffolding prose — used to be enough, which
  * classified ordinary React apps as TanStack Start and then failed the whole
@@ -218,18 +224,18 @@ export function createGeneratedAppManifest(input: {
   const hasPayments = contains(input.files, /stripe|checkout|payment|subscription|invoice/i);
   const nodeFullstack = profile === 'node-fullstack';
   const hasServerFunctions = Boolean(nodeFullstack || input.requirement?.needs_edge_functions || input.requirement?.needs_secrets || hasServerEntry(input.files) || contains(input.files, /supabase\/functions|server function|createServerFn/i));
-  const cloudflareFullstack = profile === 'tanstack-fullstack';
+  const vercelFullstack = profile === 'tanstack-fullstack';
   const managedBackend = !nodeFullstack && (hasDatabase || hasAuth || hasStorage || hasRealtime || hasServerFunctions || hasPayments);
 
   return {
     schemaVersion: 1,
     profile,
     framework: tanstack ? 'tanstack-start' : 'vite-react',
-    runtime: cloudflareFullstack ? 'cloudflare-workers' : nodeFullstack ? 'node-server' : 'static-assets',
+    runtime: vercelFullstack ? 'vercel-functions' : nodeFullstack ? 'node-server' : 'static-assets',
     backend: nodeFullstack ? 'node-api' : managedBackend ? 'coden-cloud-supabase' : 'none',
     buildCommand: 'npm run build',
     devCommand: 'npm run dev',
-    outputDirectory: 'dist',
+    outputDirectory: vercelFullstack ? '.output' : 'dist',
     routes: inferRoutes(input.files),
     // Every managed backend is reached from the browser with the same public
     // Coden Cloud config, whether it is used for data, auth, storage, realtime,
@@ -243,9 +249,9 @@ export function createGeneratedAppManifest(input: {
           { name: 'VITE_CODEN_CLOUD_SUPABASE_ANON_KEY', scope: 'public', required: true, description: 'Clé publishable du backend Coden Cloud.' },
         ]
       : [],
-    requiredServerEnv: !nodeFullstack && (input.requirement?.needs_secrets || hasServerFunctions)
-      ? [{ name: 'CODEN_SERVER_RUNTIME', scope: 'server', required: true, description: 'Configuration serveur injectée par le runtime Coden/Cloudflare.' }]
-      : [],
+    // Runtime availability is a platform contract, not a pretend secret. Real
+    // private keys are declared only when an integration names one explicitly.
+    requiredServerEnv: [],
     capabilities: {
       ssr: tanstack,
       auth: hasAuth,
@@ -276,8 +282,8 @@ export function validateGeneratedAppManifest(manifest: GeneratedAppManifest): st
   if (manifest.schemaVersion !== 1) errors.push('Unsupported generated app manifest schema.');
   if (!manifest.profile || !manifest.framework || !manifest.runtime) errors.push('Runtime profile is incomplete.');
   if (!manifest.buildCommand || !manifest.outputDirectory) errors.push('Build contract is incomplete.');
-  if (manifest.profile === 'tanstack-fullstack' && manifest.runtime !== 'cloudflare-workers') {
-    errors.push('TanStack fullstack apps must target the Cloudflare Workers runtime.');
+  if (manifest.profile === 'tanstack-fullstack' && manifest.runtime !== 'vercel-functions') {
+    errors.push('TanStack fullstack apps must target Vercel Functions.');
   }
   if (manifest.profile === 'node-fullstack' && (manifest.runtime !== 'node-server' || manifest.backend !== 'node-api')) {
     errors.push('Node fullstack apps must target the Node server runtime and declare a Node API backend.');
@@ -294,8 +300,13 @@ export function manifestFile(input: Parameters<typeof createGeneratedAppManifest
   if (manifest.profile === 'tanstack-fullstack') {
     if (!hasTanStackRouter(input.files)) errors.push('TanStack fullstack apps must include TanStack Router.');
     if (!hasTanStackQuery(input.files)) errors.push('TanStack fullstack apps must include TanStack Query for server state.');
-    if (!fileContent(input.files, 'wrangler.jsonc') && !fileContent(input.files, 'wrangler.toml')) {
-      errors.push('TanStack fullstack apps must include a Cloudflare Wrangler configuration.');
+    const pkg = packageJson(input.files);
+    if (!packageHas(pkg, 'nitro') || !contains(input.files, /from\s+['"]nitro\/vite['"]|nitro\(\)/i)) {
+      errors.push('TanStack fullstack apps must include and register the Nitro Vite plugin.');
+    }
+    const vercelConfig = fileContent(input.files, 'vercel.json');
+    if (!/"framework"\s*:\s*"tanstack-start"/i.test(vercelConfig)) {
+      errors.push('TanStack fullstack apps must include a Vercel TanStack Start configuration.');
     }
   }
   if (errors.length) throw new Error(`Invalid generated app manifest: ${errors.join(' ')}`);

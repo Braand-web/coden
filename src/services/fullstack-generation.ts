@@ -48,8 +48,7 @@ const VERSIONED_MIGRATION_PATH = 'supabase/migrations/0001_coden_fullstack.sql';
 const TANSTACK_START_VERSION = '1.168.49';
 const TANSTACK_ROUTER_VERSION = '1.170.32';
 const TANSTACK_QUERY_VERSION = '5.102.2';
-const CLOUDFLARE_VITE_PLUGIN_VERSION = '1.53.1';
-const WRANGLER_VERSION = '4.125.0';
+const NITRO_VERSION = '3.0.260903-beta';
 const VITE_VERSION = '7.3.6';
 const VITE_REACT_VERSION = '5.2.0';
 
@@ -98,7 +97,7 @@ function hasStandaloneNodeBackend(files: FullstackGeneratedFile[]) {
 }
 
 function explicitlyRequestsManagedCodenBackend(prompt: string) {
-  return /\b(supabase|coden cloud|cloudflare(?: workers?)?|tanstack start|serverless|managed backend|backend manag[ée])\b/i.test(prompt || '');
+  return /\b(supabase|coden cloud|tanstack start|serverless|managed backend|backend manag[ée])\b/i.test(prompt || '');
 }
 
 function blueprintRequiresBackend(prompt: string) {
@@ -117,6 +116,11 @@ export function shouldApplyCodenFullstackKit(input: {
   files: FullstackGeneratedFile[];
   requirement: CodenCloudRequirement;
 }) {
+  const legacyCloudflareTanStack = input.files.some(file =>
+    /(?:^|\/)(?:wrangler\.jsonc|wrangler\.toml)$/i.test(normalizePath(file.path))
+      || /@cloudflare\/vite-plugin/i.test(file.content || ''),
+  ) && input.files.some(file => /@tanstack\/react-start/i.test(file.content || ''));
+
   // A generated Express/Fastify/Hono server is already a real backend. Do not
   // replace it with the Coden Cloud/TanStack/Supabase template unless the user
   // explicitly requested that managed runtime. Mixing both runtimes creates
@@ -131,6 +135,10 @@ export function shouldApplyCodenFullstackKit(input: {
   }
 
   return Boolean(
+    // Existing Coden projects generated for the retired Workers runtime are
+    // upgraded in place. Keeping their product files while replacing only the
+    // runtime scaffold makes old projects publishable on Vercel too.
+    legacyCloudflareTanStack ||
     hasCodenCloudRequirement(input.requirement) ||
     hasSupabaseUsage(input.files) ||
     // Deterministic, blueprint-driven detection: any prompt the production
@@ -167,8 +175,7 @@ function mergePackageJson(content: string) {
     test: 'node --experimental-strip-types src/app.test.ts && node --experimental-strip-types src/fullstack.test.ts',
     lint: 'tsc --noEmit',
     preview: 'vite preview',
-    deploy: 'npm run build && wrangler deploy',
-    'cf-typegen': 'wrangler types',
+    deploy: 'npm run build',
     ...(pkg.scripts || {}),
   };
   // These scripts describe the locked runtime and therefore intentionally win
@@ -176,8 +183,8 @@ function mergePackageJson(content: string) {
   pkg.scripts.dev = 'vite dev';
   pkg.scripts.build = 'vite build && tsc --noEmit';
   pkg.scripts.preview = 'vite preview';
-  pkg.scripts.deploy = 'npm run build && wrangler deploy';
-  pkg.scripts['cf-typegen'] = 'wrangler types';
+  pkg.scripts.deploy = 'npm run build';
+  delete pkg.scripts['cf-typegen'];
   if (!String(pkg.scripts.test || '').includes('src/fullstack.test.ts')) {
     pkg.scripts.test = `${String(pkg.scripts.test || 'node --experimental-strip-types src/app.test.ts').trim()} && node --experimental-strip-types src/fullstack.test.ts`;
   }
@@ -187,31 +194,32 @@ function mergePackageJson(content: string) {
     '@tanstack/react-start': TANSTACK_START_VERSION,
     '@tanstack/react-router': TANSTACK_ROUTER_VERSION,
     '@tanstack/react-query': TANSTACK_QUERY_VERSION,
+    nitro: NITRO_VERSION,
     '@supabase/supabase-js': pkg.dependencies?.['@supabase/supabase-js'] || '2.106.0',
     zod: pkg.dependencies?.zod || '4.4.3',
   };
   pkg.devDependencies = {
     ...(pkg.devDependencies || {}),
-    '@cloudflare/vite-plugin': CLOUDFLARE_VITE_PLUGIN_VERSION,
     '@vitejs/plugin-react': VITE_REACT_VERSION,
     vite: VITE_VERSION,
-    wrangler: WRANGLER_VERSION,
     '@types/node': '22.20.1',
   };
+  delete pkg.devDependencies['@cloudflare/vite-plugin'];
+  delete pkg.devDependencies.wrangler;
   return JSON.stringify(pkg, null, 2);
 }
 
 function buildTanStackViteConfig() {
   return [
-    "import { cloudflare } from '@cloudflare/vite-plugin';",
     "import { tanstackStart } from '@tanstack/react-start/plugin/vite';",
+    "import { nitro } from 'nitro/vite';",
     "import react from '@vitejs/plugin-react';",
     "import { defineConfig } from 'vite';",
     '',
     'export default defineConfig({',
     '  plugins: [',
-    "    cloudflare({ viteEnvironment: { name: 'ssr' } }),",
     '    tanstackStart(),',
+    '    nitro(),',
     '    react(),',
     '  ],',
     '});',
@@ -348,22 +356,8 @@ function buildTanStackIndexRoute() {
   ].join('\n');
 }
 
-function buildWranglerConfig(projectName: string) {
-  const workerName = String(projectName || 'coden-app')
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48) || 'coden-app';
-  return [
-    '{',
-    '  "$schema": "node_modules/wrangler/config-schema.json",',
-    `  "name": ${JSON.stringify(workerName)},`,
-    '  "compatibility_date": "2026-08-24",',
-    '  "compatibility_flags": ["nodejs_compat"],',
-    '  "main": "@tanstack/react-start/server-entry"',
-    '}',
-    '',
-  ].join('\n');
+function buildVercelConfig() {
+  return `${JSON.stringify({ framework: 'tanstack-start' }, null, 2)}\n`;
 }
 
 function buildCodenCloudClient() {
@@ -1452,7 +1446,9 @@ export function applyCodenFullstackKit(input: FullstackKitInput): FullstackGener
   // Coden supplies only the framework, routing and deployment contract.
   upsertFile(byPath, 'vite.config.ts', buildTanStackViteConfig(), 'ts');
   upsertFile(byPath, 'tsconfig.json', buildTanStackTsconfig(), 'json');
-  upsertFile(byPath, 'wrangler.jsonc', buildWranglerConfig(input.projectName), 'json');
+  byPath.delete('wrangler.jsonc');
+  byPath.delete('wrangler.toml');
+  upsertFile(byPath, 'vercel.json', buildVercelConfig(), 'json');
   upsertFile(byPath, 'src/router.tsx', buildTanStackRouter(), 'tsx');
   upsertFile(byPath, 'src/routeTree.gen.ts', buildTanStackRouteTree(), 'ts');
   upsertFile(byPath, 'src/routes/__root.tsx', buildTanStackRootRoute(input.projectName), 'tsx');

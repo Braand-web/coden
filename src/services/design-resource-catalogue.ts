@@ -83,7 +83,7 @@ export const DESIGN_RESOURCES: readonly DesignResource[] = [
     version: '5.3.0',
     category: 'typography',
     license: 'OFL-1.1',
-    useWhen: 'Only if the app must render offline or the CDN is unavailable — the scaffold already loads Inter from Google Fonts in index.html. Add a second family, self-hosted or from Google Fonts, only for display headings with real character.',
+    useWhen: 'Only when Inter is an intentional product choice, never as the automatic default. The neutral scaffold carries no brand font; load the chosen Design DNA family explicitly and keep a reliable system fallback.',
   },
   /*
    * Radix ships one package per primitive, each on its own version line, so

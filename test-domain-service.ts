@@ -17,7 +17,7 @@ function fakeHost(overrides: Partial<DomainHostProvider> & { hostStatus?: any } 
   const host: DomainHostProvider = {
     async attach(domain) {
       calls.push(`attach:${domain}`);
-      return { instructions: [{ type: 'CNAME', name: domain, value: 'app.workers.dev', status: 'pending' }] };
+      return { instructions: [{ type: 'CNAME', name: domain, value: 'cname.vercel-dns.com', status: 'pending' }] };
     },
     async status(domain) {
       calls.push(`status:${domain}`);
@@ -114,7 +114,7 @@ function fakeSupabase(rows: Record<string, any[]> = {}) {
   const { host } = fakeHost({ hostStatus: { active: true, detail: 'active', certificate: 'active' } });
   const { client } = fakeSupabase({
     domains: [{ id: 'd1', project_id: 'proj-1', domain: 'app.example.com', status: 'pending' }],
-    dns_verifications: [{ domain_id: 'd1', record_type: 'CNAME', record_name: 'app.example.com', record_value: 'x.workers.dev', status: 'pending' }],
+    dns_verifications: [{ domain_id: 'd1', record_type: 'CNAME', record_name: 'app.example.com', record_value: 'cname.vercel-dns.com', status: 'pending' }],
   });
   const result = await new DomainService(client, host).verifyDnsRecords('proj-1', 'd1');
   assert.equal(result.status, 'active');
@@ -124,7 +124,7 @@ function fakeSupabase(rows: Record<string, any[]> = {}) {
 
 // A host that cannot be reached is an error the user can act on, not a crash.
 {
-  const { host } = fakeHost({ status: async () => { throw new Error('Cloudflare API unreachable'); } });
+  const { host } = fakeHost({ status: async () => { throw new Error('Vercel API unreachable'); } });
   const { client } = fakeSupabase({ domains: [{ id: 'd1', project_id: 'proj-1', domain: 'app.example.com', status: 'pending' }] });
   const result = await new DomainService(client, host).verifyDnsRecords('proj-1', 'd1');
   assert.equal(result.state, 'error');
@@ -169,16 +169,17 @@ assert.equal(domainPlanLimits.getCustomDomainLimit('free'), 0);
 assert.equal(domainPlanLimits.getCustomDomainLimit('pro'), 1);
 assert.ok(RESERVED_SUBDOMAINS.has('admin') && RESERVED_SUBDOMAINS.has('api'));
 
-// Nothing may reintroduce a second hosting provider through this module. Only
-// executable lines count — the header explains why Vercel was removed, and that
-// prose is the reason a future reader will not put it back.
+// Nothing may reintroduce Cloudflare into the custom-domain path. Only
+// executable lines count — comments document the migration without affecting
+// this regression check.
 const source = await import('node:fs').then(fs => fs.readFileSync('src/services/domain-service.ts', 'utf8'));
 const code = source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
   .filter(line => !line.trim().startsWith('//'))
   .join('\n');
-assert.ok(!/vercel/i.test(code), 'domains are served by Cloudflare only');
-assert.ok(/publish-cloudflare/.test(code), 'the provider must come from the Cloudflare publish path');
+assert.ok(/vercel/i.test(code), 'domains are served by Vercel only');
+assert.ok(/publish-vercel/.test(code), 'the provider must come from the Vercel publish path');
+assert.ok(!/cloudflare/i.test(code), 'Cloudflare must not be reintroduced through the domain service');
 
 console.log('domain service tests passed');

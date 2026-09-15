@@ -129,6 +129,7 @@ class FakeAnthropic {
   const transitions: Array<{ from: string; to: string; reason: string }> = [];
   const gateway = new ProviderGateway(fake as any);
   const result = await gateway.streamingCompletion('openai/gpt-5.6-luna-pro', messages, {
+    maxAttempts: 1,
     allowFallback: true,
     validateResult: candidate => {
       if (candidate.text === 'malformed') {
@@ -142,6 +143,31 @@ class FakeAnthropic {
   assert.equal(result.text, '{"files":[]}');
   assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna']);
   assert.equal(transitions[0]?.reason, 'MODEL_OUTPUT_PARSE_FAILED');
+}
+
+{
+  const fake = new FakeOpenRouter();
+  fake.streamChat = async function* (modelId: string) {
+    this.calls.push(modelId);
+    yield {
+      type: 'token' as const,
+      text: this.calls.length === 1 ? 'malformed' : '{"files":[]}',
+      model: modelId,
+    };
+  };
+  const gateway = new ProviderGateway(fake as any);
+  const result = await gateway.streamingCompletion('openai/gpt-5.6-luna-pro', messages, {
+    allowFallback: true,
+    validateResult: candidate => {
+      if (candidate.text === 'malformed') {
+        const error: any = new Error('Generated project JSON is invalid.');
+        error.diagnosticCode = 'MODEL_OUTPUT_PARSE_FAILED';
+        throw error;
+      }
+    },
+  });
+  assert.equal(result.text, '{"files":[]}');
+  assert.deepEqual(fake.calls, ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna-pro']);
 }
 
 {

@@ -67,7 +67,7 @@ describe('plan presentation', () => {
 
     // And the same on reload, so reopening a conversation does not undo it.
     expect(source).not.toMatch(/message\.intent === 'plan';/);
-    expect(source).toMatch(/const storedPlan = role === 'assistant'\n\s*\? parsePlanPresentation\(/);
+    expect(source).toMatch(/const storedPlan = role === 'assistant'\r?\n\s*\? parsePlanPresentation\(/);
   });
 
   it('still declines prose that merely mentions a plan', () => {

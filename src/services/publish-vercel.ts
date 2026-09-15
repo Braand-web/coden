@@ -10,6 +10,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { sanitizePublicBuildEnv } from './build-runner.ts';
 
 const VERCEL_API = 'https://api.vercel.com';
 const DEFAULT_ROOT_DOMAIN = 'coden.fun';
@@ -144,17 +146,27 @@ function safeRelativeFilePath(root: string, absolute: string): string {
   return relative;
 }
 
-function collectFiles(root: string): Array<{ file: string; data: string; encoding: 'base64' }> {
+export type VercelUploadFile = { file: string; sha: string; size: number; data: Buffer };
+
+function uploadFileRecord(file: string, data: Buffer): VercelUploadFile {
+  return {
+    file: file.replace(/^\/+/, ''),
+    sha: createHash('sha1').update(data).digest('hex'),
+    size: data.byteLength,
+    data,
+  };
+}
+
+function collectFiles(root: string, prefix = ''): VercelUploadFile[] {
   if (!fs.existsSync(root)) throw new Error(`Build output not found: ${root}`);
-  const output: Array<{ file: string; data: string; encoding: 'base64' }> = [];
+  const output: VercelUploadFile[] = [];
   let totalBytes = 0;
 
   function visit(directory: string) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       // Dependencies are installed by Vercel and must never be uploaded from
-      // the Coden build worker. This also keeps the inline deployment below
-      // Vercel's payload limit and prevents generated package code from being
-      // mixed with the host service's modules.
+      // the Coden build worker. This also prevents generated package code from
+      // being mixed with the host service's modules.
       if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.vercel') continue;
       const absolute = path.join(directory, entry.name);
       if (entry.isDirectory()) {
@@ -165,14 +177,73 @@ function collectFiles(root: string): Array<{ file: string; data: string; encodin
       if (output.length >= MAX_FILES) throw new Error(`Vercel build contains more than ${MAX_FILES} files.`);
       const buffer = fs.readFileSync(absolute);
       totalBytes += buffer.byteLength;
-      if (totalBytes > MAX_TOTAL_BYTES) throw new Error('Vercel build exceeds the 50 MB inline deployment limit.');
-      output.push({ file: safeRelativeFilePath(root, absolute), data: buffer.toString('base64'), encoding: 'base64' });
+      if (totalBytes > MAX_TOTAL_BYTES) throw new Error('Vercel build exceeds the 50 MB deployment limit.');
+      const relative = safeRelativeFilePath(root, absolute);
+      output.push(uploadFileRecord([prefix.replace(/\/+$/, ''), relative].filter(Boolean).join('/'), buffer));
     }
   }
 
   visit(root);
   if (!output.length) throw new Error('Vercel build output is empty.');
   return output;
+}
+
+/** Build Output API v3 layout for an already verified static build. */
+export function collectStaticBuildOutput(distDir: string): VercelUploadFile[] {
+  const files = collectFiles(distDir, '.vercel/output/static');
+  const hasIndex = files.some(file => file.file === '.vercel/output/static/index.html');
+  const config = {
+    version: 3 as const,
+    routes: hasIndex
+      ? [{ handle: 'filesystem' }, { src: '/(.*)', dest: '/index.html' }]
+      : [{ handle: 'filesystem' }],
+  };
+  files.push(uploadFileRecord('.vercel/output/config.json', Buffer.from(`${JSON.stringify(config, null, 2)}\n`, 'utf8')));
+  return files;
+}
+
+async function uploadDeploymentFile(file: VercelUploadFile): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(apiUrl('/v2/files'), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${requiredEnv('VERCEL_TOKEN')}`,
+        'Content-Type': 'application/octet-stream',
+        'x-vercel-digest': file.sha,
+      },
+      body: file.data as unknown as BodyInit,
+    });
+    if (response.ok) {
+      await response.body?.cancel();
+      return;
+    }
+    const text = await response.text();
+    let payload: any = {};
+    try { payload = text ? JSON.parse(text) : {}; } catch { payload = { raw: text }; }
+    if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+      await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+      continue;
+    }
+    const providerError = payload?.error || payload;
+    const error = new Error(redactProviderMessage(providerError?.message || `Vercel file upload failed (${response.status})`)) as any;
+    error.statusCode = response.status;
+    error.providerCode = providerError?.code || null;
+    throw error;
+  }
+}
+
+async function uploadDeploymentFiles(files: VercelUploadFile[]): Promise<void> {
+  // Identical contents share one immutable SHA blob on Vercel. Uploading each
+  // digest once avoids needless requests without changing the deployment map.
+  const unique = Array.from(new Map(files.map(file => [file.sha, file])).values());
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(6, unique.length) }, async () => {
+    while (cursor < unique.length) {
+      const file = unique[cursor++];
+      await uploadDeploymentFile(file);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function findServerEntry(sourceDir: string): string | null {
@@ -239,8 +310,11 @@ export default async function handler(req: any, res: any) {
 }
 
 export function prepareVercelSource(sourceDir: string, runtime: string): void {
+  // TanStack Start is compiled by Nitro into native Vercel Functions. A
+  // generic Node adapter would duplicate its server entry and break routing.
+  if (runtime === 'vercel-functions') return;
   const entry = findServerEntry(sourceDir);
-  const dynamic = /node|server|fullstack|cloudflare|next/i.test(String(runtime || ''));
+  const dynamic = /node|server|fullstack|next/i.test(String(runtime || ''));
   if (!dynamic || !entry) return;
 
   const relativeEntry = path.relative(sourceDir, entry).split(path.sep).join('/');
@@ -304,6 +378,31 @@ async function attachCodenDomain(project: string, host: string) {
   }
 }
 
+async function waitForCodenDomain(
+  project: string,
+  host: string,
+  initial: { verified: boolean; verification: Array<{ type?: string; domain?: string; value?: string; reason?: string }> },
+) {
+  if (initial.verified) return initial;
+  let latest = initial;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, Math.min(2_000, 500 + attempt * 125)));
+    try {
+      const current = await vercelRequest<any>(`/v9/projects/${encodeURIComponent(project)}/domains/${encodeURIComponent(host)}`);
+      latest = {
+        verified: Boolean(current?.verified),
+        verification: verificationList(current?.verification),
+      };
+      if (latest.verified) return latest;
+    } catch (error: any) {
+      // Domain creation can be eventually consistent. Keep polling on a 404;
+      // authentication and configuration errors must still fail immediately.
+      if (Number(error?.statusCode || 0) !== 404) throw error;
+    }
+  }
+  return latest;
+}
+
 async function waitForDeployment(deploymentId: string): Promise<VercelDeployment> {
   let current = await vercelRequest<VercelDeployment>(`/v13/deployments/${encodeURIComponent(deploymentId)}`);
   for (let attempt = 0; attempt < 45; attempt += 1) {
@@ -335,8 +434,12 @@ export async function verifyVercelDeployment(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8_000);
       try {
-        const response = await fetchImpl(url, { redirect: 'manual', signal: controller.signal, headers: { 'user-agent': 'Coden-Vercel-Deployment-Verifier/1.0' } });
-        const check = { url, status: response.status, ok: response.status >= 200 && response.status < 300 };
+        const protectionBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
+        const headers: Record<string, string> = { 'user-agent': 'Coden-Vercel-Deployment-Verifier/1.0' };
+        if (protectionBypass) headers['x-vercel-protection-bypass'] = protectionBypass;
+        const response = await fetchImpl(url, { redirect: 'follow', signal: controller.signal, headers });
+        const redirectedToLogin = /(?:^|\.)vercel\.com\/login/i.test(response.url || '');
+        const check = { url, status: response.status, ok: response.status >= 200 && response.status < 300 && !redirectedToLogin };
         attemptChecks.push(check);
         await response.body?.cancel();
       } catch (error: any) {
@@ -357,27 +460,32 @@ export async function publishProjectToVercel(params: {
   runtime: string;
   sourceDir?: string;
   outputDirectory?: string;
+  publicEnv?: Record<string, string>;
 }): Promise<VercelPublishResult> {
   const projectName = vercelProjectNameForSlug(params.slug);
-  const deploymentRoot = params.sourceDir || params.distDir;
-  if (params.sourceDir) prepareVercelSource(params.sourceDir, params.runtime);
-  const files = collectFiles(deploymentRoot);
+  const sourceDeployment = Boolean(params.sourceDir) && params.runtime !== 'static-assets';
+  const deploymentRoot = sourceDeployment ? params.sourceDir! : params.distDir;
+  if (sourceDeployment) prepareVercelSource(deploymentRoot, params.runtime);
+  const files = sourceDeployment ? collectFiles(deploymentRoot) : collectStaticBuildOutput(params.distDir);
+  await uploadDeploymentFiles(files);
   const outputDirectory = String(params.outputDirectory || 'dist').replace(/^[/\\]+/, '') || '.';
-  const projectSettings = params.sourceDir
+  const projectSettings = sourceDeployment
     ? {
-        framework: null,
-        buildCommand: 'true',
+        framework: params.runtime === 'vercel-functions' ? 'tanstack-start' : null,
+        buildCommand: 'npm run build',
         installCommand: 'npm install --ignore-scripts --no-audit --no-fund',
-        outputDirectory,
+        ...(params.runtime === 'node-server' ? { outputDirectory } : {}),
       }
     : { framework: null };
+  const publicEnv = sanitizePublicBuildEnv(params.publicEnv);
   const deployment = await vercelRequest<VercelDeployment>('/v13/deployments', {
     method: 'POST',
     body: JSON.stringify({
       name: projectName,
       target: 'production',
-      files,
+      files: files.map(({ file, sha, size }) => ({ file, sha, size })),
       projectSettings,
+      ...(Object.keys(publicEnv).length ? { env: publicEnv, build: { env: publicEnv } } : {}),
       meta: { coden: 'true', codenSlug: slugify(params.slug) },
     }),
   }, { forceNew: 1, skipAutoDetectionConfirmation: 1 });
@@ -388,12 +496,13 @@ export async function publishProjectToVercel(params: {
   if (!deploymentUrl) throw new Error('Vercel did not return a deployment URL.');
 
   const host = vercelCodenHostForSlug(params.slug);
-  // A Vercel deployment is usable through its vercel.app URL even when the
-  // optional coden.fun domain still needs DNS verification. Domain setup must
-  // never turn a successful application deployment into a publish failure.
+  // Coden publication is complete only once the platform-owned hostname is
+  // confirmed by Vercel. The vercel.app deployment remains an implementation
+  // detail and is never presented as a successful Coden publication.
   let domain = { verified: false, verification: [] as any[] };
   try {
-    domain = await attachCodenDomain(projectName, host);
+    const attached = await attachCodenDomain(projectName, host);
+    domain = await waitForCodenDomain(projectName, host, attached);
   } catch (error: any) {
     console.warn('[coden:vercel_domain_pending]', {
       project: projectName,
