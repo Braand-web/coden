@@ -79,7 +79,7 @@ function notify(message: string, kind: 'info' | 'success' | 'error' = 'info') {
     'border-radius:12px',
     'padding:10px 12px',
     'font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    'color:var(--text,#1c1c1c)',
+    'color:var(--text,#0f172a)',
     kind === 'error' ? 'background:#fff1f2' : kind === 'success' ? 'background:#f0fdf4' : 'background:var(--bg-surface,#fffdf8)',
     'box-shadow:0 18px 60px rgba(9,9,11,.16)',
   ].join(';');

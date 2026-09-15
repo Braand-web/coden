@@ -7,6 +7,15 @@ import { AgentToolLine } from './agent-tool-line';
 import type { AgentMessageState, AgentNotice, DecisionNotice } from './agent-parts';
 import '../../styles/agent-message.css';
 
+function recoveryCopy(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'La génération s’est interrompue. Votre travail enregistré reste disponible.';
+  if (/(request\s*id|\bcode\s*:|provider|quota|billing|rate.?limit|stack|digest method)/i.test(raw)) {
+    return 'La génération est momentanément indisponible. Votre demande et les changements déjà enregistrés sont conservés.';
+  }
+  return raw.slice(0, 280);
+}
+
 function DecisionNoticeView({ notice, onSelect }: { notice: DecisionNotice; onSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   return <section className="coden-stream-notice coden-stream-decision" aria-label="Décision requise">
@@ -50,7 +59,12 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onArtif
         ? <AgentThinkingLine key={state.activity || 'thinking'} label={state.activity} />
         : null}
     </AnimatePresence>
-    {state.error ? <p role="alert" className="coden-agent-message-error">{state.error}</p> : null}
+    {state.error ? (
+      <section role="alert" className="coden-agent-message-error">
+        <strong>La génération est interrompue</strong>
+        <p>{recoveryCopy(state.error)}</p>
+      </section>
+    ) : null}
     {state.status === 'cancelled' ? <p className="coden-agent-message-note">Exécution annulée.</p> : null}
     {!streaming && (onCopy || onRetry) ? <div className="coden-message-actions">
       {onCopy ? <button type="button" aria-label="Copier" title="Copier" onClick={onCopy}><Copy size={15} aria-hidden="true" /></button> : null}

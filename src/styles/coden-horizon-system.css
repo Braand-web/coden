@@ -11,28 +11,35 @@
  * landing-v3 loaded neither, so `var(--transition-control)` there resolved to
  * nothing and every duration in those files had to be written by hand.
  */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "./motion-tokens.css";
 
 :root,
 :root[data-theme="light"] {
   color-scheme: light;
-  --horizon-canvas: #fcfbf8;
-  --horizon-surface: #f7f4ed;
-  --horizon-raised: #f1eee6;
-  --horizon-input: #fffefa;
-  --horizon-border: #e8e4da;
-  --horizon-border-strong: #d5d0c4;
-  --horizon-text: #1c1c1c;
-  --horizon-ink: #030303;
-  --horizon-muted: #64625e;
-  --horizon-subtle: #85817a;
-  --horizon-blue: #3b82f6;
-  --horizon-blue-hover: #2563eb;
+  --horizon-canvas: #f8fafc;
+  --horizon-surface: #ffffff;
+  --horizon-raised: #f1f5f9;
+  --horizon-input: #ffffff;
+  --horizon-border: #e2e8f0;
+  --horizon-border-strong: #cbd5e1;
+  --horizon-text: #0f172a;
+  --horizon-ink: #020617;
+  --horizon-muted: #64748b;
+  --horizon-subtle: #94a3b8;
+  --horizon-blue: #2563eb;
+  --horizon-blue-hover: #1d4ed8;
   --horizon-blue-ink: #ffffff;
   --horizon-blue-soft: rgba(59, 130, 246, .11);
-  --horizon-overlay: rgba(28, 28, 28, .28);
-  --horizon-shadow-inset: inset 0 0 0 .5px rgba(3, 3, 3, .18);
-  --horizon-shadow-float: 0 20px 25px -5px rgba(28, 28, 28, .08), 0 8px 10px -6px rgba(28, 28, 28, .08);
+  --horizon-success: #15803d;
+  --horizon-success-soft: rgba(21, 128, 61, .10);
+  --horizon-warning: #b45309;
+  --horizon-warning-soft: rgba(180, 83, 9, .10);
+  --horizon-danger: #dc2626;
+  --horizon-danger-soft: rgba(220, 38, 38, .10);
+  --horizon-overlay: rgba(15, 23, 42, .32);
+  --horizon-shadow-inset: inset 0 0 0 .5px rgba(15, 23, 42, .08);
+  --horizon-shadow-float: 0 20px 25px -5px rgba(15, 23, 42, .08), 0 8px 10px -6px rgba(15, 23, 42, .06);
   --horizon-ease: cubic-bezier(.32, .72, 0, 1);
 
   --coden-bg: var(--horizon-canvas);
@@ -74,7 +81,7 @@
   --text-muted: var(--horizon-muted);
   --text-sub: var(--horizon-subtle);
   --border: var(--horizon-border);
-  --border-light: rgba(232, 228, 218, .64);
+  --border-light: rgba(226, 232, 240, .72);
   --border-mid: var(--horizon-border-strong);
   --border-focus: var(--horizon-blue);
   --accent-blue: var(--horizon-blue);
@@ -83,6 +90,12 @@
   --accent-blue-hover: rgba(59, 130, 246, .17);
   --accent-blue-active: rgba(59, 130, 246, .24);
   --focus-ring: var(--horizon-blue);
+  --success: var(--horizon-success);
+  --success-dim: var(--horizon-success-soft);
+  --warning: var(--horizon-warning);
+  --warning-dim: var(--horizon-warning-soft);
+  --error: var(--horizon-danger);
+  --error-dim: var(--horizon-danger-soft);
   --background: var(--horizon-canvas);
   --foreground: var(--horizon-text);
   --surface: var(--horizon-surface);
@@ -97,10 +110,10 @@
   --muted: var(--horizon-surface);
   --muted-foreground: var(--horizon-muted);
   --accent: var(--horizon-blue-soft);
-  --accent-foreground: #1e4f9d;
+  --accent-foreground: #1d4ed8;
   --overlay: var(--horizon-overlay);
-  --font-sans: Manrope, system-ui, sans-serif;
-  --font-display: Manrope, system-ui, sans-serif;
+  --font-sans: Geist, system-ui, sans-serif;
+  --font-display: Geist, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -110,28 +123,34 @@
   --radius-full: 9999px;
   --shadow-xs: var(--horizon-shadow-inset);
   --shadow-sm: var(--horizon-shadow-inset);
-  --shadow-md: 0 10px 24px rgba(28, 28, 28, .07);
+  --shadow-md: 0 10px 24px rgba(15, 23, 42, .07);
   --shadow-lg: var(--horizon-shadow-float);
-  --shadow-xl: 0 28px 64px rgba(28, 28, 28, .12);
-  --shadow-overlay: 0 32px 80px rgba(28, 28, 28, .16);
+  --shadow-xl: 0 28px 64px rgba(15, 23, 42, .12);
+  --shadow-overlay: 0 32px 80px rgba(15, 23, 42, .16);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --horizon-canvas: #0e1116;
-  --horizon-surface: #151a22;
-  --horizon-raised: #1b2230;
-  --horizon-input: #111720;
-  --horizon-border: #263244;
+  --horizon-canvas: #0a0d12;
+  --horizon-surface: #101722;
+  --horizon-raised: #172033;
+  --horizon-input: #0d1420;
+  --horizon-border: #26354a;
   --horizon-border-strong: #3a4a60;
   --horizon-text: #f8fafc;
   --horizon-ink: #ffffff;
-  --horizon-muted: #aab4c3;
-  --horizon-subtle: #8d98a8;
-  --horizon-blue: #4f8cff;
-  --horizon-blue-hover: #6b9bff;
-  --horizon-blue-ink: #08111f;
-  --horizon-blue-soft: rgba(79, 140, 255, .14);
+  --horizon-muted: #a8b6c8;
+  --horizon-subtle: #8190a5;
+  --horizon-blue: #60a5fa;
+  --horizon-blue-hover: #93c5fd;
+  --horizon-blue-ink: #07111f;
+  --horizon-blue-soft: rgba(96, 165, 250, .14);
+  --horizon-success: #4ade80;
+  --horizon-success-soft: rgba(74, 222, 128, .12);
+  --horizon-warning: #fbbf24;
+  --horizon-warning-soft: rgba(251, 191, 36, .12);
+  --horizon-danger: #f87171;
+  --horizon-danger-soft: rgba(248, 113, 113, .12);
   --horizon-overlay: rgba(4, 7, 12, .72);
   --horizon-shadow-inset: inset 0 0 0 .5px rgba(255, 255, 255, .12);
   --horizon-shadow-float: 0 20px 42px rgba(0, 0, 0, .34);
@@ -156,6 +175,13 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* The landing has a few historical inline font declarations. Keep the product
+   voice consistent without affecting the monospace code treatment elsewhere. */
+body[data-coden-surface="landing-v3"] > div,
+body[data-coden-surface="landing-v3"] [style*="font-family"] {
+  font-family: var(--font-sans) !important;
+}
+
 :where(h1, h2, h3, h4, h5, h6) {
   font-family: var(--font-sans) !important;
   font-style: normal !important;
@@ -178,26 +204,46 @@ body {
 
 :where(button, [role="button"]):active:not(:disabled) { transform: scale(.98); }
 
-/* One scrolling contract across the product shell. Native browser rails were
-   appearing at full width in the dashboard and inside long composer values,
-   which made the surfaces look like unrelated legacy pages. Keep every
-   container scrollable, but let the shell provide the visual context instead
-   of a second heavy rail. The landing page keeps its own visual treatment. */
+/* Scrollbars remain discoverable for overflowing panels without becoming a
+   heavy second column in the dashboard or composer. */
 :where(
   body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
   body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
 ) {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
 :where(
   body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
   body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
 )::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+  width: 6px;
+  height: 6px;
+}
+
+:where(
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
+)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+:where(
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
+):hover {
+  scrollbar-color: color-mix(in srgb, var(--horizon-subtle) 58%, transparent) transparent;
+}
+
+:where(
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]),
+  body[data-coden-surface]:not([data-coden-surface="landing-v3"]) *
+):hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--horizon-subtle) 58%, transparent);
 }
 
 /* Product controls use the rounded, compact interaction language. */
@@ -341,8 +387,7 @@ body[data-coden-surface="landing-v3"] #top h1 {
 
 body[data-coden-surface="landing-v3"] #top h1,
 body[data-coden-surface="landing-v3"] main h2,
-body[data-coden-surface="landing-v3"] main h3,
-body[data-coden-surface="landing-v3"] [style*="Instrument Serif"] {
+body[data-coden-surface="landing-v3"] main h3 {
   font-family: var(--font-sans) !important;
   font-style: normal !important;
 }
@@ -485,7 +530,7 @@ body[data-coden-surface="dashboard"] {
      theme-independent value owned by dashboard-react.css; this block would
      only shadow it with a copy to keep in sync. The panel that sits on the
      mesh does take Horizon's palette, because that one is per-theme. */
-  --dashboard-panel: color-mix(in srgb, var(--horizon-canvas) 88%, transparent);
+  --dashboard-panel: var(--horizon-surface);
   --dashboard-panel-border: var(--horizon-border);
   --dashboard-panel-shadow: 0 30px 80px rgba(6, 10, 24, .45);
 }
@@ -498,11 +543,6 @@ body[data-coden-surface="dashboard"] .coden-dashboard-main {
   scrollbar-gutter: auto;
   overscroll-behavior-y: contain;
   scroll-behavior: smooth;
-}
-
-body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-backdrop {
@@ -626,51 +666,49 @@ body[data-coden-surface="dashboard"] .coden-dashboard-project-card-link:hover .c
    with the content. It is intentionally strongest at the outer shell and
    recedes behind readable, opaque working surfaces. */
 body[data-coden-surface="landing-v3"] #top {
-  background-color: #f7faff !important;
+  background-color: #f8fafc !important;
   background-image:
-    radial-gradient(56% 48% at 50% 4%, rgba(86, 150, 255, .20), transparent 72%),
-    linear-gradient(155deg, #fbfdff 0%, #f1f6ff 56%, #e9f3ff 100%) !important;
+    radial-gradient(56% 48% at 50% 4%, rgba(37, 99, 235, .13), transparent 72%),
+    radial-gradient(44% 42% at 3% 48%, rgba(96, 165, 250, .07), transparent 76%) !important;
 }
 
 body:has(#coden-dashboard-react-root) {
-  background-color: #edf5ff !important;
+  background-color: #f8fafc !important;
   background-image:
-    radial-gradient(70% 72% at 4% 4%, rgba(76, 125, 255, .34), transparent 72%),
-    radial-gradient(58% 64% at 96% 100%, rgba(31, 189, 222, .22), transparent 70%),
-    linear-gradient(145deg, #eff6ff 0%, #e8f1ff 48%, #edf9ff 100%) !important;
+    radial-gradient(70% 72% at 4% 4%, rgba(37, 99, 235, .12), transparent 72%),
+    radial-gradient(58% 64% at 96% 100%, rgba(96, 165, 250, .06), transparent 70%) !important;
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-shell { background: transparent; }
 body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
-  background: color-mix(in srgb, var(--horizon-surface) 90%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(115%);
-  backdrop-filter: blur(18px) saturate(115%);
+  background: var(--dashboard-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 body[data-coden-surface="dashboard"] .coden-dashboard-main {
-  background-color: color-mix(in srgb, var(--horizon-canvas) 90%, transparent);
-  background-image: linear-gradient(145deg, rgba(255, 255, 255, .93) 0%, rgba(237, 246, 255, .88) 100%);
-  -webkit-backdrop-filter: blur(18px) saturate(115%);
-  backdrop-filter: blur(18px) saturate(115%);
+  background-color: var(--dashboard-panel);
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 :root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top {
-  background-color: #0e1522 !important;
+  background-color: #0a0d12 !important;
   background-image:
-    radial-gradient(58% 50% at 50% 2%, rgba(59, 130, 246, .28), transparent 72%),
-    linear-gradient(155deg, #0e1522 0%, #101d33 54%, #101827 100%) !important;
+    radial-gradient(58% 50% at 50% 2%, rgba(96, 165, 250, .16), transparent 72%),
+    radial-gradient(46% 44% at 98% 52%, rgba(37, 99, 235, .08), transparent 78%) !important;
 }
 
 :root[data-theme="dark"] body:has(#coden-dashboard-react-root) {
-  background-color: #0d1420 !important;
+  background-color: #0a0d12 !important;
   background-image:
-    radial-gradient(72% 70% at 2% 0%, rgba(37, 99, 235, .36), transparent 74%),
-    radial-gradient(62% 70% at 98% 100%, rgba(8, 145, 178, .24), transparent 72%),
-    linear-gradient(145deg, #0d1420 0%, #101c32 50%, #0d1725 100%) !important;
+    radial-gradient(72% 70% at 2% 0%, rgba(96, 165, 250, .14), transparent 74%),
+    radial-gradient(62% 70% at 98% 100%, rgba(37, 99, 235, .07), transparent 72%) !important;
 }
 
 :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-main {
-  background-color: color-mix(in srgb, var(--horizon-canvas) 90%, transparent);
-  background-image: linear-gradient(145deg, rgba(14, 17, 22, .94) 0%, rgba(14, 29, 51, .90) 100%);
+  background-color: var(--dashboard-panel);
+  background-image: none;
 }
 
 /* The landing composer is the product's primary control. Keep it neutral in
@@ -698,15 +736,15 @@ body[data-coden-surface="landing-v3"] #top .input-wrapper .coden-agent-mode-trig
 }
 
 :root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper {
-  background: #111720 !important;
-  border-color: #263244 !important;
+  background: #0d1420 !important;
+  border-color: #26354a !important;
   box-shadow: 0 16px 36px rgba(0, 0, 0, .28) !important;
 }
 
 :root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper textarea { color: var(--horizon-text) !important; }
 :root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper .coden-agent-mode-trigger {
-  border-color: #263244 !important;
-  background: #151a22 !important;
+  border-color: #26354a !important;
+  background: #101722 !important;
   color: var(--horizon-muted) !important;
 }
 

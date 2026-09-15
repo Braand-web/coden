@@ -98,13 +98,13 @@
 
     /* Design tokens mirrored from dashboard.html (single source of truth) — light */
     :root[data-theme="light"] {
-      --bg: #fafafa;
+      --bg: #f8fafc;
       --bg-surface: #ffffff;
-      --bg-panel: #f4f4f5;
+      --bg-panel: #f1f5f9;
       --bg-input: #ffffff;
-      --border: #eceae4;
-      --border-light: #f1f0ec;
-      --border-mid: #dedbd2;
+      --border: #e2e8f0;
+      --border-light: #f1f5f9;
+      --border-mid: #cbd5e1;
       --border-focus: rgba(59, 130, 246, 0.36);
       --accent: #3b82f6;
       --accent-spark: #3b82f6;
@@ -116,9 +116,9 @@
       --accent-dim: rgba(59, 130, 246, 0.10);
       --accent-hover: rgba(59, 130, 246, 0.14);
       --accent-active: rgba(59, 130, 246, 0.18);
-      --text: #1c1c1c;
-      --text-muted: #5f5f5d;
-      --text-sub: #77736b;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-sub: #94a3b8;
       --text-dark: #52525b;
       --success: #22c55e;
       --success-dim: rgba(34, 197, 94, 0.08);
@@ -128,9 +128,9 @@
       --error-dim: rgba(220, 38, 38, 0.08);
       --grain-opacity: 0.018;
       --topbar-bg: #ffffff;
-      --topbar-border: #eceae4;
-      --topbar-fg: rgba(28, 28, 28, 0.92);
-      --topbar-fg-muted: rgba(28, 28, 28, 0.55);
+      --topbar-border: #e2e8f0;
+      --topbar-fg: rgba(15, 23, 42, 0.92);
+      --topbar-fg-muted: rgba(100, 116, 139, 0.88);
       --topbar-hover: rgba(9, 9, 11, 0.06);
       --topbar-focus-ring: rgba(9, 9, 11, 0.30);
       --blue: var(--accent-blue);
@@ -139,24 +139,25 @@
 
     * {
       box-sizing: border-box;
-      /* Keep scrolling available without exposing the browser's heavy native
-         rails in the workspace. The chat, code editor and preview still scroll
-         with wheel, touch, keyboard and assistive technology. */
-      scrollbar-width: none !important;
-      -ms-overflow-style: none !important;
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
     }
 
-    /* Hide the visual rail in every Builder-owned scroll container. */
+    /* Native scrolling stays available. Rails are intentionally discreet until
+       the user interacts with a scrollable surface. */
     ::-webkit-scrollbar {
-      display: none !important;
-      width: 0 !important;
-      height: 0 !important;
+      width: 6px;
+      height: 6px;
     }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+    *:hover { scrollbar-color: rgba(100, 116, 139, 0.46) transparent; }
+    *:hover::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.46); }
 
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: "Instrument Sans", sans-serif;
+      font-family: var(--font-sans, Geist, system-ui, sans-serif);
       -webkit-font-smoothing: antialiased;
       font-feature-settings: "ss01","cv01";
       margin: 0;
@@ -4348,15 +4349,16 @@
       min-height: 0;
     }
     .code-screen-layout.is-empty .code-empty-state {
-      border: 0;
-      background: transparent;
-      box-shadow: none;
-      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-sm);
+      padding: 24px;
       text-align: center;
     }
     .code-screen-layout.is-empty .code-empty-state h3 {
       justify-content: center;
-      font-family: "Instrument Sans", system-ui, sans-serif;
+      font-family: var(--font-sans, Geist, system-ui, sans-serif);
       font-style: normal;
       font-size: 15px;
       font-weight: 700;
@@ -4377,6 +4379,37 @@
     }
     .code-empty-action:hover { border-color: var(--border-mid); background: var(--accent-dim); }
     .chat-input-row #model-select-btn { display: none !important; }
+
+    /* The workspace is made of independent surfaces. On desktop the right
+       context is a rounded editor frame, not a square slab welded to the
+       canvas. Every active view is clipped by the same frame, so Code, Cloud,
+       analysis and preview transition without exposing sharp corners. */
+    @media (min-width: 761px) {
+      .editor-pane {
+        margin: 12px 12px 12px 0;
+        padding-top: 0 !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-lg);
+        background: var(--bg-surface) !important;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .viewport-content-holder {
+        border-radius: inherit;
+        overflow: hidden;
+        background: var(--bg-surface);
+      }
+
+      .viewport-content-holder > :is(.code-screen-layout, .preview-screen-panel, .analysis-screen-panel) {
+        border-radius: inherit;
+        overflow: hidden;
+      }
+
+      .code-screen-layout.is-empty .editor-main-scroll {
+        background: var(--bg-surface);
+        padding: 32px;
+      }
+    }
   </style>
 </head>
 <body data-coden-surface="builder">

@@ -55,7 +55,7 @@
 body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
   min-height: 52px !important;
   max-height: 240px !important;
-  overflow-y: hidden;
+  overflow-y: auto;
   resize: none !important;
   transition: height 220ms var(--coden-composer-ease);
 }

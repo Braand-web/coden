@@ -62,7 +62,7 @@ function injectSharedPublicStyles() {
 
     .coden-public-theme-toggle:hover {
       color: var(--text, var(--seo-text, #181613));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #fffefa)) 92%, transparent);
+      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 92%, transparent);
       border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
       transform: translateY(-1px);
     }
@@ -85,7 +85,7 @@ function injectSharedPublicStyles() {
       border: 1px solid var(--border, var(--seo-border, rgba(20, 20, 20, 0.14)));
       border-radius: 999px;
       color: var(--text-muted, var(--seo-muted, #777166));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #fffefa)) 86%, transparent);
+      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 86%, transparent);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       text-decoration: none;
@@ -104,7 +104,7 @@ function injectSharedPublicStyles() {
     .back-home-link:hover {
       color: var(--text, var(--seo-text, #181613));
       border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #fffefa)) 96%, transparent);
+      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 96%, transparent);
       transform: translateX(-2px);
     }
 
@@ -122,7 +122,7 @@ function injectSharedPublicStyles() {
       border-radius: 28px;
       background:
         radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--accent, #2563eb) 10%, transparent), transparent 32%),
-        color-mix(in srgb, var(--bg-surface, var(--seo-surface, #fffefa)) 92%, transparent);
+        color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 92%, transparent);
       box-shadow: var(--coden-shadow-card, 0 20px 70px rgba(24, 22, 17, 0.10));
     }
 
@@ -165,7 +165,7 @@ function injectSharedPublicStyles() {
     .coden-shared-faq-item:hover {
       transform: translateY(-1px);
       border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #fffefa)) 96%, transparent);
+      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 96%, transparent);
     }
 
     .coden-shared-faq-question {

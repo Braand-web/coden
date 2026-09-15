@@ -20,6 +20,7 @@ import { AgentMessage } from './components/agent/agent-message';
 import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState, type DecisionNotice } from './components/agent/agent-parts';
 import type { AgentEnvelope } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
+import "./styles/agent-conversation.css";
 import "./styles/agent-surface.css";
 
 hljs.registerLanguage("bash", bash);
@@ -97,6 +98,7 @@ type AttachmentEntry = { id: string; name: string; url?: string; mediaType?: str
 
 type LiveRunState = {
   chat?: AgentMessageState;
+  lastSequence?: number;
   status: "active" | "done" | "failed" | "cancelled";
   intentText: string;
   activeText: string;
@@ -352,10 +354,75 @@ function cloneMessages(messages: CodenConversationMessage[]) {
   }));
 }
 
-export function createStore() {
-  let messages: CodenConversationMessage[] = [];
+const CONVERSATION_STORAGE_PREFIX = 'coden:conversation:v1:';
+const MAX_PERSISTED_MESSAGES = 120;
+const STREAM_INTERRUPTED_COPY = 'La connexion a été interrompue. Votre travail déjà enregistré reste disponible.';
+
+function conversationStorageKey() {
+  if (typeof window === 'undefined') return `${CONVERSATION_STORAGE_PREFIX}server`;
+  const search = typeof window.location?.search === 'string' ? window.location.search : '';
+  const project = new URLSearchParams(search).get('project') || 'new-project';
+  return `${CONVERSATION_STORAGE_PREFIX}${project.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) || 'new-project'}`;
+}
+
+function persistedMessage(message: CodenConversationMessage): CodenConversationMessage {
+  const copy = JSON.parse(JSON.stringify({ ...message, actions: [] })) as CodenConversationMessage;
+  if (!copy.working) return copy;
+
+  copy.working = false;
+  if (copy.liveRun) {
+    copy.liveRun.status = 'failed';
+    copy.liveRun.activeText = '';
+    copy.liveRun.summary = copy.liveRun.summary || STREAM_INTERRUPTED_COPY;
+    copy.liveRun.chat = copy.liveRun.chat
+      ? { ...copy.liveRun.chat, status: 'error', thinking: false, activity: null, error: STREAM_INTERRUPTED_COPY }
+      : copy.liveRun.chat;
+  }
+  return copy;
+}
+
+function restorePersistedMessages(storageKey: string): CodenConversationMessage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((message): message is CodenConversationMessage => Boolean(message && typeof message.id === 'string' && typeof message.role === 'string' && typeof message.content === 'string'))
+      .slice(-MAX_PERSISTED_MESSAGES)
+      .map((message) => ({ ...message, actions: [] }));
+  } catch {
+    return [];
+  }
+}
+
+export function createStore(storageKey = conversationStorageKey()) {
+  let messages: CodenConversationMessage[] = restorePersistedMessages(storageKey);
   const listeners = new Set<() => void>();
   let raf = 0;
+  let persistFrame = 0;
+
+  const persist = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(messages.slice(-MAX_PERSISTED_MESSAGES).map(persistedMessage)));
+    } catch {
+      // Persistence is an enhancement. A full or unavailable session store
+      // must never prevent the current run from continuing in memory.
+    }
+  };
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', persist);
+  }
+
+  const schedulePersist = () => {
+    if (persistFrame || typeof window === 'undefined') return;
+    persistFrame = window.requestAnimationFrame(() => {
+      persistFrame = 0;
+      persist();
+    });
+  };
 
   const notify = () => {
     if (raf) return;
@@ -367,6 +434,7 @@ export function createStore() {
 
   const mutate = (callback: () => void) => {
     callback();
+    schedulePersist();
     notify();
   };
 
@@ -516,6 +584,7 @@ export function createStore() {
         if (!message) return;
         const run = ensureLiveRun(message);
         run.chat = reduceAgentMessage(run.chat || { ...EMPTY_MESSAGE, parts: [], runId: event.runId }, event.payload, event.seq);
+        if (run.chat.lastSequence !== undefined) run.lastSequence = run.chat.lastSequence;
         const streamedText = run.chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n');
         if (streamedText) message.content = streamedText;
         message.working = run.chat.status === 'streaming';
@@ -575,6 +644,7 @@ export function createStore() {
     clear() {
       mutate(() => {
         messages = [];
+        if (typeof window !== 'undefined') window.sessionStorage.removeItem(storageKey);
       });
     },
     messages() {
@@ -1547,17 +1617,30 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
 
 function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof createStore>; host: HTMLElement; callbacks: ConversationCallbacks }) {
   const [version, setVersion] = useState(0);
+  const [hasUnread, setHasUnread] = useState(false);
   const messages = store.messages();
   const lastLengthRef = useRef(0);
   const scrollFrameRef = useRef<number | null>(null);
+  const isAtBottomRef = useRef(true);
   const isStreaming = messages.some((m) => m.role === "assistant" && m.working);
 
   useEffect(() => store.subscribe(() => setVersion((value) => value + 1)), [store]);
 
   useEffect(() => {
+    const syncScrollPosition = () => {
+      const distanceFromBottom = host.scrollHeight - host.clientHeight - host.scrollTop;
+      isAtBottomRef.current = distanceFromBottom < 36;
+      if (isAtBottomRef.current) setHasUnread(false);
+    };
+    syncScrollPosition();
+    host.addEventListener('scroll', syncScrollPosition, { passive: true });
+    return () => host.removeEventListener('scroll', syncScrollPosition);
+  }, [host]);
+
+  useEffect(() => {
     void version;
     const distanceFromBottom = host.scrollHeight - host.clientHeight - host.scrollTop;
-    const shouldFollow = distanceFromBottom < 180 || (messages.length !== lastLengthRef.current && distanceFromBottom < 420);
+    const shouldFollow = isAtBottomRef.current || (messages.length !== lastLengthRef.current && distanceFromBottom < 96);
     if (shouldFollow && scrollFrameRef.current === null) {
       const startTop = host.scrollTop;
       const startedAt = performance.now();
@@ -1573,6 +1656,8 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
         }
       };
       scrollFrameRef.current = window.requestAnimationFrame(animate);
+    } else if (version > 0) {
+      setHasUnread(true);
     }
 
     lastLengthRef.current = messages.length;
@@ -1581,6 +1666,12 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
   }, []);
+
+  const revealNewest = () => {
+    isAtBottomRef.current = true;
+    setHasUnread(false);
+    host.scrollTo({ top: Math.max(0, host.scrollHeight - host.clientHeight), behavior: 'smooth' });
+  };
 
   return (
     <div className="coden-conversation-react">
@@ -1592,6 +1683,11 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
           <p>Les messages apparaitront ici pendant que Coden repond, planifie ou construit.</p>
         </div>
       )}
+      {hasUnread ? (
+        <button type="button" className="coden-conversation-new-messages" onClick={revealNewest}>
+          Nouveaux messages
+        </button>
+      ) : null}
     </div>
   );
 }

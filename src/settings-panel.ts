@@ -329,9 +329,9 @@ function installSettingsStyle() {
       display: flex;
       flex-direction: column;
       width: min(620px, 100vw);
-      background: var(--bg, #fcfbf8);
-      color: var(--text, #1c1c1c);
-      border-left: 1px solid var(--border, #eceae4);
+      background: var(--bg, #f8fafc);
+      color: var(--text, #0f172a);
+      border-left: 1px solid var(--border, #e2e8f0);
       box-shadow: -24px 0 80px rgba(28,28,28,.12);
       transform: translateX(100%);
       opacity: 0;
@@ -375,7 +375,7 @@ function installSettingsStyle() {
       justify-content: center;
       width: 28px;
       height: 28px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 7px;
       background: transparent;
       color: var(--text-sub, #77736b);
@@ -404,9 +404,9 @@ function installSettingsStyle() {
     }
 
     .settings-tab.active {
-      border-color: var(--border-focus, var(--border, #eceae4));
-      background: var(--accent-blue-soft, var(--bg-elevated, #f7f4ed));
-      color: var(--accent-blue, var(--text, #1c1c1c));
+      border-color: var(--border-focus, var(--border, #e2e8f0));
+      background: var(--accent-blue-soft, var(--bg-elevated, #f1f5f9));
+      color: var(--accent-blue, var(--text, #0f172a));
     }
 
     .settings-content {
@@ -431,7 +431,7 @@ function installSettingsStyle() {
       align-items: center;
       height: 24px;
       padding: 0 9px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 999px;
       background: var(--bg-surface, #fffdf8);
       color: var(--text-sub, #77736b);
@@ -442,7 +442,7 @@ function installSettingsStyle() {
 
     .settings-status[data-tone="saving"] {
       color: var(--accent-blue, #2563eb);
-      border-color: color-mix(in srgb, var(--accent-blue, #2563eb) 32%, var(--border, #eceae4));
+      border-color: color-mix(in srgb, var(--accent-blue, #2563eb) 32%, var(--border, #e2e8f0));
     }
 
     .settings-status[data-tone="success"] {
@@ -462,7 +462,7 @@ function installSettingsStyle() {
     }
 
     .settings-card {
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 14px;
       background: var(--bg-surface, #fffdf8);
       padding: 14px;
@@ -474,7 +474,7 @@ function installSettingsStyle() {
     }
 
     .settings-card:hover {
-      border-color: var(--border-focus, var(--border, #eceae4));
+      border-color: var(--border-focus, var(--border, #e2e8f0));
       transform: translateY(-1px);
     }
 
@@ -507,7 +507,7 @@ function installSettingsStyle() {
       border-radius: 16px;
       display: grid;
       place-items: center;
-      color: var(--bg, #fcfbf8);
+      color: var(--bg, #f8fafc);
       background: var(--accent-blue, #2563eb);
       font-size: 18px;
       font-weight: 900;
@@ -522,9 +522,9 @@ function installSettingsStyle() {
       min-height: 24px;
       padding: 0 9px;
       border-radius: 999px;
-      border: 1px solid var(--border, #eceae4);
-      background: var(--bg-elevated, #f7f4ed);
-      color: var(--text, #1c1c1c);
+      border: 1px solid var(--border, #e2e8f0);
+      background: var(--bg-elevated, #f1f5f9);
+      color: var(--text, #0f172a);
       font-size: 10px;
       font-weight: 900;
       letter-spacing: .06em;
@@ -562,10 +562,10 @@ function installSettingsStyle() {
     .settings-field textarea {
       width: 100%;
       min-height: 38px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 10px;
-      background: var(--bg, #fcfbf8);
-      color: var(--text, #1c1c1c);
+      background: var(--bg, #f8fafc);
+      color: var(--text, #0f172a);
       padding: 9px 11px;
       outline: none;
       font: inherit;
@@ -604,7 +604,7 @@ function installSettingsStyle() {
     .settings-row strong {
       display: block;
       margin-bottom: 3px;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 13px;
     }
 
@@ -622,11 +622,11 @@ function installSettingsStyle() {
     .settings-action-button,
     .settings-danger-button {
       min-height: 32px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 9px;
       padding: 0 11px;
-      background: var(--bg, #fcfbf8);
-      color: var(--text, #1c1c1c);
+      background: var(--bg, #f8fafc);
+      color: var(--text, #0f172a);
       font-size: 12px;
       font-weight: 850;
       cursor: pointer;
@@ -638,7 +638,7 @@ function installSettingsStyle() {
     .settings-action-button:hover,
     .settings-danger-button:hover {
       transform: translateY(-1px);
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
     }
 
     .settings-danger-button {
@@ -677,13 +677,13 @@ function installSettingsStyle() {
       gap: 12px;
       min-width: 0;
       padding: 14px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 12px;
-      background: var(--bg, #fcfbf8);
+      background: var(--bg, #f8fafc);
     }
 
     .billing-plan-card[data-plan="pro"] {
-      border-color: color-mix(in srgb, var(--accent-blue, #2563eb) 35%, var(--border, #eceae4));
+      border-color: color-mix(in srgb, var(--accent-blue, #2563eb) 35%, var(--border, #e2e8f0));
     }
 
     .billing-plan-head,
@@ -701,10 +701,10 @@ function installSettingsStyle() {
     .billing-tier-select {
       width: 100%;
       height: 36px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 9px;
       padding: 0 10px;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       background: var(--bg-surface, #fffdf8);
       font: inherit;
       font-size: 12px;
@@ -739,7 +739,7 @@ function installSettingsStyle() {
 
     .billing-plan-card .settings-action-button {
       width: 100%;
-      color: var(--bg, #fcfbf8);
+      color: var(--bg, #f8fafc);
       border-color: var(--accent-blue, #2563eb);
       background: var(--accent-blue, #2563eb);
     }
@@ -766,10 +766,10 @@ function installSettingsStyle() {
 
     .settings-segment button {
       min-height: 32px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 999px;
       padding: 0 12px;
-      background: var(--bg, #fcfbf8);
+      background: var(--bg, #f8fafc);
       color: var(--text-sub, #77736b);
       font-size: 12px;
       font-weight: 850;
@@ -793,12 +793,12 @@ function installSettingsStyle() {
       border: 1px solid var(--border-light, rgba(236,234,228,.78));
       border-radius: 11px;
       padding: 10px;
-      background: var(--bg, #fcfbf8);
+      background: var(--bg, #f8fafc);
     }
 
     .settings-integration strong {
       display: block;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 12px;
       margin-bottom: 5px;
     }
@@ -835,7 +835,7 @@ function installSettingsStyle() {
       border: 1px solid var(--border-light, rgba(236,234,228,.78));
       border-radius: 10px;
       padding: 10px;
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
     }
 
     .usage-summary-label,
@@ -851,7 +851,7 @@ function installSettingsStyle() {
 
     .usage-summary-value,
     .cloud-summary-value {
-      color: var(--accent-blue, var(--text, #1c1c1c));
+      color: var(--accent-blue, var(--text, #0f172a));
       font-size: 18px;
       font-weight: 850;
       letter-spacing: -.03em;
@@ -863,7 +863,7 @@ function installSettingsStyle() {
       border: 1px solid var(--border-light, rgba(236,234,228,.78));
       border-radius: 10px;
       padding: 10px;
-      background: var(--bg, #fcfbf8);
+      background: var(--bg, #f8fafc);
     }
 
     .usage-row + .usage-row,
@@ -881,7 +881,7 @@ function installSettingsStyle() {
 
     .usage-row-title,
     .model-rate-title {
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 12px;
       font-weight: 800;
     }
@@ -896,11 +896,11 @@ function installSettingsStyle() {
 
     .usage-credit-pill,
     .model-tier-pill {
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 999px;
       padding: 3px 7px;
-      background: var(--bg-elevated, #f7f4ed);
-      color: var(--text, #1c1c1c);
+      background: var(--bg-elevated, #f1f5f9);
+      color: var(--text, #0f172a);
       font-size: 10px;
       font-weight: 850;
       white-space: nowrap;
@@ -917,7 +917,7 @@ function installSettingsStyle() {
       border: 1px solid var(--border-light, rgba(236,234,228,.78));
       border-radius: 8px;
       padding: 7px;
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
     }
 
     .model-credit-cell span {
@@ -931,16 +931,16 @@ function installSettingsStyle() {
     }
 
     .model-credit-cell strong {
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 11px;
     }
 
     .usage-empty {
-      border: 1px dashed var(--border, #eceae4);
+      border: 1px dashed var(--border, #e2e8f0);
       border-radius: 10px;
       padding: 12px;
       color: var(--text-sub, #77736b);
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -951,25 +951,25 @@ function installSettingsStyle() {
       gap: 8px;
       padding: 14px 16px;
       border-top: 1px solid var(--border-light, rgba(236,234,228,.78));
-      background: var(--bg, #fcfbf8);
+      background: var(--bg, #f8fafc);
     }
 
     .settings-footer button {
       height: 30px;
-      border: 1px solid var(--border, #eceae4);
+      border: 1px solid var(--border, #e2e8f0);
       border-radius: 8px;
       padding: 0 12px;
       background: transparent;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 12px;
       font-weight: 800;
       cursor: pointer;
     }
 
     .settings-footer .primary {
-      background: var(--text, #1c1c1c);
-      color: var(--bg, #fcfbf8);
-      border-color: var(--text, #1c1c1c);
+      background: var(--text, #0f172a);
+      color: var(--bg, #f8fafc);
+      border-color: var(--text, #0f172a);
     }
 
     /* Shared centered settings workspace */
@@ -999,7 +999,7 @@ function installSettingsStyle() {
       max-height: calc(100dvh - 40px);
       display: block;
       overflow: hidden;
-      border: 1px solid var(--border-mid, var(--border, #eceae4));
+      border: 1px solid var(--border-mid, var(--border, #e2e8f0));
       border-radius: 16px;
       background: var(--bg-surface, #fffdf8);
       box-shadow: 0 30px 96px rgba(0, 0, 0, .34);
@@ -1033,7 +1033,7 @@ function installSettingsStyle() {
       flex-direction: column;
       gap: 12px;
       padding: 16px 12px 14px;
-      background: color-mix(in srgb, var(--bg, #fcfbf8) 92%, transparent);
+      background: color-mix(in srgb, var(--bg, #f8fafc) 92%, transparent);
       border-right: 1px solid var(--border-light, rgba(236,234,228,.78));
     }
 
@@ -1047,7 +1047,7 @@ function installSettingsStyle() {
       border: 1px solid transparent;
       border-radius: 11px;
       padding: 0 11px;
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
       color: var(--text-sub, #77736b);
       transition:
         border-color 140ms cubic-bezier(.22, 1, .36, 1),
@@ -1055,7 +1055,7 @@ function installSettingsStyle() {
     }
 
     .settings-search:focus-within {
-      border-color: var(--border-focus, var(--border, #eceae4));
+      border-color: var(--border-focus, var(--border, #e2e8f0));
       background: var(--bg-input, var(--bg-surface, #fffdf8));
     }
 
@@ -1073,7 +1073,7 @@ function installSettingsStyle() {
       border: 0;
       outline: 0;
       background: transparent;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font: inherit;
       font-size: 14px;
     }
@@ -1113,7 +1113,7 @@ function installSettingsStyle() {
       border: 0;
       border-radius: 10px;
       padding: 0 10px;
-      color: var(--text-muted, #5f5f5d);
+      color: var(--text-muted, #64748b);
       font-size: 13px;
       font-weight: 600;
       text-align: left;
@@ -1124,15 +1124,15 @@ function installSettingsStyle() {
     }
 
     .settings-tab:hover {
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       background: var(--accent-dim, rgba(28,28,28,.06));
       transform: translateX(1px);
     }
 
     .settings-tab.active {
       border: 0;
-      background: var(--bg-elevated, #f7f4ed);
-      color: var(--text, #1c1c1c);
+      background: var(--bg-elevated, #f1f5f9);
+      color: var(--text, #0f172a);
     }
 
     .settings-tab[hidden] {
@@ -1147,7 +1147,7 @@ function installSettingsStyle() {
     }
 
     .settings-sidebar-footer strong {
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 12px;
     }
 
@@ -1195,14 +1195,14 @@ function installSettingsStyle() {
       height: 30px;
       border: 0;
       border-radius: 9px;
-      color: var(--text-muted, #5f5f5d);
+      color: var(--text-muted, #64748b);
       transition:
         color 140ms cubic-bezier(.22, 1, .36, 1),
         background 140ms cubic-bezier(.22, 1, .36, 1);
     }
 
     .settings-close:hover {
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       background: var(--accent-dim, rgba(28,28,28,.06));
     }
 
@@ -1221,7 +1221,7 @@ function installSettingsStyle() {
       content: attr(data-settings-heading);
       display: block;
       margin: 2px 0 22px;
-      color: var(--text, #1c1c1c);
+      color: var(--text, #0f172a);
       font-size: 18px;
       font-weight: 760;
       letter-spacing: -.025em;
@@ -1292,7 +1292,7 @@ function installSettingsStyle() {
       min-height: 38px;
       border-color: transparent;
       border-radius: 10px;
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
     }
 
     .settings-field textarea {
@@ -1313,7 +1313,7 @@ function installSettingsStyle() {
     .cloud-summary-card,
     .usage-row,
     .model-rate-row {
-      background: var(--bg-elevated, #f7f4ed);
+      background: var(--bg-elevated, #f1f5f9);
     }
 
     .settings-footer {

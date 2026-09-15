@@ -21,10 +21,10 @@ function installAiInputStyle() {
 
     .coden-ai-input.input-wrapper,
     .coden-ai-input {
-      border: 1px solid var(--horizon-border, var(--border, #eceae4)) !important;
+      border: 1px solid var(--horizon-border, var(--border, #e2e8f0)) !important;
       border-radius: 24px !important;
-      background: var(--horizon-surface, var(--bg-input, #fffefa)) !important;
-      color: var(--text, #1c1c1c) !important;
+      background: var(--horizon-surface, var(--bg-input, #ffffff)) !important;
+      color: var(--text, #0f172a) !important;
       box-shadow: 0 12px 32px rgba(28,28,28,.07) !important;
       overflow: visible !important;
       text-align: left !important;
@@ -43,7 +43,7 @@ function installAiInputStyle() {
     .coden-ai-input textarea,
     .coden-ai-input #ai-textarea,
     .coden-ai-input #chat-textarea-box {
-      color: var(--text, #1c1c1c) !important;
+      color: var(--text, #0f172a) !important;
       text-align: left !important;
     }
 
@@ -96,7 +96,7 @@ function installAiInputStyle() {
       min-height: var(--chat-action-height) !important;
       height: var(--chat-action-height) !important;
       border-radius: var(--chat-action-radius) !important;
-      border: 1px solid var(--border, #eceae4) !important;
+      border: 1px solid var(--border, #e2e8f0) !important;
       background: transparent !important;
       color: var(--text-sub, #77736b) !important;
       box-shadow: none !important;
@@ -172,9 +172,9 @@ function installAiInputStyle() {
 
     .coden-ai-input .submit-btn.active,
     .coden-ai-input .submit-btn:not(:disabled).active {
-      background: var(--accent-blue, var(--text, #1c1c1c)) !important;
-      color: var(--bg, #fcfbf8) !important;
-      border-color: var(--accent-blue, var(--text, #1c1c1c)) !important;
+      background: var(--accent-blue, var(--text, #0f172a)) !important;
+      color: var(--bg, #f8fafc) !important;
+      border-color: var(--accent-blue, var(--text, #0f172a)) !important;
       cursor: pointer !important;
       pointer-events: auto !important;
       box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-blue, #2f6df6) 18%, transparent) !important;
@@ -189,8 +189,8 @@ function installAiInputStyle() {
     .coden-ai-input .prompt-mode-btn:hover,
     .coden-ai-input #btn-chat-mode:hover {
       border-color: var(--border-focus, rgba(47,109,246,.34)) !important;
-      color: var(--accent-blue, var(--text, #1c1c1c)) !important;
-      background: var(--accent-blue-soft, var(--bg-elevated, #f7f4ed)) !important;
+      color: var(--accent-blue, var(--text, #0f172a)) !important;
+      background: var(--accent-blue-soft, var(--bg-elevated, #f1f5f9)) !important;
     }
 
     [data-theme="dark"] .coden-ai-input.input-wrapper,

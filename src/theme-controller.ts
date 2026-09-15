@@ -20,7 +20,7 @@ export function applyTheme(theme: CodenTheme): void {
   document.documentElement.style.colorScheme = theme;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = theme === 'dark' ? '#0e1116' : '#fcfbf8';
+  if (themeColor) themeColor.content = theme === 'dark' ? '#0a0d12' : '#f8fafc';
 
   document.querySelectorAll<HTMLElement>('[data-theme-icon="dark"], #moon-icon').forEach((icon) => {
     icon.classList.toggle('hidden', theme !== 'dark');
