@@ -622,6 +622,57 @@ body[data-coden-surface="dashboard"] .coden-dashboard-project-card-link:hover .c
   body[data-coden-surface="dashboard"] .coden-dashboard-main { border: 0; border-radius: 0; box-shadow: none; }
 }
 
+/* A restrained blue atmosphere restores a sense of depth without competing
+   with the content. It is intentionally strongest at the outer shell and
+   recedes behind readable, opaque working surfaces. */
+body[data-coden-surface="landing-v3"] #top {
+  background-color: #f7faff !important;
+  background-image:
+    radial-gradient(56% 48% at 50% 4%, rgba(86, 150, 255, .20), transparent 72%),
+    linear-gradient(155deg, #fbfdff 0%, #f1f6ff 56%, #e9f3ff 100%) !important;
+}
+
+body:has(#coden-dashboard-react-root) {
+  background-color: #edf5ff !important;
+  background-image:
+    radial-gradient(70% 72% at 4% 4%, rgba(76, 125, 255, .34), transparent 72%),
+    radial-gradient(58% 64% at 96% 100%, rgba(31, 189, 222, .22), transparent 70%),
+    linear-gradient(145deg, #eff6ff 0%, #e8f1ff 48%, #edf9ff 100%) !important;
+}
+
+body[data-coden-surface="dashboard"] .coden-dashboard-shell { background: transparent; }
+body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
+  background: color-mix(in srgb, var(--horizon-surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+  backdrop-filter: blur(18px) saturate(115%);
+}
+body[data-coden-surface="dashboard"] .coden-dashboard-main {
+  background-color: color-mix(in srgb, var(--horizon-canvas) 90%, transparent);
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, .93) 0%, rgba(237, 246, 255, .88) 100%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+  backdrop-filter: blur(18px) saturate(115%);
+}
+
+:root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top {
+  background-color: #0e1522 !important;
+  background-image:
+    radial-gradient(58% 50% at 50% 2%, rgba(59, 130, 246, .28), transparent 72%),
+    linear-gradient(155deg, #0e1522 0%, #101d33 54%, #101827 100%) !important;
+}
+
+:root[data-theme="dark"] body:has(#coden-dashboard-react-root) {
+  background-color: #0d1420 !important;
+  background-image:
+    radial-gradient(72% 70% at 2% 0%, rgba(37, 99, 235, .36), transparent 74%),
+    radial-gradient(62% 70% at 98% 100%, rgba(8, 145, 178, .24), transparent 72%),
+    linear-gradient(145deg, #0d1420 0%, #101c32 50%, #0d1725 100%) !important;
+}
+
+:root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-main {
+  background-color: color-mix(in srgb, var(--horizon-canvas) 90%, transparent);
+  background-image: linear-gradient(145deg, rgba(14, 17, 22, .94) 0%, rgba(14, 29, 51, .90) 100%);
+}
+
 /* The shell, the root and the sidebar are deliberately NOT repainted here.
    They are transparent so the gradient above shows through, and the only
    opaque surface is the rounded panel that holds the content. */
