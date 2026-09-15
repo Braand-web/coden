@@ -20,6 +20,41 @@ textarea:focus-visible { outline:none; }
 .cdn-tech-brand.is-node { color:#4f9b45; }
 .cdn-tech-brand.is-supabase { color:#3ecf8e; }
 .cdn-tech-brand.is-github { color:currentColor; }
+.cdn-workflow-section { padding:0 clamp(16px,3vw,24px) clamp(60px,9vw,110px); background:var(--horizon-canvas,#fcfbf8); }
+.cdn-workflow-intro { max-width:680px; margin:0 auto 32px; text-align:center; }
+.cdn-workflow-eyebrow { margin:0 0 12px; color:#8fb7ff; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; }
+.cdn-workflow-intro h2 { margin:0; color:var(--horizon-muted,#64625e); font-family:'Instrument Serif',Georgia,serif; font-size:clamp(32px,5vw,58px); font-weight:400; letter-spacing:-.02em; line-height:1.06; text-wrap:balance; }
+.cdn-workflow-intro h2 span { color:var(--horizon-text,#1c1c1c); }
+.cdn-workflow-intro > p:last-child { max-width:540px; margin:16px auto 0; color:var(--horizon-muted,#64625e); font-size:16px; text-wrap:pretty; }
+.cdn-workflow-grid { width:min(1200px,100%); margin:0 auto; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.cdn-workflow-card { overflow:hidden; border:1px solid var(--horizon-border,#e8e4da); border-radius:18px; background:var(--horizon-surface,#f7f4ed); box-shadow:var(--horizon-shadow-float,0 20px 25px -5px rgba(28,28,28,.08)); transition:transform 280ms cubic-bezier(.32,.72,0,1),border-color 280ms cubic-bezier(.32,.72,0,1),box-shadow 280ms cubic-bezier(.32,.72,0,1); }
+.cdn-workflow-card:hover { transform:translateY(-4px); border-color:var(--horizon-border-strong,#d5d0c4); box-shadow:0 18px 38px rgba(28,28,28,.12); }
+.cdn-workflow-visual { min-height:236px; padding:16px; background:var(--horizon-input,#fffefa); border-bottom:1px solid var(--horizon-border,#e8e4da); }
+.cdn-workflow-windowbar { display:flex; align-items:center; gap:8px; color:var(--horizon-muted,#64625e); font-family:'JetBrains Mono',monospace; font-size:10px; }
+.cdn-workflow-dot { width:7px; height:7px; flex:none; border-radius:9999px; background:#8fb7ff; box-shadow:0 0 0 4px rgba(143,183,255,.12); }
+.cdn-workflow-dot-blue { background:#4f8cff; box-shadow:0 0 0 4px rgba(79,140,255,.12); }
+.cdn-workflow-dot-green { background:#36c98f; box-shadow:0 0 0 4px rgba(54,201,143,.12); }
+.cdn-workflow-window-status { margin-left:auto; color:var(--horizon-subtle,#85817a); }
+.cdn-workflow-prompt { margin-top:30px; padding:16px; min-height:96px; border:1px solid var(--horizon-border-strong,#d5d0c4); border-radius:14px; background:var(--horizon-surface,#f7f4ed); color:var(--horizon-text,#1c1c1c); font-size:15px; line-height:1.5; text-wrap:pretty; box-shadow:0 12px 24px rgba(28,28,28,.08); }
+.cdn-workflow-prompt-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; color:var(--horizon-subtle,#85817a); font-size:11px; }
+.cdn-workflow-send { display:grid; place-items:center; width:28px; height:28px; border-radius:9px; background:var(--horizon-blue,#3b82f6); color:var(--horizon-blue-ink,#fff); font-size:18px; font-weight:600; }
+.cdn-workflow-preview-layout { display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:10px; margin-top:26px; }
+.cdn-workflow-preview-panel { min-height:136px; padding:12px; border:1px solid var(--horizon-border,#e8e4da); border-radius:12px; background:var(--horizon-surface,#f7f4ed); }
+.cdn-workflow-preview-panel.active { border-color:var(--horizon-blue,#3b82f6); box-shadow:0 0 0 3px var(--horizon-blue-soft,rgba(59,130,246,.11)); }
+.cdn-workflow-preview-label { display:block; color:var(--horizon-subtle,#85817a); font-family:'JetBrains Mono',monospace; font-size:10px; }
+.cdn-workflow-preview-panel strong { display:block; margin-top:12px; color:var(--horizon-text,#1c1c1c); font-size:13px; line-height:1.35; }
+.cdn-workflow-line { display:block; width:85%; height:6px; margin-top:20px; border-radius:9999px; background:var(--horizon-border-strong,#d5d0c4); }
+.cdn-workflow-line.short { width:55%; margin-top:8px; background:var(--horizon-border,#e8e4da); }
+.cdn-workflow-preview-card { display:block; height:62px; margin-top:17px; border:1px solid var(--horizon-border-strong,#d5d0c4); border-radius:9px; background:var(--horizon-raised,#f1eee6); }
+.cdn-workflow-checklist { display:grid; gap:10px; margin-top:28px; }
+.cdn-workflow-checklist > div { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:9px; padding:10px 11px; border:1px solid var(--horizon-border,#e8e4da); border-radius:10px; background:var(--horizon-surface,#f7f4ed); color:var(--horizon-muted,#64625e); font-size:12px; }
+.cdn-workflow-checklist > div > span:last-child { color:#249b6d; font-family:'JetBrains Mono',monospace; font-size:10px; }
+.cdn-workflow-check { display:grid; place-items:center; width:18px; height:18px; border-radius:9999px; background:rgba(54,201,143,.14); color:#249b6d; font-weight:700; }
+.cdn-workflow-domain { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; padding:10px 11px; border:1px solid var(--horizon-border-strong,#d5d0c4); border-radius:10px; color:var(--horizon-text,#1c1c1c); font-family:'JetBrains Mono',monospace; font-size:11px; }
+.cdn-workflow-domain strong { padding:5px 8px; border-radius:7px; background:var(--horizon-blue,#3b82f6); color:var(--horizon-blue-ink,#fff); font-family:'Instrument Sans',sans-serif; font-size:11px; }
+.cdn-workflow-copy { padding:24px; }
+.cdn-workflow-copy h3 { margin:0; color:var(--horizon-text,#1c1c1c); font-family:'Instrument Serif',Georgia,serif; font-size:24px; font-weight:400; letter-spacing:-.015em; line-height:1.1; text-wrap:balance; }
+.cdn-workflow-copy p { margin:10px 0 0; color:var(--horizon-muted,#64625e); font-size:14.5px; line-height:1.55; text-wrap:pretty; }
 .cdn-footer-brand-mark rect { fill:#3b82f6; }
 .cdn-footer-brand-mark path { fill:#fff; }
 .cdn-footer-brand { color:var(--horizon-text, #1c1c1c) !important; }
@@ -68,6 +103,8 @@ textarea:focus-visible { outline:none; }
   .cdn-tech-group { gap:32px; padding-right:32px; }
   .cdn-tech-brand { gap:8px; font-size:16px; }
   .cdn-tech-brand svg { width:32px; height:32px; flex-basis:32px; }
+  .cdn-workflow-grid { grid-template-columns:minmax(0,1fr); }
+  .cdn-workflow-visual { min-height:220px; }
   .cdn-marketing-footer { padding:48px 16px 24px; }
   .cdn-footer-intro { align-items:flex-start; flex-direction:column; padding-bottom:32px; }
   .cdn-footer-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }

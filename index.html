@@ -233,50 +233,51 @@
     </div>
   </section>
 
-  <section aria-label="Reliability" style="padding:0 clamp(16px,3vw,24px) clamp(56px,8vw,96px)">
-    <p class="cdn-example-note">Illustrations of the workflow — not live project metrics.</p><div style="max-width:1200px;margin:0 auto;display:grid;gap:16px">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
-	        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(20px,2.6vw,28px);box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-16">
-          <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:24px;letter-spacing:-.015em;margin:0">The right tools for your next idea</h3>
-          <p style="margin:10px 0 0;font-size:15px;color:#8d98a8;text-wrap:pretty">Describe the outcome you want. Coden works with your project, writes code and checks the result in one workspace.</p>
-        </div>
-	        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;border-radius:10px;background:#1b2230;border:1px solid #263244">
-            <span style="font-size:14px;font-weight:600;color:#f8fafc">Coden Agent</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8d98a8">router</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-radius:10px;background:#11161e;border:1px solid #263244">
-            <span style="display:flex;align-items:center;gap:9px;font-size:14px;color:#aab4c3"><span style="width:7px;height:7px;border-radius:9999px;background:#4f8cff"></span>Auto</span>
-            <span style="font-size:12.5px;color:#8d98a8">All users</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;border-radius:10px;background:#11161e;border:1px solid #263244">
-            <span style="display:flex;align-items:center;gap:9px;font-size:14px;color:#aab4c3"><span style="width:7px;height:7px;border-radius:9999px;background:#8fb7ff"></span>Plan</span>
-            <span style="padding:2px 9px;border-radius:9999px;background:rgba(79,140,255,.14);color:#bbd4ff;font-size:11.5px;font-weight:600">Read-only</span>
-          </div>
-        </div>
-	        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(18px,2.4vw,24px);display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-          <span style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;color:#f8fafc"><span style="width:7px;height:7px;border-radius:9999px;background:#8fb7ff"></span>Plan</span>
-          <p style="margin:0;font-size:14.5px;color:#8d98a8">Explore the approach before asking Coden to change your application.</p>
-          <div style="display:grid;gap:8px">
-            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">Purpose</span><span style="color:#aab4c3">Planning</span></div>
-            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">Output</span><span style="color:#aab4c3">A clear approach</span></div>
-            <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px"><span style="color:#8d98a8">File changes</span><span style="color:#aab4c3">None</span></div>
-          </div>
-        </div>
-      </div>
+  <section id="workflow" class="cdn-workflow-section" aria-labelledby="workflow-title">
+    <div class="cdn-workflow-intro">
+      <p class="cdn-workflow-eyebrow">A calmer way to build</p>
+      <h2 id="workflow-title">Bring the idea.<br/><span>Keep the momentum.</span></h2>
+      <p>Move from a clear request to a working product with one conversation, one preview and one place to publish.</p>
+    </div>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
-	        <div style="border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(24px,3.4vw,40px);text-align:center;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-          <p style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(60px,9vw,108px);line-height:1;letter-spacing:-.03em;margin:0;color:#f8fafc">Build &amp; test</p>
-          <p style="margin:4px 0 0;font-family:'Instrument Serif',Georgia,serif;font-size:clamp(20px,2.4vw,27px);color:#8d98a8">an iterative workflow</p>
-          <p style="max-width:330px;margin:18px auto 0;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Inspect the preview, review the checks and ask Coden to improve the result.</p>
+    <div class="cdn-workflow-grid">
+      <article class="cdn-workflow-card cdn-interaction-16">
+        <div class="cdn-workflow-visual" aria-label="Coden prompt composer preview">
+          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot"></span><span>Coden workspace</span><span class="cdn-workflow-window-status">Ready</span></div>
+          <div class="cdn-workflow-prompt">Build a client portal with tasks, billing and a clear activity feed.</div>
+          <div class="cdn-workflow-prompt-footer"><span>Describe the outcome</span><span class="cdn-workflow-send" aria-hidden="true">↑</span></div>
         </div>
-	        <div style="position:relative;overflow:hidden;border:1px solid #263244;border-radius:18px;background:#151a22;padding:clamp(22px,3vw,30px);box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-          <h3 style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:24px;letter-spacing:-.015em;margin:0">Build big without breaking</h3>
-          <p style="margin:10px 0 0;max-width:400px;font-size:14.5px;color:#8d98a8;text-wrap:pretty">Keep your code, conversation and preview together. Make focused changes as your project grows.</p>
-          <p style="font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:clamp(54px,10vw,112px);line-height:1;letter-spacing:-.035em;margin:20px 0 -16px;color:#1b2230">Iterate.</p>
+        <div class="cdn-workflow-copy">
+          <h3>You bring the idea. Coden gives it shape.</h3>
+          <p>Explain what the product should do in plain language. Coden turns the request into a concrete build brief before it touches your project.</p>
         </div>
-      </div>
+      </article>
+
+      <article class="cdn-workflow-card cdn-interaction-17">
+        <div class="cdn-workflow-visual cdn-workflow-visual-preview" aria-label="Coden preview and plan preview">
+          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot cdn-workflow-dot-blue"></span><span>Preview</span><span class="cdn-workflow-window-status">Live draft</span></div>
+          <div class="cdn-workflow-preview-layout">
+            <div class="cdn-workflow-preview-panel"><span class="cdn-workflow-preview-label">Plan</span><strong>Clear steps before changes</strong><span class="cdn-workflow-line"></span><span class="cdn-workflow-line short"></span></div>
+            <div class="cdn-workflow-preview-panel active"><span class="cdn-workflow-preview-label">App preview</span><strong>Client portal</strong><span class="cdn-workflow-preview-card"></span></div>
+          </div>
+        </div>
+        <div class="cdn-workflow-copy">
+          <h3>Refine the product while you can see it.</h3>
+          <p>Review the plan, inspect the preview and ask for focused changes. Your conversation, files and result stay together.</p>
+        </div>
+      </article>
+
+      <article class="cdn-workflow-card cdn-interaction-18">
+        <div class="cdn-workflow-visual cdn-workflow-visual-publish" aria-label="Coden publish verification preview">
+          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot cdn-workflow-dot-green"></span><span>Publish check</span><span class="cdn-workflow-window-status">Verified</span></div>
+          <div class="cdn-workflow-checklist"><div><span class="cdn-workflow-check">✓</span><span>Preview checked</span><span>Done</span></div><div><span class="cdn-workflow-check">✓</span><span>Build verified</span><span>Done</span></div><div><span class="cdn-workflow-check">✓</span><span>Domain ready</span><span>Live</span></div></div>
+          <div class="cdn-workflow-domain"><span>coden.fun</span><strong>Publish</strong></div>
+        </div>
+        <div class="cdn-workflow-copy">
+          <h3>Publish when the result is ready.</h3>
+          <p>Check the real preview first, then publish through a verified flow. Keep your Coden URL or connect a custom domain when you are ready.</p>
+        </div>
+      </article>
     </div>
   </section>
 
