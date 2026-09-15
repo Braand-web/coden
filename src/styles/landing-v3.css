@@ -58,7 +58,7 @@ textarea:focus-visible { outline:none; }
 .cdn-footer-brand-mark rect { fill:#3b82f6; }
 .cdn-footer-brand-mark path { fill:#fff; }
 .cdn-footer-brand { color:var(--horizon-text, #1c1c1c) !important; }
-.cdn-marketing-footer { padding:64px 24px 32px; border-top:1px solid var(--horizon-border, #dedbd2); background:var(--horizon-canvas, #fcfbf8); }
+.cdn-marketing-footer { margin:0 12px 12px; padding:clamp(40px,6vw,72px) clamp(20px,4vw,44px) 24px; border:1px solid var(--horizon-border, #dedbd2); border-radius:24px; background:var(--horizon-canvas, #fcfbf8); }
 .cdn-footer-intro, .cdn-footer-grid, .cdn-footer-bottom { width:min(1120px, 100%); margin-inline:auto; }
 .cdn-footer-intro { display:flex; align-items:flex-end; justify-content:space-between; gap:32px; padding-bottom:48px; }
 .cdn-footer-intro > div > p { max-width:420px; margin:12px 0 0; color:var(--horizon-muted, #6f6b63); font-size:14px; line-height:20px; text-wrap:pretty; }
@@ -66,7 +66,7 @@ textarea:focus-visible { outline:none; }
 .cdn-footer-brand-mark { display:block; flex:none; }
 .cdn-footer-cta { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:8px 12px; border-radius:10px; background:var(--horizon-blue, #3b82f6); color:#fff !important; font-size:14px; font-weight:600; transition:transform 220ms cubic-bezier(.32,.72,0,1), background-color 220ms cubic-bezier(.32,.72,0,1); }
 .cdn-footer-cta:hover { transform:translateY(-1px); background:var(--horizon-blue-hover, #2563eb); }
-.cdn-footer-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; padding:32px 0; border-top:1px solid var(--horizon-border, #dedbd2); }
+.cdn-footer-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:28px; padding:32px 0; border-top:1px solid var(--horizon-border, #dedbd2); }
 .cdn-footer-grid > div > p { margin:0 0 12px; color:var(--horizon-text, #1c1c1c); font-size:12px; line-height:16px; font-weight:600; }
 .cdn-footer-grid > div > div { display:grid; gap:4px; }
 .cdn-footer-grid a { width:max-content; min-height:32px; display:inline-flex; align-items:center; color:var(--horizon-muted, #6f6b63); font-size:14px; line-height:20px; transition:color 220ms cubic-bezier(.32,.72,0,1); }
@@ -105,7 +105,7 @@ textarea:focus-visible { outline:none; }
   .cdn-tech-brand svg { width:32px; height:32px; flex-basis:32px; }
   .cdn-workflow-grid { grid-template-columns:minmax(0,1fr); }
   .cdn-workflow-visual { min-height:220px; }
-  .cdn-marketing-footer { padding:48px 16px 24px; }
+  .cdn-marketing-footer { margin:0 8px 8px; padding:48px 16px 24px; border-radius:20px; }
   .cdn-footer-intro { align-items:flex-start; flex-direction:column; padding-bottom:32px; }
   .cdn-footer-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
   .cdn-footer-bottom { flex-direction:column; }
