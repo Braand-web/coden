@@ -85,6 +85,19 @@ assert(
 );
 
 assert(
+  browserAuthSource.includes('migratePersistedAuthSession') &&
+    browserAuthSource.includes('huggy.auth.session.v2') &&
+    browserAuthSource.includes('sb-${getSupabaseProjectRef(SUPABASE_URL)}-auth-token'),
+  'browser auth must migrate legacy persisted sessions after the product rename',
+);
+
+assert(
+  browserAuthSource.includes('SESSION_RETRY_DELAYS_MS') &&
+    browserAuthSource.includes('readPersistedSession'),
+  'browser auth must retry session restoration during the initial page load',
+);
+
+assert(
   browserConfigSource.includes("UNCONFIGURED_SUPABASE_URL = 'https://coden-unconfigured.invalid'") &&
     browserConfigSource.includes('usingDevFallback: false') &&
     !browserConfigSource.includes('allowDevFallback') &&
@@ -99,8 +112,9 @@ assert(
 );
 
 assert(
-  authGuardSource.includes('getVerifiedSession({ allowRefresh: true })'),
-  'private route guard must refresh once before redirecting',
+  authGuardSource.includes('restoreSessionBeforeRedirect') &&
+    authGuardSource.includes('retryDelays = [180, 480]'),
+  'private route guard must retry session restoration before redirecting',
 );
 
 assert(

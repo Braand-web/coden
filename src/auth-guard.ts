@@ -6,6 +6,20 @@ function redirectToAuth() {
   window.location.href = `/auth.html?redirect=${redirect}`;
 }
 
+async function restoreSessionBeforeRedirect() {
+  const retryDelays = [180, 480];
+  let verified = await getVerifiedSession({ allowRefresh: true });
+  if (verified) return verified;
+
+  for (const delay of retryDelays) {
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    verified = await getVerifiedSession({ allowRefresh: true });
+    if (verified) return verified;
+  }
+
+  return null;
+}
+
 async function guardPage() {
   document.documentElement.dataset.authReady = 'checking';
   if (isLocalPreviewEnabled()) {
@@ -16,7 +30,7 @@ async function guardPage() {
     window.dispatchEvent(new CustomEvent('coden:auth-ready', { detail: previewAuth }));
     return;
   }
-  const verified = await getVerifiedSession({ allowRefresh: true });
+  const verified = await restoreSessionBeforeRedirect();
   if (!verified?.user?.id || !verified.session?.access_token) {
     document.documentElement.dataset.authReady = 'false';
     redirectToAuth();

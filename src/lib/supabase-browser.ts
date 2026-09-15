@@ -1,8 +1,39 @@
 import { createClient } from '@supabase/supabase-js';
-import { hasSupabaseBrowserConfig, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from './supabase-config';
+import {
+  getSupabaseProjectRef,
+  hasSupabaseBrowserConfig,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+} from './supabase-config';
 import { TEMPORARY_GENERATION_ACCESS_TOKEN } from '../services/temporary-generation-access';
 
 export const CODEN_AUTH_STORAGE_KEY = 'coden.auth.session.v2';
+
+const LEGACY_AUTH_STORAGE_KEYS = [
+  `sb-${getSupabaseProjectRef(SUPABASE_URL)}-auth-token`,
+  'huggy.auth.session.v2',
+];
+
+function migratePersistedAuthSession() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    if (window.localStorage.getItem(CODEN_AUTH_STORAGE_KEY)) return;
+
+    for (const legacyKey of LEGACY_AUTH_STORAGE_KEYS) {
+      if (!legacyKey || legacyKey === CODEN_AUTH_STORAGE_KEY) continue;
+      const persistedSession = window.localStorage.getItem(legacyKey);
+      if (!persistedSession) continue;
+      window.localStorage.setItem(CODEN_AUTH_STORAGE_KEY, persistedSession);
+      break;
+    }
+  } catch {
+    // Storage can be blocked by privacy settings. Supabase will report the
+    // actual auth state and route guards will handle that case safely.
+  }
+}
+
+migratePersistedAuthSession();
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
@@ -124,15 +155,9 @@ export function getCurrentPrivatePath(): string {
 
 export function isConfirmedInvalidSessionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
-  const record = error as { status?: unknown; message?: unknown; code?: unknown; name?: unknown };
-  const status = Number(record.status || 0);
+  const record = error as { message?: unknown; code?: unknown; name?: unknown };
   const text = `${record.name || ''} ${record.code || ''} ${record.message || ''}`.toLowerCase();
-  return (
-    status === 400 ||
-    status === 401 ||
-    status === 403 ||
-    /invalid.*jwt|jwt.*expired|session.*not.*found|refresh.*token.*not.*found|invalid.*refresh|token.*expired|not authenticated/.test(text)
-  );
+  return /invalid.*jwt|jwt.*expired|session.*not.*found|refresh.*token.*not.*found|invalid.*refresh|token.*expired|not authenticated/.test(text);
 }
 
 async function signOutLocalQuietly() {
@@ -176,11 +201,25 @@ export async function refreshVerifiedSession(): Promise<VerifiedSession | null> 
   }
 }
 
+const SESSION_RETRY_DELAYS_MS = [0, 120, 320];
+
+async function readPersistedSession() {
+  let result: Awaited<ReturnType<typeof supabase.auth.getSession>> | null = null;
+
+  for (const delay of SESSION_RETRY_DELAYS_MS) {
+    if (delay > 0) await new Promise((resolve) => window.setTimeout(resolve, delay));
+    result = await supabase.auth.getSession();
+    if (result.data?.session || (result.error && isConfirmedInvalidSessionError(result.error))) return result;
+  }
+
+  return result || { data: { session: null }, error: null };
+}
+
 export async function getVerifiedSession(options: { allowRefresh?: boolean } = {}): Promise<VerifiedSession | null> {
   if (!hasSupabaseBrowserConfig()) return getTemporaryGenerationSession();
   const allowRefresh = options.allowRefresh !== false;
   try {
-    const { data, error } = await supabase.auth.getSession();
+    const { data, error } = await readPersistedSession();
     const session = data?.session;
     if (error || !session) return getTemporaryGenerationSession();
 
