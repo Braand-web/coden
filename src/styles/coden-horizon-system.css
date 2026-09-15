@@ -673,6 +673,43 @@ body[data-coden-surface="dashboard"] .coden-dashboard-main {
   background-image: linear-gradient(145deg, rgba(14, 17, 22, .94) 0%, rgba(14, 29, 51, .90) 100%);
 }
 
+/* The landing composer is the product's primary control. Keep it neutral in
+   light mode, like the Builder and Dashboard, so the blue atmosphere stays
+   in the background rather than turning the input itself beige. */
+body[data-coden-surface="landing-v3"] #top .input-wrapper {
+  background: #ffffff !important;
+  border-color: #d7e0ec !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, .10) !important;
+}
+
+body[data-coden-surface="landing-v3"] #top .input-wrapper textarea {
+  color: #0f172a !important;
+}
+
+body[data-coden-surface="landing-v3"] #top .input-wrapper textarea::placeholder,
+body[data-coden-surface="landing-v3"] #top .input-wrapper [data-prompt-action] {
+  color: #64748b !important;
+}
+
+body[data-coden-surface="landing-v3"] #top .input-wrapper .coden-agent-mode-trigger {
+  border-color: #d7e0ec !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+}
+
+:root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper {
+  background: #111720 !important;
+  border-color: #263244 !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .28) !important;
+}
+
+:root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper textarea { color: var(--horizon-text) !important; }
+:root[data-theme="dark"] body[data-coden-surface="landing-v3"] #top .input-wrapper .coden-agent-mode-trigger {
+  border-color: #263244 !important;
+  background: #151a22 !important;
+  color: var(--horizon-muted) !important;
+}
+
 /* The shell, the root and the sidebar are deliberately NOT repainted here.
    They are transparent so the gradient above shows through, and the only
    opaque surface is the rounded panel that holds the content. */
