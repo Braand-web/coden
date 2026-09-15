@@ -1,5 +1,6 @@
 import { initPromptInputActions } from './prompt-input-actions';
 import { initThemeController } from './theme-controller';
+import { initCodenNavigationTransitions } from './navigation-transitions';
 import './styles/agent-surface.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
@@ -7,6 +8,7 @@ import './styles/coden-composer.css';
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
 const notice = document.getElementById('landing-notice');
 initThemeController();
+initCodenNavigationTransitions();
 
 function announce(message: string) {
   if (!notice) return;
@@ -120,6 +122,36 @@ initPromptInputActions({ persistForBuilder:true, onNotice: announce });
       if (section.getBoundingClientRect().top < fold) reveal(section);
     }
   }, 1200);
+})();
+
+/*
+ * The manifesto is intentionally the one expressive motion moment on the
+ * page.  It uses the same observer contract as the section reveals instead
+ * of a scroll handler, so it does not compete with scrolling or run for
+ * people who have asked for reduced motion.
+ */
+(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (typeof IntersectionObserver !== 'function') return;
+
+  const manifesto = document.querySelector<HTMLElement>('#manifesto');
+  const words = Array.from(document.querySelectorAll<HTMLElement>('[data-word-reveal]'));
+  if (!manifesto || !words.length) return;
+
+  // Arm the hidden start state only once the progressive enhancement is known
+  // to be available. Without this, an older browser would keep the heading
+  // invisible forever instead of simply showing a static heading.
+  manifesto.dataset.wordReveal = 'on';
+
+  const observer = new IntersectionObserver(entries => {
+    if (!entries.some(entry => entry.isIntersecting)) return;
+    words.forEach((word, index) => {
+      window.setTimeout(() => word.classList.add('is-revealed'), index * 52);
+    });
+    observer.disconnect();
+  }, { threshold: .34 });
+
+  observer.observe(manifesto);
 })();
 
 document.querySelectorAll<HTMLAnchorElement>('[data-start-from]').forEach(link => {
