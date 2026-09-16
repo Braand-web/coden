@@ -2762,9 +2762,7 @@
       overflow: hidden;
       scrollbar-width: none;
       -ms-overflow-style: none;
-      background:
-        radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 3%, transparent), transparent 40%),
-        var(--preview-stage-bg, var(--bg-panel));
+      background: var(--preview-shell-bg, var(--bg-panel));
       padding: 0;
     }
 
@@ -4299,19 +4297,7 @@
       .sub-nav-tab { transition: none !important; }
     }
 
-    /* 8 ── Zone preview : canvas flottant à coins arrondis (réf. Lovable).
-       Le bureau était edge-to-edge ; on le fait « flotter » sur la scène. */
-    .preview-screen-panel[data-preview-device="desktop"] .preview-device-frame {
-      width: calc(100% - 4px);
-      height: calc(100% - 6px);
-      margin: 3px auto 0;
-      align-self: flex-start;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-md);
-    }
-
-    /* 9 ── Pastille d'adresse du preview : surface et rayon cohérents */
+    /* 8 ── Pastille d'adresse du preview : surface et rayon cohérents */
     .preview-address-glow {
       box-shadow: var(--shadow-sm);
       border-radius: 999px;
@@ -4380,10 +4366,9 @@
     .code-empty-action:hover { border-color: var(--border-mid); background: var(--accent-dim); }
     .chat-input-row #model-select-btn { display: none !important; }
 
-    /* The workspace is made of independent surfaces. On desktop the right
-       context is a rounded editor frame, not a square slab welded to the
-       canvas. Every active view is clipped by the same frame, so Code, Cloud,
-       analysis and preview transition without exposing sharp corners. */
+    /* The workspace is made of independent surfaces. The right context owns one
+       rounded frame. In preview mode, the application fills that frame directly:
+       there is no second device card, dark shell, or exposed stage around it. */
     @media (min-width: 761px) {
       .editor-pane {
         margin: 12px 12px 12px 0;
@@ -4403,6 +4388,52 @@
       .viewport-content-holder > :is(.code-screen-layout, .preview-screen-panel, .analysis-screen-panel) {
         border-radius: inherit;
         overflow: hidden;
+      }
+
+      .preview-screen-panel[data-preview-device="desktop"] {
+        background: var(--preview-shell-bg, var(--bg-panel));
+      }
+
+      .preview-screen-panel[data-preview-device="desktop"] .preview-device-stage {
+        background: transparent;
+      }
+
+      .preview-screen-panel[data-preview-device="desktop"] .preview-device-frame {
+        width: 100%;
+        max-width: none;
+        height: 100%;
+        margin: 0;
+        border: 0;
+        border-radius: 0 !important;
+        box-shadow: none;
+        background: transparent;
+      }
+
+      .preview-screen-panel[data-preview-device="desktop"] .preview-iframe-view {
+        background: var(--preview-shell-bg, var(--bg-panel));
+        border-radius: 0 !important;
+      }
+
+      /* Preview is the canvas itself. Remove the editor shell's outer gutter
+         only while this view is active, so the generated app reaches the
+         divider, viewport edge and bottom without a dark rail around it. */
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) {
+        margin: 0;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-lg);
+        box-shadow: none;
+        background: var(--preview-shell-bg, var(--bg-panel)) !important;
+        overflow: hidden;
+      }
+
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .viewport-content-holder {
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .preview-screen-panel {
+        border: 0 !important;
+        border-radius: 0 !important;
       }
 
       .code-screen-layout.is-empty .editor-main-scroll {
