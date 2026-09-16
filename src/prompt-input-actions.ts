@@ -75,7 +75,7 @@ function notify(message: string, kind: 'info' | 'success' | 'error' = 'info') {
     'bottom:18px',
     'z-index:99999',
     'max-width:min(360px,calc(100vw - 32px))',
-    'border:1px solid var(--border,color-mix(in srgb, var(--horizon-border) 16%, transparent))',
+    'border:1px solid var(--border,rgba(9,9,11,.16))',
     'border-radius:12px',
     'padding:10px 12px',
     'font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',

@@ -198,14 +198,25 @@ const RGB_BACKGROUNDS = {
   '180,83,9': WARNING, '251,191,36': WARNING,
 };
 
-const RGB_BORDERS = {
-  '248,250,252': BORDER, '255,255,255': BORDER, '236,234,228': BORDER,
-  '232,228,218': BORDER, '15,23,42': BORDER, '9,9,11': BORDER, '0,0,0': BORDER,
-  '32,32,29': BORDER, '32,29,23': BORDER, '14,17,22': BORDER,
-  '226,232,240': BORDER, '203,213,225': BORDER_STRONG,
-  '59,130,246': BLUE, '79,140,255': BLUE, '37,99,235': BLUE, '96,165,250': BLUE,
-  '220,38,38': DANGER, '54,201,143': SUCCESS, '180,83,9': WARNING,
-};
+/*
+ * A translucent edge is left alone. There is no table for it on purpose.
+ *
+ * `border: 1px solid rgba(255,255,255,.13)` on a dark panel is not a border
+ * painted in the border colour — it is a highlight, the lit edge of a raised
+ * surface. And `rgba(32,32,29,.08)` on a light one is ink at 8%, a faint grey
+ * line. In both cases the ALPHA is what makes the line subtle.
+ *
+ * `--horizon-border` is already the subtle colour: #e2e8f0 in light, #26354a
+ * in dark. Mixing it down to 8% applies the subtlety a second time and the
+ * line disappears — a dark highlight on a dark panel, a near-white line on
+ * white.
+ *
+ * The first run of this script did exactly that to every hairline in the
+ * dashboard, and it lost every edge that defined its panels, its cards and its
+ * menus. Whatever the base colour, a translucent border has no equivalent in
+ * this token set, so leaving the literal is the correct outcome.
+ */
+const RGB_BORDERS = {};
 
 const RGB_BY_PROPERTY = {
   color: RGB_TEXTS, fill: RGB_TEXTS, stroke: RGB_TEXTS,
@@ -257,6 +268,26 @@ const EXCLUDE_CSS = new Set([
   'src/styles/coden-horizon-system.css',
   'src/styles/coden-tailwind.css',
   'src/design-system.css',
+  /*
+   * The dashboard is excluded because it does not have this problem.
+   *
+   * It already carries a complete token system of its own — `--dashboard-bg`,
+   * `--dashboard-surface`, `--dashboard-panel` and the rest — declared twice,
+   * once at `:root` and once under `html[data-theme="light"]`. It follows the
+   * theme correctly and always did.
+   *
+   * What remained hard-coded there was hard-coded on purpose: panels that are
+   * deliberately dark in both themes, and translucent white hairlines that are
+   * the lit edge of those panels. Converting them replaced light ink with
+   * theme ink on surfaces that never lighten (dark on dark in the light
+   * theme), and dissolved every hairline. Running this over it took a designed
+   * surface and flattened it.
+   */
+  'src/styles/dashboard-react.css',
+  'src/styles/dashboard-orygin.css',
+  'src/styles/dashboard-polish.css',
+  'src/styles/dashboard-kimi.css',
+  'src/styles/dashboard-kimi-sidebar.css',
 ]);
 
 function cssFiles() {

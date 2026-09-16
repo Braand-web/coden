@@ -27,8 +27,8 @@
 
 .workspace-hub-card:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 28%, var(--border));
-  background: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 4%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent-blue, #3b82f6) 4%, var(--bg-surface));
   box-shadow:
     0 12px 28px color-mix(in srgb, var(--accent-blue, #3b82f6) 10%, transparent),
     0 2px 6px rgba(20, 20, 20, .05);
@@ -49,7 +49,7 @@
 
 .workspace-hub-card:hover .workspace-hub-icon {
   transform: scale(1.08);
-  color: var(--accent-blue, var(--horizon-blue));
+  color: var(--accent-blue, #3b82f6);
 }
 
 /* ── Suggestion chips ── */
@@ -63,8 +63,8 @@
 
 .chip:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 30%, var(--border));
-  background: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 7%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent-blue, #3b82f6) 7%, var(--bg-surface));
   color: var(--text);
 }
 
@@ -101,7 +101,7 @@
 
 .project-card:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 24%, var(--border));
+  border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 24%, var(--border));
   box-shadow:
     0 14px 30px rgba(20, 20, 20, .07),
     0 2px 6px rgba(20, 20, 20, .04);
@@ -122,7 +122,7 @@
 }
 
 .project-card .btn-card-delete:hover {
-  color: var(--error, var(--horizon-danger));
+  color: var(--error, #ef4444);
   transform: scale(1.08);
 }
 
@@ -140,8 +140,8 @@
   width: 64px;
   height: 64px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 8%, var(--bg-surface));
-  color: var(--accent-blue, var(--horizon-blue));
+  background: color-mix(in srgb, var(--accent-blue, #3b82f6) 8%, var(--bg-surface));
+  color: var(--accent-blue, #3b82f6);
   margin-bottom: 4px;
 }
 
@@ -191,7 +191,7 @@
 }
 
 .mobile-dashboard-nav button.active {
-  color: var(--accent-blue, var(--horizon-blue));
+  color: var(--accent-blue, #3b82f6);
 }
 
 .mobile-dashboard-nav button.active svg {

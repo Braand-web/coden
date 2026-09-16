@@ -114,8 +114,8 @@ body { background: var(--kimi-bg); }
   margin-top: 8px;
 }
 .profile-avatar {
-  background: linear-gradient(135deg, var(--horizon-blue), var(--kimi-blue)) !important;
-  color: var(--horizon-text) !important;
+  background: linear-gradient(135deg, #8b5cf6, var(--kimi-blue)) !important;
+  color: #fff !important;
 }
 
 .sidebar-credits {
@@ -125,17 +125,17 @@ body { background: var(--kimi-bg); }
 }
 .plan-badge {
   background: var(--kimi-blue-soft) !important;
-  color: var(--horizon-blue) !important;
+  color: #93c5fd !important;
   border: none !important;
 }
-.credits-fill { background: linear-gradient(90deg, var(--kimi-blue), var(--horizon-blue)) !important; }
+.credits-fill { background: linear-gradient(90deg, var(--kimi-blue), #60a5fa) !important; }
 
 .sidebar-promo {
   background: linear-gradient(160deg, var(--kimi-blue-soft), transparent) !important;
   border: 1px solid var(--kimi-border) !important;
   border-radius: 12px !important;
 }
-.btn-promo-upgrade { background: var(--kimi-blue) !important; color: var(--horizon-text) !important; border: none !important; }
+.btn-promo-upgrade { background: var(--kimi-blue) !important; color: #fff !important; border: none !important; }
 
 /* ── Main area: Kimi centered hero ───────────────────────────────────────── */
 .main-area { background: var(--kimi-bg) !important; }
@@ -152,7 +152,7 @@ body { background: var(--kimi-bg); }
 .topbar-right { position: static !important; }
 .btn-create-top {
   background: var(--kimi-blue-soft) !important;
-  color: var(--horizon-blue) !important;
+  color: #93c5fd !important;
   border: none !important;
   border-radius: 999px !important;
   font-weight: 600 !important;
@@ -224,7 +224,7 @@ body { background: var(--kimi-bg); }
   width: 40px !important; height: 40px !important;
   border-radius: 999px !important;
   background: var(--kimi-blue) !important;
-  color: var(--horizon-text) !important;
+  color: #fff !important;
   display: grid !important; place-items: center !important;
 }
 
