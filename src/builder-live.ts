@@ -1224,7 +1224,7 @@ html, body { min-height: 100%; }
 body {
   margin: 0;
   overflow: hidden;
-  font-family: Manrope, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--loader-canvas);
   color: var(--loader-text);
 }
@@ -1237,17 +1237,12 @@ body {
   padding: 24px;
 }
 .loader-core {
-  width: min(320px, 100%);
-  min-height: 168px;
+  width: min(320px, calc(100% - 48px));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
-  border: 1px solid var(--loader-border);
-  border-radius: 24px;
-  background: var(--loader-surface);
-  padding: 24px;
   user-select: none;
 }
 .loader-mark {
