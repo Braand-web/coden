@@ -14,7 +14,7 @@ body.coden-pricing-page {
 body.coden-pricing-page::before { display: none; }
 body.coden-pricing-page .coden-react-marketing-header { font-family: Manrope, system-ui, sans-serif; }
 
-.pricing-skip-link { position: fixed; top: 8px; left: 8px; z-index: 3000; padding: 12px 16px; border-radius: 8px; background: var(--horizon-surface); color: #000000; transform: translateY(-160%); transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.pricing-skip-link { position: fixed; top: 8px; left: 8px; z-index: 3000; padding: 12px 16px; border-radius: 8px; background: var(--horizon-surface); color: var(--horizon-text); transform: translateY(-160%); transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
 .pricing-skip-link:focus { transform: translateY(0); }
 .pricing-page-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 144px 0 0; }
 

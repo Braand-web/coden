@@ -365,146 +365,28 @@ body[data-coden-surface="public"] .page-hero::before { display: none !important;
 body[data-coden-surface="public"] :where(.page-content, .hero-subtitle) { color: var(--horizon-muted) !important; }
 body[data-coden-surface="public"] .page-content h2 { border-color: var(--horizon-border) !important; }
 
-/* Marketing landing: retain content and hooks, replace the competing visual shell. */
-body[data-coden-surface="landing-v3"] > div:first-of-type {
-  background: var(--horizon-canvas) !important;
-  color: var(--horizon-text) !important;
-  font-family: var(--font-sans) !important;
-}
-
-body[data-coden-surface="landing-v3"] #coden-marketing-header-root {
-  padding: 8px clamp(12px, 3vw, 20px) 0 !important;
-}
-
-body[data-coden-surface="landing-v3"] .cdn-pill {
-  height: 52px !important;
-  border: 1px solid var(--horizon-border) !important;
-  border-radius: 9999px !important;
-  background: color-mix(in srgb, var(--horizon-canvas) 88%, transparent) !important;
-  box-shadow: var(--horizon-shadow-inset) !important;
-}
-
-body[data-coden-surface="landing-v3"] #top {
-  position: relative;
-  overflow: hidden;
-  background: var(--horizon-canvas) !important;
-}
-
-body[data-coden-surface="landing-v3"] #top > [aria-hidden="true"] { display: none !important; }
-
-body[data-coden-surface="landing-v3"] #top > [aria-hidden="true"]:nth-of-type(2) { display: none !important; }
-
-body[data-coden-surface="landing-v3"] #manifesto > [aria-hidden="true"],
-body[data-coden-surface="landing-v3"] #cta > [aria-hidden="true"] { display: none !important; }
-
-body[data-coden-surface="landing-v3"] #top h1 {
-  max-width: 680px;
-  margin-inline: auto;
-  background: linear-gradient(90deg, var(--horizon-ink), var(--horizon-muted));
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent !important;
-  font-size: clamp(48px, 7vw, 72px) !important;
-  line-height: 1 !important;
-}
-
-body[data-coden-surface="landing-v3"] #top h1,
-body[data-coden-surface="landing-v3"] main h2,
-body[data-coden-surface="landing-v3"] main h3 {
-  font-family: var(--font-sans) !important;
-  font-style: normal !important;
-}
-
-body[data-coden-surface="landing-v3"] #top p,
-body[data-coden-surface="landing-v3"] #top [style*="color:rgba(248,250,252"] {
-  color: var(--horizon-muted) !important;
-}
-
-body[data-coden-surface="landing-v3"] .cdn-interaction-8 {
-  border-color: var(--horizon-border) !important;
-  background: var(--horizon-raised) !important;
-  color: var(--horizon-muted) !important;
-}
-
-body[data-coden-surface="landing-v3"] :where(.cdn-stack-name, .cdn-stack-caption, .cdn-example-note) {
-  color: var(--horizon-muted) !important;
-  font-family: var(--font-sans) !important;
-}
-
-body[data-coden-surface="landing-v3"] .input-wrapper {
-  border: 1px solid var(--horizon-border) !important;
-  border-radius: 24px !important;
-  background: var(--horizon-surface) !important;
-  box-shadow: var(--horizon-shadow-float) !important;
-}
-
-body[data-coden-surface="landing-v3"] .input-wrapper:focus-within {
-  border-color: var(--horizon-blue) !important;
-  box-shadow: 0 0 0 4px var(--horizon-blue-soft), var(--horizon-shadow-float) !important;
-}
-
-body[data-coden-surface="landing-v3"] [data-build],
-body[data-coden-surface="landing-v3"] .cdn-interaction-7 {
-  border-radius: 9999px !important;
-  border-color: var(--horizon-blue) !important;
-  background: var(--horizon-blue) !important;
-  color: var(--horizon-blue-ink) !important;
-}
-
-body[data-coden-surface="landing-v3"] [data-build]:hover,
-body[data-coden-surface="landing-v3"] .cdn-interaction-7:hover {
-  border-color: var(--horizon-blue-hover) !important;
-  background: var(--horizon-blue-hover) !important;
-}
-
-body[data-coden-surface="landing-v3"] :where([data-start-from], [data-mode-toggle], [data-prompt-action]) {
-  border-color: var(--horizon-border) !important;
-  border-radius: 9999px !important;
-  background: transparent !important;
-  color: var(--horizon-muted) !important;
-}
-
-body[data-coden-surface="landing-v3"] :where([data-start-from], [data-mode-toggle], [data-prompt-action]):hover {
-  background: var(--horizon-raised) !important;
-  color: var(--horizon-text) !important;
-}
-
-body[data-coden-surface="landing-v3"] main section:not(#top) {
-  border-color: var(--horizon-border) !important;
-  background: var(--horizon-canvas) !important;
-}
-
-body[data-coden-surface="landing-v3"] :where(
-  [style*="background:#151a22"], [style*="background:#11161e"],
-  [style*="background:#1b2230"], [style*="background:linear-gradient"]
-) {
-  border-color: var(--horizon-border) !important;
-  background: var(--horizon-surface) !important;
-  box-shadow: none !important;
-}
-
-body[data-coden-surface="landing-v3"] :where(
-  [style*="border:1px solid #263244"], [style*="border-bottom:1px solid #1b2230"],
-  [style*="border-top:1px solid #263244"]
-) { border-color: var(--horizon-border) !important; }
-
-body[data-coden-surface="landing-v3"] :where([style*="color:#aab4c3"], [style*="color:#8d98a8"]) {
-  color: var(--horizon-muted) !important;
-}
-
-body[data-coden-surface="landing-v3"] [style*="color:#f8fafc"] { color: var(--horizon-text) !important; }
-
-body[data-coden-surface="landing-v3"] [style*="background:#4f8cff"] { background: var(--horizon-blue) !important; }
-body[data-coden-surface="landing-v3"] [style*="color:#8fb7ff"] { color: var(--horizon-blue) !important; }
-
-body[data-coden-surface="landing-v3"] .cdn-faq {
-  border-color: var(--horizon-border) !important;
-  border-radius: 16px !important;
-  background: var(--horizon-surface) !important;
-}
-
-body[data-coden-surface="landing-v3"] .cdn-faq summary:hover { background: var(--horizon-raised) !important; }
-
+/* ---------------------------------------------------------------------------
+ * Marketing landing — withdrawn
+ *
+ * This file used to carry ~140 lines aimed at the landing: it forced the hero
+ * background, overrode h1/h2/h3 and paragraph colours, and switched off every
+ * decorative layer with `#top > [aria-hidden="true"] { display: none
+ * !important }`.
+ *
+ * Almost all of it targeted markup that no longer exists — `.cdn-interaction-8`,
+ * `.input-wrapper`, `[style*="color:rgba(248,250,252"]` — because the page it
+ * was written against was built from inline styles, and overriding an inline
+ * style is only possible with `!important`. Rewriting the landing against a
+ * stylesheet of its own removes the reason those rules existed.
+ *
+ * What was left was actively harmful: the `display: none !important` on
+ * decorative children is what made the new page's gradient layer measure 0x0
+ * and paint nothing, which took a while to find precisely because the element
+ * was present, correct and invisible.
+ *
+ * The landing owns its own visual system in styles/landing.css, imported after
+ * this file so it wins where they overlap without needing `!important` at all.
+ * ------------------------------------------------------------------------- */
 body[data-coden-surface="landing-v3"] #landing-notice {
   border-color: var(--horizon-border-strong);
   border-radius: 16px;

@@ -3,6 +3,13 @@ import { initCodenNavigationTransitions } from './navigation-transitions';
 import './styles/agent-surface.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
+/*
+ * Last, so the landing's own rules win over the shared shell where they
+ * overlap. The page was ~400 lines of inline styles before this file existed;
+ * an inline style would have beaten any of them, which is why so much of the
+ * old landing could not follow the theme.
+ */
+import './styles/landing.css';
 
 // Dedicated entrypoint: never mounts the legacy marketing shell or Builder UI.
 const notice = document.getElementById('landing-notice');

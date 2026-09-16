@@ -1,0 +1,746 @@
+/* ---------------------------------------------------------------------------
+ * Coden — marketing landing
+ *
+ * Written from scratch to replace ~400 lines of inline-style markup. Every
+ * colour here is a `--horizon-*` token, so the page follows the theme instead
+ * of carrying a second palette of its own — which is what the old page did and
+ * why half of it could not go dark.
+ *
+ * Three rules hold the whole thing together:
+ *
+ *  1. ONE type scale. The hero is the only thing at hero size; every section
+ *     heading shares one smaller size. Hierarchy is what makes a page feel
+ *     calm, not empty space.
+ *  2. ONE rhythm. Every section has the same padding. A rhythm that depends on
+ *     what the previous section happened to end with breaks the moment
+ *     anything is reordered.
+ *  3. Motion is an enhancement, never a precondition. Nothing is hidden by a
+ *     stylesheet waiting for a class to arrive — the rules that hide are all
+ *     gated on `html[data-coden-reveal="on"]`, which only the script sets, and
+ *     only after it has confirmed it can reveal. Without JavaScript the page
+ *     renders whole.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --ldg-rhythm: clamp(48px, 5.6vw, 72px);
+  --ldg-gutter: clamp(20px, 4vw, 32px);
+  --ldg-max: 1180px;
+  --ldg-radius: 20px;
+  --ldg-radius-lg: 28px;
+  --ldg-ease: cubic-bezier(.22, 1, .36, 1);
+  --ldg-card: color-mix(in srgb, var(--horizon-surface) 86%, transparent);
+  --ldg-card-hover: color-mix(in srgb, var(--horizon-surface) 96%, transparent);
+  --ldg-hairline: color-mix(in srgb, var(--horizon-text) 9%, transparent);
+  --ldg-shadow: 0 1px 2px color-mix(in srgb, var(--horizon-ink, #020617) 5%, transparent),
+                0 12px 32px -12px color-mix(in srgb, var(--horizon-ink, #020617) 14%, transparent);
+  --ldg-shadow-lift: 0 2px 4px color-mix(in srgb, var(--horizon-ink, #020617) 6%, transparent),
+                     0 28px 60px -18px color-mix(in srgb, var(--horizon-ink, #020617) 24%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Aurora
+ *
+ * Four soft blooms over the canvas. They are `background-image` layers on a
+ * dedicated element rather than on the section, so the section keeps its own
+ * background and nothing has to fight over one property.
+ *
+ * Each stop fades to its own colour at zero alpha, never to `transparent`:
+ * `transparent` is transparent BLACK, so interpolating a saturated hue towards
+ * it drags the midpoint through grey and leaves a dirty halo.
+ * ------------------------------------------------------------------------- */
+.ldg-aurora {
+  position: absolute;
+  inset: -20% -10% auto -10%;
+  height: 150%;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(46% 50% at 16% 6%, color-mix(in srgb, var(--horizon-blue) 34%, transparent), rgba(37, 99, 235, 0) 70%),
+    radial-gradient(42% 46% at 86% 2%, color-mix(in srgb, #7c3aed 30%, transparent), rgba(124, 58, 237, 0) 68%),
+    radial-gradient(48% 44% at 74% 80%, color-mix(in srgb, #06b6d4 24%, transparent), rgba(6, 182, 212, 0) 66%),
+    radial-gradient(44% 48% at 6% 72%, color-mix(in srgb, #4f46e5 26%, transparent), rgba(79, 70, 229, 0) 68%);
+  opacity: 1;
+  /*
+   * Faded out at the bottom rather than clipped by the section's `overflow`.
+   * A hard horizontal edge across a soft gradient reads as a rendering fault,
+   * not as a section boundary.
+   */
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 96%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 96%);
+}
+
+@keyframes ldg-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -2.5%, 0) scale(1.06); }
+}
+
+/*
+ * The drift is 24 seconds and 2.5%: slow and small enough that it reads as
+ * light moving rather than as something sliding. Anything faster turns a
+ * backdrop into an event the reader has to dismiss.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .ldg-aurora { animation: ldg-drift 24s var(--ldg-ease) infinite; }
+}
+
+/* A single hairline instead of a hard section edge. */
+.ldg-edge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ldg-hairline) 18%, var(--ldg-hairline) 82%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Skeleton
+ * ------------------------------------------------------------------------- */
+.ldg-section {
+  position: relative;
+  padding: var(--ldg-rhythm) var(--ldg-gutter);
+}
+
+.ldg-inner {
+  position: relative;
+  z-index: 1;
+  max-width: var(--ldg-max);
+  margin: 0 auto;
+}
+
+.ldg-head {
+  max-width: 720px;
+  margin: 0 auto clamp(36px, 5vw, 56px);
+  text-align: center;
+}
+
+.ldg-eyebrow {
+  display: inline-block;
+  margin: 0 0 14px;
+  color: var(--horizon-blue);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.ldg-h2 {
+  margin: 0;
+  color: var(--horizon-text);
+  font-size: clamp(30px, 4vw, 46px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -.03em;
+  text-wrap: balance;
+}
+
+.ldg-h2 em {
+  font-style: normal;
+  background: linear-gradient(100deg, var(--horizon-blue), #7c3aed 58%, #06b6d4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: var(--horizon-blue);
+}
+
+.ldg-lede {
+  max-width: 620px;
+  margin: 18px auto 0;
+  color: var(--horizon-muted);
+  font-size: clamp(15px, 1.4vw, 17px);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* ---------------------------------------------------------------------------
+ * Hero
+ * ------------------------------------------------------------------------- */
+.ldg-hero {
+  padding-top: clamp(104px, 12vw, 148px);
+  padding-bottom: clamp(52px, 7vw, 88px);
+  overflow: hidden;
+  text-align: center;
+}
+
+.ldg-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px 7px 11px;
+  color: var(--horizon-text);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+  background: var(--ldg-card);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 999px;
+  box-shadow: var(--ldg-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  transition: transform .28s var(--ldg-ease), box-shadow .28s var(--ldg-ease);
+}
+
+.ldg-badge:hover { transform: translateY(-1px); box-shadow: var(--ldg-shadow-lift); }
+.ldg-badge svg { color: var(--horizon-blue); }
+
+.ldg-h1 {
+  max-width: 900px;
+  margin: 26px auto 0;
+  color: var(--horizon-text);
+  font-size: clamp(42px, 7vw, 76px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -.045em;
+  text-wrap: balance;
+}
+
+.ldg-h1 em {
+  font-style: normal;
+  background: linear-gradient(104deg, var(--horizon-blue) 6%, #7c3aed 52%, #06b6d4 96%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /*
+   * The fallback matters: with `background-clip: text` unsupported the text
+   * would otherwise paint in `transparent` and the headline would vanish.
+   */
+  color: var(--horizon-blue);
+}
+
+.ldg-hero-lede {
+  max-width: 560px;
+  margin: 20px auto 0;
+  color: var(--horizon-muted);
+  font-size: clamp(16px, 1.5vw, 18px);
+  line-height: 1.55;
+}
+
+/* The composer island mounts here. It brings its own card, so this is only a
+   rail: any chrome of its own would render as a second card around it. */
+.ldg-composer {
+  display: flex;
+  justify-content: center;
+  margin: clamp(28px, 4vw, 40px) auto 0;
+  max-width: 720px;
+}
+
+.ldg-starters {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 22px auto 0;
+}
+
+.ldg-starter {
+  padding: 7px 13px;
+  color: var(--horizon-muted);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--ldg-card);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .22s var(--ldg-ease), border-color .22s var(--ldg-ease),
+              background-color .22s var(--ldg-ease), transform .22s var(--ldg-ease);
+}
+
+.ldg-starter:hover {
+  color: var(--horizon-text);
+  background: var(--ldg-card-hover);
+  border-color: color-mix(in srgb, var(--horizon-blue) 40%, transparent);
+  transform: translateY(-1px);
+}
+
+/* ---------------------------------------------------------------------------
+ * Stack marquee
+ * ------------------------------------------------------------------------- */
+.ldg-stack { padding: clamp(28px, 4vw, 44px) 0; }
+
+.ldg-stack-caption {
+  margin: 0 0 22px;
+  color: var(--horizon-subtle);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.ldg-marquee {
+  max-width: 1200px;
+  margin: 0 auto;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+.ldg-track {
+  display: flex;
+  width: max-content;
+  align-items: center;
+}
+
+@keyframes ldg-marquee { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ldg-track { animation: ldg-marquee 38s linear infinite; }
+  .ldg-marquee:hover .ldg-track { animation-play-state: paused; }
+}
+
+.ldg-stack-group {
+  display: flex;
+  align-items: center;
+  gap: clamp(32px, 5vw, 56px);
+  padding-right: clamp(32px, 5vw, 56px);
+}
+
+.ldg-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--horizon-muted);
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ldg-brand svg { width: 32px; height: 32px; flex: 0 0 32px; }
+
+/*
+ * The one place a literal colour is correct: these are other people's brands,
+ * and a brand recoloured to our palette is no longer their brand. In the light
+ * theme each is mixed with the page's own ink — Supabase's green measured
+ * 1.9:1 on the light canvas, which is a shape rather than a word.
+ */
+.ldg-brand.is-react { color: #149eca; }
+.ldg-brand.is-typescript { color: #3178c6; }
+.ldg-brand.is-vite { color: #8b5cf6; }
+.ldg-brand.is-node { color: #4f9b45; }
+.ldg-brand.is-supabase { color: #3ecf8e; }
+
+:root:not([data-theme="dark"]) .ldg-brand.is-react { color: color-mix(in srgb, #149eca 78%, var(--horizon-text)); }
+:root:not([data-theme="dark"]) .ldg-brand.is-typescript { color: color-mix(in srgb, #3178c6 82%, var(--horizon-text)); }
+:root:not([data-theme="dark"]) .ldg-brand.is-vite { color: color-mix(in srgb, #8b5cf6 82%, var(--horizon-text)); }
+:root:not([data-theme="dark"]) .ldg-brand.is-node { color: color-mix(in srgb, #4f9b45 76%, var(--horizon-text)); }
+:root:not([data-theme="dark"]) .ldg-brand.is-supabase { color: color-mix(in srgb, #3ecf8e 58%, var(--horizon-text)); }
+
+/* ---------------------------------------------------------------------------
+ * Cards and the bento
+ * ------------------------------------------------------------------------- */
+.ldg-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(20px, 2.4vw, 28px);
+  background: var(--ldg-card);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: var(--ldg-radius);
+  box-shadow: var(--ldg-shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  transition: transform .34s var(--ldg-ease), box-shadow .34s var(--ldg-ease),
+              border-color .34s var(--ldg-ease), background-color .34s var(--ldg-ease);
+}
+
+/*
+ * The lit edge on hover. Drawn as a masked ring on a pseudo-element rather
+ * than as a border-image: a gradient border would have to repaint the border
+ * box on every frame, and it cannot follow `border-radius` on all engines.
+ */
+.ldg-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--horizon-blue) 55%, transparent),
+    color-mix(in srgb, #7c3aed 40%, transparent) 46%,
+    transparent 72%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .34s var(--ldg-ease);
+}
+
+.ldg-card:hover {
+  transform: translateY(-3px);
+  background: var(--ldg-card-hover);
+  box-shadow: var(--ldg-shadow-lift);
+}
+
+.ldg-card:hover::after { opacity: 1; }
+
+.ldg-card-title {
+  margin: 0;
+  color: var(--horizon-text);
+  font-size: clamp(17px, 1.6vw, 20px);
+  font-weight: 600;
+  letter-spacing: -.015em;
+  line-height: 1.25;
+}
+
+.ldg-card-text {
+  margin: 10px 0 0;
+  color: var(--horizon-muted);
+  font-size: 14.5px;
+  line-height: 1.58;
+}
+
+.ldg-card-kicker {
+  margin: 0 0 10px;
+  color: var(--horizon-subtle);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+/*
+ * The bento.
+ *
+ * Twelve columns so a card can be a half, a third or two thirds without a
+ * separate grid per row. `auto-flow: dense` is deliberately NOT set: it would
+ * let a later card jump into an earlier gap, and reading order would stop
+ * matching visual order for anyone using a screen reader or a keyboard.
+ */
+.ldg-bento {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: clamp(12px, 1.4vw, 18px);
+}
+
+.ldg-bento > * { grid-column: span 12; }
+
+@media (min-width: 760px) {
+  .ldg-bento > .is-half { grid-column: span 6; }
+  .ldg-bento > .is-third { grid-column: span 4; }
+  .ldg-bento > .is-two-thirds { grid-column: span 8; }
+  .ldg-bento > .is-full { grid-column: span 12; }
+  .ldg-bento > .is-tall { grid-row: span 2; }
+}
+
+/* A wide card puts its copy and its picture side by side. */
+@media (min-width: 900px) {
+  .ldg-card.is-split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(24px, 3vw, 44px);
+    align-items: center;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * The little mock interfaces inside the cards
+ * ------------------------------------------------------------------------- */
+.ldg-mock {
+  margin-top: 18px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--horizon-raised) 70%, transparent);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 14px;
+}
+
+.ldg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 11px;
+  color: var(--horizon-text);
+  font-size: 13px;
+  background: var(--horizon-surface);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 10px;
+}
+
+.ldg-row + .ldg-row { margin-top: 7px; }
+.ldg-row-meta { color: var(--horizon-muted); font-size: 12px; }
+.ldg-row-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; }
+
+.ldg-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--horizon-success);
+}
+
+.ldg-dot.is-pending { background: var(--horizon-blue); }
+
+.ldg-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--horizon-text) 10%, transparent);
+}
+
+.ldg-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--horizon-blue), #7c3aed);
+}
+
+.ldg-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+
+.ldg-pill {
+  padding: 6px 12px;
+  color: var(--horizon-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--horizon-raised) 70%, transparent);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 999px;
+}
+
+/* ---------------------------------------------------------------------------
+ * FAQ
+ * ------------------------------------------------------------------------- */
+.ldg-faq { max-width: 780px; margin: 0 auto; display: grid; gap: 10px; }
+
+.ldg-faq details {
+  padding: 4px 20px;
+  background: var(--ldg-card);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 16px;
+  transition: border-color .28s var(--ldg-ease), background-color .28s var(--ldg-ease);
+}
+
+.ldg-faq details[open] {
+  background: var(--ldg-card-hover);
+  border-color: color-mix(in srgb, var(--horizon-blue) 30%, transparent);
+}
+
+.ldg-faq summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  color: var(--horizon-text);
+  font-size: 15.5px;
+  font-weight: 550;
+  list-style: none;
+  cursor: pointer;
+}
+
+.ldg-faq summary::-webkit-details-marker { display: none; }
+
+.ldg-faq summary::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-right: 1.8px solid var(--horizon-muted);
+  border-bottom: 1.8px solid var(--horizon-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform .3s var(--ldg-ease);
+}
+
+.ldg-faq details[open] summary::after { transform: rotate(-135deg) translate(-3px, -3px); }
+
+.ldg-faq p {
+  margin: 0;
+  padding: 0 0 18px;
+  color: var(--horizon-muted);
+  font-size: 14.5px;
+  line-height: 1.62;
+}
+
+/* ---------------------------------------------------------------------------
+ * Manifesto
+ * ------------------------------------------------------------------------- */
+.ldg-manifesto { text-align: center; }
+
+.ldg-manifesto .ldg-h2 {
+  max-width: 820px;
+  margin-inline: auto;
+  font-size: clamp(32px, 4.6vw, 52px);
+}
+
+/*
+ * The word reveal is armed by the script, never by this stylesheet. If the
+ * hidden state were written unconditionally, a browser without
+ * IntersectionObserver would keep the headline invisible for good.
+ */
+.ldg-manifesto[data-word-reveal="on"] .ldg-h2 [data-word-reveal] {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .52s var(--ldg-ease), transform .52s var(--ldg-ease);
+}
+
+.ldg-manifesto .ldg-h2 [data-word-reveal].is-revealed { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ldg-manifesto .ldg-h2 [data-word-reveal] { opacity: 1; transform: none; transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Staggered entrance
+ *
+ * Gated on the same attribute as the section reveal, for the same reason: the
+ * script sets it only once it knows it can finish the job.
+ *
+ * The stagger caps at the sixth child. An uncapped 70ms step puts the ninth
+ * card of a bento two thirds of a second behind the first, which is not an
+ * entrance, it is a queue.
+ * ------------------------------------------------------------------------- */
+html[data-coden-reveal="on"] [data-coden-reveal] .ldg-stagger > * {
+  opacity: 0;
+  transform: translateY(16px);
+}
+
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > * {
+  opacity: 1;
+  transform: none;
+  transition: opacity .58s var(--ldg-ease), transform .58s var(--ldg-ease);
+}
+
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(1) { transition-delay: 0ms; }
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(2) { transition-delay: 70ms; }
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(3) { transition-delay: 140ms; }
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(4) { transition-delay: 210ms; }
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(5) { transition-delay: 280ms; }
+html[data-coden-reveal="on"] [data-coden-reveal].is-revealed .ldg-stagger > :nth-child(n+6) { transition-delay: 350ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-coden-reveal="on"] [data-coden-reveal] .ldg-stagger > * {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Final call
+ * ------------------------------------------------------------------------- */
+.ldg-cta { overflow: hidden; text-align: center; }
+
+.ldg-cta .ldg-h2 { font-size: clamp(32px, 4.4vw, 50px); }
+
+@media (max-width: 640px) {
+  .ldg-card.is-split { display: flex; }
+  .ldg-h1 { letter-spacing: -.035em; }
+}
+
+/* ---------------------------------------------------------------------------
+ * Header
+ *
+ * Rebuilt with the page. It used to carry its colours as inline styles —
+ * `background: rgba(21, 26, 34, .82)`, a dark pill from the landing's dark
+ * period — which is why it stayed dark on a light page and why the shared
+ * stylesheet needed `!important` to argue with it at all.
+ * ------------------------------------------------------------------------- */
+.ldg-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding: 10px clamp(12px, 3vw, 20px) 0;
+}
+
+.ldg-pill {
+  display: flex;
+  max-width: 1120px;
+  height: 54px;
+  margin: 0 auto;
+  padding: 0 8px 0 14px;
+  align-items: center;
+  gap: 24px;
+  background: color-mix(in srgb, var(--horizon-surface) 78%, transparent);
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 999px;
+  box-shadow: var(--ldg-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
+.ldg-logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  color: var(--horizon-text);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  text-decoration: none;
+}
+
+.ldg-logo svg { display: block; flex: none; }
+
+.cdn-nav {
+  display: flex;
+  gap: 22px;
+  margin: 0 auto;
+}
+
+.cdn-nav a {
+  color: var(--horizon-muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color .18s var(--ldg-ease);
+}
+
+.cdn-nav a:hover { color: var(--horizon-text); }
+
+.ldg-actions {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.ldg-theme {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--horizon-muted);
+  background: transparent;
+  border: 1px solid var(--ldg-hairline);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color .18s var(--ldg-ease), background-color .18s var(--ldg-ease);
+}
+
+.ldg-theme:hover { color: var(--horizon-text); background: color-mix(in srgb, var(--horizon-raised) 70%, transparent); }
+
+.ldg-signin {
+  color: var(--horizon-muted);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color .18s var(--ldg-ease);
+}
+
+.ldg-signin:hover { color: var(--horizon-text); }
+
+.ldg-cta-btn {
+  padding: 9px 15px;
+  color: var(--horizon-blue-ink);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  background: var(--horizon-blue);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--horizon-blue) 62%, transparent);
+  transition: transform .2s var(--ldg-ease), background-color .2s var(--ldg-ease);
+}
+
+.ldg-cta-btn:hover { transform: translateY(-1px); background: var(--horizon-blue-hover); }
+
+@media (max-width: 720px) {
+  .cdn-nav { display: none; }
+  .ldg-signin { display: none; }
+}
