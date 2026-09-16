@@ -2101,3 +2101,163 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-menu {
 }
 /* The arrow buttons at each end are the bulk of the platform bar's width. */
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+/* ---------------------------------------------------------------------------
+ * Dashboard reference composition
+ *
+ * The dashboard lives on one atmospheric field.  The sidebar deliberately
+ * stays transparent on that field, while the workspace is the sole raised
+ * surface.  The composer and project rail then sit directly in the workspace
+ * instead of being nested inside another panel.  This keeps the generous,
+ * floating composition of the original Coden dashboard without altering the
+ * compact mobile layout.
+ * ------------------------------------------------------------------------- */
+@media (min-width: 761px) {
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"],
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"]:has(#coden-dashboard-react-root) {
+    /* The user-selected dashboard art direction intentionally uses the one
+       product-level atmospheric gradient, visible around the entire shell. */
+    background-color: #1e43bd !important;
+    background-image: linear-gradient(132deg, #1e57d1 0%, #2d3db5 48%, #4d29a8 100%) !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+    padding: 0;
+    gap: 0;
+    background: transparent !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
+    --dashboard-text: #f8fafc;
+    --dashboard-muted: rgba(239, 246, 255, .74);
+    --dashboard-surface: rgba(255, 255, 255, .10);
+    --dashboard-raised: rgba(255, 255, 255, .14);
+    --dashboard-border: rgba(255, 255, 255, .24);
+    --dashboard-border-soft: rgba(255, 255, 255, .18);
+    --dashboard-focus: #dbeafe;
+    flex: 0 0 clamp(260px, 16.4vw, 315px);
+    width: clamp(260px, 16.4vw, 315px);
+    height: 100dvh;
+    padding: 24px 24px 20px;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-sidebar .coden-dashboard-new-project {
+    min-height: 52px;
+    margin-top: 28px;
+    padding-inline: 20px;
+    background: rgba(255, 255, 255, .10) !important;
+    border-color: rgba(255, 255, 255, .24) !important;
+    border-radius: 999px !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-sidebar .coden-dashboard-project-nav {
+    margin-top: 28px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-sidebar .coden-dashboard-project-link {
+    min-height: 44px;
+    padding-inline: 12px;
+    border-radius: 10px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-sidebar .coden-dashboard-sidebar-bottom {
+    padding-top: 18px;
+    border-top-color: rgba(255, 255, 255, .18);
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-main {
+    height: calc(100dvh - 32px);
+    margin: 16px 16px 16px 0;
+    background: #0e1525 !important;
+    background-image: none !important;
+    border: 1px solid rgba(148, 163, 184, .16) !important;
+    border-radius: 28px !important;
+    box-shadow: 0 26px 70px rgba(5, 12, 34, .38) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-content {
+    width: min(100%, 1050px);
+    /* The project rail owns the full 1,050px reference width.  The composer
+       remains narrower by virtue of its own 875px width and auto margins. */
+    /* The cards finish inside the viewport at the reference height.  Extra
+       bottom padding would create a scroll rail even though no content is
+       hidden, which breaks the uninterrupted floating-panel silhouette. */
+    padding: 80px 0 0;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-create {
+    width: min(100%, 875px);
+    min-height: 420px;
+    justify-content: flex-start;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-create-mark {
+    width: 52px;
+    height: 52px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-create h1 {
+    margin-top: 28px;
+    font-size: clamp(32px, 2.5vw, 48px);
+    line-height: 1.08;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-create > p {
+    margin-top: 12px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
+    width: 100%;
+    max-width: 875px !important;
+    margin-top: 32px;
+  }
+
+  /* The first direct div is the hidden attachment rail.  It must remain at
+     zero height until an attachment exists; the second div is the actual
+     composer surface that carries the generous reference height. */
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input > div:first-of-type {
+    min-height: 0;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input > div:nth-of-type(2) {
+    min-height: 160px;
+    border-color: rgba(148, 163, 184, .22) !important;
+    background: #131b2a !important;
+    box-shadow: 0 16px 42px rgba(0, 0, 0, .16) !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-toolbar {
+    margin-top: 34px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-controls {
+    min-height: 52px;
+    padding: 4px;
+    background: rgba(26, 37, 56, .84) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-toolbar .coden-dashboard-search,
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-filters button {
+    min-height: 42px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-list {
+    gap: 20px;
+    margin-top: 24px;
+  }
+
+  :root[data-theme="dark"] body[data-coden-surface="dashboard"] .coden-dashboard-project-preview {
+    border-radius: 14px;
+  }
+}
