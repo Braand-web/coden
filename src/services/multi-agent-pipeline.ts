@@ -54,6 +54,7 @@ import {
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
+import { scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -443,6 +444,11 @@ export async function runMultiAgentPipeline(input: {
   /** How long the whole run may take, shared by every coder round. */
   runDeadlineMs?: number;
   /**
+   * The effort the user asked for, which widens or narrows the route budget.
+   * Absent means Medium, which is the budget this pipeline already had.
+   */
+  effort?: AgentEffort;
+  /**
    * What this project has already decided, rendered by
    * `buildMemoryRagContext` — the established stack, the user's preferences,
    * the failure modes to avoid. Empty for a project with no history.
@@ -486,7 +492,13 @@ export async function runMultiAgentPipeline(input: {
    * this reports work rather than performing it.
    */
   const fr = speaksFrench(input.prompt);
-  const routeBudget = budgetForRoute(input.route);
+  /*
+   * The route decides the shape of the budget; the effort decides how much of
+   * it there is. Applied here, once, because `routeBudget` feeds the run
+   * deadline and all three coder-loop ceilings — scaling it at each of those
+   * four sites is four chances for them to disagree.
+   */
+  const routeBudget = scaleRouteBudgetForEffort(budgetForRoute(input.route), input.effort);
   const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
   const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now()));
   input = { ...input, signal: input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal };

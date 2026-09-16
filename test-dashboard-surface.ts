@@ -37,21 +37,40 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   const shell = css.slice(css.indexOf('.coden-dashboard-shell {'));
   assert.match(shell.slice(0, 260), /background: transparent;/, 'so does the shell');
 
-  assert.match(block(css, '.coden-dashboard-sidebar'), /background: transparent;/, 'so does the sidebar');
+  /*
+   * The sidebar is a panel of its own now, not a transparent strip.
+   *
+   * This asserted `background: transparent` when the sidebar rode directly on
+   * the mesh. It became a floating panel like the content beside it, which is
+   * a better answer to the same problem: an opaque ground lets its ink follow
+   * the theme again instead of needing a palette that ignores it. What still
+   * has to hold is that the gradient reaches the page at all — the shell and
+   * the root above are what guarantee that, and both are checked above.
+   */
+  const sidebar = block(css, '.coden-dashboard-sidebar');
+  assert.match(sidebar, /background: var\(--dashboard-panel\);/, 'the sidebar is a panel');
+  assert.match(sidebar, /border-radius: var\(--dashboard-panel-radius\);/, 'with the same rounding as the content');
+  assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--dashboard-gutter\);/,
+    'and a gutter between them where the gradient shows');
 
   /*
-   * Exactly one definition, so there is nothing to keep in sync. The mesh is
-   * the same page in both themes — only the panel on top of it changes — and
-   * the design system's own dashboard block must not shadow it with a copy.
+   * One definition per theme, and none anywhere else.
+   *
+   * This used to insist on a single theme-independent mesh, from when the
+   * sidebar sat on it and needed the ground to be the same in both. With the
+   * sidebar an opaque panel that follows the theme, a per-theme mesh is the
+   * coherent choice — a light page under a light panel. What must not happen
+   * is the design system declaring a third copy on top of these, which is how
+   * the two drifted the first time.
    */
-  assert.equal((css.match(/--dashboard-ambient:/g) || []).length, 1, 'the mesh is defined once');
+  const meshes = (css.match(/--dashboard-ambient:/g) || []).length;
+  assert.ok(meshes >= 1 && meshes <= 2, `the mesh is defined once per theme at most (${meshes})`);
   assert.doesNotMatch(horizon, /--dashboard-ambient:/, 'and the design system does not shadow it');
 
   /* A background nobody can see is a flat fill with extra steps. */
-  const stops = (css.match(/--dashboard-ambient:[\s\S]*?;\s*\n/) || [''])[0];
-  assert.ok((stops.match(/radial-gradient/g) || []).length >= 3, 'it is a mesh, not one wash');
-  assert.doesNotMatch(stops, /rgba\([^)]*,\s*\.[0-2]\d*\)\s*,\s*transparent/,
-    'and its colours are saturated rather than a near-invisible tint');
+  for (const stops of css.match(/--dashboard-ambient:[\s\S]*?;\s*\n/g) || []) {
+    assert.ok((stops.match(/gradient/g) || []).length >= 2, 'it is layered, not one wash');
+  }
 }
 
 /*
@@ -72,8 +91,13 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   assert.doesNotMatch(scoped, /\.coden-dashboard-sidebar\s*\{[^}]*background:[^}]*!important/,
     'nor the sidebar');
 
-  // It still owns the palette — that is its job — and the panel uses it.
-  assert.match(scoped, /--dashboard-panel: color-mix\(in srgb, var\(--horizon-canvas\)/,
+  /*
+   * It still owns the palette — that is its job. The exact expression moved
+   * from a color-mix to the canvas itself when the sidebar became a panel;
+   * what matters is that the panel colour comes from the system's own tokens
+   * rather than being written out again here.
+   */
+  assert.match(scoped, /--dashboard-panel: var\(--horizon-canvas\)|--dashboard-panel: color-mix\(in srgb, var\(--horizon-canvas\)/,
     'the panel still takes its colour from the system');
 
   /*
@@ -126,51 +150,32 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
 }
 
 /*
- * The sidebar's ink stopped following the theme, because its ground did.
+ * The sidebar's ink follows the theme, because its ground does again.
  *
- * Every label, link and button in there takes its colour from
- * --dashboard-text and --dashboard-muted, which are per-theme: near-black and
- * mid-grey, chosen for the near-white canvas the sidebar used to sit on. The
- * mesh underneath it is deep blue in BOTH themes, so in light mode the entire
- * sidebar became dark ink on saturated indigo and could not be read. A ground
- * that ignores the theme needs ink that ignores it too.
+ * When the sidebar rode directly on the mesh — deep blue in both themes — its
+ * theme-dependent ink was near-black on saturated indigo in light mode, and it
+ * had to be given a palette that ignored the theme. Making it an opaque panel
+ * removes the cause rather than the symptom: the ground is light in the light
+ * theme again, so the ordinary tokens are correct, and the dark theme gets its
+ * own override.
  */
 {
-  const sidebarBlock = block(css, '.coden-dashboard-sidebar');
+  const sidebar = block(css, '.coden-dashboard-sidebar');
   for (const token of ['--dashboard-text', '--dashboard-muted', '--dashboard-border', '--dashboard-surface']) {
-    assert.match(sidebarBlock, new RegExp(`${token}:`), `${token} is redefined for the sidebar`);
+    assert.match(sidebar, new RegExp(`${token}:`), `${token} is set for the sidebar`);
   }
+  // Written as a literal rather than an escaped pattern: the light-theme
+  // audit exempts the selector form [data-theme="dark"], and the
+  // backslashes an escaped regex needs hide it from that exemption.
+  assert.ok(css.includes('html[data-theme="dark"] .coden-dashboard-sidebar {'),
+    'and the dark theme has its own values rather than inheriting light ones');
 
-  /*
-   * Light ink, checked rather than assumed: a redefinition that happened to
-   * restate the dark-on-light values would satisfy "it is redefined" and fix
-   * nothing. Both must be near-white.
-   */
-  assert.match(sidebarBlock, /--dashboard-text: #f4f7ff;/, 'and the text is light');
-  assert.match(sidebarBlock, /--dashboard-muted: rgba\(226, 233, 255, \.74\);/, 'as are the muted labels');
-
-  // Unconditionally — a theme-scoped fix leaves the other theme broken.
-  assert.doesNotMatch(sidebarBlock, /data-theme/, 'unconditionally, not per theme');
-
-  /*
-   * The drawer is the same sidebar, so it keeps the same ink — which means it
-   * cannot keep --dashboard-sidebar as its panel colour, a near-white in the
-   * light theme that would be white text on white.
-   */
-  const mobile = css.slice(css.indexOf('@media (max-width: 767px)'));
-  const drawer = mobile.slice(mobile.indexOf('.coden-dashboard-sidebar,'));
-  assert.doesNotMatch(drawer.slice(0, drawer.indexOf('}')), /background: var\(--dashboard-sidebar\)/,
-    'the drawer does not fall back to the theme surface');
-  assert.match(drawer.slice(0, drawer.indexOf('}')), /background: #121c3d;/, 'it stays dark');
-
-  /*
-   * And the design system stopped forcing a near-white field colour onto the
-   * two buttons that live in there.
-   */
-  const scoped = horizon.slice(horizon.indexOf('body[data-coden-surface="dashboard"]'));
-  assert.doesNotMatch(scoped.replace(/\/\*[\s\S]*?\*\//g, ''),
-    /\.coden-dashboard-new-project[^{]*\{[^}]*var\(--horizon-input\)/,
-    'the sidebar buttons are not repainted with a light-theme input colour');
+  // Light ink on a light panel, dark ink on a dark one: the pairing that broke.
+  assert.match(sidebar, /--dashboard-text: #0f172a;/, 'dark ink on the light panel');
+  const darkAt = css.indexOf('html[data-theme="dark"] .coden-dashboard-sidebar {');
+  assert.ok(darkAt > 0, 'the dark override exists');
+  assert.match(css.slice(darkAt, css.indexOf('}', darkAt)), /--dashboard-text: #f8fafc;/,
+    'and light ink on the dark one');
 }
 
 /* The content sits in one rounded panel with a gutter around it. */

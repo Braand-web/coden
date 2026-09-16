@@ -305,6 +305,51 @@ let currentProjectId = '';
 let currentFiles: GeneratedFile[] = [];
 let currentPreviewHtml = '';
 let isGenerating = false;
+
+/*
+ * The Builder's composer is the shared PromptInput, mounted as a React island.
+ *
+ * Eleven places in this file reached for `#chat-textarea-box` — reading its
+ * value, writing it, focusing it, nudging its height. A React-controlled
+ * textarea answers none of those honestly: writing `.value` sets the DOM
+ * property and the component overwrites it on its next render, which is a
+ * prefill that silently disappears.
+ *
+ * So the field's value lives here, and those eleven sites talk to this adapter
+ * instead. It implements exactly the surface they use and nothing more —
+ * `style` is accepted and ignored because the component sizes itself now, and
+ * `dispatchEvent` is a no-op because the setter already re-renders.
+ */
+let composerValue = '';
+let composerModel = 'auto';
+let composerEffort = 'Medium';
+let renderComposer: () => void = () => {};
+
+type ComposerHandle = {
+  value: string;
+  focus: () => void;
+  dispatchEvent: (event: Event) => boolean;
+  setSelectionRange: (start: number, end: number) => void;
+  style: { height: string; overflowY: string };
+  scrollHeight: number;
+  selectionStart: number;
+  selectionEnd: number;
+};
+
+function chatComposer(): ComposerHandle {
+  const field = () => document.querySelector<HTMLTextAreaElement>('.chat-input-row textarea');
+  return {
+    get value() { return composerValue; },
+    set value(next: string) { composerValue = next; renderComposer(); },
+    focus: () => field()?.focus(),
+    dispatchEvent: () => true,
+    setSelectionRange: (start, end) => field()?.setSelectionRange(start, end),
+    style: { height: '', overflowY: '' },
+    get scrollHeight() { return field()?.scrollHeight ?? 0; },
+    get selectionStart() { return field()?.selectionStart ?? composerValue.length; },
+    get selectionEnd() { return field()?.selectionEnd ?? composerValue.length; },
+  };
+}
 // Last known client-side wallet balance (credits). null = unknown -> defer to the
 // server credit gate. 0 = known-empty -> block the workspace reveal and show the
 // existing upgrade prompt instead.
@@ -935,7 +980,7 @@ function syncMediaControls() {
 }
 
 function refreshWorkshopInputContext() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const context = document.getElementById('coden-workshop-context') as HTMLElement | null;
   const label = document.getElementById('coden-workshop-context-label') as HTMLElement | null;
   const chatTab = document.getElementById('btn-sidebar-chat') as HTMLElement | null;
@@ -953,7 +998,9 @@ function refreshWorkshopInputContext() {
     else option.removeAttribute('aria-current');
   });
 
-  if (input && !input.value.trim()) input.placeholder = config.placeholder;
+  /* The placeholder is a prop of the island now, so changing the workshop
+     re-renders it rather than writing onto a DOM node React owns. */
+  if (!composerValue.trim()) renderComposer();
   if (context && label) {
     context.classList.toggle('visible', activeWorkshop !== 'chat');
     context.setAttribute('aria-hidden', activeWorkshop === 'chat' ? 'true' : 'false');
@@ -974,7 +1021,7 @@ function setActiveWorkshop(workshop: StudioWorkshop, options: { focusInput?: boo
   syncWorkshopPreview();
   syncProjectReadinessClass();
   if (options.focusInput) {
-    document.getElementById('chat-textarea-box')?.focus();
+    chatComposer().focus();
   }
 }
 
@@ -1099,7 +1146,7 @@ function syncInternalPreviewTheme() {
  * path then turns this into a targeted patch — no full prompt required.
  */
 function applyVisualEditTarget(target: VisualEditTarget) {
-  const composer = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const composer = chatComposer();
   if (!composer) return;
   const existing = composer.value.trim();
   composer.value = existing ? `${target.instruction}${existing}` : target.instruction;
@@ -1807,7 +1854,7 @@ function bindPreviewDeviceToggle() {
 function scheduleWorkspaceSave(patch: Partial<WorkspaceState> = {}, immediate = false) {
   if (workspaceSaveTimer !== null) window.clearTimeout(workspaceSaveTimer);
   const save = async () => {
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     const body = {
       draft_prompt: input?.value || '',
       selected_mode: selectedChatMode,
@@ -1879,7 +1926,7 @@ function applyWorkspaceState(state?: WorkspaceState | null) {
     applySidebarWidthPreference(state.sidebar_width);
   }
   const handoff = getInitialBuilderHandoff();
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
   if (input && !handoff.prompt && !input.value.trim() && state.draft_prompt) {
     input.value = repairTextEncoding(state.draft_prompt);
@@ -1968,7 +2015,7 @@ function bindConversationFeedbackBridge() {
     const detail = (event as CustomEvent).detail || {};
     const content = String(detail.content || '').trim();
     if (!content) return;
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     if (!input) return;
     input.value = content;
     input.focus();
@@ -2766,7 +2813,7 @@ function renderPlanResponse(
     });
     addInlineAction(card, speaksFrench ? 'Ajuster le plan' : 'Adjust plan', () => {
       setChatMode('plan');
-      const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+      const input = chatComposer();
       if (!input) return;
       input.value = speaksFrench ? 'Ajuste ce plan : ' : 'Adjust this plan: ';
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -3546,7 +3593,7 @@ function renderFiles(files: GeneratedFile[]) {
       if (document.querySelector('.workspace-body')?.classList.contains('sidebar-collapsed')) {
         (document.querySelector('.collapse-sidebar-arrow') as HTMLButtonElement | null)?.click();
       }
-      (document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null)?.focus();
+      (chatComposer())?.focus();
     });
   }
 }
@@ -4267,30 +4314,13 @@ const stopIconSvg = `
 `;
 
 function syncSubmitButtonState() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
-  if (!submit) return;
-  const hasPrompt = Boolean(input?.value.trim());
-  const shouldStop = isGenerating;
-  const shouldSendInstruction = isGenerating && hasPrompt;
-  submit.innerHTML = shouldStop && !shouldSendInstruction ? stopIconSvg : sendIconSvg;
-  submit.classList.toggle('active', shouldStop || hasPrompt);
-  submit.classList.toggle('is-generating', shouldStop);
-  const submitLabel = shouldSendInstruction ? 'Send instruction' : shouldStop ? 'Stop generation' : 'Send message';
-  submit.setAttribute('aria-label', submitLabel);
-  submit.setAttribute('title', submitLabel);
-  submit.setAttribute('aria-disabled', shouldStop || hasPrompt ? 'false' : 'true');
-  submit.style.pointerEvents = 'auto';
-  submit.style.cursor = shouldStop || hasPrompt ? 'pointer' : 'not-allowed';
-}
-
-function autoResizeChatInput() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  if (!input) return;
-  input.style.height = 'auto';
-  const nextHeight = Math.min(Math.max(input.scrollHeight, 52), 240);
-  input.style.height = `${nextHeight}px`;
-  input.style.overflowY = input.scrollHeight > 240 ? 'auto' : 'hidden';
+  /*
+   * The island owns the action button, and it already renders the right state
+   * from `isBusy` and whether the field has a value. Seven callers still mean
+   * "the composer's action needs refreshing", so the name stays and the work
+   * becomes a re-render.
+   */
+  renderComposer();
 }
 
 function setBusy(busy: boolean) {
@@ -5857,7 +5887,7 @@ function setBuilderLayout(state: BuilderLayout) {
 }
 
 function focusComposer() {
-  (document.getElementById('chat-textarea-box') as HTMLElement | null)?.focus?.();
+  (chatComposer())?.focus?.();
 }
 
 async function revealWorkspaceLayout(): Promise<void> {
@@ -6307,7 +6337,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       addInlineAction(target, speaksFrench ? 'Variation' : 'Variation', () => void generateFromPrompt(`${safePrompt}\n\nMake a fresh variation with the same goal.`, 'auto', false, { studioContext: studioPromptContextPayload() }, safeDisplayText));
       addInlineAction(target, speaksFrench ? 'Utiliser dans l app' : 'Use in app', () => {
         setActiveWorkshop('chat', { focusInput: true });
-        const promptInput = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+        const promptInput = chatComposer();
         if (promptInput) {
           promptInput.value = speaksFrench
             ? 'Utilise le dernier asset Coden Media dans la landing de cette app, sans casser le design actuel.'
@@ -7095,7 +7125,7 @@ function renderCloudConsole(db: any) {
 }
 
 function focusBuilderComposerWithPrompt(prompt: string) {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   if (!input) return;
   input.value = prompt;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7755,7 +7785,7 @@ function renderAnalysis(payload: AnalysisPayload) {
     void loadAnalysis();
   });
   document.getElementById('btn-fix-seo')?.addEventListener('click', () => {
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     if (!input) return;
     input.value = 'Optimize this app for Google and AI search. Add strong title and meta descriptions, Open Graph tags, one clear H1, image alt text, structured data, sitemap.xml and robots.txt without changing the core product.';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7931,7 +7961,7 @@ function showFixBugBox(errors: any[]) {
   `, async (action) => {
     if (action === 'copy') await navigator.clipboard?.writeText(first.message || 'Preview failed.');
     if (action === 'send') {
-      const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+      const input = chatComposer();
       if (input) input.value = `Fix this preview error: ${first.message}`;
     }
     if (action === 'fix') await generateFromPrompt(`Fix this preview error: ${first.message}`, 'build');
@@ -7976,95 +8006,55 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
 }
 
 function bindChat() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  const oldSubmit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
-  if (!input || !oldSubmit) return;
+  const row = document.querySelector('.chat-input-row');
+  if (!row) return;
 
-  const submit = oldSubmit.cloneNode(true) as HTMLButtonElement;
-  oldSubmit.replaceWith(submit);
-  submit.style.pointerEvents = 'auto';
-  submit.style.cursor = 'pointer';
-  syncSubmitButtonState();
-
-  input.addEventListener('input', () => {
-    const repaired = repairTextEncoding(input.value);
-    if (repaired !== input.value) {
-      const start = input.selectionStart;
-      const end = input.selectionEnd;
-      input.value = repaired;
-      input.setSelectionRange(Math.min(start, repaired.length), Math.min(end, repaired.length));
-    }
-  });
-
-  const send = (mode: ChatMode) => {
-    const value = repairTextEncoding(input.value).trim();
+  /*
+   * The island replaces the row's contents, including the old submit button.
+   * The component's own action button covers every state that button had:
+   * an arrow to send, a stop while a run is in flight, a microphone when the
+   * field is empty. `syncSubmitButtonState` therefore has nothing left to
+   * drive and simply re-renders.
+   */
+  const send = () => {
+    const value = repairTextEncoding(composerValue).trim();
     if (!value) return;
-    input.value = '';
-    input.style.height = '52px';
-    input.style.overflowY = 'hidden';
-    submit.classList.remove('active');
-    syncSubmitButtonState();
-    scheduleWorkspaceSave({ draft_prompt: '', selected_mode: mode }, true);
+    composerValue = '';
+    renderComposer();
+    scheduleWorkspaceSave({ draft_prompt: '', selected_mode: selectedChatMode }, true);
     if (isGenerating) {
       void sendActiveHarnessInstruction(value);
       return;
     }
-    void generateFromPrompt(value, mode, false, { studioContext: studioPromptContextPayload() });
+    void generateFromPrompt(value, selectedChatMode, false, { studioContext: studioPromptContextPayload() });
   };
 
-  input.addEventListener('input', () => {
-    autoResizeChatInput();
-    syncSubmitButtonState();
-    scheduleWorkspaceSave();
-  });
-
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      send(selectedChatMode);
-    }
-  }, true);
-
-  submit.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (isGenerating) {
-      const value = repairTextEncoding(input.value).trim();
-      if (value) send(selectedChatMode);
-      else void cancelBuild();
-      return;
-    }
-    send(selectedChatMode);
-  }, true);
-
-  const sharedModeMounted = document.getElementById('chat-mode-wrapper')?.dataset.codenAgentModeMounted === 'true';
-  if (!sharedModeMounted) {
-    document.getElementById('btn-chat-mode')?.addEventListener('click', (event) => {
-      event.preventDefault();
-      const menu = document.getElementById('chat-mode-menu');
-      const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
-      const nextOpen = menu?.style.display !== 'block';
-      if (menu) menu.style.display = nextOpen ? 'block' : 'none';
-      button?.setAttribute('aria-expanded', String(nextOpen));
+  void import('./mount-prompt-input').then(({ mountPromptInput }) => {
+    renderComposer = () => mountPromptInput(row, {
+      placeholder: currentWorkshopConfig().placeholder || 'Demandez à Coden…',
+      value: composerValue,
+      onChange: next => {
+        // Encoding repair stays: the Builder receives pasted prose from
+        // everywhere, and mojibake reaching a prompt is a real failure mode.
+        composerValue = repairTextEncoding(next);
+        renderComposer();
+        scheduleWorkspaceSave();
+      },
+      onSubmit: (_value, meta) => {
+        composerModel = meta.model;
+        composerEffort = meta.effort;
+        // The workspace still remembers the model between sessions; the
+        // island is just where the choice is made now.
+        applySelectedModel(meta.model, { persist: true, saveWorkspace: true });
+        send();
+      },
+      isBusy: isGenerating,
+      onStop: () => { void cancelBuild(); },
+      defaultExpanded: true,
+      collapsedWidth: 720,
+      expandedWidth: 720,
     });
-
-    document.querySelectorAll('[data-chat-mode]').forEach(option => {
-      option.addEventListener('click', (event) => {
-        event.preventDefault();
-        setChatMode(normalizeAgentMode((option as HTMLElement).dataset.chatMode));
-      });
-    });
-  }
-
-  document.addEventListener('click', (event) => {
-    const wrapper = document.getElementById('chat-mode-wrapper');
-    if (wrapper && !wrapper.contains(event.target as Node)) {
-      const menu = document.getElementById('chat-mode-menu');
-      const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
-      if (menu) menu.style.display = 'none';
-      button?.setAttribute('aria-expanded', 'false');
-    }
+    renderComposer();
   });
 
   setChatMode(selectedChatMode);
@@ -8102,7 +8092,7 @@ function initStudioWorkshops() {
 }
 
 function hydrateDashboardPrompt() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
   const mode = getInitialDashboardMode();
   const prompt = getInitialDashboardPrompt();
@@ -8124,7 +8114,7 @@ function maybeStartInitialGeneration() {
   if (!prompt) return;
   initialGenerationStarted = true;
 
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   if (input && input.value.trim() === prompt) {
     input.value = '';
     input.style.height = '48px';
@@ -8266,7 +8256,7 @@ function bindGlobalKeyboardShortcuts() {
     const meta = event.metaKey || event.ctrlKey;
     if (meta && (event.key === 'k' || event.key === 'K')) {
       event.preventDefault();
-      (document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null)?.focus();
+      (chatComposer())?.focus();
       return;
     }
     if (meta && (event.key === 'b' || event.key === 'B')) {

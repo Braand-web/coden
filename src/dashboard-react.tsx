@@ -15,11 +15,9 @@ import {
   ChevronRight,
   FileCode2,
   LogOut,
-  Mic,
   Menu,
   Plus,
   Search,
-  ArrowUp,
   Settings,
   WandSparkles,
   X,
@@ -32,9 +30,7 @@ import {
   startCreateProjectFlow,
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
-import { AgentModeComposer } from './components/agent/agent-mode-composer';
-import type { AgentMode } from './services/agent-mode';
-import { initPromptInputActions } from './prompt-input-actions';
+import { PromptInput } from './components/ui/ai-chat-input';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
@@ -437,15 +433,12 @@ function DashboardHome() {
   });
   const [search, setSearch] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [composerMode, setComposerMode] = useState<AgentMode>('auto');
   const [creating, setCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState('');
   const [projectView, setProjectView] = useState<'all' | 'recent'>('all');
   const [showAllProjects, setShowAllProjects] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-  const composerFormRef = useRef<HTMLFormElement>(null);
   const wasSidebarOpen = useRef(false);
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
@@ -497,9 +490,8 @@ function DashboardHome() {
     };
   }, [projects.length, visibleProjects.length, projectView, search]);
 
-  const createFromPrompt = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const request = prompt.trim();
+  const createFromPrompt = async (text: string, meta: { model: string; effort: string }) => {
+    const request = text.trim();
     if (!request || creating) return;
     setCreating(true);
     setCreationStatus(formatCreateProjectFlowStatus('preparing', 'fr'));
@@ -512,7 +504,13 @@ function DashboardHome() {
     }
     try {
       await startCreateProjectFlow(
-        { prompt: request, mode: composerMode === 'plan' ? 'plan' : 'auto', source: 'dashboard' },
+        {
+          prompt: request,
+          mode: 'auto',
+          source: 'dashboard',
+          model: meta.model,
+          effort: meta.effort,
+        },
         {
           onStatus: (status: CreateProjectFlowStatus) => {
             setCreationStatus(formatCreateProjectFlowStatus(status, 'fr'));
@@ -528,21 +526,6 @@ function DashboardHome() {
   useEffect(() => {
     try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage can be unavailable */ }
   }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 52), 240);
-    textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden';
-  }, [prompt]);
-
-  useEffect(() => {
-    const root = composerFormRef.current?.parentElement;
-    if (!root) return;
-    initPromptInputActions({ root, persistForBuilder: true });
-  }, []);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
@@ -584,40 +567,25 @@ function DashboardHome() {
             </span>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
             <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
-            <form ref={composerFormRef} className="coden-dashboard-composer input-wrapper" onSubmit={createFromPrompt}>
-              <textarea
-                ref={composerRef}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing) return;
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                rows={1}
-                placeholder="Créez un CRM moderne, une boutique, un portfolio…"
-                aria-label="Décrire le projet à créer"
-                disabled={creating}
-              />
-              <div className="coden-dashboard-composer-footer input-actions">
-                <div className="coden-dashboard-composer-actions actions-left" aria-label="Actions du composer">
-                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="upload" aria-label="Joindre des fichiers" disabled={creating}>
-                    <Plus size={16} aria-hidden="true" />
-                  </button>
-                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="voice" aria-label="Saisie vocale" disabled={creating}>
-                    <Mic size={15} aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="coden-dashboard-composer-actions actions-right">
-                  <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
-                  <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
-                    <ArrowUp size={17} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </form>
+            {/*
+              * The composer is the PromptInput now, on all three surfaces.
+              *
+              * It opens on this page rather than starting collapsed: the
+              * hero's whole job is to invite a prompt, and a 320px pill that
+              * has to be clicked before it can be typed into puts a step in
+              * front of the only action here.
+              */}
+            <PromptInput
+              className="coden-dashboard-prompt-input"
+              placeholder="Créez un CRM moderne, une boutique, un portfolio…"
+              value={prompt}
+              onChange={setPrompt}
+              onSubmit={(text, meta) => { void createFromPrompt(text, meta); }}
+              disabled={creating}
+              defaultExpanded
+              collapsedWidth={560}
+              expandedWidth={700}
+            />
             <div className="coden-dashboard-create-status" role="status" aria-live="polite">
               {creationStatus}
             </div>

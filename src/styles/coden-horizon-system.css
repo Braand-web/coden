@@ -111,6 +111,21 @@
   --muted-foreground: var(--horizon-muted);
   --accent: var(--horizon-blue-soft);
   --accent-foreground: #1d4ed8;
+
+  /*
+   * The card and ring names the composer reaches for.
+   *
+   * `bg-card`, `border-ring/40` and `focus-visible:ring-ring` had nothing to
+   * resolve to — these three were the only shadcn semantics this system never
+   * declared, so the composer's surface fell back to transparent and its focus
+   * ring drew nothing at all. Defined against the horizon palette like every
+   * other alias here, so they follow the theme without a second definition.
+   */
+  --card: var(--horizon-input);
+  --card-foreground: var(--horizon-text);
+  --ring: var(--horizon-blue);
+  --scrollbar-thumb: color-mix(in srgb, var(--horizon-muted) 42%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--horizon-muted) 68%, transparent);
   --overlay: var(--horizon-overlay);
   --font-sans: Geist, system-ui, sans-serif;
   --font-display: Geist, system-ui, sans-serif;
@@ -580,7 +595,16 @@ body[data-coden-surface="dashboard"] {
   --dashboard-border-soft: var(--horizon-border);
   --dashboard-accent: var(--horizon-blue);
   --dashboard-focus: var(--horizon-blue);
-  --dashboard-ambient: none;
+  /*
+   * `--dashboard-ambient` is deliberately NOT declared here.
+   *
+   * It was set to `none`, and this block outranks both `:root` and
+   * `html[data-theme="light"]` — so the two meshes defined in
+   * dashboard-react.css never painted, while still being maintained as if
+   * they did. One layer declaring a background and another quietly cancelling
+   * it is the same disagreement that cost this file three `!important` fills
+   * earlier; the mesh belongs to the dashboard stylesheet alone.
+   */
   --dashboard-panel: var(--horizon-canvas);
   --dashboard-panel-border: var(--horizon-border);
   --dashboard-panel-shadow: none;
@@ -1899,3 +1923,33 @@ body:not([data-coden-surface="landing-v3"]) .coden-react-menu {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * One scrollbar, everywhere
+ *
+ * `builder.css` has styled these at 4px since forever — but only the builder
+ * imports it. The dashboard, the landing and every settings panel fell back to
+ * the platform default, which on Windows is a 17px grey channel with arrow
+ * buttons at both ends. Against the dashboard's gradient that bar was the
+ * loudest object on the page.
+ *
+ * Declared here because this is the one stylesheet all four entry points load
+ * — the same reason the motion contract lives here.
+ * ------------------------------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(128, 128, 128, .4)) transparent;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(128, 128, 128, .4));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(128, 128, 128, .65));
+}
+/* The arrow buttons at each end are the bulk of the platform bar's width. */
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
