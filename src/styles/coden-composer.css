@@ -259,3 +259,27 @@ body[data-coden-surface="builder"] :where(.coden-decision-card, .coden-stream-no
     transition-duration: 0ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * The composer's own scrollbars
+ *
+ * The component shipped this as an inline `<style dangerouslySetInnerHTML>`
+ * block using `hsl(var(--muted-foreground) / 0.3)`. That form needs shadcn's
+ * bare HSL triplets; Coden's tokens are whole colours, so the expression
+ * resolved to `hsl(#64625e / 0.3)` — invalid, dropped, and the thumb painted
+ * with the browser default instead of the intended one.
+ *
+ * `color-mix` does the same job against a real colour, and living in a
+ * stylesheet means it is parsed once rather than re-inserted into the DOM on
+ * every render of the card.
+ * ------------------------------------------------------------------------- */
+.prompt-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; background: transparent; }
+.prompt-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.prompt-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+.prompt-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
+.prompt-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;
+}

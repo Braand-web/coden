@@ -1,4 +1,3 @@
-import { initPromptInputActions } from './prompt-input-actions';
 import { initThemeController } from './theme-controller';
 import './styles/agent-surface.css';
 import './styles/coden-horizon-system.css';
@@ -15,62 +14,86 @@ function announce(message: string) {
 }
 
 let submitting = false;
-document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {
-  const wrapper = textarea.parentElement!;
-  wrapper.classList.add('input-wrapper');
-  const submit = wrapper.querySelector<HTMLButtonElement>('[data-build]')!;
-  const modeButton = wrapper.querySelector<HTMLButtonElement>('[data-mode-toggle]');
-  let mode: 'auto' | 'plan' = 'auto';
-  const resize = () => {
-    textarea.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 52), 240);
-    textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden';
-  };
-  textarea.rows = 1;
-  resize();
-  textarea.addEventListener('input', resize);
-  modeButton?.addEventListener('click', () => {
-    mode = mode === 'auto' ? 'plan' : 'auto';
-    wrapper.dataset.promptMode = mode;
-    modeButton.setAttribute('aria-pressed', String(mode === 'plan'));
-    modeButton.setAttribute('aria-label', mode === 'plan' ? 'Return to Auto mode' : 'Switch to Plan mode');
-    modeButton.setAttribute('title', mode === 'plan' ? 'Prepare the work without changing the project.' : 'Coden chooses the best action.');
-    const label = modeButton.querySelector('[data-mode-label]');
-    if (label) label.textContent = mode === 'plan' ? 'Plan' : 'Auto';
-    submit.setAttribute('aria-label', mode === 'plan' ? 'Plan this app' : 'Build now');
-  });
-  wrapper.dataset.promptMode = mode;
-  async function start() {
-    if (submitting) return;
-    const prompt = textarea.value.trim();
-    if (!prompt) { textarea.focus(); announce('Describe what you would like to build first.'); return; }
-    submitting = true;
-    document.querySelectorAll<HTMLButtonElement>('[data-build]').forEach(button => { button.disabled = true; });
-    textarea.readOnly = true;
-    wrapper.setAttribute('aria-busy', 'true');
-    announce('Preparing your workspace…');
-    try {
-      const { startCreateProjectFlow, formatCreateProjectFlowStatus } = await import('./services/create-project-flow');
-      await startCreateProjectFlow({ prompt, mode, source:'landing', projectName:prompt }, {
+
+/*
+ * Both composers on this page are the shared PromptInput now.
+ *
+ * There are two — the hero and the closing call to action — and each used to
+ * be hand-wired markup with its own resize handler, its own mode toggle and
+ * its own submit button. They are replaced in place: the textarea's own
+ * container becomes the island host, so index.html keeps its layout and the
+ * component brings the behaviour.
+ */
+async function startFromPrompt(
+  prompt: string,
+  meta: { model: string; effort: string },
+  setBusy: (busy: boolean) => void,
+) {
+  const request = prompt.trim();
+  if (!request || submitting) return;
+  submitting = true;
+  setBusy(true);
+  announce('Preparing your workspace…');
+  try {
+    const { startCreateProjectFlow, formatCreateProjectFlowStatus } = await import('./services/create-project-flow');
+    await startCreateProjectFlow(
+      { prompt: request, mode: 'auto', source: 'landing', projectName: request, model: meta.model, effort: meta.effort },
+      {
         createProject: true,
         onStatus: status => announce(formatCreateProjectFlowStatus(status, 'en')),
-      });
-    } catch (error) {
-      announce(error instanceof Error ? error.message : 'Unable to open your workspace. Please try again.');
-    } finally {
-      submitting = false;
-      textarea.readOnly = false;
-      wrapper.removeAttribute('aria-busy');
-      document.querySelectorAll<HTMLButtonElement>('[data-build]').forEach(button => { button.disabled = false; });
-    }
+      },
+    );
+  } catch (error) {
+    announce(error instanceof Error ? error.message : 'Unable to open your workspace. Please try again.');
+  } finally {
+    submitting = false;
+    setBusy(false);
   }
-  submit.addEventListener('click', () => { void start(); });
-  textarea.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void start(); }
+}
+
+/*
+ * Each island owns its own value, so the page can drive it.
+ *
+ * The composer is a controlled component here rather than uncontrolled,
+ * because the "start from a screenshot / a repository / an example" links at
+ * the bottom of the page prefill it. Writing `.value` on a React-controlled
+ * textarea sets the DOM property and nothing else — the component re-renders
+ * from state on the next keystroke and the prefill vanishes. Holding the
+ * value out here is what keeps those three links working.
+ */
+type ComposerIsland = { setValue: (value: string) => void; openFilePicker: () => void };
+const composerIslands: ComposerIsland[] = [];
+
+document.querySelectorAll<HTMLTextAreaElement>('textarea').forEach(textarea => {
+  const host = textarea.parentElement;
+  if (!host) return;
+  const placeholder = textarea.getAttribute('placeholder') || 'Describe the app you want to build…';
+
+  let value = '';
+  let busy = false;
+  let render = () => {};
+
+  void import('./mount-prompt-input').then(({ mountPromptInput }) => {
+    render = () => mountPromptInput(host, {
+      placeholder,
+      value,
+      onChange: next => { value = next; render(); },
+      defaultExpanded: true,
+      collapsedWidth: 640,
+      expandedWidth: 640,
+      disabled: busy,
+      onSubmit: (submitted, meta) => {
+        void startFromPrompt(submitted, meta, next => { busy = next; render(); });
+      },
+    });
+    render();
+    composerIslands.push({
+      setValue: next => { value = next; render(); },
+      openFilePicker: () => host.querySelector<HTMLButtonElement>('[data-prompt-action="upload"]')?.click(),
+    });
   });
 });
-initPromptInputActions({ persistForBuilder:true, onNotice: announce });
+
 
 /*
  * Sections arrive as you reach them.
@@ -125,18 +148,19 @@ initPromptInputActions({ persistForBuilder:true, onNotice: announce });
 document.querySelectorAll<HTMLAnchorElement>('[data-start-from]').forEach(link => {
   link.addEventListener('click', event => {
     event.preventDefault();
-    const textarea = document.querySelector<HTMLTextAreaElement>('#top textarea')!;
-    textarea.scrollIntoView({ block:'center', behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    const hero = composerIslands[0];
+    document.getElementById('top')?.scrollIntoView({
+      block: 'center',
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+    });
+    if (!hero) return;
     if (link.dataset.startFrom === 'screenshot') {
-      document.querySelector<HTMLButtonElement>('#top [data-prompt-action="upload"]')?.click();
-    } else {
-      textarea.value = link.dataset.startFrom === 'repository'
-        ? 'Help me work on this GitHub repository: '
-        : 'Build a responsive customer portal with a dashboard, a list of projects and project detail pages.';
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-      if (link.dataset.startFrom === 'repository') announce('Paste your repository URL and describe the changes you need.');
+      hero.openFilePicker();
+      return;
     }
+    hero.setValue(link.dataset.startFrom === 'repository'
+      ? 'Help me work on this GitHub repository: '
+      : 'Build a responsive customer portal with a dashboard, a list of projects and project detail pages.');
+    if (link.dataset.startFrom === 'repository') announce('Paste your repository URL and describe the changes you need.');
   });
 });

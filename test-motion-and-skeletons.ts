@@ -67,7 +67,13 @@ const cloudCss = read('./src/styles/cloud-console.css');
     .replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
     .split('}');
   for (const rule of rules) {
-    if (!/opacity:\s*0\s*;/.test(rule)) continue;
+    /*
+     * The `opacity` property itself, not a custom property whose name ends in
+     * it. `--coden-enter-opacity: 0` is the start value a keyframe reads, inert
+     * until that animation runs — it cannot hide anything on its own, which is
+     * the entire thing this block is checking for.
+     */
+    if (!/(^|[^-\w])opacity:\s*0\s*;/.test(rule)) continue;
     assert.match(rule, /data-coden-reveal="on"/,
       `every opacity:0 is behind the armed attribute, not this one: ${rule.trim().slice(0, 60)}`);
   }

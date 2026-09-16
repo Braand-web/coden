@@ -1,5 +1,6 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
+import { normalizeAgentEffort, effortCostMultiplier } from './src/services/agent-effort.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
@@ -12432,6 +12433,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
+  /*
+   * The effort the composer asked for. It widens or narrows the route budget
+   * in the pipeline and scales the credit estimate here, so a level that
+   * promises more work is priced for more work before the gate runs.
+   */
+  const requestedEffort = normalizeAgentEffort(req.body?.effort);
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
   const recentHistory = await getRecentDecisionHistory(project.id, 6);
@@ -12553,6 +12560,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         history: recentHistory,
         approvedPlan: req.body?.useLastPlan ? lastPlan || undefined : undefined,
         complexity: inferAgentTaskComplexity(agentPrompt, decision, existingFiles),
+        effort: requestedEffort,
         selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
         visionInputs,
         userPlan: routingPlan,
@@ -12607,7 +12615,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
          * work that reached their project, and a run that failed earlier
          * already returned above without passing through here.
          */
-        const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
+        /*
+         * Priced for the effort that was actually granted.
+         *
+         * Max Effort buys twice the wall clock and twice the tool calls per
+         * round, so it really does cost more provider time; charging it the
+         * Medium price is the same mistake as the September one, just earlier
+         * in the pipeline. Low is genuinely cheaper and is billed that way —
+         * a level that costs the same as Medium while doing less is a level
+         * nobody should pick.
+         *
+         * Floored at one credit rather than at the Medium price: the estimator
+         * enforces `minimum_action_credits` internally but does not report it,
+         * and no action is free.
+         */
+        const baseCost = estimateActionCost(prompt, decision, requestedModelSelection);
+        const pipelineCost = {
+          ...baseCost,
+          finalCredits: Math.max(
+            1,
+            Math.ceil(baseCost.finalCredits * effortCostMultiplier(requestedEffort) * 10000) / 10000,
+          ),
+        };
         const pipelineProviderCostUsd = Number(outcome.costUsd || 0);
         await chargeCompletedAgentAction(
           helpers,
