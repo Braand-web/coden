@@ -232,7 +232,7 @@ svg {
 .theme-toggle:hover {
     border-color: var(--border-focus);
     color: var(--accent-blue);
-    background: var(--accent-blue-soft, rgba(59, 130, 246, 0.10));
+    background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
 }
 
 .sign-in-btn {
@@ -2134,7 +2134,7 @@ h1 {
 }
 
 .demo-line.done span {
-    background: #22c55e;
+    background: var(--horizon-success);
 }
 
 @keyframes demoLine {
@@ -2784,7 +2784,7 @@ h1 {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.8);
+    background: color-mix(in srgb, var(--horizon-surface) 80%, transparent);
     backdrop-filter: blur(8px);
     z-index: 10000;
     display: flex;
@@ -3196,7 +3196,7 @@ h1 {
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(110deg, transparent 24%, rgba(255, 255, 255, 0.16) 42%, transparent 58%);
+    background: linear-gradient(110deg, transparent 24%, color-mix(in srgb, var(--horizon-surface) 16%, transparent) 42%, transparent 58%);
     transform: translateX(-120%);
     animation: proofPreviewSweep 6s var(--landing-ease) infinite;
 }
@@ -3522,7 +3522,7 @@ h1 {
     border: 0;
     border-radius: 999px;
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--horizon-text);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
@@ -3737,7 +3737,7 @@ h1 {
 .pricing-mini.featured { border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--border)); box-shadow: 0 0 0 1px var(--accent-blue-soft); }
 .pm-badge {
     position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
-    background: var(--accent-blue); color: #fff; font-size: 11px; font-weight: 700;
+    background: var(--accent-blue); color: var(--horizon-text); font-size: 11px; font-weight: 700;
     padding: 3px 10px; border-radius: 999px; white-space: nowrap;
 }
 .pm-name { font-size: 14px; font-weight: 600; color: var(--text-muted); }
@@ -3860,8 +3860,8 @@ h1 {
     color: var(--text);
 }
 .plan-cta:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.plan-cta-primary { background: var(--accent-blue); border-color: transparent; color: #fff; }
-.plan-cta-primary:hover { background: var(--accent-blue-deep); color: #fff; box-shadow: 0 10px 26px -8px var(--accent-blue); }
+.plan-cta-primary { background: var(--accent-blue); border-color: transparent; color: var(--horizon-text); }
+.plan-cta-primary:hover { background: var(--accent-blue-deep); color: var(--horizon-text); box-shadow: 0 10px 26px -8px var(--accent-blue); }
 
 /* Pro: clearly featured, kept aligned with the other two. */
 .plan-card.featured {
@@ -3877,7 +3877,7 @@ h1 {
     padding: 4px 12px;
     border-radius: 999px;
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--horizon-text);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: .04em;
@@ -4015,7 +4015,7 @@ body::before {
 }
 .discover-chip:hover { transform: translateY(-1px); color: var(--text); border-color: color-mix(in srgb, var(--accent-blue) 36%, var(--border)); }
 .discover-chip:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.discover-chip.active { background: var(--accent-blue); border-color: transparent; color: #fff; }
+.discover-chip.active { background: var(--accent-blue); border-color: transparent; color: var(--horizon-text); }
 .discover-block { margin-top: 36px; }
 .discover-block:first-of-type { margin-top: 0; }
 .discover-block-title {
@@ -4043,7 +4043,7 @@ body::before {
     font-family: "Inter", system-ui, sans-serif;
     font-size: 20px;
     font-weight: 800;
-    color: #fff;
+    color: var(--horizon-text);
     background: color-mix(in srgb, var(--thumb-tint) 82%, var(--text));
     box-shadow: 0 6px 16px color-mix(in srgb, var(--thumb-tint) 30%, rgba(0, 0, 0, 0.12));
 }
@@ -4115,7 +4115,7 @@ body::before {
     padding: 0 16px;
     border-radius: 10px;
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--horizon-text);
     font-weight: 700;
     box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-blue) 24%, transparent);
 }
@@ -4186,7 +4186,7 @@ body::before {
 #ai-textarea { min-height: 104px; padding: 20px 20px 0; font-size: 16px; line-height: 1.55; }
 .input-actions { padding: 10px 14px 14px; }
 .icon-btn { width: 32px; height: 32px; border-radius: 8px; }
-.submit-btn { min-height: 44px; min-width: 156px; padding-inline: 16px; border-radius: 10px; background: var(--accent-blue); color: #fff; box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-blue) 24%, transparent); }
+.submit-btn { min-height: 44px; min-width: 156px; padding-inline: 16px; border-radius: 10px; background: var(--accent-blue); color: var(--horizon-text); box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-blue) 24%, transparent); }
 .submit-btn:hover { background: var(--accent-blue-deep); transform: translateY(-1px); }
 .model-select, .prompt-mode-btn { min-height: 36px; border-radius: 9px; }
 .hero-content,
@@ -4230,7 +4230,7 @@ body::before {
 }
 .footer-cta .section-kicker { margin: 0 0 8px; }
 .footer-cta h2 { margin: 0; color: var(--text); font-size: clamp(24px, 4vw, 38px); letter-spacing: -.045em; }
-.footer-cta-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 18px; border-radius: 10px; background: var(--accent-blue); color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap; transition: transform 180ms var(--ease-coden, ease), filter 180ms var(--ease-coden, ease); }
+.footer-cta-button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0 18px; border-radius: 10px; background: var(--accent-blue); color: var(--horizon-text); font-size: 14px; font-weight: 700; text-decoration: none; white-space: nowrap; transition: transform 180ms var(--ease-coden, ease), filter 180ms var(--ease-coden, ease); }
 .footer-cta-button:hover { transform: translateY(-1px); filter: brightness(1.08); }
 .footer { padding: 0 24px 36px; background: var(--bg); border-top: 0; }
 .footer-grid { width: min(1120px, 100%); max-width: none; grid-template-columns: 1.7fr repeat(3, minmax(0, 1fr)); gap: 28px; margin-bottom: 52px; }

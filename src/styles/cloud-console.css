@@ -231,7 +231,7 @@
 .db-action-primary {
   border-color: var(--horizon-blue, var(--accent-blue));
   background: var(--horizon-blue, var(--accent-blue));
-  color: var(--horizon-blue-ink, #fff);
+  color: var(--horizon-blue-ink, var(--horizon-text));
 }
 
 .cloud-console-content { display: grid; gap: 16px; }
@@ -408,9 +408,9 @@
   background: currentColor;
 }
 
-.cloud-status[data-tone="ok"] { color: #168457; }
-.cloud-status[data-tone="warn"] { color: #b36b00; }
-.cloud-status[data-tone="error"] { color: #c13e4f; }
+.cloud-status[data-tone="ok"] { color: var(--horizon-success); }
+.cloud-status[data-tone="warn"] { color: var(--horizon-warning); }
+.cloud-status[data-tone="error"] { color: var(--horizon-danger); }
 
 .cloud-detail-list,
 .cloud-log-list,
@@ -497,7 +497,7 @@
 .db-file-btn:hover,
 .db-table-chip:hover { background: var(--horizon-raised, var(--accent-dim)); }
 .cloud-link-button.is-danger,
-.db-eu-del { color: #c13e4f; }
+.db-eu-del { color: var(--horizon-danger); }
 
 .cloud-toolbar,
 .db-browser-top,
@@ -572,9 +572,9 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-note,
 .cloud-inline-note { display: flex; align-items: flex-start; gap: 8px; padding: 12px; color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
 .db-note svg { flex: 0 0 auto; width: 16px; height: 16px; margin-top: 1px; }
-.db-state-error { color: #c13e4f; }
+.db-state-error { color: var(--horizon-danger); }
 .db-enduser-msg { min-height: 20px; color: var(--horizon-muted, var(--text-muted)); font-size: 12px; line-height: 16px; }
-.db-enduser-ok { color: #168457; }
+.db-enduser-ok { color: var(--horizon-success); }
 
 .cloud-empty {
   display: grid;

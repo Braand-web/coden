@@ -4,6 +4,11 @@ import { normalizeAgentEffort, effortCostMultiplier } from './src/services/agent
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
+import {
+  UNIFIED_USAGE_CATEGORIES,
+  spendableByCategory,
+  sharedCredits,
+} from './src/services/credit-visibility.ts';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
@@ -9658,9 +9663,41 @@ async function loadUnifiedWalletSnapshot(organizationId: string) {
     return totals;
   }, {});
 
+  /*
+   * What each category can actually spend.
+   *
+   * `balance` and `breakdown` are both true and both useless as a gate
+   * readout, because they are on the wrong axis. `breakdown` is keyed by the
+   * grant's KIND — `daily_build`, `monthly_ai`, `topup` — while every debit
+   * filters on its usage_restriction: `coden_billing_reserve` only draws from
+   * grants restricted to the category being charged, or to `general`.
+   *
+   * On a free account that difference is the whole product. The plan issues
+   * build 5/day (capped 30/month), cloud 20/month and ai_gateway 4/month, so
+   * `balance` can read 30 while a chat has nothing to draw on — which is
+   * exactly what this account saw on 13 September: a counter promising 30
+   * credits, and "the model is temporarily unavailable" on the next message.
+   *
+   * It also made two slots in the settings panel permanently wrong: a top-up
+   * (kind `topup`, restriction `general`) is spendable on all three categories
+   * but appeared under none of them, and "General credits" read `breakdown`
+   * for a key that is a restriction and never a kind, so it never displayed
+   * anything at all.
+   *
+   * Computed from the rows already loaded, with the same predicate as the RPC,
+   * so the number shown and the number spent cannot drift apart.
+   */
+  const spendable = spendableByCategory(grants);
+
+  // Shared credit, reported once on its own so the categories above can be
+  // read as "what this can pay for" without double-counting it by hand.
+  const shared = sharedCredits(grants);
+
   return {
     balance: grants.reduce((sum, grant) => sum + grant.credits_remaining, 0),
     breakdown,
+    spendable,
+    shared,
     grants,
   };
 }
@@ -9668,7 +9705,7 @@ async function loadUnifiedWalletSnapshot(organizationId: string) {
 type UnifiedUsageReservation = {
   id: string;
   accountId: string;
-  category: 'build' | 'cloud' | 'ai_gateway' | 'email';
+  category: (typeof UNIFIED_USAGE_CATEGORIES)[number];
   credits: number;
   estimatedCogsUsd: number;
   idempotencyKey: string;
@@ -9967,6 +10004,15 @@ app.get('/api/billing/wallet', async (req, res) => {
     balance: CODEN_MONETIZATION_ENABLED ? (wallet?.balance || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     unlimited: hasUnlimitedTestCredits(orgId),
     breakdown: wallet?.breakdown || {},
+    /*
+     * What each category can actually spend, which is what a gate refuses on.
+     * `balance` sums every restriction together and so can promise credit the
+     * next request has no way to draw.
+     */
+    spendable: CODEN_MONETIZATION_ENABLED
+      ? (wallet?.spendable || {})
+      : Object.fromEntries(UNIFIED_USAGE_CATEGORIES.map(category => [category, CODEN_UNMETERED_USAGE_BUDGET])),
+    shared: CODEN_MONETIZATION_ENABLED ? (wallet?.shared || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     grants: wallet?.grants || [],
     legacy_shadow_balance: legacyShadowBalance,
   });
@@ -11163,6 +11209,12 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
       daily_promo_credits: unifiedWallet?.breakdown.daily_build || 0,
       topup_credits: unifiedWallet?.breakdown.topup || 0,
       breakdown: unifiedWallet?.breakdown || {},
+      // Per category, on the axis the debit actually uses. See
+      // loadUnifiedWalletSnapshot for why the two differ.
+      spendable: CODEN_MONETIZATION_ENABLED
+        ? (unifiedWallet?.spendable || {})
+        : Object.fromEntries(UNIFIED_USAGE_CATEGORIES.map(category => [category, CODEN_UNMETERED_USAGE_BUDGET])),
+      shared: CODEN_MONETIZATION_ENABLED ? (unifiedWallet?.shared || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     },
     history,
   });

@@ -10,10 +10,10 @@ html[data-local-preview="true"] .coden-local-preview-banner {
   max-width: calc(100vw - 24px);
   min-height: 32px;
   padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, #4f8cff 46%, var(--border, #263244));
+  border: 1px solid color-mix(in srgb, var(--horizon-blue) 46%, var(--border, var(--horizon-border)));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-elevated, #1b2230) 92%, transparent);
-  color: var(--foreground, #f8fafc);
+  background: color-mix(in srgb, var(--surface-elevated, var(--horizon-raised)) 92%, transparent);
+  color: var(--foreground, var(--horizon-text));
   box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
   font: 600 11px/1.2 Instrument Sans, Inter, system-ui, sans-serif;
   transform: none;
@@ -21,7 +21,7 @@ html[data-local-preview="true"] .coden-local-preview-banner {
 }
 
 html[data-local-preview="true"] .coden-local-preview-note {
-  color: var(--muted-foreground, #8d98a8);
+  color: var(--muted-foreground, var(--horizon-muted));
   font-weight: 500;
 }
 
@@ -30,7 +30,7 @@ html[data-local-preview="true"] .coden-local-preview-dot {
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #f2b84b;
+  background: var(--horizon-warning);
   box-shadow: 0 0 0 3px rgb(242 184 75 / 15%);
 }
 

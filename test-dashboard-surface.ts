@@ -266,18 +266,44 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
   assert.match(badgeBlock, /left: 9px;/, 'anchored to the left edge');
   assert.match(badgeBlock, /bottom: 9px;/, 'and to the bottom');
   assert.doesNotMatch(badgeBlock, /right:/, 'and not still pinned right as well');
-  assert.match(badgeBlock, /background: rgba\(255, 255, 255, \.92\);/, 'a light pill');
+  assert.match(badgeBlock, /background: color-mix\(in srgb, var\(--coden-preview-pill\) 92%, transparent\);/, 'a light pill');
   assert.match(badgeBlock, /border-radius: 999px;/, 'actually a pill');
   assert.match(badgeBlock, /z-index: 2;/, 'above the frame it labels');
 
   /*
+   * And it stays light in BOTH themes.
+   *
+   * This is the one badge in the product that must not follow `[data-theme]`,
+   * because it is not drawn on one of our surfaces — it sits over a live
+   * thumbnail of the customer's own application. When everything else was
+   * moved onto the horizon tokens, this rule went with it, and in dark mode
+   * the pill would have turned dark again over an app that may also be dark:
+   * the exact failure the light pill was introduced to fix.
+   *
+   * So the check is on the shape of the value, not its colour. A
+   * `--horizon-*` token here means it flips with the theme and the exemption
+   * has been lost.
+   */
+  const pillTokens = ['--coden-preview-pill', '--coden-preview-pill-ink'];
+  for (const token of pillTokens) {
+    assert.match(css, new RegExp(`\\${token}: #[0-9a-f]{6};`), `${token} is a fixed value, not a theme token`);
+  }
+  assert.doesNotMatch(badgeBlock, /var\(--horizon-/, 'the pill itself never reads a theme token');
+
+  /*
    * The state colours had to follow it. Kept as the dark end of the same
    * hues — #8de5ae on white is unreadable, and silently keeping it would have
-   * traded one invisible badge for another.
+   * traded one invisible badge for another — and fixed for the same reason as
+   * the pill they are printed on.
    */
-  for (const [state, hex] of [['published', '#0f7a43'], ['issue', '#b3261e'], ['building', '#1d4ed8']] as const) {
-    assert.match(css, new RegExp(`\\.coden-dashboard-project-badge\\.is-${state} \\{\\s*color: ${hex};`),
+  for (const [state, token] of [
+    ['published', '--coden-preview-pill-success'],
+    ['issue', '--coden-preview-pill-danger'],
+    ['building', '--coden-preview-pill-info'],
+  ] as const) {
+    assert.match(css, new RegExp(`\\.coden-dashboard-project-badge\\.is-${state} \\{\\s*color: var\\(\\${token}\\);`),
       `the ${state} colour reads on a light pill`);
+    assert.match(css, new RegExp(`\\${token}: #[0-9a-f]{6};`), `and does not move with the theme`);
   }
 }
 

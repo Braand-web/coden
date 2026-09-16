@@ -124,11 +124,11 @@ function injectProviderSelectorStyle() {
     .coden-auto-model-option.active,
     .coden-provider-card:hover,
     .coden-provider-card.active {
-      background: var(--accent-blue-soft, var(--accent-hover, rgba(9,9,11,.08)));
+      background: var(--accent-blue-soft, var(--accent-hover, color-mix(in srgb, var(--horizon-surface) 8%, transparent)));
       border-color: var(--border-focus, var(--border));
     }
     .coden-provider-card.open {
-      background: var(--accent-blue-hover, var(--accent-hover, rgba(9,9,11,.10)));
+      background: var(--accent-blue-hover, var(--accent-hover, color-mix(in srgb, var(--horizon-surface) 10%, transparent)));
       border-color: var(--border-focus, var(--border));
       transform: translateX(2px);
     }
@@ -273,11 +273,11 @@ function injectProviderSelectorStyle() {
         transform 150ms cubic-bezier(0.34,1.56,0.64,1);
     }
     .coden-model-item:hover {
-      background: var(--accent-dim, rgba(9,9,11,.08));
+      background: var(--accent-dim, color-mix(in srgb, var(--horizon-surface) 8%, transparent));
       transform: translateX(2px);
     }
     .coden-model-item.selected {
-      background: var(--accent-blue-soft, var(--accent-hover, rgba(9,9,11,.10)));
+      background: var(--accent-blue-soft, var(--accent-hover, color-mix(in srgb, var(--horizon-surface) 10%, transparent)));
     }
     .coden-model-item.selected::before {
       content: "";
@@ -358,9 +358,9 @@ function injectProviderSelectorStyle() {
       color: var(--text-muted);
       border: 1px solid var(--border);
     }
-    .coden-model-badge.new { color: #166534; background: #dcfce7; border-color: #bbf7d0; }
-    .coden-model-badge.fast { color: #854d0e; background: #fef9c3; border-color: #fde68a; }
-    .coden-model-badge.premium { color: #6b21a8; background: #f3e8ff; border-color: #e9d5ff; }
+    .coden-model-badge.new { color: var(--horizon-success); background: var(--horizon-success-soft); border-color: var(--horizon-success); }
+    .coden-model-badge.fast { color: var(--horizon-warning); background: var(--horizon-warning-soft); border-color: var(--horizon-warning); }
+    .coden-model-badge.premium { color: var(--horizon-blue); background: var(--horizon-raised); border-color: var(--horizon-border); }
     @keyframes coden-model-enter {
       from { opacity: 0; transform: translateX(-8px); }
       to { opacity: 1; transform: translateX(0); }

@@ -76,7 +76,7 @@
 :root[data-theme="light"] .main-area,
 :root[data-theme="light"] .app-workspace,
 :root[data-theme="light"] .dashboard {
-  background: #ffffff;
+  background: var(--horizon-surface);
   color: var(--text);
 }
 
@@ -206,7 +206,7 @@
 ) {
   color: var(--accent-blue-deep);
   background-color: var(--accent-blue-soft);
-  border-color: #bfdbfe;
+  border-color: var(--horizon-blue);
 }
 
 :root[data-theme="light"] :where(
@@ -218,7 +218,7 @@
   .seo-button,
   .card-cta
 ) {
-  color: #ffffff;
+  color: var(--horizon-text);
   background: var(--accent-blue);
   border-color: var(--accent-blue);
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.18);
@@ -238,11 +238,11 @@
 }
 
 :root[data-theme="light"] .preview-panel {
-  background: #f4f4f5 !important;
+  background: var(--horizon-raised) !important;
 }
 
 :root[data-theme="light"] :where(.preview-content, .preview-frame-wrapper, .web-preview, .artifact-preview) {
-  background-color: #ffffff;
+  background-color: var(--horizon-surface);
   border-color: var(--border);
 }
 

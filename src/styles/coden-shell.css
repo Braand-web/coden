@@ -71,7 +71,7 @@
   border-radius: var(--coden-shell-radius-sm) !important;
   background: var(--coden-shell-blue) !important;
   border-color: var(--coden-shell-blue) !important;
-  color: #fff !important;
+  color: var(--horizon-text) !important;
   transition: transform var(--coden-shell-fast) var(--coden-shell-ease), background-color var(--coden-shell-fast) var(--coden-shell-ease), box-shadow var(--coden-shell-fast) var(--coden-shell-ease), opacity var(--coden-shell-fast) var(--coden-shell-ease);
 }
 

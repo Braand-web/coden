@@ -19,6 +19,28 @@ const bannedExact = [
   '#E4E4E7',
 ];
 
+/*
+ * The beige that was actually in the product.
+ *
+ * This list banned `#f7f4ef`. The colour the design system really used was
+ * `#f7f4ed` — one character apart — so the audit passed for as long as the
+ * warm palette existed, and reported a clean light theme the whole time it was
+ * beige. These are the literals found and removed from Coden's own surfaces,
+ * added so they cannot come back the same way.
+ *
+ * `#fcfbf8` and `#f7f4ed` are deliberately NOT here. They survive in
+ * `server.ts`, inside the scaffold Coden generates for a CUSTOMER's
+ * application — `codenCream` is that template's palette, not this product's
+ * chrome. Banning them would either fail this audit on somebody else's app or
+ * push us into silently restyling what customers ship.
+ */
+const bannedBeige = [
+  '#fffdf8', '#fffaf0', '#f8f3e8', '#f8f7f3', '#f7f7f5', '#e8e2d6',
+  '#e9e8e3', '#e7e5de', '#20201d', '#201d17', '#272622', '#191918',
+  '#171716', '#14130f', '#6f6a60', '#77736b', '#c9c9c6', '#e8e8e5', '#c6c6c1',
+];
+bannedExact.push(...bannedBeige);
+
 const allowedLightExact = new Set(['#d4d4d8', '#D4D4D8', '#e4e4e7', '#E4E4E7']);
 const bannedWords = /\b(beige|cream|sand)\b/i;
 const weakWhiteBorder = /rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*(?:0?\.)0[0-9]/i;

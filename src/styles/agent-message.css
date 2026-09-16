@@ -1,4 +1,4 @@
-.coden-agent-message { display:grid; gap:10px; width:100%; min-width:0; color:var(--text,#ededed); }
+.coden-agent-message { display:grid; gap:10px; width:100%; min-width:0; color:var(--text,var(--horizon-text)); }
 .coden-agent-message .coden-response { font-size:14px; line-height:1.62; text-wrap:pretty; }
 .coden-thinking-line { font-size:14px; min-height:22px; }
 
@@ -24,22 +24,22 @@
 .coden-agent-message .coden-response pre { font-size:12.5px; }
 .coden-agent-message .coden-response blockquote { margin:10px 0; }
 .coden-agent-message .coden-response hr { margin:14px 0; }
-.coden-tool-line { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-muted,#8a8a8a); font-size:14.5px; }
+.coden-tool-line { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-muted,var(--horizon-muted)); font-size:14.5px; }
 .coden-tool-line svg,.coden-tool-line>span:first-of-type { flex-shrink:0; }
 .coden-tool-paths { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px/1.6 ui-monospace,monospace; }
 .coden-message-actions { display:flex; gap:4px; }
-.coden-message-actions button { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:6px; background:transparent; color:var(--text-muted,#8a8a8a); cursor:pointer; }
-.coden-message-actions button:hover { background:var(--bg-input,#ffffff12); color:var(--text,#ededed); }
+.coden-message-actions button { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:6px; background:transparent; color:var(--text-muted,var(--horizon-muted)); cursor:pointer; }
+.coden-message-actions button:hover { background:var(--bg-input,#ffffff12); color:var(--text,var(--horizon-text)); }
 .coden-message-actions button:focus-visible { outline:2px solid var(--accent,#568aff); outline-offset:2px; }
 .coden-agent-message-error {
   display: grid;
   gap: 4px;
   margin: 2px 0 0;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--error, #dc2626) 32%, var(--border, #e2e8f0));
+  border: 1px solid color-mix(in srgb, var(--error, var(--horizon-danger)) 32%, var(--border, var(--horizon-border)));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--error-dim, rgba(220, 38, 38, .1)) 54%, var(--bg-surface, #fff));
-  color: var(--text, #0f172a);
+  background: color-mix(in srgb, var(--error-dim, color-mix(in srgb, var(--horizon-danger) 10%, transparent)) 54%, var(--bg-surface, var(--horizon-surface)));
+  color: var(--text, var(--horizon-text));
   font-size: 13px;
   line-height: 1.5;
 }

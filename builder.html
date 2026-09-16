@@ -152,7 +152,7 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
     *:hover { scrollbar-color: rgba(100, 116, 139, 0.46) transparent; }
-    *:hover::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, 0.46); }
+    *:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--horizon-border-strong) 46%, transparent); }
 
     body {
       background: var(--bg);
@@ -265,7 +265,7 @@
     }
 
     .brand-logo-spark {
-      background: linear-gradient(135deg, var(--accent-blue, #3b82f6), #93c5fd);
+      background: linear-gradient(135deg, var(--accent-blue, var(--horizon-blue)), var(--horizon-blue));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       font-size: 16px;
@@ -500,15 +500,15 @@
     }
 
     .builder-plan-badge.pro {
-      border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 28%, var(--border));
-      background: var(--accent-blue-soft, rgba(59, 130, 246,.10));
-      color: var(--accent-blue-deep, #2458dc);
+      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 28%, var(--border));
+      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
+      color: var(--accent-blue-deep, var(--horizon-blue));
     }
 
     .builder-plan-badge.scale {
       border-color: rgba(111, 66, 193, .26);
       background: rgba(111, 66, 193, .10);
-      color: #5b35a8;
+      color: var(--horizon-blue);
     }
 
     .project-menu-muted {
@@ -554,8 +554,8 @@
       border-radius: 9px;
       display: grid;
       place-items: center;
-      background: var(--accent-blue, #3b82f6);
-      color: #fff;
+      background: var(--accent-blue, var(--horizon-blue));
+      color: var(--horizon-text);
       padding: 0;
       font-size: 11px;
       font-weight: 840;
@@ -686,7 +686,7 @@
     }
 
     .btn-integration:hover {
-      background: var(--accent-dim, rgba(9, 9, 11, 0.08));
+      background: var(--accent-dim, color-mix(in srgb, var(--horizon-surface) 8%, transparent));
       color: var(--text);
     }
 
@@ -702,7 +702,7 @@
     }
 
     .btn-upgrade:hover {
-      background: var(--accent-dim, rgba(9, 9, 11, 0.08));
+      background: var(--accent-dim, color-mix(in srgb, var(--horizon-surface) 8%, transparent));
     }
 
     /* Modern, flat Indigo — no gradients, noise or heavy shadow. */
@@ -711,8 +711,8 @@
       align-items: center;
       justify-content: center;
       gap: 7px;
-      background: var(--accent-blue, #3b82f6);
-      color: #ffffff;
+      background: var(--accent-blue, var(--horizon-blue));
+      color: var(--horizon-text);
       border: 0;
       font-size: 12px;
       font-weight: 700;
@@ -735,7 +735,7 @@
       width: 24px;
       height: 24px;
       border-radius: 50%;
-      background: #f1a98c; /* Warm salmon pink peach matching screenshot */
+      background: var(--horizon-warning-soft); /* Warm salmon pink peach matching screenshot */
       border: 1px solid var(--border);
       cursor: pointer;
     }
@@ -888,15 +888,15 @@
       gap: 3px;
       padding: 3px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-input) 82%, #000 8%);
+      background: color-mix(in srgb, var(--bg-input) 82%, var(--horizon-canvas) 8%);
       border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
       box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset;
       overflow: visible;
     }
 
     :root[data-theme="light"] .brand-topbar .sub-nav-tabs {
-      background: #ffffff;
-      border-color: rgba(9, 9, 11, .10);
+      background: var(--horizon-surface);
+      border-color: color-mix(in srgb, var(--horizon-border) 10%, transparent);
       box-shadow: 0 1px 0 rgba(9, 9, 11, .04) inset, 0 10px 28px rgba(9, 9, 11, .06);
     }
 
@@ -930,7 +930,7 @@
     .brand-topbar .sub-nav-tab.active,
     .brand-topbar .builder-more-trigger.active,
     .brand-topbar .builder-more-wrapper.open .builder-more-trigger {
-      color: #b8d0ff;
+      color: var(--horizon-blue);
       background: linear-gradient(180deg, rgba(48, 91, 190, .72), rgba(35, 69, 165, .88));
       border-color: rgba(111, 150, 255, .58);
       box-shadow:
@@ -969,8 +969,8 @@
     }
 
     :root[data-theme="light"] .brand-topbar .builder-more-menu {
-      background: rgba(255,255,255,.96);
-      border-color: rgba(9,9,11,.10);
+      background: color-mix(in srgb, var(--horizon-surface) 96%, transparent);
+      border-color: color-mix(in srgb, var(--horizon-border) 10%, transparent);
     }
 
     .brand-topbar .builder-more-wrapper.open .builder-more-menu {
@@ -1068,8 +1068,8 @@
     }
 
     .btn-share.is-copied {
-      border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 42%, var(--border));
-      color: var(--accent-blue-deep, #2458dc);
+      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 42%, var(--border));
+      color: var(--accent-blue-deep, var(--horizon-blue));
     }
 
     .btn-share:disabled {
@@ -1081,7 +1081,7 @@
     .brand-topbar .btn-upgrade {
       border-color: color-mix(in srgb, var(--accent-blue) 38%, transparent);
       background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
-      color: color-mix(in srgb, var(--accent-blue) 35%, #ffffff);
+      color: color-mix(in srgb, var(--accent-blue) 35%, var(--horizon-text));
       box-shadow: none;
     }
 
@@ -1097,8 +1097,8 @@
     .brand-topbar .btn-publish {
       padding: 0 16px;
       border-color: transparent;
-      background: var(--accent-blue, #3b82f6);
-      color: #fff;
+      background: var(--accent-blue, var(--horizon-blue));
+      color: var(--horizon-text);
       box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
     }
 
@@ -1119,8 +1119,8 @@
       display: inline-grid;
       place-items: center;
       border: 1px solid var(--topbar-border);
-      background: linear-gradient(135deg, var(--accent-blue, #3b82f6), var(--accent-blue-deep, #1d4ed8));
-      color: #fff;
+      background: linear-gradient(135deg, var(--accent-blue, var(--horizon-blue)), var(--accent-blue-deep, var(--horizon-blue-hover)));
+      color: var(--horizon-text);
       font-size: 12px;
       font-weight: 800;
       letter-spacing: -.03em;
@@ -1445,10 +1445,10 @@
       justify-content: center;
       height: 16px;
       padding: 0 6px;
-      border: 1px solid color-mix(in srgb, var(--accent-blue, #3b82f6) 26%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 26%, var(--border));
       border-radius: 999px;
-      background: var(--accent-blue-soft, rgba(59, 130, 246,.10));
-      color: var(--accent-blue-deep, #2458dc);
+      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
+      color: var(--accent-blue-deep, var(--horizon-blue));
       font-size: 8.5px;
       font-weight: 850;
       letter-spacing: .04em;
@@ -1467,14 +1467,14 @@
     .builder-action-plan-tag.included {
       border-color: rgba(22, 163, 74, .24);
       background: rgba(22, 163, 74, .10);
-      color: #15803d;
+      color: var(--horizon-success);
     }
 
     .pane-plan-tag.locked,
     .builder-action-plan-tag.locked {
-      border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 24%, var(--border));
-      background: var(--accent-blue-soft, rgba(59, 130, 246,.10));
-      color: var(--accent-blue-deep, #2458dc);
+      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 24%, var(--border));
+      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
+      color: var(--accent-blue-deep, var(--horizon-blue));
     }
 
     .pane-studio-option-desc {
@@ -1587,7 +1587,7 @@
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: var(--accent-blue, #3b82f6);
+      background: var(--accent-blue, var(--horizon-blue));
       box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59, 130, 246, 0.12));
       flex: 0 0 auto;
     }
@@ -1876,7 +1876,7 @@
         z-index: -1;
     }
     .chat-input-row .input-wrapper:focus-within {
-        border-color: color-mix(in srgb, var(--accent-blue, #3b82f6) 30%, var(--border-mid)) !important;
+        border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 30%, var(--border-mid)) !important;
         box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59, 130, 246, 0.10)), 0 8px 24px rgba(9,9,11,.06) !important;
     }
     .chat-input-row .icon-btn:hover {
@@ -1901,9 +1901,9 @@
         background: var(--accent-hover);
     }
     .chat-input-row .submit-btn.active {
-        background: var(--accent-blue, #3b82f6) !important;
+        background: var(--accent-blue, var(--horizon-blue)) !important;
         border-color: transparent !important;
-        color: #ffffff !important;
+        color: var(--horizon-text) !important;
         cursor: pointer !important;
         pointer-events: auto !important;
         box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-blue, #3b82f6) 36%, transparent) !important;
@@ -1913,9 +1913,9 @@
         transform: scale(1.06);
     }
     .chat-input-row .submit-btn.is-generating {
-        background: #ef4444 !important;
+        background: var(--horizon-danger) !important;
         border-color: transparent !important;
-        color: #ffffff !important;
+        color: var(--horizon-text) !important;
         cursor: pointer !important;
         pointer-events: auto !important;
         box-shadow: 0 2px 10px rgba(239, 68, 68, 0.36) !important;
@@ -2078,9 +2078,9 @@
     .brand-center .sub-nav-tab.active,
     .brand-center .builder-more-trigger.active,
     .brand-center .builder-more-wrapper.open .builder-more-trigger {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 92%, #fff 8%), var(--accent-blue-deep, #1d4ed8));
+      background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 92%, var(--horizon-surface) 8%), var(--accent-blue-deep, var(--horizon-blue-hover)));
       border: 1px solid color-mix(in srgb, var(--accent-blue) 70%, #fff 18%);
-      color: #fff;
+      color: var(--horizon-text);
       box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 42%, transparent), 0 8px 24px color-mix(in srgb, var(--accent-blue) 32%, transparent);
     }
 
@@ -2119,8 +2119,8 @@
     }
 
     .sub-nav-action-btn.active {
-      color: var(--accent-blue, #3b82f6);
-      background-color: var(--accent-blue-soft, rgba(59, 130, 246, 0.10));
+      color: var(--accent-blue, var(--horizon-blue));
+      background-color: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
     }
 
     /* Viewport Frame Holder */
@@ -2329,10 +2329,10 @@
 
     /* Syntax markup highlighting for high performance styling */
     .syn-keyword { color: var(--accent-spark); font-weight: 500; }
-    .syn-string { color: #a3e635; } 
+    .syn-string { color: var(--horizon-success); } 
     .syn-comment { color: var(--text-sub); font-style: italic; }
-    .syn-call { color: #60a5fa; } 
-    .syn-type { color: #fbbf24; }
+    .syn-call { color: var(--horizon-blue); } 
+    .syn-type { color: var(--horizon-warning); }
 
     /* Preview dynamic viewport screen output */
     .preview-screen-panel {
@@ -2365,10 +2365,10 @@
       gap: 6px;
       margin-left: 10px;
       padding: 3px 9px;
-      border: 1px solid color-mix(in srgb, #d97706 46%, transparent);
+      border: 1px solid color-mix(in srgb, var(--horizon-warning) 46%, transparent);
       border-radius: 6px;
-      background: color-mix(in srgb, #d97706 12%, transparent);
-      color: #d97706;
+      background: color-mix(in srgb, var(--horizon-warning) 12%, transparent);
+      color: var(--horizon-warning);
       font-size: 11px;
       font-weight: 600;
       letter-spacing: .01em;
@@ -2576,7 +2576,7 @@
       width: 5px;
       height: 5px;
       border-radius: 50%;
-      background: #22c55e;
+      background: var(--horizon-success);
       box-shadow: 0 0 6px #22c55e;
       flex: 0 0 auto;
     }
@@ -2763,7 +2763,7 @@
       scrollbar-width: none;
       -ms-overflow-style: none;
       background:
-        radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-blue, #3b82f6) 3%, transparent), transparent 40%),
+        radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 3%, transparent), transparent 40%),
         var(--preview-stage-bg, var(--bg-panel));
       padding: 0;
     }
@@ -2820,7 +2820,7 @@
     }
 
     :root[data-theme="light"] .preview-device-frame {
-      background: #ffffff;
+      background: var(--horizon-surface);
     }
 
     :root[data-theme="dark"] {
@@ -3298,13 +3298,13 @@
     .db-action-primary {
       background: var(--accent-blue);
       border-color: var(--accent-blue);
-      color: #fff;
+      color: var(--horizon-text);
     }
 
     .db-action-primary:hover {
       background: var(--accent-blue-deep);
       border-color: var(--accent-blue-deep);
-      color: #fff;
+      color: var(--horizon-text);
     }
 
     .db-sections {
@@ -3729,7 +3729,7 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #16a34a;
+      background: var(--horizon-success);
       box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
     }
 
@@ -3770,7 +3770,7 @@
     }
 
     .analysis-metric-card.is-primary {
-      border-color: rgba(37, 99, 235, .44);
+      border-color: color-mix(in srgb, var(--horizon-blue) 44%, transparent);
       box-shadow: 0 0 0 1px rgba(37, 99, 235, .08), 0 18px 42px rgba(37, 99, 235, .09);
     }
 
@@ -3782,7 +3782,7 @@
     }
 
     .analysis-metric-card.is-primary .analysis-metric-label {
-      color: var(--accent-blue, #3b82f6);
+      color: var(--accent-blue, var(--horizon-blue));
     }
 
     .analysis-metric-value {
@@ -3812,14 +3812,14 @@
 
     .analysis-chart-line {
       fill: none;
-      stroke: var(--accent-blue, #3b82f6);
+      stroke: var(--accent-blue, var(--horizon-blue));
       stroke-width: 3;
       stroke-linejoin: round;
       stroke-linecap: round;
     }
 
     .analysis-chart-area {
-      fill: rgba(37, 99, 235, .10);
+      fill: color-mix(in srgb, var(--horizon-blue) 10%, transparent);
     }
 
     .analysis-chart-label {
@@ -3874,7 +3874,7 @@
       position: absolute;
       inset: 0 auto 0 0;
       width: var(--row-width, 0%);
-      background: rgba(37, 99, 235, .16);
+      background: color-mix(in srgb, var(--horizon-blue) 16%, transparent);
       border-radius: inherit;
     }
 
@@ -3998,18 +3998,18 @@
     }
 
     .analysis-seo-check.is-pass strong {
-      color: #166534;
-      background: rgba(34, 197, 94, .14);
+      color: var(--horizon-success);
+      background: color-mix(in srgb, var(--horizon-success) 14%, transparent);
     }
 
     .analysis-seo-check.is-warn strong {
-      color: #92400e;
+      color: var(--horizon-warning);
       background: rgba(245, 158, 11, .16);
     }
 
     .analysis-seo-check.is-fail strong {
-      color: #991b1b;
-      background: rgba(239, 68, 68, .14);
+      color: var(--horizon-danger);
+      background: color-mix(in srgb, var(--horizon-danger) 14%, transparent);
     }
 
     .analysis-seo-check small {
@@ -4039,7 +4039,7 @@
     .analysis-skeleton {
       min-height: 120px;
       border-radius: 16px;
-      background: linear-gradient(90deg, rgba(0,0,0,.04), rgba(0,0,0,.08), rgba(0,0,0,.04));
+      background: linear-gradient(90deg, color-mix(in srgb, var(--horizon-surface) 4%, transparent), color-mix(in srgb, var(--horizon-surface) 8%, transparent), color-mix(in srgb, var(--horizon-surface) 4%, transparent));
       background-size: 220% 100%;
       animation: analysis-shimmer 1.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
     }
@@ -4178,7 +4178,7 @@
         width: 15px;
         height: 15px;
         border-radius: 50%;
-        background: #fff;
+        background: var(--horizon-surface);
         position: absolute;
       }
     }
@@ -4548,7 +4548,7 @@
                             <span id="chat-mode-label">Auto</span><span style="font-size:9px;opacity:.62;">v</span>
                         </button>
                         <div id="chat-mode-menu" role="menu" style="position:absolute;right:0;bottom:calc(100% + 8px);width:218px;border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.22);display:none;z-index:1000;">
-                            <button type="button" data-chat-mode="auto" role="menuitem" style="width:100%;text-align:left;border:0;background:var(--accent-hover, rgba(9,9,11,.08));color:var(--text);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Auto <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Let Coden choose the right action</span></button>
+                            <button type="button" data-chat-mode="auto" role="menuitem" style="width:100%;text-align:left;border:0;background:var(--accent-hover, color-mix(in srgb, var(--horizon-surface) 8%, transparent));color:var(--text);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Auto <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Let Coden choose the right action</span></button>
                             <button type="button" data-chat-mode="build" role="menuitem" style="width:100%;text-align:left;border:0;background:transparent;color:var(--text-muted);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Build <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Generate or edit the app</span></button>
                             <button type="button" data-chat-mode="plan" role="menuitem" style="width:100%;text-align:left;border:0;background:transparent;color:var(--text-muted);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Plan <span style="display:block;color:var(--text-sub);font-weight:500;font-size:10px;margin-top:2px;">Think without changing files</span></button>
                         </div>
@@ -4761,7 +4761,7 @@
                     </svg>
                   </button>
                   <div class="editor-tab-item" style="border-left: none;">
-                    <span style="color: #60a5fa;">📄</span>
+                    <span style="color: var(--horizon-blue);">📄</span>
                     <span id="open-file-tab-label">Code</span>
                   </div>
                 </div>

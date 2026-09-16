@@ -1,3 +1,29 @@
+/* ---------------------------------------------------------------------------
+ * The one badge that must not follow the theme
+ *
+ * Everything else in this product now paints from `--horizon-*` and flips with
+ * `[data-theme]`. The state pill on a project card is the deliberate
+ * exception, because it is not drawn on one of our surfaces: it sits on top of
+ * a live thumbnail of the CUSTOMER's application, whose colours we do not
+ * choose and cannot predict.
+ *
+ * It was a near-black chip once, and it vanished into every generated app that
+ * had a dark footer. Letting it become a dark chip again in dark mode would
+ * bring that back. So these five are fixed values on purpose — a white pill
+ * with dark ink reads over anything, in either theme.
+ *
+ * Written as custom properties rather than as literals in the rule so the
+ * palette pass leaves them alone: it rewrites declarations, never definitions.
+ * ------------------------------------------------------------------------- */
+:root {
+  --coden-preview-pill: #ffffff;
+  --coden-preview-pill-ink: #0f172a;
+  --coden-preview-pill-success: #15803d;
+  --coden-preview-pill-danger: #dc2626;
+  --coden-preview-pill-info: #1d4ed8;
+  --coden-preview-pill-muted: #64748b;
+}
+
 :root {
   --dashboard-bg: #0a0d12;
   --dashboard-sidebar: #101722;
@@ -266,7 +292,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 
 .coden-dashboard-new-project:hover {
   background: var(--dashboard-raised);
-  border-color: #3a485c;
+  border-color: var(--horizon-border);
 }
 
 .coden-dashboard-project-nav {
@@ -348,7 +374,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 .coden-dashboard-upgrade {
   min-height: 36px;
   margin-bottom: 6px;
-  color: #91b6ff;
+  color: var(--horizon-blue);
   font-weight: 650;
 }
 
@@ -385,8 +411,8 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 /* A menu has to be opaque enough to read: the translucent --dashboard-raised
    the sidebar uses for hover states would leave the mesh legible through it. */
 .coden-dashboard-sidebar .coden-dashboard-account-menu {
-  background: #16203f;
-  border-color: rgba(255, 255, 255, .16);
+  background: var(--horizon-raised);
+  border-color: color-mix(in srgb, var(--horizon-border) 16%, transparent);
 }
 
 .coden-dashboard-account-menu {
@@ -439,7 +465,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   flex: 0 0 26px;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--horizon-text);
   font-size: 11px;
   font-weight: 700;
   background: var(--dashboard-accent);
@@ -574,9 +600,9 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   height: 42px;
   align-items: center;
   justify-content: center;
-  color: #a8c4ff;
-  background: rgba(79, 140, 255, .11);
-  border: 1px solid rgba(79, 140, 255, .22);
+  color: var(--horizon-blue);
+  background: color-mix(in srgb, var(--horizon-blue) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--horizon-blue) 22%, transparent);
   border-radius: 12px;
 }
 
@@ -682,7 +708,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: #fff;
+  color: var(--horizon-text);
   background: var(--dashboard-accent);
   border: 0;
   border-radius: 999px;
@@ -949,9 +975,9 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   height: 44px;
   align-items: center;
   justify-content: center;
-  color: #9ebeff;
-  background: rgba(79, 140, 255, .1);
-  border: 1px solid rgba(79, 140, 255, .18);
+  color: var(--horizon-blue);
+  background: color-mix(in srgb, var(--horizon-blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--horizon-blue) 18%, transparent);
   border-radius: 12px;
 }
 
@@ -980,11 +1006,11 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   align-items: center;
   gap: 5px;
   padding: 4px 9px;
-  color: #101521;
+  color: var(--coden-preview-pill-ink);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: .01em;
-  background: rgba(255, 255, 255, .92);
+  background: color-mix(in srgb, var(--coden-preview-pill) 92%, transparent);
   border: 1px solid rgba(16, 21, 33, .07);
   border-radius: 999px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
@@ -1011,19 +1037,19 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 /* Read on a white pill, so these are the dark ends of the same hues the
    dark-chip version used, not the light ends. */
 .coden-dashboard-project-badge.is-published {
-  color: #0f7a43;
+  color: var(--coden-preview-pill-success);
 }
 
 .coden-dashboard-project-badge.is-issue {
-  color: #b3261e;
+  color: var(--coden-preview-pill-danger);
 }
 
 .coden-dashboard-project-badge.is-building {
-  color: #1d4ed8;
+  color: var(--coden-preview-pill-info);
 }
 
 .coden-dashboard-project-badge.is-ready {
-  color: #2f4056;
+  color: var(--coden-preview-pill-muted);
 }
 
 /* Avatar, copy, chevron. The avatar column came back once it had something to
@@ -1043,7 +1069,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   height: 36px;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--horizon-text);
   font-size: 13px;
   font-weight: 700;
   background: linear-gradient(140deg, var(--dashboard-accent), #8b6aff);
@@ -1151,9 +1177,9 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
   height: 36px;
   align-items: center;
   justify-content: center;
-  color: #b8c6dc;
-  background: rgba(79, 140, 255, .09);
-  border: 1px solid rgba(79, 140, 255, .16);
+  color: var(--horizon-muted);
+  background: color-mix(in srgb, var(--horizon-blue) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--horizon-blue) 16%, transparent);
   border-radius: 9px;
 }
 
@@ -1184,15 +1210,15 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 }
 
 .coden-dashboard-project-status.is-published {
-  color: #73d69b;
+  color: var(--horizon-success);
 }
 
 .coden-dashboard-project-status.is-issue {
-  color: #ff9292;
+  color: var(--horizon-danger);
 }
 
 .coden-dashboard-project-status.is-building {
-  color: #87b0ff;
+  color: var(--horizon-blue);
 }
 
 .coden-dashboard-project-arrow {
@@ -1258,7 +1284,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
 
 .coden-dashboard-empty a {
   margin-top: 5px;
-  color: #8ab2ff;
+  color: var(--horizon-blue);
 }
 
 .coden-dashboard-backdrop {
@@ -1296,7 +1322,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
     /* Solid, and taken from the mesh's own base rather than from
        --dashboard-sidebar: the drawer keeps the sidebar's light-on-dark ink,
        so a theme-coloured panel would be white text on white here. */
-    background: #121c3d;
+    background: var(--horizon-raised);
     border-right: 1px solid var(--dashboard-border-soft);
     transform: translateX(-100%);
     transition: transform var(--transition-control);
@@ -1343,7 +1369,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
     z-index: 4;
     display: block;
     padding: 0;
-    background: rgba(0, 0, 0, .58);
+    background: color-mix(in srgb, var(--horizon-surface) 58%, transparent);
     border: 0;
   }
 
@@ -1376,7 +1402,7 @@ html[data-theme="dark"] .coden-dashboard-sidebar {
     gap: 6px;
     margin-left: auto;
     padding: 0 10px;
-    color: #fff;
+    color: var(--horizon-text);
     font-size: 12px;
     font-weight: 650;
     text-decoration: none;

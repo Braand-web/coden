@@ -741,7 +741,7 @@ function ensureConversationStyles() {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
+      background: var(--accent, var(--horizon-blue));
       box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #3b82f6) 42%, transparent);
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
@@ -757,7 +757,7 @@ function ensureConversationStyles() {
       width: 5px;
       height: 5px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
+      background: var(--accent, var(--horizon-blue));
       animation: coden-typing-bounce 1s ease-in-out infinite;
     }
     .coden-agent-pending > span:nth-child(2) { animation-delay: 0.15s; }
@@ -790,7 +790,7 @@ function ensureConversationStyles() {
       padding: 0 7px;
       border: 1px solid var(--border, rgba(148,163,184,.25));
       border-radius: 999px;
-      color: var(--text-muted, #94a3b8);
+      color: var(--text-muted, var(--horizon-subtle));
       font: 600 10px/1.2 "JetBrains Mono", monospace;
       letter-spacing: .01em;
       flex: 0 0 auto;
@@ -800,13 +800,13 @@ function ensureConversationStyles() {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: #10b981;
+      background: var(--horizon-success);
       flex: 0 0 auto;
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
 
-    .coden-live-dot.is-done { animation: none; background: #22c55e; }
-    .coden-live-dot.is-failed { animation: none; background: #ef4444; }
+    .coden-live-dot.is-done { animation: none; background: var(--horizon-success); }
+    .coden-live-dot.is-failed { animation: none; background: var(--horizon-danger); }
 
     .coden-live-time {
       color: var(--text-muted);
@@ -817,8 +817,8 @@ function ensureConversationStyles() {
 
     .coden-shimmer-text {
       display: inline;
-      color: color-mix(in srgb, var(--text) 86%, var(--accent, #3b82f6));
-      background: linear-gradient(90deg, var(--text-muted), var(--text), var(--accent, #3b82f6), var(--text));
+      color: color-mix(in srgb, var(--text) 86%, var(--accent, var(--horizon-blue)));
+      background: linear-gradient(90deg, var(--text-muted), var(--text), var(--accent, var(--horizon-blue)), var(--text));
       background-size: 260% 100%;
       -webkit-background-clip: text;
       background-clip: text;
@@ -860,12 +860,12 @@ function ensureConversationStyles() {
     }
 
     .coden-live-line.is-active span:first-child {
-      background: var(--accent, #3b82f6);
+      background: var(--accent, var(--horizon-blue));
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
 
-    .coden-live-line.is-done span:first-child { background: #22c55e; }
-    .coden-live-line.is-failed span:first-child { background: #ef4444; }
+    .coden-live-line.is-done span:first-child { background: var(--horizon-success); }
+    .coden-live-line.is-failed span:first-child { background: var(--horizon-danger); }
     .coden-live-line.is-muted { opacity: .65; }
 
     .coden-live-summary {
@@ -900,7 +900,7 @@ function ensureConversationStyles() {
     .coden-rich-response blockquote {
       margin: 10px 0;
       padding-left: 11px;
-      border-left: 2px solid color-mix(in srgb, var(--accent, #3b82f6) 55%, var(--border));
+      border-left: 2px solid color-mix(in srgb, var(--accent, var(--horizon-blue)) 55%, var(--border));
       color: var(--text-sub);
     }
     .coden-rich-response table {
@@ -933,7 +933,7 @@ function ensureConversationStyles() {
       padding: 12px;
       border-radius: 11px;
       overflow: auto;
-      background: #0f1117;
+      background: var(--horizon-canvas);
       border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
       font-size: 11.5px;
       line-height: 1.55;
@@ -965,7 +965,7 @@ function ensureConversationStyles() {
       display: grid;
       gap: 11px;
       padding: 15px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 42%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent, var(--horizon-blue)) 42%, var(--border));
       border-radius: 15px;
       background: color-mix(in srgb, var(--bg-input) 82%, transparent);
       box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
@@ -984,11 +984,11 @@ function ensureConversationStyles() {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: #e7a32e;
+      background: var(--horizon-warning);
       box-shadow: 0 0 0 4px color-mix(in srgb, #e7a32e 14%, transparent);
     }
-    .coden-approval-card[data-state="approved"] .coden-approval-kicker > span { background: #22c55e; }
-    .coden-approval-card[data-state="rejected"] .coden-approval-kicker > span { background: #ef4444; }
+    .coden-approval-card[data-state="approved"] .coden-approval-kicker > span { background: var(--horizon-success); }
+    .coden-approval-card[data-state="rejected"] .coden-approval-kicker > span { background: var(--horizon-danger); }
     .coden-approval-heading {
       display: flex;
       align-items: flex-start;
@@ -1037,9 +1037,9 @@ function ensureConversationStyles() {
       transition: transform 180ms cubic-bezier(.32,.72,0,1), background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
     }
     .coden-approval-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent, var(--horizon-blue));
+      background: var(--accent, var(--horizon-blue));
+      color: var(--accent-foreground, var(--horizon-text));
     }
     .coden-approval-actions button:hover:not(:disabled) { filter: brightness(1.04); }
     .coden-approval-actions button:active:not(:disabled) { transform: scale(.98); }
@@ -1050,7 +1050,7 @@ function ensureConversationStyles() {
       display: grid;
       gap: 12px;
       padding: 13px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 38%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent, var(--horizon-blue)) 38%, var(--border));
       border-radius: 16px;
       background: color-mix(in srgb, var(--bg-input) 76%, transparent);
       box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
@@ -1079,7 +1079,7 @@ function ensureConversationStyles() {
     }
     .coden-plan-kicker svg {
       flex: none;
-      color: var(--accent, #3b82f6);
+      color: var(--accent, var(--horizon-blue));
     }
     .coden-plan-summary {
       margin: 0;
@@ -1162,7 +1162,7 @@ function ensureConversationStyles() {
       height: 5px;
       margin-top: 5px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--accent, #3b82f6) 72%, var(--text-muted));
+      background: color-mix(in srgb, var(--accent, var(--horizon-blue)) 72%, var(--text-muted));
     }
     /* Bottom right: where the eye lands after the summary, not before it. */
     .coden-plan-actions {
@@ -1176,7 +1176,7 @@ function ensureConversationStyles() {
       margin-left: 7px;
       padding: 1px 4px;
       border-radius: 5px;
-      background: color-mix(in srgb, #000 16%, transparent);
+      background: color-mix(in srgb, var(--horizon-canvas) 16%, transparent);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 10px;
       font-weight: 600;
@@ -1196,9 +1196,9 @@ function ensureConversationStyles() {
       cursor: pointer;
     }
     .coden-plan-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent, var(--horizon-blue));
+      background: var(--accent, var(--horizon-blue));
+      color: var(--accent-foreground, var(--horizon-text));
     }
     .coden-plan-actions button:hover { filter: brightness(1.04); }
 
@@ -1206,7 +1206,7 @@ function ensureConversationStyles() {
       display: grid;
       gap: 12px;
       padding: 16px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 28%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent, var(--horizon-blue)) 28%, var(--border));
       border-radius: 16px;
       background: color-mix(in srgb, var(--bg-input) 72%, transparent);
       box-shadow: 0 10px 26px color-mix(in srgb, #000 8%, transparent);
@@ -1223,7 +1223,7 @@ function ensureConversationStyles() {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
+      background: var(--accent, var(--horizon-blue));
       box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
     }
     .coden-recovery-card h3 {
@@ -1258,12 +1258,12 @@ function ensureConversationStyles() {
       transition: transform 180ms cubic-bezier(0.32,0.72,0,1), background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1);
     }
     .coden-recovery-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent, var(--horizon-blue));
+      background: var(--accent, var(--horizon-blue));
+      color: var(--accent-foreground, var(--horizon-text));
     }
-    .coden-recovery-actions button:hover { background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent); }
-    .coden-recovery-actions button.is-primary:hover { background: var(--accent, #3b82f6); filter: brightness(1.04); }
+    .coden-recovery-actions button:hover { background: color-mix(in srgb, var(--accent, var(--horizon-blue)) 10%, transparent); }
+    .coden-recovery-actions button.is-primary:hover { background: var(--accent, var(--horizon-blue)); filter: brightness(1.04); }
     .coden-recovery-actions button:active { transform: scale(.98); }
     .coden-recovery-actions button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
 
@@ -1304,17 +1304,17 @@ function ensureConversationStyles() {
     .coden-tool-name { flex: 1; text-align: left; }
     .coden-tool-status {
       font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
-      background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
-      color: color-mix(in srgb, var(--text) 80%, var(--accent, #3b82f6));
+      background: color-mix(in srgb, var(--accent, var(--horizon-blue)) 14%, transparent);
+      color: color-mix(in srgb, var(--text) 80%, var(--accent, var(--horizon-blue)));
       text-transform: uppercase; letter-spacing: 0.04em;
     }
     .coden-tool-status.status-output-error {
-      background: color-mix(in srgb, #ef4444 18%, transparent);
-      color: #ef4444;
+      background: color-mix(in srgb, var(--horizon-danger) 18%, transparent);
+      color: var(--horizon-danger);
     }
     .coden-tool-status.status-output-available {
-      background: color-mix(in srgb, #22c55e 16%, transparent);
-      color: #16a34a;
+      background: color-mix(in srgb, var(--horizon-success) 16%, transparent);
+      color: var(--horizon-success);
     }
     .coden-tool-content {
       padding: 0 10px 10px;
@@ -1323,14 +1323,14 @@ function ensureConversationStyles() {
     }
     .coden-tool-input, .coden-tool-output-pre {
       margin: 8px 0 0; padding: 8px 10px;
-      background: #0f1117; color: #e5e7eb;
+      background: var(--horizon-canvas); color: var(--horizon-text);
       border-radius: 8px; font-size: 11px; line-height: 1.5;
       overflow: auto; max-height: 280px;
     }
-    .coden-tool-output.is-error { color: #ef4444; font-size: 12px; margin-top: 8px; }
+    .coden-tool-output.is-error { color: var(--horizon-danger); font-size: 12px; margin-top: 8px; }
 
     .coden-reasoning {
-      border-left: 2px solid color-mix(in srgb, var(--accent, #3b82f6) 50%, var(--border));
+      border-left: 2px solid color-mix(in srgb, var(--accent, var(--horizon-blue)) 50%, var(--border));
       padding-left: 10px; margin: 6px 0 10px; color: var(--text-sub);
     }
     .coden-reasoning-trigger {

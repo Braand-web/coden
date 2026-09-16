@@ -302,7 +302,7 @@ body.auth-premium-ready::before {
 .btn-submit {
   margin-top: 4px;
   border: 1px solid var(--primary, var(--coden-blue));
-  color: var(--primary-foreground, #08111f);
+  color: var(--primary-foreground, var(--horizon-blue-ink));
   background: var(--primary, var(--coden-blue));
   box-shadow: 0 8px 20px color-mix(in srgb, var(--primary, var(--coden-blue)) 18%, transparent);
 }
@@ -404,15 +404,15 @@ body.auth-premium-ready::before {
 }
 
 .auth-status[data-tone="error"] {
-  color: var(--danger, #f06b7a);
-  border-color: color-mix(in srgb, var(--danger, #f06b7a) 28%, transparent);
-  background: color-mix(in srgb, var(--danger, #f06b7a) 9%, var(--surface));
+  color: var(--danger, var(--horizon-danger));
+  border-color: color-mix(in srgb, var(--danger, var(--horizon-danger)) 28%, transparent);
+  background: color-mix(in srgb, var(--danger, var(--horizon-danger)) 9%, var(--surface));
 }
 
 .auth-status[data-tone="success"] {
-  color: var(--success, #36c98f);
-  border-color: color-mix(in srgb, var(--success, #36c98f) 28%, transparent);
-  background: color-mix(in srgb, var(--success, #36c98f) 9%, var(--surface));
+  color: var(--success, var(--horizon-success));
+  border-color: color-mix(in srgb, var(--success, var(--horizon-success)) 28%, transparent);
+  background: color-mix(in srgb, var(--success, var(--horizon-success)) 9%, var(--surface));
 }
 
 [hidden],
@@ -470,11 +470,11 @@ body.auth-premium-ready::before {
 body.auth-premium-ready {
   --auth-card-width: 404px;
   --auth-control-height: 44px;
-  background: #0e1116;
+  background: var(--horizon-canvas);
 }
 
 html[data-theme="light"] body.auth-premium-ready {
-  background: #f7f8fa;
+  background: var(--horizon-raised);
 }
 
 .auth-topbar {
@@ -507,12 +507,12 @@ html[data-theme="light"] body.auth-premium-ready {
   padding: 24px 28px 22px;
   border-color: rgba(151, 162, 178, .16) !important;
   border-radius: 14px !important;
-  background: #12171f !important;
+  background: var(--horizon-surface) !important;
   box-shadow: 0 18px 54px rgba(0, 0, 0, .18) !important;
 }
 
 html[data-theme="light"] .auth-card {
-  background: #fff !important;
+  background: var(--horizon-surface) !important;
   box-shadow: 0 16px 44px rgba(25, 35, 50, .07) !important;
 }
 

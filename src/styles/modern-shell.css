@@ -19,7 +19,7 @@ body.coden-modern-shell .navbar {
 
 body.coden-modern-shell .navbar.scrolled,
 body.coden-modern-shell .navbar:not(.navbar-transparent-on-scroll) {
-  background: color-mix(in srgb, var(--bg-panel, var(--coden-panel, #13151a)) 84%, transparent) !important;
+  background: color-mix(in srgb, var(--bg-panel, var(--coden-panel, var(--horizon-surface))) 84%, transparent) !important;
   border-color: color-mix(in srgb, var(--border, var(--coden-border)) 90%, transparent) !important;
   box-shadow: 0 14px 44px rgba(0, 0, 0, .18);
   backdrop-filter: blur(18px) saturate(125%);
@@ -130,7 +130,7 @@ body.coden-react-surface-home { padding-top: 76px; }
 .coden-react-theme-toggle, .coden-react-menu { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--bg-surface) 72%, transparent); transition: color var(--transition-control), border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .coden-react-theme-toggle:hover, .coden-react-menu:hover { color: var(--text); border-color: var(--border-strong, var(--border)); background: var(--bg-surface); }
 .coden-react-theme-toggle:active, .coden-react-menu:active { transform: scale(.97); }
-.coden-react-cta { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 10px; background: var(--accent-blue); color: #ffffff !important; font-size: 14px; line-height: 20px; font-weight: 600; }
+.coden-react-cta { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 10px; background: var(--accent-blue); color: var(--horizon-text) !important; font-size: 14px; line-height: 20px; font-weight: 600; }
 .coden-react-menu { display: none; }
 .coden-react-mobile-backdrop { position: fixed; inset: 0; z-index: -1; background: var(--overlay, rgba(4, 7, 12, .62)); }
 .coden-react-mobile-nav { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 2; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated); box-shadow: var(--shadow-lg); }

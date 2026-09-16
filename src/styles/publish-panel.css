@@ -63,10 +63,10 @@
   height: 8px;
   border-radius: 50%;
   flex: 0 0 auto;
-  background: var(--text-sub, #71717a);
+  background: var(--text-sub, var(--horizon-border-strong));
 }
 
-.cdn-pub__dot--live { background: var(--success, #22c55e); }
+.cdn-pub__dot--live { background: var(--success, var(--horizon-success)); }
 
 .cdn-pub__icon-btn {
   display: grid;
@@ -112,7 +112,7 @@
 .cdn-pub__error {
   border: 1px solid var(--error-dim, rgba(248, 113, 113, .25));
   background: var(--error-dim, rgba(248, 113, 113, .10));
-  color: var(--error, #f87171);
+  color: var(--error, var(--horizon-danger));
   border-radius: 10px;
   padding: 9px 11px;
   font-size: 12px;
@@ -159,8 +159,8 @@
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-  border: 1.5px solid color-mix(in srgb, var(--accent-blue, #6366f1) 25%, transparent);
-  border-top-color: var(--accent-blue, #6366f1);
+  border: 1.5px solid color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 25%, transparent);
+  border-top-color: var(--accent-blue, var(--horizon-blue));
   border-radius: 50%;
   animation: cdn-pub-spin .8s linear infinite;
 }
@@ -242,7 +242,7 @@
 
 /* A summary that reports a failure is not the same voice as one that reports
    a state, and the panel has room to say which. */
-.cdn-pub__summary[data-tone='warn'] { color: var(--warning, #d97706); }
+.cdn-pub__summary[data-tone='warn'] { color: var(--warning, var(--horizon-warning)); }
 
 .cdn-pub__detail { margin: 0 -16px; }
 
@@ -274,8 +274,8 @@
 .cdn-pub__primary {
   height: 40px;
   border: 0;
-  background: var(--accent-blue, #6366f1);
-  color: #fff;
+  background: var(--accent-blue, var(--horizon-blue));
+  color: var(--horizon-text);
   border-radius: 11px;
   font-size: 13.5px;
   font-weight: 800;
@@ -350,8 +350,8 @@
   font-weight: 800;
 }
 
-.cdn-pub__count[data-tone="fail"] { background: var(--error, #f87171); color: #fff; }
-.cdn-pub__count[data-tone="warn"] { background: var(--warning, #fbbf24); color: #fff; }
+.cdn-pub__count[data-tone="fail"] { background: var(--error, var(--horizon-danger)); color: var(--horizon-text); }
+.cdn-pub__count[data-tone="warn"] { background: var(--warning, var(--horizon-warning)); color: var(--horizon-text); }
 
 /* ── checks ─────────────────────────────────────────────── */
 
@@ -476,20 +476,20 @@
 }
 
 .cdn-dom__state[data-state="active"] {
-  color: var(--success, #22c55e);
-  background: color-mix(in srgb, var(--success, #22c55e) 12%, transparent);
+  color: var(--success, var(--horizon-success));
+  background: color-mix(in srgb, var(--success, var(--horizon-success)) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="error"] {
-  color: var(--error, #f87171);
-  background: color-mix(in srgb, var(--error, #f87171) 12%, transparent);
+  color: var(--error, var(--horizon-danger));
+  background: color-mix(in srgb, var(--error, var(--horizon-danger)) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="dns_verification"],
 .cdn-dom__state[data-state="dns_propagation"],
 .cdn-dom__state[data-state="configuration_required"] {
-  color: var(--warning, #d97706);
-  background: color-mix(in srgb, var(--warning, #d97706) 12%, transparent);
+  color: var(--warning, var(--horizon-warning));
+  background: color-mix(in srgb, var(--warning, var(--horizon-warning)) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="dns_propagation"]::before {
@@ -546,8 +546,8 @@
 }
 
 .cdn-dom__danger {
-  color: var(--error, #f87171);
-  border-color: color-mix(in srgb, var(--error, #f87171) 30%, var(--border));
+  color: var(--error, var(--horizon-danger));
+  border-color: color-mix(in srgb, var(--error, var(--horizon-danger)) 30%, var(--border));
 }
 
 @media (prefers-reduced-motion: reduce) {

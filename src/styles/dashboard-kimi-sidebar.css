@@ -303,7 +303,7 @@
   padding: 3px 5px !important;
   border-radius: 5px !important;
   background: var(--kimi-blue, var(--accent-blue)) !important;
-  color: #fff !important;
+  color: var(--horizon-text) !important;
   font-family: "JetBrains Mono", monospace;
   font-size: 9px;
   font-weight: 700;
@@ -474,7 +474,7 @@
   position: fixed;
   inset: 0;
   z-index: 240;
-  background: rgba(0, 0, 0, .52);
+  background: color-mix(in srgb, var(--horizon-surface) 52%, transparent);
   opacity: 1;
   transition: opacity 180ms ease;
 }

@@ -56,7 +56,7 @@ body {
   min-height: var(--coden-control-height);
   border-radius: var(--radius-md, 10px) !important;
   background: var(--primary, var(--coden-blue)) !important;
-  color: var(--primary-foreground, #08111f) !important;
+  color: var(--primary-foreground, var(--horizon-blue-ink)) !important;
 }
 
 :where(.btn-primary, .btn-solid, .btn-create-top, .btn-promo-upgrade, .btn-deploy, .pricing-btn.primary, .card-cta, .checkout-submit, .btn-submit, .submit-btn.active):hover:not(:disabled) {

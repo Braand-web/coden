@@ -95,7 +95,7 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
 :where(button, a):active:not([aria-disabled="true"]):not(:disabled) { transform: scale(.985); }
 
 .coden-ui-button { min-height: var(--control-height-md); display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 10px; padding: 0 16px; font: 600 13px/1 var(--font-sans, "Instrument Sans", sans-serif); cursor: pointer; user-select: none; }
-.coden-ui-button-primary { background: var(--accent-blue); color: #08111f; border-color: var(--accent-blue); }
+.coden-ui-button-primary { background: var(--accent-blue); color: var(--horizon-blue-ink); border-color: var(--accent-blue); }
 .coden-ui-button-primary:hover:not(:disabled) { background: var(--accent-blue-deep); border-color: var(--accent-blue-deep); }
 .coden-ui-button-secondary { background: var(--bg-elevated); color: var(--text); border-color: var(--border-mid); }
 .coden-ui-button-secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--bg-elevated) 82%, var(--accent-blue)); }
