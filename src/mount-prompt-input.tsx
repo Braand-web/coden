@@ -23,6 +23,14 @@ export function mountPromptInput(host: Element, props: PromptInputProps): () => 
   if (existing) existing.unmount();
 
   host.innerHTML = '';
+  /*
+   * The marker the neutralising rules in coden-composer.css hang off.
+   *
+   * Added rather than substituted: the Builder finds this very element with
+   * `document.querySelector('.chat-input-row')` in three places, so replacing
+   * its class list would break the composer's own mount point.
+   */
+  host.classList.add('coden-composer-host');
   const root = createRoot(host as HTMLElement);
   roots.set(host, root);
   root.render(<PromptInput {...props} />);

@@ -1,4 +1,18 @@
-@import "tailwindcss";
+/*
+ * Preflight only.
+ *
+ * The theme and the utilities moved to `styles/coden-tailwind.css`, imported
+ * by `coden-horizon-system.css` so they reach every surface instead of the
+ * seven pages that happen to link this file. Every one of those seven also
+ * loads the horizon system — directly (`admin-live.ts`) or through `main.ts`
+ * (`pricing-page.ts` imports it) — so nothing here loses its utilities, and
+ * they are not shipped twice.
+ *
+ * Preflight stays because these pages were built on top of it; the product
+ * surfaces never had it and must not suddenly get it.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/preflight.css" layer(base);
 @import "./design-system.css";
 @import "./styles/coden-ux-polish.css";
 @import "./styles/coden-light-theme.css";

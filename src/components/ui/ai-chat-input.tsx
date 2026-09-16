@@ -727,7 +727,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     return (
       <>
-        {/* Outer Wrapper for positioning and max-width scaling */}
+        {/* Outer Wrapper for positioning and max-width scaling.
+            `coden-prompt-input` is the scope hook, not decoration: Tailwind's
+            preflight is deliberately not loaded on the product surfaces (it
+            would reset thousands of lines of hand-written Builder CSS), so the
+            few resets this component genuinely assumes — a button with no
+            chrome, a control that inherits its font — are scoped to this
+            subtree in coden-composer.css instead. */}
         <div
           ref={(node) => {
             if (typeof ref === "function") ref(node);
@@ -736,7 +742,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             internalContainerRef.current = node;
           }}
           onBlur={handleBlur}
-          className={cn("relative flex flex-col w-full", className)}
+          className={cn("coden-prompt-input relative flex flex-col w-full", className)}
           style={{
             maxWidth: expanded ? expandedWidth : collapsedWidth,
             transition: isSmoothResize ? "max-width 0.15s ease-out" : "max-width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",

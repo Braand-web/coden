@@ -12,6 +12,14 @@
  * nothing and every duration in those files had to be written by hand.
  */
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/*
+ * The Tailwind utility layer rides here for the same reason, and it is the
+ * same bug one level up: the composer's utilities were reaching only the seven
+ * pages that load `index.css`. See coden-tailwind.css for why preflight stays
+ * behind.
+ */
+@import "./coden-tailwind.css";
 @import "./motion-tokens.css";
 
 :root,

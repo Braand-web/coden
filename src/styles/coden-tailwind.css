@@ -1,0 +1,75 @@
+/* ---------------------------------------------------------------------------
+ * The utility layer, on every surface
+ *
+ * `@import "tailwindcss"` lived in `src/index.css`, and `src/index.css` is
+ * loaded by seven secondary pages and by nothing else. The landing, the
+ * dashboard and the Builder — the three surfaces that actually render
+ * `PromptInput` — never loaded it, so every `flex`, `hidden`, `absolute` and
+ * `size-12` in that component resolved to nothing and the composer painted as
+ * raw HTML: a visible file input, the measuring span of the morphing label
+ * showing next to the real one, the model menu as a bare stack of icons.
+ *
+ * This file is imported from `coden-horizon-system.css`, which is the one
+ * stylesheet all six entry points load — the same vehicle already used for the
+ * motion contract and the global scrollbars, for the same reason.
+ *
+ * Preflight is deliberately NOT here. It stays in `index.css`, where those
+ * seven pages have always had it. Dropping a `* { margin: 0; padding: 0;
+ * border: 0 }` reset onto the Builder and the dashboard — thousands of lines
+ * of hand-written CSS that never had one — would be a redesign, not a fix. The
+ * composer gets the few resets it actually needs, scoped to itself, in
+ * `coden-composer.css`.
+ * ------------------------------------------------------------------------- */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* ---------------------------------------------------------------------------
+ * The semantic palette, finally connected
+ *
+ * The composer is written against shadcn's names — `bg-card`, `border-border`,
+ * `text-muted-foreground`, `bg-muted`, `ring-ring`. In Tailwind v4 those
+ * utilities only exist if something maps `--color-card` & co into the theme,
+ * and nothing in this project ever did. Verified against the built output
+ * before writing this: `bg-muted`, `border-border`, `text-foreground` and
+ * `bg-card` appear ZERO times in `dist/assets/index-*.css`, while plain
+ * utilities from the same file (`size-12`, `rounded-t-2xl`) appear once each.
+ *
+ * So the component was missing its colours even on the pages that did load
+ * Tailwind. Reaching the utility layer was only half the bug.
+ *
+ * `inline` is the important word. Without it Tailwind snapshots the value at
+ * `:root` and the utility freezes on the light palette; with it the utility
+ * emits `var(--card)` directly, so `[data-theme="dark"]` redefining the
+ * horizon tokens moves the composer with the rest of the product.
+ *
+ * Every name below maps to a token this design system already declares. The
+ * ones it does not declare (`--popover`, `--destructive`) borrow the nearest
+ * one that exists rather than pointing at an undefined variable, which would
+ * resolve to nothing and paint transparent — exactly the failure being fixed.
+ * ------------------------------------------------------------------------- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--card);
+  --color-popover-foreground: var(--card-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--error);
+
+  --color-border: var(--border);
+  --color-input: var(--bg-input);
+  --color-ring: var(--ring);
+}
