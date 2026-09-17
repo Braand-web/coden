@@ -13,11 +13,6 @@
  * itself: the resets it was written against, a host that stops pretending to
  * be the card, and its scrollbars.
  * ------------------------------------------------------------------------- */
-:root {
-  --coden-composer-radius: 24px;
-  --coden-composer-ease: cubic-bezier(.32, .72, 0, 1);
-}
-
 /* ---------------------------------------------------------------------------
  * Preflight, scoped
  *
@@ -92,18 +87,14 @@
 /* ---------------------------------------------------------------------------
  * The host is a rail, never a second card
  *
- * On the landing the host is a plain `<div>` carrying INLINE
- * `border:1px solid #263244; background:#151a22; border-radius:18px;
- * box-shadow:…`. `mountPromptInput` empties its children, so the old textarea
- * and buttons go — but the div keeps its own chrome, and the component's card
- * renders inside it. That is the double border in the screenshots.
+ * The host can arrive with inline chrome from a surface-specific shell.
+ * `mountPromptInput` empties its children, so the old controls go — but the
+ * host would otherwise keep its own chrome and paint a second card.
  *
  * `!important` is what it takes: a declaration in a stylesheet loses to an
  * inline style otherwise. The marker class is added by `mountPromptInput`, so
  * the Builder's `.chat-input-row` keeps the class its own JavaScript queries.
  * ------------------------------------------------------------------------- */
-body[data-coden-surface="landing-v3"] #top .coden-composer-host,
-body[data-coden-surface="landing-v3"] .coden-composer-host,
 body[data-coden-surface="builder"] .chat-input-row.coden-composer-host,
 body[data-coden-surface="builder"] .coden-composer-host {
   display: flex !important;
@@ -118,17 +109,10 @@ body[data-coden-surface="builder"] .coden-composer-host {
 }
 
 /* The decorative pseudo-layers of the surfaces the host used to belong to. */
-body[data-coden-surface="landing-v3"] .coden-composer-host::before,
-body[data-coden-surface="landing-v3"] .coden-composer-host::after,
 body[data-coden-surface="builder"] .coden-composer-host::before,
 body[data-coden-surface="builder"] .coden-composer-host::after {
   content: none !important;
   display: none !important;
-}
-
-/* The landing host keeps its own placement; only the chrome is removed. */
-body[data-coden-surface="landing-v3"] .coden-composer-host {
-  padding: 0 !important;
 }
 
 /* The Builder footer is a positioning rail, and the rail keeps its breathing
@@ -145,7 +129,6 @@ body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
 }
 
 @media (max-width: 560px) {
-  :root { --coden-composer-radius: 20px; }
   body[data-coden-surface="builder"] .chat-input-row.coden-composer-host {
     padding: 8px !important;
   }
@@ -163,9 +146,9 @@ body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
  * The composer's own scrollbars
  *
  * The component shipped this as an inline `<style dangerouslySetInnerHTML>`
- * block using `hsl(var(--muted-foreground) / 0.3)`. That form needs shadcn's
+ * block using `var(--foreground) / 0.3)`. That form needs shadcn's
  * bare HSL triplets; Coden's tokens are whole colours, so the expression
- * resolved to `hsl(#64625e / 0.3)` — invalid, dropped, and the thumb painted
+ * resolved to `var(--foreground)` — invalid, dropped, and the thumb painted
  * with the browser default instead of the intended one.
  *
  * `color-mix` does the same job against a real colour, and living in a
@@ -181,4 +164,12 @@ body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
 .prompt-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;
+}
+
+/* The prompt keeps its scroll affordance as a flat token-backed veil. A
+ * background gradient here would violate the product-wide surface contract
+ * and would make the shared composer diverge between landing and Builder. */
+.coden-prompt-fade {
+  background: var(--input);
+  opacity: .92;
 }

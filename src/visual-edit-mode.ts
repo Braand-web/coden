@@ -113,10 +113,10 @@ export function setVisualEditMode(enabled: boolean, options: VisualEditOptions):
         position: fixed;
         pointer-events: none;
         z-index: 2147483647;
-        border: 2px solid #2f6df6;
+        border: 2px solid var(--syntax-cyan);
         border-radius: 6px;
-        background: rgba(47, 109, 246, 0.08);
-        box-shadow: 0 0 0 2px rgba(47, 109, 246, 0.18);
+        background: color-mix(in srgb, var(--syntax-cyan) 8%, transparent);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--syntax-cyan) 18%, transparent);
         transition: color 60ms ease-out, background-color 60ms ease-out, border-color 60ms ease-out, box-shadow 60ms ease-out, opacity 60ms ease-out, transform 60ms ease-out, filter 60ms ease-out;
         opacity: 0;
       }

@@ -7,7 +7,7 @@ const now = new Date().toISOString().slice(0, 10);
 const routePolicy = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public-route-policy.json'), 'utf8'));
 
 const existingPages = [
-  { file: 'index.html', path: '/', title: 'Coden — Turn an idea into a web app with AI', description: 'Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification.' },
+  { file: 'index.html', path: '/', title: 'Coden — Transformez une idée en application web avec l’IA', description: 'Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.' },
   { file: 'pricing.html', path: '/pricing.html', title: 'Coden Pricing — Build, preview and publish web apps', description: 'Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications.' },
   { file: 'features.html', path: '/features.html', title: 'Coden Features — Plan, Build, Database, Preview and Deploy', description: 'Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment.' },
   { file: 'documentation.html', path: '/documentation.html', title: 'Coden Documentation — Build Production Apps With AI', description: 'Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps.' },
@@ -67,7 +67,7 @@ const existingPageCopy = {
     sections: [
       ['Sensitive data boundaries', 'User endpoints must never expose provider cost, platform margin, Stripe fees, raw provider payloads, supplier invoice IDs or secrets. Admin-only data stays behind protected roles.'],
       ['Safer generated output', 'The builder checks generated paths, blocks dangerous filenames, avoids committing environment files and treats external keys as explicit user-controlled configuration.'],
-      ['Auth, publish and ownership', 'Published apps remain separate from builder preview, free apps can show Coden attribution, and owner-aware links route owners back to the builder while public visitors reach Coden landing.']
+      ['Auth, publish and ownership', 'Published apps remain separate from builder preview, free apps can show Coden attribution, and owner-aware links route owners back to the builder while public visitors reach the Coden entry point.']
     ]
   },
   'showcase.html': {
@@ -283,7 +283,7 @@ function faviconHead() {
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />`;
+  <meta name="theme-color" content="#FFFFFF" />`;
 }
 
 function baseHead(page, url, breadcrumbs = []) {
@@ -361,10 +361,10 @@ function sharedPublicFooter(className = 'footer') {
                 <a href="/" class="logo">
                     <div class="logo-mark">
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                            <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
+                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
+                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
+                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
                         </svg>
                     </div>
                     <span class="logo-text">Coden</span>
@@ -618,9 +618,6 @@ ${faviconHead()}
 }
 
 function updateExistingFooter(page) {
-  // The landing page owns its richer conversion footer and i18n contract.
-  // Keep the shared SEO footer for secondary public pages only.
-  if (page.file === 'index.html') return;
   const full = path.join(root, page.file);
   if (!fs.existsSync(full)) return;
   let html = fs.readFileSync(full, 'utf8');

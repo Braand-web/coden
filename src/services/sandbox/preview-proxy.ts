@@ -190,15 +190,15 @@ export function previewErrorDocument(title: string, message: string, detail = ''
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
     font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    background:#0b0d12; color:#e6e8ee; }
-  @media (prefers-color-scheme: light) { body { background:#f7f8fa; color:#1a1d24; } }
+    background:var(--background); color:var(--foreground); }
+  @media (prefers-color-scheme: light) { body { background:var(--surface); color:var(--foreground); } }
   .card { max-width:34rem; text-align:center; }
   h1 { margin:0 0 .5rem; font-size:1.05rem; font-weight:600; }
   p { margin:0; opacity:.72; }
   code { display:block; margin-top:1rem; padding:.6rem .75rem; border-radius:8px;
-    background:rgba(127,127,127,.14); font-size:12px; text-align:left;
+    background:color-mix(in srgb, var(--surface-hover) 14%, transparent); font-size:12px; text-align:left;
     word-break:break-word; opacity:.8; }
-  .dot { width:8px; height:8px; border-radius:50%; background:#d97706;
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--danger);
     display:inline-block; margin-right:.5rem; vertical-align:middle; }
 </style></head><body><div class="card">
 <h1><span class="dot"></span>${escape(title)}</h1>

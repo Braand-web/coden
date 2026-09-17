@@ -1,0 +1,158 @@
+/* The only colour source for Coden. Components consume semantic variables
+   from this file; page and component styles never introduce a palette. */
+:root {
+  --font-sans: Geist, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+  --ease-standard: cubic-bezier(.32, .72, 0, 1);
+  --transition-micro: 120ms var(--ease-standard);
+  --transition-control: 180ms var(--ease-standard);
+  --transition-panel: 280ms var(--ease-standard);
+  --shadow-sm: 0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent);
+  --shadow-md: 0 8px 24px color-mix(in srgb, var(--foreground) 12%, transparent);
+  --shadow-lg: 0 18px 48px color-mix(in srgb, var(--foreground) 16%, transparent);
+  --shadow-overlay: 0 24px 64px color-mix(in srgb, var(--foreground) 22%, transparent);
+  --overlay: color-mix(in srgb, var(--foreground) 52%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #FFFFFF;
+  --sidebar: #F3F3F3;
+  --surface: #FFFFFF;
+  --surface-soft: #F8F8F8;
+  --surface-hover: #E7E8E8;
+
+  --border-subtle: #EDEDED;
+  --border: #E2E2E2;
+  --border-strong: #DEDEDE;
+
+  --foreground: #1A1C1F;
+  --text-strong: #232528;
+  --text-secondary: #505153;
+  --text-muted: #6A6C6E;
+  --text-disabled: #8E8F90;
+
+  --accent: #3A83F7;
+  --accent-soft: #9DBBFF;
+
+  --success: #00A240;
+  --success-background: #E7F4E7;
+  --danger: #BA2623;
+  --danger-background: #FBE6E2;
+
+  --syntax-purple: #751ED9;
+  --syntax-orange: #BD5800;
+  --syntax-green: #008809;
+  --syntax-cyan: #25B4CA;
+  --syntax-yellow: #ECAD29;
+
+  --control: var(--surface-soft);
+  --input: var(--surface);
+  --accent-track: var(--accent-soft);
+  --syntax-blue: var(--accent);
+  --text-on-accent: var(--foreground);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #111111;
+  --sidebar: #202020;
+  --surface: #1C1C1C;
+  --surface-hover: #232323;
+  --control: #2F2F2F;
+  --input: #0E0E0E;
+
+  --border: #313131;
+
+  --foreground: #FCFCFC;
+  --text-secondary: #D4D4D4;
+  --text-muted: #9F9F9F;
+
+  --accent: #3A83F7;
+  --accent-track: #2C5CA7;
+
+  --success: #00A240;
+  --success-background: #1A2B1B;
+  --danger: #E02E2A;
+  --danger-background: #381C17;
+
+  --syntax-purple: #B06DFF;
+  --syntax-orange: #FA994C;
+  --syntax-green: #85DF7B;
+  --syntax-blue: #5E51FF;
+
+  --surface-soft: var(--surface);
+  --border-subtle: var(--border);
+  --border-strong: var(--border);
+  --text-strong: var(--foreground);
+  --text-disabled: var(--text-muted);
+  --accent-soft: var(--accent-track);
+  --syntax-cyan: var(--syntax-blue);
+  --syntax-yellow: var(--syntax-orange);
+  --text-on-accent: var(--background);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+:where(button, input, textarea, select, summary) {
+  font: inherit;
+}
+
+:where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+
+:where(button, a, input, textarea, select):disabled,
+:where(button, a)[aria-disabled="true"] {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--foreground);
+}
+
+:where(body, body *) {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 56%, transparent) transparent;
+}
+
+:where(body, body *)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:where(body, body *)::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 44%, transparent);
+  border: 2px solid transparent;
+  border-radius: var(--radius-full);
+  background-clip: padding-box;
+}
+
+:where(body, body *)::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--text-muted) 68%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

@@ -49,8 +49,8 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
    */
   const sidebar = block(css, '.coden-dashboard-sidebar');
   assert.match(sidebar, /background: var\(--dashboard-panel\);/, 'the sidebar is a panel');
-  assert.match(sidebar, /border-radius: var\(--dashboard-panel-radius\);/, 'with the same rounding as the content');
-  assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--dashboard-gutter\);/,
+  assert.match(sidebar, /border-radius: var\(--app-panel-radius\);/, 'with the same rounding as the content');
+  assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--app-gutter\);/,
     'and a gutter between them where the gradient shows');
 
   /*
@@ -181,9 +181,9 @@ const horizon = readFileSync(new URL('./src/styles/coden-horizon-system.css', im
 /* The content sits in one rounded panel with a gutter around it. */
 {
   const mainBlock = block(css, '.coden-dashboard-main');
-  assert.match(mainBlock, /border-radius: var\(--dashboard-panel-radius\);/, 'the panel has rounded edges');
+  assert.match(mainBlock, /border-radius: var\(--app-panel-radius\);/, 'the panel has rounded edges');
   assert.match(mainBlock, /background: var\(--dashboard-panel\);/, 'and is the one opaque surface');
-  assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--dashboard-gutter\);/,
+  assert.match(css, /\.coden-dashboard-shell \{[^}]*padding: var\(--app-gutter\);/,
     'with room around it for the gradient to show');
 
   /*

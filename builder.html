@@ -13,7 +13,7 @@
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
   <meta property="og:title" content="Coden — Builder Workspace" />
@@ -41,102 +41,24 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <script>
     (function() {
-      const theme = localStorage.getItem('coden-theme') || 'light';
-      document.documentElement.setAttribute('data-theme', theme);
+      try {
+        const stored = localStorage.getItem('coden-theme');
+        const theme = stored === 'dark' || stored === 'light'
+          ? stored
+          : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch (_) {
+        document.documentElement.dataset.theme = 'light';
+      }
     })();
   </script>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
   <script type="module" src="/src/auth-guard.ts"></script>
   
   <style>
-    /* Absolute pixel-perfect UI style matches the Coden AI Workspace layout precisely */
-    /* Coden theme v2 — Zinc surfaces + Indigo 500 signature.
-       Aligned with src/builder.css and src/design-system.css. */
-    /* Design tokens mirrored from dashboard.html (single source of truth) — dark */
-    :root {
-      --bg: #0f1014;
-      --bg-surface: #15171c;
-      --bg-panel: #13151a;
-      --bg-input: #181b21;
-      --border: rgba(226, 232, 240, 0.12);
-      --border-light: rgba(226, 232, 240, 0.06);
-      --border-mid: rgba(226, 232, 240, 0.18);
-      --border-focus: rgba(59, 130, 246, 0.46);
-      --accent: #f5f7fb;
-      --accent-spark: #3b82f6;
-      --accent-blue: #3b82f6;
-      --accent-blue-deep: #93c5fd;
-      --accent-blue-soft: rgba(59, 130, 246, 0.16);
-      --accent-blue-hover: rgba(59, 130, 246, 0.22);
-      --accent-blue-active: rgba(59, 130, 246, 0.30);
-      --accent-dim: rgba(245, 247, 251, 0.07);
-      --accent-hover: rgba(245, 247, 251, 0.11);
-      --accent-active: rgba(245, 247, 251, 0.15);
-      --text: #f5f7fb;
-      --text-muted: #c6cad3;
-      --text-sub: #8d95a3;
-      --text-dark: #52525b;
-      --success: #4ade80;
-      --success-dim: rgba(74, 222, 128, 0.10);
-      --warning: #fbbf24;
-      --warning-dim: rgba(251, 191, 36, 0.10);
-      --error: #f87171;
-      --error-dim: rgba(248, 113, 113, 0.10);
-      --grain-opacity: 0.022;
-      /* Editor top bar — harmonized with the dashboard slate palette. */
-      --topbar-bg: #0f1014;
-      --topbar-border: rgba(226, 232, 240, 0.12);
-      --topbar-fg: rgba(245, 247, 251, 0.92);
-      --topbar-fg-muted: rgba(245, 247, 251, 0.70);
-      --topbar-hover: rgba(245, 247, 251, 0.08);
-      --topbar-focus-ring: rgba(245, 247, 251, 0.30);
-      --blue: var(--accent-blue);
-      --blue-dim: var(--accent-blue-soft);
-    }
-
-    /* Design tokens mirrored from dashboard.html (single source of truth) — light */
-    :root[data-theme="light"] {
-      --bg: #f8fafc;
-      --bg-surface: #ffffff;
-      --bg-panel: #f1f5f9;
-      --bg-input: #ffffff;
-      --border: #e2e8f0;
-      --border-light: #f1f5f9;
-      --border-mid: #cbd5e1;
-      --border-focus: rgba(59, 130, 246, 0.36);
-      --accent: #3b82f6;
-      --accent-spark: #3b82f6;
-      --accent-blue: #3b82f6;
-      --accent-blue-deep: #1d4ed8;
-      --accent-blue-soft: rgba(59, 130, 246, 0.10);
-      --accent-blue-hover: rgba(59, 130, 246, 0.14);
-      --accent-blue-active: rgba(59, 130, 246, 0.18);
-      --accent-dim: rgba(59, 130, 246, 0.10);
-      --accent-hover: rgba(59, 130, 246, 0.14);
-      --accent-active: rgba(59, 130, 246, 0.18);
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --text-sub: #94a3b8;
-      --text-dark: #52525b;
-      --success: #22c55e;
-      --success-dim: rgba(34, 197, 94, 0.08);
-      --warning: #d97706;
-      --warning-dim: rgba(217, 119, 6, 0.08);
-      --error: #dc2626;
-      --error-dim: rgba(220, 38, 38, 0.08);
-      --grain-opacity: 0.018;
-      --topbar-bg: #ffffff;
-      --topbar-border: #e2e8f0;
-      --topbar-fg: rgba(15, 23, 42, 0.92);
-      --topbar-fg-muted: rgba(100, 116, 139, 0.88);
-      --topbar-hover: rgba(9, 9, 11, 0.06);
-      --topbar-focus-ring: rgba(9, 9, 11, 0.30);
-      --blue: var(--accent-blue);
-      --blue-dim: var(--accent-blue-soft);
-    }
-
     * {
       box-sizing: border-box;
       scrollbar-width: thin;
@@ -151,12 +73,12 @@
     }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
-    *:hover { scrollbar-color: rgba(100, 116, 139, 0.46) transparent; }
-    *:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--horizon-border-strong) 46%, transparent); }
+    *:hover { scrollbar-color: color-mix(in srgb, var(--accent) 46%, transparent) transparent; }
+    *:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--border-strong) 46%, transparent); }
 
     body {
-      background: var(--bg);
-      color: var(--text);
+      background: var(--surface);
+      color: var(--foreground);
       font-family: var(--font-sans, Geist, system-ui, sans-serif);
       -webkit-font-smoothing: antialiased;
       font-feature-settings: "ss01","cv01";
@@ -166,16 +88,6 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-    }
-
-    /* GRAIN — subtle texture overlay mirrored from dashboard.html */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 9998; pointer-events: none;
-      background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
-      background-repeat: repeat;
-      background-size: 200px 200px;
-      opacity: var(--grain-opacity);
     }
 
     @supports (height: 100dvh) {
@@ -193,7 +105,7 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
-      background: var(--bg);
+      background: var(--surface);
     }
 
     @supports (height: 100dvh) {
@@ -208,22 +120,16 @@
        reste en --bg pour rester continu avec le preview — un seul bloc encastré.
        Sidebar repliée / chat plein écran → fond uni --bg. */
     @media (min-width: 761px) {
-      .app-workspace {
-        background: linear-gradient(
-          to right,
-          var(--bg-panel) 0,
-          var(--bg-panel) var(--coden-sidebar-width, 380px),
-          var(--preview-stage-bg, var(--bg-surface)) var(--coden-sidebar-width, 380px)
-        );
+      .app-workspace {background: var(--surface);
       }
       /* Sidebar repliée : le preview occupe tout → teinte exacte du preview. */
       .app-workspace:has(.workspace-body.sidebar-collapsed) {
-        background: var(--preview-stage-bg, var(--bg-surface));
+        background: var(--background);
       }
       /* Chat plein écran (pas de preview) → teinte du chat plein écran (--bg). */
       .app-workspace:has(.workspace-body[data-layout="chat-rest"]),
       .app-workspace:has(.workspace-body[data-layout="chat"]) {
-        background: var(--bg);
+        background: var(--surface);
       }
     }
 
@@ -258,14 +164,14 @@
     .brand-title {
       font-weight: 500;
       font-size: 13.5px;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
     .brand-logo-spark {
-      background: linear-gradient(135deg, var(--accent-blue, var(--horizon-blue)), var(--horizon-blue));
+      background: var(--surface);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       font-size: 16px;
@@ -273,7 +179,7 @@
     }
 
     .brand-sep {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-weight: 300;
       font-size: 13px;
       margin: 0 2px;
@@ -293,11 +199,11 @@
     }
 
     .project-selector:hover {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .project-selector[aria-expanded="true"] {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .project-menu-panel {
@@ -310,8 +216,8 @@
       padding: 6px;
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: var(--bg-surface);
-      box-shadow: var(--shadow-lg, 0 18px 48px rgba(0,0,0,.55));
+      background: var(--surface);
+      box-shadow: var(--shadow-lg, 0 18px 48px color-mix(in srgb, var(--foreground) 55%, transparent));
       backdrop-filter: blur(20px) saturate(140%);
     }
 
@@ -324,7 +230,7 @@
       min-height: 38px;
       border: 1px solid transparent;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       gap: 8px;
@@ -342,7 +248,7 @@
     }
 
     .project-menu-link:hover {
-      background: var(--bg-elevated);
+      background: var(--surface-soft);
     }
 
     .project-menu-divider {
@@ -408,7 +314,7 @@
     }
 
     .project-menu-credits-value {
-      color: var(--text);
+      color: var(--foreground);
       font-size: 15px;
       font-weight: 780;
       line-height: 1.1;
@@ -430,8 +336,8 @@
       padding: 0 11px;
       border-radius: 9px;
       border: 1px solid var(--border);
-      background: var(--bg-elevated);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 740;
       cursor: pointer;
@@ -445,7 +351,7 @@
     }
 
     .project-menu-upgrade:hover {
-      background: var(--bg-input);
+      background: var(--input);
       border-color: var(--text-muted);
     }
 
@@ -457,7 +363,7 @@
 
     .project-menu-name {
       min-width: 0;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 13px;
       font-weight: 780;
       overflow: hidden;
@@ -478,8 +384,8 @@
     }
 
     .project-menu-rename:hover {
-      background: var(--bg-elevated);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
 
     .builder-plan-badge {
@@ -487,7 +393,7 @@
       padding: 0 10px;
       border-radius: 999px;
       border: 1px solid var(--border);
-      background: var(--bg-surface);
+      background: var(--surface);
       color: var(--text-muted);
       display: inline-flex;
       align-items: center;
@@ -500,15 +406,15 @@
     }
 
     .builder-plan-badge.pro {
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 28%, var(--border));
-      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
-      color: var(--accent-blue-deep, var(--horizon-blue));
+      border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+      color: var(--accent);
     }
 
     .builder-plan-badge.scale {
-      border-color: rgba(111, 66, 193, .26);
-      background: rgba(111, 66, 193, .10);
-      color: var(--horizon-blue);
+      border-color: color-mix(in srgb, var(--syntax-purple) 26%, transparent);
+      background: color-mix(in srgb, var(--syntax-purple) 10%, transparent);
+      color: var(--accent);
     }
 
     .project-menu-muted {
@@ -535,16 +441,16 @@
       height: 36px;
       border: 1px solid var(--border);
       border-radius: 9px;
-      background: var(--bg-elevated);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
       padding: 0 10px;
       font-size: 13px;
       outline: none;
     }
 
     .project-menu-input:focus {
-      border-color: var(--border-focus, var(--accent-blue));
-      box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59, 130, 246,.10));
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 10%, transparent));
     }
 
     .project-menu-save {
@@ -554,8 +460,8 @@
       border-radius: 9px;
       display: grid;
       place-items: center;
-      background: var(--accent-blue, var(--horizon-blue));
-      color: var(--horizon-text);
+      background: var(--surface);
+      color: var(--foreground);
       padding: 0;
       font-size: 11px;
       font-weight: 840;
@@ -599,8 +505,8 @@
       padding: 8px;
       border: 1px solid var(--border);
       border-radius: 18px;
-      background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
-      box-shadow: var(--shadow-lg, 0 18px 48px rgba(0,0,0,.42));
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: var(--shadow-lg, 0 18px 48px color-mix(in srgb, var(--foreground) 42%, transparent));
       backdrop-filter: blur(22px) saturate(150%);
       -webkit-backdrop-filter: blur(22px) saturate(150%);
       opacity: 0;
@@ -643,9 +549,9 @@
 
     .builder-more-item:hover,
     .builder-more-item.active {
-      background: var(--accent-dim);
+      background: var(--surface-soft);
       border-color: var(--border);
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .builder-more-item[aria-disabled="true"] {
@@ -664,7 +570,7 @@
       border: 1px solid var(--border);
       border-radius: 999px;
       padding: 2px 6px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 9px;
       font-weight: 850;
       letter-spacing: .08em;
@@ -675,7 +581,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      background: #181c1f00;
+      background: color-mix(in srgb, var(--background) 0%, transparent);
       border: 1px solid var(--border);
       color: var(--text-muted);
       font-size: 12px;
@@ -686,14 +592,14 @@
     }
 
     .btn-integration:hover {
-      background: var(--accent-dim, color-mix(in srgb, var(--horizon-surface) 8%, transparent));
-      color: var(--text);
+      background: var(--surface-soft, color-mix(in srgb, var(--surface) 8%, transparent));
+      color: var(--foreground);
     }
 
     .btn-upgrade {
       background: transparent;
       border: 1px solid var(--border);
-      color: var(--text);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 500;
       padding: 6px 12px;
@@ -702,7 +608,7 @@
     }
 
     .btn-upgrade:hover {
-      background: var(--accent-dim, color-mix(in srgb, var(--horizon-surface) 8%, transparent));
+      background: var(--surface-soft, color-mix(in srgb, var(--surface) 8%, transparent));
     }
 
     /* Modern, flat Indigo — no gradients, noise or heavy shadow. */
@@ -711,8 +617,8 @@
       align-items: center;
       justify-content: center;
       gap: 7px;
-      background: var(--accent-blue, var(--horizon-blue));
-      color: var(--horizon-text);
+      background: var(--surface);
+      color: var(--foreground);
       border: 0;
       font-size: 12px;
       font-weight: 700;
@@ -735,7 +641,7 @@
       width: 24px;
       height: 24px;
       border-radius: 50%;
-      background: var(--horizon-warning-soft); /* Warm salmon pink peach matching screenshot */
+      background: var(--syntax-yellow); /* Warm salmon pink peach matching screenshot */
       border: 1px solid var(--border);
       cursor: pointer;
     }
@@ -746,7 +652,7 @@
       gap: 10px;
       padding: 0 12px;
       background: transparent;
-      color: var(--topbar-fg);
+      color: var(--foreground);
       border-bottom: none;
       box-shadow: none;
       font-size: 13px;
@@ -767,7 +673,7 @@
     .brand-topbar.lovable-builder-topbar button:focus-visible,
     .brand-topbar.lovable-builder-topbar [tabindex]:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 2px var(--topbar-bg), 0 0 0 4px var(--topbar-focus-ring);
+      box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
     }
 
     .lovable-topbar-left,
@@ -785,11 +691,11 @@
     /* Desktop: the builder-views cluster (history / panel / Preview pill / file /
        ⋮) starts exactly at the chat|preview divider — the brand (logo + project)
        fills the sidebar-width column, the views begin at the divider and run
-       toward the right actions. Mirrors the body's --coden-sidebar-width track. */
+       toward the right actions. Mirrors the body's --app-sidebar-width track. */
     @media (min-width: 761px) {
       .brand-topbar .lovable-topbar-left {
         display: grid;
-        grid-template-columns: var(--coden-sidebar-width, 380px) auto;
+        grid-template-columns: var(--app-sidebar-width, 380px) auto;
         align-items: center;
         gap: 0;
       }
@@ -821,7 +727,7 @@
       height: 34px;
       border: 0;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       display: inline-flex;
       align-items: center;
       gap: 9px;
@@ -833,7 +739,7 @@
 
     .project-mini-trigger:hover,
     .project-mini-trigger[aria-expanded="true"] {
-      background: color-mix(in srgb, var(--text) 5%, transparent);
+      background: color-mix(in srgb, var(--foreground) 5%, transparent);
     }
 
     .project-mini-trigger .brand-logo {
@@ -841,7 +747,7 @@
       height: 24px;
       flex: 0 0 auto;
       border-radius: 7px;
-      box-shadow: 0 1px 0 rgba(255,255,255,.18) inset;
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 18%, transparent) inset;
     }
 
     .project-mini-name {
@@ -861,7 +767,7 @@
       border: 0;
       border-radius: 8px;
       background: transparent;
-      color: var(--topbar-fg-muted);
+      color: var(--text-muted);
       display: inline-grid;
       place-items: center;
       padding: 0;
@@ -871,8 +777,8 @@
 
     .lovable-nav-icon-btn:hover,
     .brand-topbar .collapse-sidebar-arrow:hover {
-      color: var(--topbar-fg);
-      background: var(--topbar-hover);
+      color: var(--foreground);
+      background: var(--surface-hover);
     }
 
     .lovable-nav-icon-btn svg,
@@ -888,16 +794,16 @@
       gap: 3px;
       padding: 3px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-input) 82%, var(--horizon-canvas) 8%);
-      border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
-      box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset;
+      background: color-mix(in srgb, var(--input) 82%, var(--background) 8%);
+      border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent) inset;
       overflow: visible;
     }
 
     :root[data-theme="light"] .brand-topbar .sub-nav-tabs {
-      background: var(--horizon-surface);
-      border-color: rgba(9, 9, 11, .10);
-      box-shadow: 0 1px 0 rgba(9, 9, 11, .04) inset, 0 10px 28px rgba(9, 9, 11, .06);
+      background: var(--surface);
+      border-color: color-mix(in srgb, var(--border) 10%, transparent);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset, 0 10px 28px color-mix(in srgb, var(--foreground) 6%, transparent);
     }
 
     .brand-topbar .sub-nav-tab {
@@ -923,20 +829,20 @@
     }
 
     .brand-topbar .sub-nav-tab:hover:not(.active) {
-      color: var(--text);
-      background: color-mix(in srgb, var(--text) 6%, transparent);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--foreground) 6%, transparent);
     }
 
     .brand-topbar .sub-nav-tab.active,
     .brand-topbar .builder-more-trigger.active,
     .brand-topbar .builder-more-wrapper.open .builder-more-trigger {
-      color: var(--horizon-blue);
-      background: linear-gradient(180deg, rgba(48, 91, 190, .72), rgba(35, 69, 165, .88));
-      border-color: rgba(111, 150, 255, .58);
+      color: var(--accent);
+      background: var(--surface);
+      border-color: color-mix(in srgb, var(--syntax-cyan) 58%, transparent);
       box-shadow:
-        0 0 0 1px rgba(86, 124, 255, .22),
-        0 0 22px rgba(59, 130, 246, .28),
-        0 1px 0 rgba(255,255,255,.16) inset;
+        0 0 0 1px color-mix(in srgb, var(--syntax-cyan) 22%, transparent),
+        0 0 22px color-mix(in srgb, var(--syntax-cyan) 28%, transparent),
+        0 1px 0 color-mix(in srgb, var(--foreground) 16%, transparent) inset;
     }
 
     .brand-topbar .builder-more-trigger {
@@ -953,7 +859,7 @@
       width: 1px;
       height: 16px;
       margin: 0 3px;
-      background: color-mix(in srgb, var(--text) 12%, transparent);
+      background: color-mix(in srgb, var(--foreground) 12%, transparent);
       flex: 0 0 auto;
     }
 
@@ -964,13 +870,13 @@
       width: min(300px, calc(100vw - 24px));
       transform: translateY(-4px) scale(.98);
       border-radius: 22px;
-      background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
-      border-color: color-mix(in srgb, var(--text) 10%, transparent);
+      background: color-mix(in srgb, var(--sidebar) 94%, transparent);
+      border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
     }
 
     :root[data-theme="light"] .brand-topbar .builder-more-menu {
-      background: color-mix(in srgb, var(--horizon-surface) 96%, transparent);
-      border-color: rgba(9,9,11,.10);
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
+      border-color: color-mix(in srgb, var(--border) 10%, transparent);
     }
 
     .brand-topbar .builder-more-wrapper.open .builder-more-menu {
@@ -1023,8 +929,8 @@
     .brand-topbar .preview-device-trigger:hover,
     .brand-topbar .preview-device-trigger[aria-expanded="true"],
     .brand-topbar .preview-refresh-btn:hover {
-      color: var(--text);
-      background: color-mix(in srgb, var(--text) 7%, transparent);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--foreground) 7%, transparent);
       transform: translateY(-1px);
     }
 
@@ -1052,24 +958,24 @@
       font-size: 13px;
       font-weight: 600;
       letter-spacing: -.025em;
-      border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
       cursor: pointer;
       transition: transform 140ms cubic-bezier(.22,1,.36,1), filter 140ms cubic-bezier(.22,1,.36,1), background 140ms cubic-bezier(.22,1,.36,1), box-shadow 140ms cubic-bezier(.22,1,.36,1);
     }
 
     .btn-share {
       background: transparent;
-      color: var(--topbar-fg);
+      color: var(--foreground);
       border-color: transparent;
     }
 
     .btn-share:hover {
-      background: var(--topbar-hover);
+      background: var(--surface-hover);
     }
 
     .btn-share.is-copied {
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 42%, var(--border));
-      color: var(--accent-blue-deep, var(--horizon-blue));
+      border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+      color: var(--accent);
     }
 
     .btn-share:disabled {
@@ -1079,14 +985,14 @@
     }
 
     .brand-topbar .btn-upgrade {
-      border-color: color-mix(in srgb, var(--accent-blue) 38%, transparent);
-      background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
-      color: color-mix(in srgb, var(--accent-blue) 35%, var(--horizon-text));
+      border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      color: color-mix(in srgb, var(--accent) 35%, var(--foreground));
       box-shadow: none;
     }
 
     .brand-topbar .btn-upgrade:hover {
-      background: color-mix(in srgb, var(--accent-blue) 24%, transparent);
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
     }
 
     .brand-topbar .btn-upgrade svg {
@@ -1097,9 +1003,9 @@
     .brand-topbar .btn-publish {
       padding: 0 16px;
       border-color: transparent;
-      background: var(--accent-blue, var(--horizon-blue));
-      color: var(--horizon-text);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+      background: var(--surface);
+      color: var(--foreground);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 30%, transparent);
     }
 
     .brand-topbar .btn-publish:hover {
@@ -1118,9 +1024,9 @@
       margin-left: 6px;
       display: inline-grid;
       place-items: center;
-      border: 1px solid var(--topbar-border);
-      background: linear-gradient(135deg, var(--accent-blue, var(--horizon-blue)), var(--accent-blue-deep, var(--horizon-blue-hover)));
-      color: var(--horizon-text);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 800;
       letter-spacing: -.03em;
@@ -1138,7 +1044,7 @@
     /* ── WORKSPACE SPLIT PANELS ───────────────────────────────── */
     .workspace-body {
       display: grid;
-      grid-template-columns: var(--coden-sidebar-width, 380px) minmax(0, 1fr);
+      grid-template-columns: var(--app-sidebar-width, 380px) minmax(0, 1fr);
       flex: 1;
       overflow: hidden;
       position: relative;
@@ -1155,7 +1061,7 @@
     /* The chat|preview seam stays invisible at rest (the --bg-panel vs --bg tint
        difference separates them); the blue guide only appears while dragging. */
     .workspace-body.is-resizing-sidebar .sidebar-pane {
-      border-right-color: var(--accent-blue);
+      border-right-color: var(--accent);
     }
 
     .workspace-body > * {
@@ -1171,7 +1077,7 @@
       grid-column: 1;
       grid-row: 1;
       border-right: 1px solid transparent;
-      background: var(--bg-panel);
+      background: var(--sidebar);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -1206,7 +1112,7 @@
         width: 100%;
         max-width: 760px;
         border-right: 0;
-        background: var(--bg);
+        background: var(--surface);
       }
       .workspace-body[data-layout="chat-rest"]:not(.sidebar-collapsed) .editor-pane,
       .workspace-body[data-layout="chat-rest"]:not(.sidebar-collapsed) .sub-navbar,
@@ -1275,18 +1181,18 @@
     .pane-header-title {
       font-size: 13.5px;
       font-weight: 500;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       gap: 6px;
     }
 
     .pane-header-title-spark {
-      color: var(--accent-spark);
+      color: var(--accent);
     }
 
     .pane-dots-btn {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       cursor: pointer;
       font-size: 16px;
       line-height: 1;
@@ -1294,14 +1200,14 @@
     }
 
     .pane-dots-btn:hover {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .pane-tabs {
       display: flex;
       gap: 4px;
       padding: 6px 12px;
-      border-bottom: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-subtle);
       min-height: 44px;
       flex: 0 0 44px;
       align-items: center;
@@ -1324,13 +1230,13 @@
     }
 
     .pane-tab-btn.active {
-      background: var(--accent-dim);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
 
     .pane-tab-btn:hover:not(.active) {
-      color: var(--text);
-      background: color-mix(in srgb, var(--accent-dim) 62%, transparent);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
     }
 
     .pane-studio-wrapper {
@@ -1362,8 +1268,8 @@
       padding: 6px;
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: var(--bg-surface);
-      box-shadow: 0 18px 48px rgba(9, 9, 11, .14);
+      background: var(--surface);
+      box-shadow: 0 18px 48px color-mix(in srgb, var(--foreground) 14%, transparent);
       opacity: 0;
       pointer-events: none;
       transform: translateY(-4px) scale(.98);
@@ -1387,14 +1293,14 @@
       border: 0;
       border-radius: 9px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       text-align: left;
       cursor: pointer;
       transition: background 140ms cubic-bezier(0.22, 1, 0.36, 1), color 140ms cubic-bezier(0.22, 1, 0.36, 1), transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .pane-studio-option:hover {
-      background: var(--accent-dim);
+      background: var(--surface-soft);
       transform: translateY(-1px);
     }
 
@@ -1414,10 +1320,10 @@
       flex: 0 0 22px;
       display: grid;
       place-items: center;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 7px;
-      color: var(--text-sub);
-      background: var(--bg-input);
+      color: var(--text-secondary);
+      background: var(--input);
     }
 
     .pane-studio-option-copy {
@@ -1445,10 +1351,10 @@
       justify-content: center;
       height: 16px;
       padding: 0 6px;
-      border: 1px solid color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 26%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
       border-radius: 999px;
-      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
-      color: var(--accent-blue-deep, var(--horizon-blue));
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+      color: var(--accent);
       font-size: 8.5px;
       font-weight: 850;
       letter-spacing: .04em;
@@ -1459,22 +1365,22 @@
     .pane-plan-tag,
     .builder-action-plan-tag {
       border-color: var(--border);
-      background: var(--bg-elevated);
+      background: var(--surface-soft);
       color: var(--text-muted);
     }
 
     .pane-plan-tag.included,
     .builder-action-plan-tag.included {
-      border-color: rgba(22, 163, 74, .24);
-      background: rgba(22, 163, 74, .10);
-      color: var(--horizon-success);
+      border-color: color-mix(in srgb, var(--success) 24%, transparent);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+      color: var(--success);
     }
 
     .pane-plan-tag.locked,
     .builder-action-plan-tag.locked {
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 24%, var(--border));
-      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
-      color: var(--accent-blue-deep, var(--horizon-blue));
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+      background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+      color: var(--accent);
     }
 
     .pane-studio-option-desc {
@@ -1488,9 +1394,9 @@
       margin-left: auto;
       flex: 0 0 auto;
       padding: 2px 5px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 9px;
       font-weight: 750;
       text-transform: uppercase;
@@ -1505,10 +1411,10 @@
       max-width: calc(100% - 28px);
       margin: 10px 14px 0;
       padding: 5px 8px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
       color: var(--text-muted);
-      background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+      background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
       font-size: 10.5px;
       font-weight: 650;
       line-height: 1;
@@ -1530,8 +1436,8 @@
     }
 
     .pane-studio-option.active {
-      background: var(--accent-dim);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
 
     /* Sidebar Conversation Flow Scroll area */
@@ -1555,7 +1461,7 @@
     .code-empty-state {
       border: 1px solid var(--border);
       border-radius: 14px;
-      background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+      background: color-mix(in srgb, var(--input) 72%, transparent);
       color: var(--text-muted);
       padding: 20px 18px;
       text-align: left;
@@ -1564,14 +1470,14 @@
 
     .sidebar-empty-state:hover,
     .code-empty-state:hover {
-      border-color: var(--border-mid);
+      border-color: var(--border-strong);
     }
 
     .sidebar-empty-state h3,
     .code-empty-state h3 {
-      font-family: "Instrument Serif", serif;
+      font-family: var(--font-sans);
       font-style: italic;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 16px;
       font-weight: 400;
       letter-spacing: -.01em;
@@ -1587,14 +1493,14 @@
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: var(--accent-blue, var(--horizon-blue));
-      box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59, 130, 246, 0.12));
+      background: var(--surface);
+      box-shadow: 0 0 0 3px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 12%, transparent));
       flex: 0 0 auto;
     }
 
     .sidebar-empty-state p,
     .code-empty-state p {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 12px;
       line-height: 1.6;
       margin: 0;
@@ -1661,16 +1567,16 @@
       gap: 6px;
       font-size: 12.5px;
       font-weight: 500;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .msg-sender-spark {
-      color: var(--accent-spark);
+      color: var(--accent);
       font-size: 13px;
     }
 
     .msg-sub-text {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11.5px;
       display: flex;
       align-items: center;
@@ -1694,12 +1600,12 @@
     }
 
     .message-card-assistant .msg-body-paragraph {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .message-card-user .msg-body-paragraph {
       max-width: min(92%, 520px);
-      color: var(--text);
+      color: var(--foreground);
       text-align: left;
     }
 
@@ -1710,7 +1616,7 @@
     .message-card-system .msg-body-paragraph {
       max-width: 92%;
       padding: 2px 0;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11.5px;
       line-height: 1.5;
       text-align: center;
@@ -1734,7 +1640,7 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 6px 12px;
-      background: var(--bg-input);
+      background: var(--input);
       margin: 4px 0;
     }
 
@@ -1747,12 +1653,12 @@
     }
 
     .tools-pill-left-spark {
-      color: var(--accent-spark);
+      color: var(--accent);
     }
 
     .btn-show-all-tools {
-      background: var(--accent-dim);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
       border: none;
       font-size: 11px;
       font-weight: 500;
@@ -1762,7 +1668,7 @@
     }
 
     .btn-show-all-tools:hover {
-      background: var(--accent-hover);
+      background: var(--surface-hover);
     }
 
     /* Modified file container */
@@ -1770,7 +1676,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      background: var(--bg-input);
+      background: var(--input);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 6px;
@@ -1782,8 +1688,8 @@
       justify-content: space-between;
       padding: 6px 10px;
       border-radius: 5px;
-      background: var(--bg-surface);
-      font-family: "JetBrains Mono", monospace;
+      background: var(--surface);
+      font-family: var(--font-mono);
       font-size: 11.5px;
     }
 
@@ -1794,15 +1700,15 @@
     }
 
     .edited-file-icon {
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     .edited-file-label {
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     .edited-file-path-highlight {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .btn-toggle-edit-view {
@@ -1815,7 +1721,7 @@
     }
 
     .btn-toggle-edit-view:hover {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     /* Key visual points listing inside Chat notes */
@@ -1837,7 +1743,7 @@
 
     .highlight-bold-title {
       font-weight: 600;
-      color: var(--text);
+      color: var(--foreground);
       min-width: 82px;
       display: inline-block;
     }
@@ -1845,7 +1751,7 @@
     /* Custom Chat input Area precisely customized */
     .chat-input-row {
       padding: 14px 10px 16px;
-      background: var(--bg-panel);
+      background: var(--sidebar);
     }
 
     /* Duplicated, Resized AI Chat component styling */
@@ -1871,54 +1777,54 @@
         content: "";
         position: absolute;
         inset: 1px;
-        background: var(--bg-input);
+        background: var(--input);
         border-radius: 11px;
         z-index: -1;
     }
     .chat-input-row .input-wrapper:focus-within {
-        border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 30%, var(--border-mid)) !important;
-        box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59, 130, 246, 0.10)), 0 8px 24px rgba(9,9,11,.06) !important;
+        border-color: color-mix(in srgb, var(--accent) 30%, var(--border-strong)) !important;
+        box-shadow: 0 0 0 3px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 10%, transparent)), 0 8px 24px color-mix(in srgb, var(--foreground) 6%, transparent) !important;
     }
     .chat-input-row .icon-btn:hover {
-        border-color: var(--border-focus);
+        border-color: var(--accent);
         color: var(--text-muted);
-        background: var(--accent-dim);
+        background: var(--surface-soft);
     }
     .chat-input-row .model-select:hover {
-        border-color: var(--border-focus);
-        background: var(--accent-hover);
-        color: var(--text);
+        border-color: var(--accent);
+        background: var(--surface-hover);
+        color: var(--foreground);
         transform: translateY(-1px);
     }
     .chat-input-row .model-option {
       cursor: pointer;
     }
     .chat-input-row .model-option:hover {
-        background: var(--accent-dim);
+        background: var(--surface-soft);
         transform: translateX(4px);
     }
     .chat-input-row .model-option.active {
-        background: var(--accent-hover);
+        background: var(--surface-hover);
     }
     .chat-input-row .submit-btn.active {
-        background: var(--accent-blue, var(--horizon-blue)) !important;
+        background: var(--accent) !important;
         border-color: transparent !important;
-        color: var(--horizon-text) !important;
+        color: var(--foreground) !important;
         cursor: pointer !important;
         pointer-events: auto !important;
-        box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-blue, #3b82f6) 36%, transparent) !important;
+        box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 36%, transparent) !important;
     }
     .chat-input-row .submit-btn.active:hover {
         filter: brightness(1.1);
         transform: scale(1.06);
     }
     .chat-input-row .submit-btn.is-generating {
-        background: var(--horizon-danger) !important;
+        background: var(--danger) !important;
         border-color: transparent !important;
-        color: var(--horizon-text) !important;
+        color: var(--foreground) !important;
         cursor: pointer !important;
         pointer-events: auto !important;
-        box-shadow: 0 2px 10px rgba(239, 68, 68, 0.36) !important;
+        box-shadow: 0 2px 10px color-mix(in srgb, var(--danger) 36%, transparent) !important;
     }
     .chat-input-row .submit-btn.is-generating:hover {
         filter: brightness(1.1);
@@ -1939,7 +1845,7 @@
     .editor-pane {
       grid-column: 2;
       grid-row: 1;
-      background: var(--bg);
+      background: var(--surface);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -1959,7 +1865,7 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 12px;
-      background: color-mix(in srgb, var(--bg) 94%, transparent);
+      background: color-mix(in srgb, var(--background) 94%, transparent);
       flex: 0 0 38px;
       position: relative;
       z-index: 90;
@@ -1976,7 +1882,7 @@
     }
 
     .collapse-sidebar-arrow {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -2000,12 +1906,12 @@
 
     .collapse-sidebar-arrow:hover {
       color: var(--text-muted);
-      background: var(--bg-elevated);
+      background: var(--surface-soft);
       border-color: var(--border);
     }
 
     .collapse-sidebar-arrow:focus-visible {
-      outline: 2px solid color-mix(in srgb, var(--accent-blue) 58%, transparent);
+      outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
       outline-offset: 2px;
     }
 
@@ -2023,7 +1929,7 @@
       flex-wrap: nowrap;
       max-width: 100%;
       overflow-x: auto;
-      background: color-mix(in srgb, var(--bg-input) 86%, transparent);
+      background: color-mix(in srgb, var(--input) 86%, transparent);
       border-radius: 999px;
       padding: 2px;
       border: 1px solid var(--border);
@@ -2035,8 +1941,8 @@
       height: 34px;
       align-items: center;
       padding: 3px;
-      background: color-mix(in srgb, var(--bg-input) 92%, transparent);
-      box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 36%, transparent) inset, 0 10px 32px rgba(0,0,0,.12);
+      background: color-mix(in srgb, var(--input) 92%, transparent);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 36%, transparent) inset, 0 10px 32px color-mix(in srgb, var(--foreground) 12%, transparent);
     }
 
     .sub-nav-tabs::-webkit-scrollbar {
@@ -2070,23 +1976,22 @@
     }
 
     .sub-nav-tab.active {
-      background: var(--bg-surface);
-      color: var(--text);
-      box-shadow: 0 1px 0 rgba(255,255,255,.55) inset, 0 8px 22px rgba(9,9,11,.10);
+      background: var(--surface);
+      color: var(--foreground);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 55%, transparent) inset, 0 8px 22px color-mix(in srgb, var(--foreground) 10%, transparent);
     }
 
     .brand-center .sub-nav-tab.active,
     .brand-center .builder-more-trigger.active,
-    .brand-center .builder-more-wrapper.open .builder-more-trigger {
-      background: linear-gradient(180deg, color-mix(in srgb, var(--accent-blue) 92%, var(--horizon-surface) 8%), var(--accent-blue-deep, var(--horizon-blue-hover)));
-      border: 1px solid color-mix(in srgb, var(--accent-blue) 70%, #fff 18%);
-      color: var(--horizon-text);
-      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 42%, transparent), 0 8px 24px color-mix(in srgb, var(--accent-blue) 32%, transparent);
+    .brand-center .builder-more-wrapper.open .builder-more-trigger {background: var(--surface);
+      border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border) 18%);
+      color: var(--foreground);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent), 0 8px 24px color-mix(in srgb, var(--accent) 32%, transparent);
     }
 
     .sub-nav-tab:hover:not(.active) {
-      color: var(--text);
-      background: var(--accent-dim);
+      color: var(--foreground);
+      background: var(--surface-soft);
     }
 
     .sub-nav-tab svg {
@@ -2101,7 +2006,7 @@
     }
 
     .sub-nav-action-btn {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       cursor: pointer;
       width: 26px;
       height: 26px;
@@ -2114,13 +2019,13 @@
     }
 
     .sub-nav-action-btn:hover {
-      color: var(--text);
-      background-color: var(--accent-dim);
+      color: var(--foreground);
+      background-color: var(--surface-soft);
     }
 
     .sub-nav-action-btn.active {
-      color: var(--accent-blue, var(--horizon-blue));
-      background-color: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
+      color: var(--accent);
+      background-color: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
     }
 
     /* Viewport Frame Holder */
@@ -2155,7 +2060,7 @@
     /* Left pane style explorer matching precisely */
     .explorer-column {
       border-right: 1px solid var(--border);
-      background: var(--bg-surface);
+      background: var(--surface);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -2173,13 +2078,13 @@
       display: flex;
       gap: 12px;
       padding: 10px 16px 8px 16px;
-      border-bottom: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-subtle);
     }
 
     .explorer-tab-link {
       font-size: 11px;
       font-weight: 500;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       cursor: pointer;
       transition: color 150ms;
       padding-bottom: 4px;
@@ -2187,8 +2092,8 @@
     }
 
     .explorer-tab-link.active {
-      color: var(--text);
-      border-bottom-color: var(--text);
+      color: var(--foreground);
+      border-bottom-color: var(--foreground);
     }
 
     .explorer-tree-scroll {
@@ -2207,19 +2112,19 @@
       align-items: center;
       gap: 6px;
       padding: 4px 6px;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 11.5px;
-      color: var(--text);
+      color: var(--foreground);
       cursor: pointer;
       border-radius: 4px;
     }
 
     .tree-folder-title:hover {
-      background: var(--accent-dim);
+      background: var(--surface-soft);
     }
 
     .tree-folder-expand-icon {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 10px;
     }
 
@@ -2236,7 +2141,7 @@
       align-items: center;
       gap: 6px;
       padding: 4px 8px;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 11.5px;
       color: var(--text-muted);
       cursor: pointer;
@@ -2246,23 +2151,23 @@
     }
 
     .tree-file:hover {
-      background: color-mix(in srgb, var(--accent-dim) 62%, transparent);
-      color: var(--text);
+      background: color-mix(in srgb, var(--surface-soft) 62%, transparent);
+      color: var(--foreground);
     }
 
     .tree-file.selected {
-      background: var(--accent-dim);
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
 
     .tree-file-icon {
       font-size: 11px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     /* RIGHT WORKSPACE: CODE EDITOR VIEW */
     .editor-column {
-      background: var(--bg);
+      background: var(--surface);
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -2272,7 +2177,7 @@
 
     .editor-tabs-bar {
       height: 38px;
-      background: var(--bg-surface);
+      background: var(--surface);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
@@ -2280,15 +2185,15 @@
     }
 
     .editor-tab-item {
-      background: var(--bg);
+      background: var(--surface);
       border: 1px solid var(--border);
       border-bottom: none;
       border-top-left-radius: 4px;
       border-top-right-radius: 4px;
       padding: 6px 12px;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 11px;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -2299,12 +2204,12 @@
       flex: 1;
       overflow: auto;
       padding: 20px;
-      background: var(--bg);
+      background: var(--surface);
     }
 
     .code-editor-pre {
       margin: 0;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 12.5px;
       line-height: 1.65;
       color: var(--text-muted);
@@ -2318,7 +2223,7 @@
       width: 32px;
       text-align: right;
       padding-right: 16px;
-      color: var(--text-dark);
+      color: var(--text-strong);
       user-select: none;
     }
 
@@ -2328,17 +2233,17 @@
     }
 
     /* Syntax markup highlighting for high performance styling */
-    .syn-keyword { color: var(--accent-spark); font-weight: 500; }
-    .syn-string { color: var(--horizon-success); } 
-    .syn-comment { color: var(--text-sub); font-style: italic; }
-    .syn-call { color: var(--horizon-blue); } 
-    .syn-type { color: var(--horizon-warning); }
+    .syn-keyword { color: var(--accent); font-weight: 500; }
+    .syn-string { color: var(--success); } 
+    .syn-comment { color: var(--text-secondary); font-style: italic; }
+    .syn-call { color: var(--accent); } 
+    .syn-type { color: var(--syntax-orange); }
 
     /* Preview dynamic viewport screen output */
     .preview-screen-panel {
       position: absolute;
       inset: 0;
-      background: var(--preview-shell-bg, var(--bg-panel));
+      background: var(--background);
       display: flex;
       flex-direction: column;
       z-index: 10;
@@ -2365,10 +2270,10 @@
       gap: 6px;
       margin-left: 10px;
       padding: 3px 9px;
-      border: 1px solid color-mix(in srgb, var(--horizon-warning) 46%, transparent);
+      border: 1px solid color-mix(in srgb, var(--syntax-orange) 46%, transparent);
       border-radius: 6px;
-      background: color-mix(in srgb, var(--horizon-warning) 12%, transparent);
-      color: var(--horizon-warning);
+      background: color-mix(in srgb, var(--syntax-orange) 12%, transparent);
+      color: var(--syntax-orange);
       font-size: 11px;
       font-weight: 600;
       letter-spacing: .01em;
@@ -2406,10 +2311,10 @@
       align-items: center;
       gap: 5px;
       max-width: 152px;
-      background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-      border: 1px solid var(--border-light);
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 10px;
       color: var(--text-muted);
       padding: 0 8px;
@@ -2417,7 +2322,7 @@
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
-      box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 12px 28px rgba(9,9,11,.08);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 50%, transparent) inset, 0 12px 28px color-mix(in srgb, var(--foreground) 8%, transparent);
       opacity: .72;
       pointer-events: auto;
       transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1), max-width 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -2435,7 +2340,7 @@
     .preview-address-glow:focus-within {
       max-width: 360px;
       opacity: 1;
-      border-color: var(--border-mid);
+      border-color: var(--border-strong);
     }
 
     .preview-address-row.address-hidden:hover .preview-address-glow,
@@ -2452,11 +2357,11 @@
       align-items: center;
       height: 26px;
       padding: 0;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
       flex: 0 0 auto;
-      box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 12px 28px rgba(9,9,11,.08);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 50%, transparent) inset, 0 12px 28px color-mix(in srgb, var(--foreground) 8%, transparent);
       pointer-events: auto;
     }
 
@@ -2478,8 +2383,8 @@
 
     .preview-device-trigger:hover,
     .preview-device-trigger[aria-expanded="true"] {
-      background: var(--text);
-      color: var(--bg);
+      background: var(--foreground);
+      color: var(--background);
     }
 
     .preview-device-trigger-icon,
@@ -2515,10 +2420,10 @@
       width: 136px;
       display: none;
       padding: 5px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 14px;
-      background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
-      box-shadow: 0 18px 48px rgba(9,9,11,.16);
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
+      box-shadow: 0 18px 48px color-mix(in srgb, var(--foreground) 16%, transparent);
       backdrop-filter: blur(18px) saturate(150%);
       z-index: 30;
     }
@@ -2561,23 +2466,23 @@
     }
 
     .preview-device-btn:hover {
-      color: var(--text);
-      background: var(--bg-input);
+      color: var(--foreground);
+      background: var(--input);
     }
 
     .preview-device-btn.active,
     .preview-device-btn[aria-pressed="true"] {
-      background: color-mix(in srgb, var(--accent-blue) 11%, var(--bg-input));
-      color: var(--text);
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-blue) 18%, transparent);
+      background: color-mix(in srgb, var(--accent) 11%, var(--input));
+      color: var(--foreground);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
     }
 
     .preview-address-live-dot {
       width: 5px;
       height: 5px;
       border-radius: 50%;
-      background: var(--horizon-success);
-      box-shadow: 0 0 6px #22c55e;
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
       flex: 0 0 auto;
     }
 
@@ -2681,9 +2586,9 @@
     .preview-refresh-btn {
       width: 30px;
       height: 30px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+      background: color-mix(in srgb, var(--surface) 90%, transparent);
       color: var(--text-muted);
       display: inline-grid;
       place-items: center;
@@ -2692,9 +2597,9 @@
     }
 
     .preview-refresh-btn:hover {
-      color: var(--text);
-      border-color: var(--border-mid);
-      background: var(--bg-input);
+      color: var(--foreground);
+      border-color: var(--border-strong);
+      background: var(--input);
       transform: translateY(-1px);
     }
 
@@ -2762,7 +2667,7 @@
       overflow: hidden;
       scrollbar-width: none;
       -ms-overflow-style: none;
-      background: var(--preview-shell-bg, var(--bg-panel));
+      background: var(--background);
       padding: 0;
     }
 
@@ -2772,7 +2677,7 @@
       min-height: 0;
       display: flex;
       overflow: hidden;
-      background: var(--bg-surface);
+      background: var(--surface);
       transition:
         width 220ms cubic-bezier(0.22, 1, 0.36, 1),
         max-width 220ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -2798,7 +2703,7 @@
       margin: 8px 0;
       border: 1px solid var(--border);
       border-radius: 28px;
-      box-shadow: 0 24px 88px rgba(9,9,11,.22);
+      box-shadow: 0 24px 88px color-mix(in srgb, var(--foreground) 22%, transparent);
     }
 
     .preview-iframe-view {
@@ -2807,23 +2712,13 @@
       width: 100%;
       height: 100%;
       min-height: 0;
-      background: var(--bg-surface);
+      background: var(--surface);
       scrollbar-width: none;
       -ms-overflow-style: none;
     }
 
-    :root[data-theme="light"] {
-      --preview-shell-bg: #f4f4f5;
-      --preview-stage-bg: #fafafa;
-    }
-
     :root[data-theme="light"] .preview-device-frame {
-      background: var(--horizon-surface);
-    }
-
-    :root[data-theme="dark"] {
-      --preview-shell-bg: #0f1014;
-      --preview-stage-bg: #15171c;
+      background: var(--surface);
     }
 
     @media (max-width: 760px) {
@@ -3081,8 +2976,8 @@
         padding: 6px;
         border: 1px solid var(--border);
         border-radius: 18px;
-        background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-        box-shadow: 0 18px 54px rgba(9,9,11,.18), 0 1px 0 rgba(255,255,255,.55) inset;
+        background: color-mix(in srgb, var(--surface) 92%, transparent);
+        box-shadow: 0 18px 54px color-mix(in srgb, var(--foreground) 18%, transparent), 0 1px 0 color-mix(in srgb, var(--foreground) 55%, transparent) inset;
         backdrop-filter: blur(18px) saturate(140%);
       }
 
@@ -3118,19 +3013,19 @@
       }
 
       .builder-mobile-nav button.active {
-        background: var(--text);
-        color: var(--bg);
+        background: var(--foreground);
+        color: var(--background);
       }
 
       .chat-input-row {
         padding: 10px 10px 12px;
         border-top: 1px solid var(--border);
-        background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+        background: color-mix(in srgb, var(--sidebar) 96%, transparent);
       }
 
       .chat-input-row .input-wrapper {
         border-radius: 16px !important;
-        box-shadow: 0 1px 0 rgba(255,255,255,.62) inset, 0 14px 34px rgba(9,9,11,.12) !important;
+        box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 62%, transparent) inset, 0 14px 34px color-mix(in srgb, var(--foreground) 12%, transparent) !important;
       }
 
       .chat-input-textarea {
@@ -3164,7 +3059,7 @@
       }
 
       .preview-screen-panel {
-        background: var(--preview-shell-bg, var(--bg));
+        background: var(--background);
       }
 
       .preview-address-row {
@@ -3212,7 +3107,7 @@
     .analysis-screen-panel {
       position: absolute;
       inset: 0;
-      background: var(--bg);
+      background: var(--surface);
       padding: 26px;
       overflow-y: auto;
       display: flex;
@@ -3256,7 +3151,7 @@
       font-size: 20px;
       font-weight: 820;
       letter-spacing: -.02em;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .db-cloud-sub {
@@ -3276,8 +3171,8 @@
       padding: 0 14px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       font-size: 13px;
       font-weight: 720;
       letter-spacing: -.01em;
@@ -3288,21 +3183,21 @@
     .db-action svg { width: 16px; height: 16px; }
 
     .db-action:hover {
-      background: var(--accent-dim);
-      border-color: color-mix(in srgb, var(--accent-blue) 32%, var(--border));
+      background: var(--surface-soft);
+      border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
       transform: translateY(-1px);
     }
 
     .db-action-primary {
-      background: var(--accent-blue);
-      border-color: var(--accent-blue);
-      color: var(--horizon-text);
+      background: var(--surface);
+      border-color: var(--accent);
+      color: var(--foreground);
     }
 
     .db-action-primary:hover {
-      background: var(--accent-blue-deep);
-      border-color: var(--accent-blue-deep);
-      color: var(--horizon-text);
+      background: var(--surface);
+      border-color: var(--accent);
+      color: var(--foreground);
     }
 
     .db-sections {
@@ -3314,7 +3209,7 @@
     .db-section {
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      background: var(--bg-surface);
+      background: var(--surface);
       box-shadow: var(--shadow-sm);
       overflow: hidden;
     }
@@ -3324,7 +3219,7 @@
       align-items: flex-start;
       gap: 13px;
       padding: 18px 20px;
-      border-bottom: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-subtle);
     }
 
     .db-section-icon {
@@ -3334,8 +3229,8 @@
       border-radius: var(--radius-md);
       display: grid;
       place-items: center;
-      background: var(--accent-blue-soft);
-      color: var(--accent-blue-deep);
+      background: var(--accent-soft);
+      color: var(--accent);
     }
 
     .db-section-icon svg { width: 20px; height: 20px; }
@@ -3347,7 +3242,7 @@
       font-size: 15px;
       font-weight: 780;
       letter-spacing: -.01em;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .db-section-desc {
@@ -3370,9 +3265,9 @@
     }
 
     .db-card {
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
-      background: var(--bg-input);
+      background: var(--input);
       padding: 14px;
       display: flex;
       flex-direction: column;
@@ -3385,13 +3280,13 @@
       font-weight: 720;
       letter-spacing: .04em;
       text-transform: uppercase;
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     .db-card-value {
       font-size: 13px;
       line-height: 1.5;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .db-card-list {
@@ -3406,7 +3301,7 @@
       justify-content: space-between;
       gap: 10px;
       font-size: 12.5px;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .db-row-key {
@@ -3418,7 +3313,7 @@
     }
 
     .db-row-meta {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11.5px;
       white-space: nowrap;
       flex: 0 0 auto;
@@ -3447,25 +3342,25 @@
 
     .db-badge-success {
       color: var(--success);
-      background: var(--success-dim);
+      background: var(--success-background);
       border-color: color-mix(in srgb, var(--success) 28%, transparent);
     }
 
     .db-badge-warning {
-      color: var(--warning);
-      background: var(--warning-dim);
-      border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+      color: var(--syntax-orange);
+      background: var(--syntax-yellow);
+      border-color: color-mix(in srgb, var(--syntax-orange) 28%, transparent);
     }
 
     .db-badge-error {
-      color: var(--error);
-      background: var(--error-dim);
-      border-color: color-mix(in srgb, var(--error) 28%, transparent);
+      color: var(--danger);
+      background: var(--danger-background);
+      border-color: color-mix(in srgb, var(--danger) 28%, transparent);
     }
 
     .db-badge-neutral {
-      color: var(--text-sub);
-      background: var(--accent-dim);
+      color: var(--text-secondary);
+      background: var(--surface-soft);
       border-color: var(--border);
     }
 
@@ -3481,7 +3376,7 @@
       align-items: flex-start;
       font-size: 12px;
       line-height: 1.5;
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     .db-note svg {
@@ -3498,7 +3393,7 @@
       gap: 14px;
       border: 1px dashed var(--border);
       border-radius: var(--radius-md);
-      background: color-mix(in srgb, var(--bg-input) 55%, transparent);
+      background: color-mix(in srgb, var(--input) 55%, transparent);
       padding: 18px;
     }
 
@@ -3508,8 +3403,8 @@
       border-radius: var(--radius-md);
       display: grid;
       place-items: center;
-      background: var(--accent-dim);
-      color: var(--text-sub);
+      background: var(--surface-soft);
+      color: var(--text-secondary);
       flex: 0 0 auto;
     }
 
@@ -3520,7 +3415,7 @@
     .db-soon-title {
       font-size: 13px;
       font-weight: 740;
-      color: var(--text);
+      color: var(--foreground);
       margin: 0 0 3px;
     }
 
@@ -3537,7 +3432,7 @@
       padding: 10px 2px;
     }
 
-    .db-state-error { color: var(--error); }
+    .db-state-error { color: var(--danger); }
 
     .db-endusers { display: grid; gap: 12px; }
 
@@ -3549,13 +3444,13 @@
       min-width: 0;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       font-size: 13px;
       padding: 0 10px;
     }
 
-    .db-input:focus { outline: none; border-color: color-mix(in srgb, var(--accent-blue) 45%, var(--border)); }
+    .db-input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 
     .db-enduser-msg { font-size: 12px; }
     .db-enduser-ok { color: var(--success); }
@@ -3567,7 +3462,7 @@
       padding: 0 10px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--text-muted);
       font-size: 11.5px;
       font-weight: 640;
@@ -3576,15 +3471,15 @@
     }
 
     .db-eu-btn:hover {
-      color: var(--text);
-      background: var(--accent-dim);
-      border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--border));
+      color: var(--foreground);
+      background: var(--surface-soft);
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
     }
 
     .db-eu-del:hover {
-      color: var(--error);
-      background: var(--error-dim);
-      border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+      color: var(--danger);
+      background: var(--danger-background);
+      border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
     }
 
     .db-browser { display: grid; gap: 12px; }
@@ -3595,8 +3490,8 @@
       height: 30px;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       font-size: 12.5px;
       padding: 0 8px;
       cursor: pointer;
@@ -3612,7 +3507,7 @@
       padding: 0 12px;
       border: 1px solid var(--border);
       border-radius: 999px;
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--text-muted);
       font-size: 12.5px;
       font-weight: 640;
@@ -3621,21 +3516,21 @@
     }
 
     .db-table-chip:hover {
-      color: var(--text);
-      background: var(--accent-dim);
-      border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--border));
+      color: var(--foreground);
+      background: var(--surface-soft);
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
     }
 
     .db-table-chip.active {
-      color: var(--accent-blue-deep);
-      background: var(--accent-blue-soft);
-      border-color: color-mix(in srgb, var(--accent-blue) 40%, transparent);
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 40%, transparent);
     }
 
     .db-table-scroll {
       overflow: auto;
       max-height: 420px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: var(--radius-md);
     }
 
@@ -3649,7 +3544,7 @@
     .db-data-table td {
       text-align: left;
       padding: 8px 12px;
-      border-bottom: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-subtle);
       white-space: nowrap;
       max-width: 320px;
       overflow: hidden;
@@ -3659,8 +3554,8 @@
     .db-data-table thead th {
       position: sticky;
       top: 0;
-      background: var(--bg-surface);
-      color: var(--text-sub);
+      background: var(--surface);
+      color: var(--text-secondary);
       font-weight: 720;
       font-size: 11px;
       letter-spacing: .03em;
@@ -3668,8 +3563,8 @@
       z-index: 1;
     }
 
-    .db-data-table tbody td { color: var(--text); }
-    .db-data-table tbody tr:hover td { background: var(--accent-dim); }
+    .db-data-table tbody td { color: var(--foreground); }
+    .db-data-table tbody tr:hover td { background: var(--surface-soft); }
 
     .db-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     .db-pager-btns { display: inline-flex; gap: 6px; }
@@ -3681,7 +3576,7 @@
       place-items: center;
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--text-muted);
       cursor: pointer;
       font-size: 15px;
@@ -3690,9 +3585,9 @@
     }
 
     .db-file-btn:hover:not([disabled]) {
-      color: var(--text);
-      background: var(--accent-dim);
-      border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--border));
+      color: var(--foreground);
+      background: var(--surface-soft);
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
     }
 
     .db-file-btn[disabled] { opacity: .4; cursor: default; }
@@ -3720,22 +3615,22 @@
       gap: 9px;
       font-size: 13px;
       font-weight: 750;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .analysis-live-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--horizon-success);
-      box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+      background: var(--success);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent);
     }
 
     .analysis-range-select {
       height: 36px;
       border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       border-radius: 10px;
       padding: 0 12px;
       font-size: 12px;
@@ -3753,10 +3648,10 @@
     .analysis-metric-card,
     .analysis-chart-card,
     .analysis-breakdown-card {
-      background: var(--bg-panel);
+      background: var(--sidebar);
       border: 1px solid var(--border);
       border-radius: 16px;
-      box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 14px 36px rgba(0,0,0,.06);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent), 0 14px 36px color-mix(in srgb, var(--foreground) 6%, transparent);
     }
 
     .analysis-metric-card {
@@ -3768,27 +3663,27 @@
     }
 
     .analysis-metric-card.is-primary {
-      border-color: rgba(37, 99, 235, .44);
-      box-shadow: 0 0 0 1px rgba(37, 99, 235, .08), 0 18px 42px rgba(37, 99, 235, .09);
+      border-color: color-mix(in srgb, var(--syntax-cyan) 44%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--syntax-cyan) 8%, transparent), 0 18px 42px color-mix(in srgb, var(--syntax-cyan) 9%, transparent);
     }
 
     .analysis-metric-label {
       font-size: 13px;
       line-height: 1.35;
       font-weight: 760;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .analysis-metric-card.is-primary .analysis-metric-label {
-      color: var(--accent-blue, var(--horizon-blue));
+      color: var(--accent);
     }
 
     .analysis-metric-value {
       font-size: 24px;
       line-height: 1;
       font-weight: 820;
-      color: var(--text);
-      font-family: "JetBrains Mono", monospace;
+      color: var(--foreground);
+      font-family: var(--font-mono);
     }
 
     .analysis-chart-card {
@@ -3810,20 +3705,20 @@
 
     .analysis-chart-line {
       fill: none;
-      stroke: var(--accent-blue, var(--horizon-blue));
+      stroke: var(--accent);
       stroke-width: 3;
       stroke-linejoin: round;
       stroke-linecap: round;
     }
 
     .analysis-chart-area {
-      fill: color-mix(in srgb, var(--horizon-blue) 10%, transparent);
+      fill: color-mix(in srgb, var(--accent) 10%, transparent);
     }
 
     .analysis-chart-label {
       fill: var(--text-muted);
       font-size: 11px;
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
     }
 
     .analysis-breakdown-grid {
@@ -3850,19 +3745,19 @@
     .analysis-breakdown-head {
       font-size: 13px;
       font-weight: 820;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .analysis-row {
       font-size: 12px;
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .analysis-row-track {
       position: relative;
       overflow: hidden;
       border-radius: 8px;
-      background: var(--bg-input);
+      background: var(--input);
       padding: 8px 10px;
       min-width: 0;
     }
@@ -3872,7 +3767,7 @@
       position: absolute;
       inset: 0 auto 0 0;
       width: var(--row-width, 0%);
-      background: color-mix(in srgb, var(--horizon-blue) 16%, transparent);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
       border-radius: inherit;
     }
 
@@ -3887,7 +3782,7 @@
 
     .analysis-seo-card {
       border: 1px solid var(--border);
-      background: var(--bg-panel);
+      background: var(--sidebar);
       border-radius: 18px;
       padding: 18px;
       display: grid;
@@ -3907,13 +3802,13 @@
       border-radius: 18px;
       display: grid;
       place-items: center;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 22px;
       font-weight: 850;
       font-variant-numeric: tabular-nums;
       background:
-        linear-gradient(var(--bg-panel), var(--bg-panel)) padding-box,
-        conic-gradient(from 160deg, #93c5fd, var(--accent-blue, #3b82f6), #f4f4f5, #93c5fd) border-box;
+        var(--surface) padding-box,
+        var(--surface) border-box;
       border: 1px solid transparent;
     }
 
@@ -3929,7 +3824,7 @@
 
     .analysis-seo-card h3 {
       margin: 0;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 15px;
       letter-spacing: -0.02em;
     }
@@ -3944,9 +3839,9 @@
 
     .analysis-seo-action {
       height: 34px;
-      border: 1px solid var(--text);
-      background: var(--text);
-      color: var(--bg);
+      border: 1px solid var(--foreground);
+      background: var(--foreground);
+      color: var(--background);
       border-radius: 10px;
       padding: 0 12px;
       font-size: 12px;
@@ -3965,7 +3860,7 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 10px;
-      background: var(--bg);
+      background: var(--surface);
       min-width: 0;
     }
 
@@ -3978,7 +3873,7 @@
     }
 
     .analysis-seo-check span {
-      color: var(--text);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 750;
     }
@@ -3991,23 +3886,23 @@
       font-size: 9px;
       letter-spacing: .08em;
       text-transform: uppercase;
-      color: var(--text);
-      background: rgba(107, 114, 128, .14);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--surface-hover) 14%, transparent);
     }
 
     .analysis-seo-check.is-pass strong {
-      color: var(--horizon-success);
-      background: color-mix(in srgb, var(--horizon-success) 14%, transparent);
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 14%, transparent);
     }
 
     .analysis-seo-check.is-warn strong {
-      color: var(--horizon-warning);
-      background: rgba(245, 158, 11, .16);
+      color: var(--syntax-orange);
+      background: color-mix(in srgb, var(--danger) 16%, transparent);
     }
 
     .analysis-seo-check.is-fail strong {
-      color: var(--horizon-danger);
-      background: color-mix(in srgb, var(--horizon-danger) 14%, transparent);
+      color: var(--danger);
+      background: color-mix(in srgb, var(--danger) 14%, transparent);
     }
 
     .analysis-seo-check small {
@@ -4031,13 +3926,12 @@
       padding: 42px 20px;
       text-align: center;
       color: var(--text-muted);
-      background: var(--bg-panel);
+      background: var(--sidebar);
     }
 
     .analysis-skeleton {
       min-height: 120px;
-      border-radius: 16px;
-      background: linear-gradient(90deg, color-mix(in srgb, var(--horizon-surface) 4%, transparent), color-mix(in srgb, var(--horizon-surface) 8%, transparent), color-mix(in srgb, var(--horizon-surface) 4%, transparent));
+      border-radius: 16px;background: var(--surface);
       background-size: 220% 100%;
       animation: analysis-shimmer 1.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
     }
@@ -4176,7 +4070,7 @@
         width: 15px;
         height: 15px;
         border-radius: 50%;
-        background: var(--horizon-surface);
+        background: var(--surface);
         position: absolute;
       }
     }
@@ -4190,22 +4084,12 @@
     /* 1 ── Tokens manquants : élévation / rayon / focus cohérents.
        (--bg-elevated et --shadow-* étaient référencés mais jamais définis.) */
     :root {
-      --bg-elevated: #1b1e25;
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
-      --shadow-md: 0 6px 18px rgba(0, 0, 0, .38), 0 2px 6px rgba(0, 0, 0, .26);
-      --shadow-lg: 0 22px 52px rgba(0, 0, 0, .55), 0 8px 18px rgba(0, 0, 0, .34);
       --radius-sm: 8px;
       --radius-md: 12px;
       --radius-lg: 16px;
-      --ring: 0 0 0 3px rgba(59, 130, 246, .34);
       --ease: cubic-bezier(.22, 1, .36, 1);
     }
     :root[data-theme="light"] {
-      --bg-elevated: #f4f4f5;
-      --shadow-sm: 0 1px 2px rgba(9, 9, 11, .06);
-      --shadow-md: 0 6px 18px rgba(9, 9, 11, .08), 0 2px 6px rgba(9, 9, 11, .05);
-      --shadow-lg: 0 22px 52px rgba(9, 9, 11, .14), 0 8px 18px rgba(9, 9, 11, .08);
-      --ring: 0 0 0 3px rgba(59, 130, 246, .26);
     }
 
     /* 2 ── Focus visible cohérent dans l'espace de travail (a11y).
@@ -4216,7 +4100,7 @@
     .workspace-body [tabindex]:focus-visible {
       outline: 2px solid transparent;
       outline-offset: 2px;
-      box-shadow: var(--ring);
+      box-shadow: var(--accent);
     }
 
     /* 3 ── Topbar : boutons plus nets, élévation discrète et cohérente */
@@ -4237,7 +4121,7 @@
       transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
     }
     .brand-topbar .project-mini-trigger:hover .brand-logo {
-      border-color: var(--border-mid);
+      border-color: var(--border-strong);
       box-shadow: var(--shadow-sm);
     }
 
@@ -4250,20 +4134,20 @@
       transition: box-shadow 220ms var(--ease), border-color 220ms var(--ease) !important;
     }
     .chat-input-row .input-wrapper:focus-within {
-      border-color: var(--border-focus) !important;
-      box-shadow: var(--shadow-md), var(--ring) !important;
+      border-color: var(--accent) !important;
+      box-shadow: var(--shadow-md), var(--accent) !important;
     }
     .chat-input-row .icon-btn:hover {
-      color: var(--text) !important;
-      border-color: var(--border-mid) !important;
-      background: var(--accent-dim) !important;
+      color: var(--foreground) !important;
+      border-color: var(--border-strong) !important;
+      background: var(--surface-soft) !important;
     }
 
     /* 5 ── Empty states : surface douce élevée plutôt que pointillés */
     .sidebar-empty-state,
     .code-empty-state {
       border: 1px solid var(--border);
-      background: var(--bg-elevated);
+      background: var(--surface-soft);
       box-shadow: var(--shadow-sm);
     }
 
@@ -4337,7 +4221,7 @@
     .code-screen-layout.is-empty .code-empty-state {
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      background: var(--bg-surface);
+      background: var(--surface);
       box-shadow: var(--shadow-sm);
       padding: 24px;
       text-align: center;
@@ -4356,14 +4240,14 @@
       padding: 0 13px;
       border: 1px solid var(--border);
       border-radius: 9px;
-      background: var(--bg-surface);
-      color: var(--text);
+      background: var(--surface);
+      color: var(--foreground);
       font: inherit;
       font-size: 12px;
       font-weight: 700;
       cursor: pointer;
     }
-    .code-empty-action:hover { border-color: var(--border-mid); background: var(--accent-dim); }
+    .code-empty-action:hover { border-color: var(--border-strong); background: var(--surface-soft); }
     .chat-input-row #model-select-btn { display: none !important; }
 
     /* The workspace is made of independent surfaces. The right context owns one
@@ -4375,14 +4259,14 @@
         padding-top: 0 !important;
         border: 1px solid var(--border) !important;
         border-radius: var(--radius-lg);
-        background: var(--bg-surface) !important;
+        background: var(--surface) !important;
         box-shadow: var(--shadow-sm);
       }
 
       .viewport-content-holder {
         border-radius: inherit;
         overflow: hidden;
-        background: var(--bg-surface);
+        background: var(--surface);
       }
 
       .viewport-content-holder > :is(.code-screen-layout, .preview-screen-panel, .analysis-screen-panel) {
@@ -4391,7 +4275,7 @@
       }
 
       .preview-screen-panel[data-preview-device="desktop"] {
-        background: var(--preview-shell-bg, var(--bg-panel));
+        background: var(--background);
       }
 
       .preview-screen-panel[data-preview-device="desktop"] .preview-device-stage {
@@ -4410,7 +4294,7 @@
       }
 
       .preview-screen-panel[data-preview-device="desktop"] .preview-iframe-view {
-        background: var(--preview-shell-bg, var(--bg-panel));
+        background: var(--background);
         border-radius: 0 !important;
       }
 
@@ -4422,7 +4306,7 @@
         border: 1px solid var(--border) !important;
         border-radius: var(--radius-lg);
         box-shadow: none;
-        background: var(--preview-shell-bg, var(--bg-panel)) !important;
+        background: var(--background) !important;
         overflow: hidden;
       }
 
@@ -4437,7 +4321,7 @@
       }
 
       .code-screen-layout.is-empty .editor-main-scroll {
-        background: var(--bg-surface);
+        background: var(--surface);
         padding: 32px;
       }
     }
@@ -4452,10 +4336,10 @@
       <div class="brand-left lovable-topbar-left" id="builder-topbar-left">
         <button class="lovable-icon-btn project-mini-trigger" id="project-combo-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Menu du projet">
           <svg width="18" height="18" viewBox="0 0 32 32" fill="none" class="brand-logo" aria-hidden="true">
-            <rect width="32" height="32" rx="8" fill="var(--bg-elevated, #f4f4f5)"/>
-            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--text, #1c1c1c)"/>
-            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--text, #1c1c1c)"/>
-            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--text, #1c1c1c)"/>
+            <rect width="32" height="32" rx="8" fill="var(--surface-soft, var(--foreground))"/>
+            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--foreground)"/>
+            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--foreground)"/>
+            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--foreground)"/>
           </svg>
           <span id="project-name" class="project-mini-name">Projet sans titre</span>
         </button>
@@ -4537,7 +4421,7 @@
 
         <!-- Chat submit block at footer -->
         <div class="chat-input-row">
-          <div class="input-wrapper" style="width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-input); box-shadow: 0 1px 0 rgba(9,9,11,0.04) inset, 0 10px 30px rgba(9,9,11,0.12); transition: all 300ms cubic-bezier(0.22, 1, 0.36, 1); position: relative; overflow: visible; text-align: left;">
+          <div class="input-wrapper" style="width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--input); box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset, 0 10px 30px color-mix(in srgb, var(--foreground) 12%, transparent); transition: all 300ms cubic-bezier(0.22, 1, 0.36, 1); position: relative; overflow: visible; text-align: left;">
             <div class="coden-workshop-context" id="coden-workshop-context" aria-live="polite">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3l1.35 4.15L17.5 8.5l-4.15 1.35L12 14l-1.35-4.15L6.5 8.5l4.15-1.35L12 3z"></path>
@@ -4545,17 +4429,17 @@
               <span id="coden-workshop-context-label">Coden Design</span>
               <span class="coden-workshop-beta">Beta</span>
             </div>
-            <textarea id="chat-textarea-box" class="chat-input-textarea" placeholder="Demandez à Coden…" style="width: 100%; background: transparent; border: none; outline: none; padding: 12px 14px 0; font-family: 'Instrument Sans', system-ui, sans-serif; font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--text); caret-color: var(--text); resize: none; min-height: 48px; max-height: 200px; display: block; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
+            <textarea id="chat-textarea-box" class="chat-input-textarea" placeholder="Demandez à Coden…" style="width: 100%; background: transparent; border: none; outline: none; padding: 12px 14px 0; font-family: var(--font-sans); font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--foreground); caret-color: var(--foreground); resize: none; min-height: 48px; max-height: 200px; display: block; scrollbar-width: none; -ms-overflow-style: none;"></textarea>
             
             <div class="input-actions" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 12px 12px; background: transparent;">
                 <div class="actions-left" style="display: flex; gap: 6px;">
-                    <button class="icon-btn" title="Upload files" data-prompt-action="upload" aria-label="Attach files" type="button" style="width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-sub); transition: all 150ms; cursor: pointer; background: transparent;">
+                    <button class="icon-btn" title="Upload files" data-prompt-action="upload" aria-label="Attach files" type="button" style="width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: all 150ms; cursor: pointer; background: transparent;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
                     </button>
-                    <button class="icon-btn" title="Voice input" data-prompt-action="voice" aria-label="Voice input" type="button" style="width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-sub); transition: all 150ms; cursor: pointer; background: transparent;">
+                    <button class="icon-btn" title="Voice input" data-prompt-action="voice" aria-label="Voice input" type="button" style="width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); transition: all 150ms; cursor: pointer; background: transparent;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -4569,22 +4453,22 @@
                         <span class="provider-dot" style="width:14px;height:14px;color:var(--accent);display:inline-flex;align-items:center;justify-content:center;">
                             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="width:14px;height:14px;display:block;"><path d="M8.2 18.8c-2.25 0-4.05-1.56-4.05-3.62 0-1.15.55-2.18 1.44-2.85-.48-.62-.75-1.39-.75-2.19 0-1.96 1.6-3.55 3.58-3.55.32-1.55 1.69-2.72 3.33-2.72 1.25 0 2.34.67 2.94 1.67.39-.14.8-.22 1.23-.22 1.96 0 3.55 1.59 3.55 3.55 0 .58-.14 1.12-.38 1.6 1.05.65 1.75 1.81 1.75 3.14 0 2.05-1.67 3.72-3.72 3.72h-.54" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"></path><path d="M9.2 9.35c1.3.26 2.05 1.08 2.18 2.34M15.15 8.7c-.95.4-1.47 1.14-1.55 2.22M11.25 14.85c1.1.72 2.16.72 3.18 0" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"></path></svg>
                         </span>
-                        <span id="current-model-label" style="font-family:'JetBrains Mono';font-weight:650;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Auto</span>
+                        <span id="current-model-label" style="font-family:'JetBrains Mono';font-weight:650;color:var(--foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Auto</span>
                         <svg id="chevron-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="transition: transform 200ms;flex:0 0 auto;">
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                     </div>
                     <div id="chat-mode-wrapper" style="position:relative;display:flex;align-items:center;flex:0 0 auto;">
-                        <button id="btn-chat-mode" type="button" aria-haspopup="menu" aria-expanded="false" title="Choose Auto, Build or Plan" style="height:24px;min-width:64px;border:1px solid var(--border);background:transparent;color:var(--text);border-radius:5px;padding:0 9px;font-size:10px;font-weight:750;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">
+                        <button id="btn-chat-mode" type="button" aria-haspopup="menu" aria-expanded="false" title="Choose Auto, Build or Plan" style="height:24px;min-width:64px;border:1px solid var(--border);background:transparent;color:var(--foreground);border-radius:5px;padding:0 9px;font-size:10px;font-weight:750;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">
                             <span id="chat-mode-label">Auto</span><span style="font-size:9px;opacity:.62;">v</span>
                         </button>
-                        <div id="chat-mode-menu" role="menu" style="position:absolute;right:0;bottom:calc(100% + 8px);width:218px;border:1px solid var(--border);background:var(--bg-surface);border-radius:12px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.22);display:none;z-index:1000;">
-                            <button type="button" data-chat-mode="auto" role="menuitem" style="width:100%;text-align:left;border:0;background:var(--accent-hover, color-mix(in srgb, var(--horizon-surface) 8%, transparent));color:var(--text);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Auto <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Let Coden choose the right action</span></button>
+                        <div id="chat-mode-menu" role="menu" style="position:absolute;right:0;bottom:calc(100% + 8px);width:218px;border:1px solid var(--border);background: var(--surface);border-radius:12px;padding:6px;box-shadow:0 18px 50px color-mix(in srgb, var(--foreground) 22%, transparent);display:none;z-index:1000;">
+                            <button type="button" data-chat-mode="auto" role="menuitem" style="width:100%;text-align:left;border:0;background:var(--surface-hover, color-mix(in srgb, var(--surface) 8%, transparent));color:var(--foreground);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Auto <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Let Coden choose the right action</span></button>
                             <button type="button" data-chat-mode="build" role="menuitem" style="width:100%;text-align:left;border:0;background:transparent;color:var(--text-muted);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Build <span style="display:block;color:var(--text-muted);font-weight:500;font-size:10px;margin-top:2px;">Generate or edit the app</span></button>
-                            <button type="button" data-chat-mode="plan" role="menuitem" style="width:100%;text-align:left;border:0;background:transparent;color:var(--text-muted);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Plan <span style="display:block;color:var(--text-sub);font-weight:500;font-size:10px;margin-top:2px;">Think without changing files</span></button>
+                            <button type="button" data-chat-mode="plan" role="menuitem" style="width:100%;text-align:left;border:0;background:transparent;color:var(--text-muted);border-radius:8px;padding:9px;font-size:11px;font-weight:750;cursor:pointer;">Plan <span style="display:block;color:var(--text-secondary);font-weight:500;font-size:10px;margin-top:2px;">Think without changing files</span></button>
                         </div>
                     </div>
-                        <button class="submit-btn" id="chat-submit-btn" type="button" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-sub); cursor: not-allowed; pointer-events: none; transition: all 150ms;">
+                        <button class="submit-btn" id="chat-submit-btn" type="button" style="display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; background: var(--input); border: 1px solid var(--border); color: var(--text-secondary); cursor: not-allowed; pointer-events: none; transition: all 150ms;">
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="12" y1="19" x2="12" y2="5"></line>
                                 <polyline points="5 12 12 5 19 12"></polyline>
@@ -4792,7 +4676,7 @@
                     </svg>
                   </button>
                   <div class="editor-tab-item" style="border-left: none;">
-                    <span style="color: var(--horizon-blue);">📄</span>
+                    <span style="color: var(--accent);">📄</span>
                     <span id="open-file-tab-label">Code</span>
                   </div>
                 </div>
@@ -4817,7 +4701,7 @@
           <div class="analysis-screen-panel" id="screen-layout-analysis" style="display: none;">
             <div class="analysis-content" id="analysis-content">
               <div class="analysis-loading">
-                <strong style="display:block;color:var(--text);font-size:14px;margin-bottom:6px;">Analysis is ready</strong>
+                <strong style="display:block;color:var(--foreground);font-size:14px;margin-bottom:6px;">Analysis is ready</strong>
                 <span style="font-size:12px;">Open this tab after a project preview receives real traffic.</span>
               </div>
             </div>
@@ -5086,7 +4970,7 @@
         if (collapsed) {
           workspaceBody.dataset.savedGridCols = workspaceBody.style.gridTemplateColumns || "";
           workspaceBody.style.gridTemplateColumns = "";
-          workspaceBody.style.removeProperty("--coden-sidebar-width");
+          workspaceBody.style.removeProperty("--app-sidebar-width");
         } else {
           const saved = workspaceBody.dataset.savedGridCols || "";
           if (saved) {
@@ -5094,7 +4978,7 @@
           }
           const savedWidth = workspaceBody.dataset.savedGridCols?.match(/^([\d.]+)px/);
           if (savedWidth) {
-            workspaceBody.style.setProperty("--coden-sidebar-width", savedWidth[1] + "px");
+            workspaceBody.style.setProperty("--app-sidebar-width", savedWidth[1] + "px");
           }
         }
         workspaceBody.classList.toggle("sidebar-collapsed", collapsed);

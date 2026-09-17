@@ -12,7 +12,7 @@
 export type DesignToken = {
   category: 'color' | 'font' | 'radius' | 'spacing' | 'shadow' | 'motion' | 'breakpoint' | 'other';
   name: string;      // e.g. '--color-primary', 'primary', 'blue-600'
-  value: string;     // e.g. '#2563eb', 'Inter', '8px'
+  value: string;     // e.g. 'var(--syntax-cyan)', 'Inter', '8px'
   source: 'css_var' | 'tailwind_class' | 'inline_style' | 'inferred';
   confidence: 'high' | 'medium' | 'low';
 };

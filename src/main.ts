@@ -502,9 +502,9 @@ function init() {
             openModal(`
                 <div style="padding: 10px;">
                     <h3 style="margin-bottom: 20px;">Search Snippets</h3>
-                    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+                    <div style="background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        <input type="text" id="modal-snippet-search" placeholder="Search templates..." style="background: transparent; border: none; outline: none; color: var(--text); width: 100%; font-size: 14px;">
+                        <input type="text" id="modal-snippet-search" placeholder="Search templates..." style="background: transparent; border: none; outline: none; color: var(--foreground); width: 100%; font-size: 14px;">
                     </div>
                     <div style="display: grid; gap: 12px;">
                         <div class="snippet-item" style="padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: background 0.2s;">

@@ -6,12 +6,16 @@ function isTheme(value: string | null): value is CodenTheme {
   return value === 'dark' || value === 'light';
 }
 
+function getSystemTheme(): CodenTheme {
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function getInitialTheme(): CodenTheme {
   try {
     const stored = localStorage.getItem(CODEN_THEME_KEY);
-    return isTheme(stored) ? stored : 'light';
+    return isTheme(stored) ? stored : getSystemTheme();
   } catch {
-    return 'light';
+    return getSystemTheme();
   }
 }
 
@@ -20,7 +24,8 @@ export function applyTheme(theme: CodenTheme): void {
   document.documentElement.style.colorScheme = theme;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = theme === 'dark' ? '#0a0d12' : '#f8fafc';
+  const background = getComputedStyle(document.documentElement).getPropertyValue('--background').trim();
+  if (themeColor && background) themeColor.content = background;
 
   document.querySelectorAll<HTMLElement>('[data-theme-icon="dark"], #moon-icon').forEach((icon) => {
     icon.classList.toggle('hidden', theme !== 'dark');

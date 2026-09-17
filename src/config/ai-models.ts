@@ -317,11 +317,11 @@ export const AI_AUTO_MODEL_OPTION = {
 } as const;
 
 export const PROVIDER_META: Record<ModelProvider, { label: string; color: string; textColor: string; icon: string }> = {
-  anthropic: { label: 'Anthropic', color: '#CC785C', textColor: '#fff', icon: 'anthropic' },
-  openai: { label: 'OpenAI', color: '#0F9F7A', textColor: '#fff', icon: 'openai' },
-  google: { label: 'Google', color: '#4285F4', textColor: '#fff', icon: 'google' },
-  moonshot: { label: 'Moonshot AI', color: '#1F2937', textColor: '#fff', icon: 'moonshot' },
-  xai: { label: 'xAI', color: '#111827', textColor: '#fff', icon: 'xai' },
+  anthropic: { label: 'Anthropic', color: 'var(--danger)', textColor: 'var(--foreground)', icon: 'anthropic' },
+  openai: { label: 'OpenAI', color: 'var(--success)', textColor: 'var(--foreground)', icon: 'openai' },
+  google: { label: 'Google', color: 'var(--syntax-cyan)', textColor: 'var(--foreground)', icon: 'google' },
+  moonshot: { label: 'Moonshot AI', color: 'var(--foreground)', textColor: 'var(--foreground)', icon: 'moonshot' },
+  xai: { label: 'xAI', color: 'var(--foreground)', textColor: 'var(--foreground)', icon: 'xai' },
 };
 
 export function getModelsByProvider() {

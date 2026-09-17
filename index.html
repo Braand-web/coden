@@ -1,11 +1,14 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Coden — Turn an idea into a web app with AI</title>
-<!-- CODEN_SEO_START -->
-  <meta name="description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#FFFFFF">
+    <meta name="description" content="Décrivez votre idée, construisez une application web fonctionnelle avec Coden, prévisualisez-la, améliorez-la et publiez-la après vérification.">
+    <link rel="canonical" href="https://coden.fun/">
+    <title>Coden — Transformez une idée en application web avec l’IA</title>
+  <!-- CODEN_SEO_START -->
+  <meta name="description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -13,11 +16,11 @@
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden — Turn an idea into a web app with AI" />
-  <meta property="og:description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+  <meta property="og:title" content="Coden — Transformez une idée en application web avec l’IA" />
+  <meta property="og:description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
   <meta property="og:url" content="https://coden.fun/" />
   <meta property="og:image" content="https://coden.fun/og-coden.svg" />
   <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
@@ -25,8 +28,8 @@
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden — Turn an idea into a web app with AI" />
-  <meta name="twitter:description" content="Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification." />
+  <meta name="twitter:title" content="Coden — Transformez une idée en application web avec l’IA" />
+  <meta name="twitter:description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
   <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
   <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
   <script type="application/ld+json">{
@@ -42,7 +45,7 @@
   "name": "Coden",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Web",
-  "description": "Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification.",
+  "description": "Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.",
   "offers": {
     "@type": "Offer",
     "price": "0",
@@ -53,7 +56,7 @@
   "@context": "https://schema.org",
   "@type": "Product",
   "name": "Coden AI App Builder",
-  "description": "Describe your idea, create a working web app with AI, preview it, improve it, and publish it after verification.",
+  "description": "Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.",
   "brand": {
     "@type": "Brand",
     "name": "Coden"
@@ -65,551 +68,111 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "Do I own the code Coden generates?",
+      "name": "Le prototype est-il du vrai code ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Your project contains standard source files. You can inspect the code in the Builder and continue working on it as your application grows."
+        "text": "Oui : Coden génère un projet web avec des fichiers, des interactions et un aperçu. La preview sert à vérifier le parcours avant publication."
       }
     },
     {
       "@type": "Question",
-      "name": "Can I connect my own database or Stripe account?",
+      "name": "Puis-je partir de mon design system ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "You can request integrations such as Supabase or Stripe. Services need their own configuration and credentials; Coden will ask for the information required by your project."
+        "text": "Décrivez vos tokens, votre direction et vos contraintes dans le brief. Coden garde le système du projet au lieu d’imposer un style générique."
       }
     },
     {
       "@type": "Question",
-      "name": "What happens when I publish?",
+      "name": "Combien de temps pour un parcours de quatre écrans ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Preview your application and check the result first. Publishing is a separate confirmed action in the Builder and uses the deployment configuration."
+        "text": "La première version dépend du brief et du contexte. Le workspace permet ensuite de demander des révisions ciblées sans reprendre les écrans à la main."
       }
     },
     {
       "@type": "Question",
-      "name": "Can Coden follow my existing design system?",
+      "name": "Mes données servent-elles à l’entraînement ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Attach a reference or provide your styles, tokens and component conventions with your request. Coden can use them while building your interface."
+        "text": "Les données de votre projet restent dans les limites prévues par les pages de confidentialité et les contrôles de votre espace."
       }
     }
   ]
 }</script>
   <!-- CODEN_SEO_END -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-  <script>try{const t=localStorage.getItem('coden-theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch{}</script>
-<link rel="stylesheet" href="/src/styles/landing-v3.css">
-</head>
-<body data-coden-surface="landing-v3">
-<div style="background:var(--horizon-canvas);color:var(--horizon-text);font-family:Geist,system-ui,sans-serif;font-size:16px;line-height:1.6;overflow-x:hidden">
-
-  <a class="cdn-skip" href="#top">Skip to content</a>
-<header id="coden-marketing-header-root" style="position:sticky;top:0;z-index:50;padding:8px clamp(12px,3vw,20px) 0">
-	    <div class="cdn-pill" style="max-width:1120px;margin:0 auto;padding:0 8px 0 12px;height:52px;display:flex;align-items:center;gap:24px;border:1px solid var(--horizon-border);border-radius:9999px;background:rgba(21,26,34,.82);backdrop-filter:blur(18px);box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-      <a aria-label="Coden home" href="#top" style="display:inline-flex;align-items:center;gap:9px;color:var(--horizon-text);flex:none;font-weight:700;letter-spacing:-.02em" class="cdn-interaction-1">
-        <svg width="30" height="30" viewBox="0 0 32 32" style="display:block;flex:none" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#3b82f6"></rect>
-          <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="#ffffff"></path>
-          <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="#ffffff"></path>
-          <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="#ffffff"></path>
-        </svg>
-        <span style="font-size:19px">coden</span>
-      </a>
-      <nav class="cdn-nav" aria-label="Main navigation" style="display:flex;gap:20px;margin:0 auto">
-        <a href="/features.html" style="color:var(--horizon-muted);font-size:14px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-2">Features</a>
-        <a href="/pricing.html" style="color:var(--horizon-muted);font-size:14px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-3">Pricing</a>
-        <a href="/documentation.html" style="color:var(--horizon-muted);font-size:14px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-4">Documentation</a>
-      </nav>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex:none">
-        <button type="button" id="theme-btn" data-theme-toggle class="cdn-theme-toggle" aria-label="Switch to dark mode" title="Switch to dark mode">
-          <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 15.1A8.5 8.5 0 0 1 8.9 3.2 8.5 8.5 0 1 0 20.8 15.1Z"></path></svg>
-          <svg id="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path></svg>
-        </button>
-        <a class="cdn-interaction-6 cdn-signin" href="/auth.html" style="color:var(--horizon-muted);font-size:14px;font-weight:500;white-space:nowrap;transition:color 160ms cubic-bezier(.16,1,.3,1)">Sign in</a>
-        <a href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" style="background:var(--horizon-blue);color:var(--horizon-blue-ink);font-size:14px;font-weight:600;padding:8px 12px;border-radius:10px;white-space:nowrap;transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-7">Start building</a>
-      </div>
-    </div>
-  </header>
-
-  <main id="landing-main"><section id="top" style="position:relative;overflow:hidden;background:var(--horizon-canvas);padding:clamp(52px,6.5vw,76px) clamp(20px,4vw,40px) clamp(56px,7vw,88px);margin-top:-72px;padding-top:clamp(104px,12vw,140px)">
-      <div aria-hidden="true" style="position:absolute;inset:0;background-image:repeating-linear-gradient(30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px),repeating-linear-gradient(-30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px);mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 34%, #000 72%);-webkit-mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 34%, #000 72%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:62%;background:radial-gradient(120% 100% at 50% 116%, var(--horizon-blue) 0%, color-mix(in srgb, var(--horizon-blue) 52%, transparent) 18%, rgba(29,78,216,.3) 40%, rgba(16,32,64,.12) 66%, transparent 84%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:34%;background:radial-gradient(46% 74% at 50% 122%, rgba(214,231,255,.62), rgba(143,183,255,.2) 48%, transparent 78%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--horizon-blue) 50%, transparent) 30%, rgba(214,231,255,.75) 50%, color-mix(in srgb, var(--horizon-blue) 50%, transparent) 70%, transparent)"></div>
-
-      <div style="position:relative;max-width:840px;margin:0 auto;text-align:center;animation:cdnRise .55s cubic-bezier(.16,1,.3,1) both">
-        <a href="#system" style="display:inline-flex;align-items:center;gap:9px;padding:8px 12px 8px 15px;border-radius:9999px;background:color-mix(in srgb, var(--horizon-surface) 42%, transparent);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(8px);color:var(--horizon-text);font-size:14.5px;font-weight:500;transition:background 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-8">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.4 6.6L22 12l-6.6 2.4L13 21l-2.4-6.6L4 12l6.6-2.4L13 3z"></path></svg>
-          From idea to working application
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('coden-theme');
+          const theme = saved === 'dark' || saved === 'light' ? saved : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch { document.documentElement.dataset.theme = 'light'; }
+      })();
+    </script>
+  </head>
+  <body data-coden-surface="landing-new">
+    <div class="landing-page-shell">
+      <header id="coden-marketing-header-root" class="landing-header">
+        <a class="landing-brand" data-coden-logo="brand" href="/" aria-label="Accueil Coden">
+          <svg class="landing-logo-mark" data-coden-logo="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)" /><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)" /><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)" /></svg>
+          <span>Coden</span>
         </a>
+        <nav class="landing-nav" id="landing-nav" aria-label="Navigation principale"><a href="#produit">Produit</a><a href="#exemples">Exemples</a><a href="#tarifs">Tarifs</a><a href="#faq">FAQ</a></nav>
+        <div class="landing-header-actions">
+          <a class="landing-signin" href="/auth.html">Connexion</a>
+          <a class="landing-header-cta" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">Essayer</a>
+          <button class="landing-menu-button" type="button" aria-controls="landing-nav" aria-expanded="false" aria-label="Ouvrir la navigation"><span></span><span></span><span></span></button>
+        </div>
+      </header>
 
-        <h1 class="cdn-hero-title" style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(42px,7vw,76px);line-height:1.02;letter-spacing:-.025em;margin:24px auto 0;text-wrap:balance">
-          Build web apps<br/>with AI.
-        </h1>
-        <p class="cdn-hero-subtitle" style="max-width:680px;margin:18px auto 0;font-size:18px;color:color-mix(in srgb, var(--horizon-text) 86%, transparent)">
-          Describe it. Coden plans, codes, tests and publishes it.
-        </p>
+      <main>
+        <section class="landing-hero" id="top" aria-labelledby="hero-title">
+          <div class="landing-hero-atmosphere" aria-hidden="true"><span></span><span></span><span></span></div>
+          <p class="landing-beta">Bêta ouverte</p>
+          <h1 id="hero-title">De la spec au prototype cliquable,<br>en une conversation</h1>
+          <p class="landing-hero-subtitle">Décrivez le parcours. Coden génère les écrans.</p>
+          <div class="landing-composer-shell"><div id="landing-composer" class="landing-composer-host" aria-label="Décrire une application"></div><p id="landing-composer-status" class="landing-live-status" role="status" aria-live="polite"></p></div>
+          <p class="landing-reassurance">Sans carte bancaire · 3 prototypes gratuits</p>
+        </section>
 
-	        <div style="margin:32px auto 0;max-width:700px;text-align:left;border:1px solid var(--horizon-border);background:var(--horizon-surface);border-radius:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 6%,transparent) inset, 0 18px 48px rgba(0,0,0,.55);transition:box-shadow 280ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-9">
-          <textarea aria-label="Describe your app" maxlength="12000" rows="2" placeholder="Describe the app you want to build…" style="width:100%;resize:none;border:0;outline:0;background:transparent;color:var(--horizon-text);font-size:16px;line-height:1.6;padding:18px 18px 4px"></textarea>
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 12px 14px">
-            <button type="button" aria-label="Attach a file" data-prompt-action="upload" style="display:grid;place-items:center;width:34px;height:34px;border-radius:10px;border:0;background:transparent;color:var(--horizon-muted);cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-10">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-              <button type="button" data-mode-toggle aria-pressed="false" aria-label="Switch to Plan mode" title="Coden chooses the best action." class="coden-agent-mode-trigger cdn-interaction-11">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"></path></svg>
-                <span data-mode-label>Auto</span>
-              </button>
-              <button type="button" aria-label="Build now" data-build style="display:grid;place-items:center;width:40px;height:40px;border-radius:10px;border:0;background:var(--horizon-blue);color:var(--horizon-blue-ink);cursor:pointer;transition:transform 160ms cubic-bezier(.16,1,.3,1),background 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-12">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
-              </button>
+        <section class="landing-capture" data-coden-reveal aria-label="Capture du produit"><svg viewBox="0 0 1120 560" role="img" aria-label="Aperçu d’un éditeur et d’une preview de prototype"><defs><pattern id="landing-hatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--border)" stroke-width="2"></line></pattern></defs><rect x="1" y="1" width="1118" height="558" rx="18" fill="url(#landing-hatch)" opacity=".55"></rect><text x="560" y="286" text-anchor="middle" fill="var(--text-secondary)">capture produit — éditeur + aperçu du prototype</text></svg></section>
+
+        <section class="landing-proof-strip" data-coden-reveal aria-label="Preuve produit"><p>Utilisé par les équipes produit de</p><div class="landing-proof-logos"><span>logo client</span><span>logo client</span><span>logo client</span><span>logo client</span><span>logo client</span><span>logo client</span></div></section>
+
+        <section class="landing-section landing-product-section" id="produit" data-coden-reveal aria-labelledby="product-title">
+          <div class="landing-section-heading"><h2 id="product-title">Assez réel pour décider, assez rapide pour jeter</h2><p>Trois choses que les maquettes statiques ne permettent pas de faire.</p></div>
+          <div class="landing-product-grid">
+            <div class="landing-feature-list" role="tablist" aria-label="Capacités de la preview">
+              <button class="landing-feature-row is-active" type="button" role="tab" aria-selected="true" aria-controls="feature-panel-navigation" data-feature-tab="navigation"><span>01</span><span><strong>Navigation réelle</strong><small>Les écrans sont reliés entre eux : on clique, on se trompe, on revient.</small></span></button>
+              <button class="landing-feature-row" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-states" data-feature-tab="states"><span>02</span><span><strong>États inclus</strong><small>Vide, chargement, erreur, succès. Générés d’office, pas ajoutés après coup.</small></span></button>
+              <button class="landing-feature-row" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-iteration" data-feature-tab="iteration"><span>03</span><span><strong>Itération en une phrase</strong><small>Une demande claire suffit pour déplacer, corriger ou réviser un écran.</small></span></button>
+            </div>
+            <div class="landing-feature-visual">
+              <div class="landing-feature-panel" id="feature-panel-navigation" role="tabpanel"><svg viewBox="0 0 300 150" aria-hidden="true"><g fill="none" stroke="var(--border-strong)" stroke-width="1.5"><rect x="6" y="28" width="74" height="94" rx="8"></rect><rect x="113" y="28" width="74" height="94" rx="8" stroke="var(--accent)"></rect><rect x="220" y="28" width="74" height="94" rx="8"></rect></g><g fill="var(--border)"><rect x="16" y="40" width="40" height="5" rx="2.5"></rect><rect x="16" y="54" width="54" height="4" rx="2"></rect><rect x="123" y="40" width="40" height="5" rx="2.5"></rect><rect x="123" y="54" width="54" height="4" rx="2"></rect><rect x="230" y="40" width="40" height="5" rx="2.5"></rect><rect x="230" y="54" width="54" height="4" rx="2"></rect></g><g stroke="var(--accent)" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M84 75H109"></path><path d="M104 70l5 5-5 5"></path><path d="M191 75H216"></path><path d="M211 70l5 5-5 5"></path></g></svg><span>écrans reliés</span></div>
+              <div class="landing-feature-panel" id="feature-panel-states" role="tabpanel" hidden><svg viewBox="0 0 300 150" aria-hidden="true"><g fill="none" stroke="var(--border)" stroke-width="1.5"><rect x="6" y="6" width="288" height="30" rx="7"></rect><rect x="6" y="44" width="288" height="30" rx="7"></rect><rect x="6" y="82" width="288" height="30" rx="7"></rect><rect x="6" y="120" width="288" height="30" rx="7" stroke="var(--success)"></rect></g><g fill="var(--border)"><rect x="44" y="18" width="88" height="6" rx="3"></rect><rect x="44" y="56" width="120" height="6" rx="3"></rect><rect x="44" y="94" width="72" height="6" rx="3"></rect><rect x="44" y="132" width="100" height="6" rx="3"></rect></g><circle cx="26" cy="59" r="6" fill="none" stroke="var(--accent)" stroke-width="1.8"></circle><circle cx="26" cy="97" r="6" fill="var(--danger)"></circle><circle cx="26" cy="135" r="6" fill="var(--success)"></circle></svg><span>vide · chargement · erreur</span></div>
+              <div class="landing-feature-panel" id="feature-panel-iteration" role="tabpanel" hidden><svg viewBox="0 0 300 150" aria-hidden="true"><rect x="6" y="8" width="288" height="34" rx="17" fill="none" stroke="var(--accent)" stroke-width="1.5"></rect><rect x="22" y="22" width="150" height="6" rx="3" fill="var(--text-muted)"></rect><circle cx="272" cy="25" r="11" fill="var(--accent)"></circle><path d="M272 30v-10M268 24l4-4 4 4" stroke="var(--background)" stroke-width="1.6" fill="none" stroke-linecap="round"></path><g fill="none" stroke="var(--border-strong)" stroke-width="1.5"><rect x="36" y="70" width="104" height="72" rx="8"></rect><rect x="160" y="70" width="104" height="72" rx="8" stroke="var(--accent)"></rect></g><rect x="172" y="118" width="40" height="12" rx="6" fill="var(--accent)"></rect></svg><span>une phrase · une révision</span></div>
             </div>
           </div>
-        </div>
+        </section>
 
-      </div>
-  </section>
+        <section class="landing-section landing-examples-section" id="exemples" data-coden-reveal aria-labelledby="examples-title">
+          <div class="landing-section-heading landing-section-heading-row"><h2 id="examples-title">Prototypes construits avec Coden</h2><a href="/features.html">Voir la galerie <span aria-hidden="true">→</span></a></div>
+          <div class="landing-examples-grid"><article><svg viewBox="0 0 400 260" role="img" aria-label="Aperçu du prototype onboarding bancaire"><defs><pattern id="capture-one" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--border)" stroke-width="2"></line></pattern></defs><rect x="1" y="1" width="398" height="258" rx="12" fill="url(#capture-one)" opacity=".5"></rect><text x="200" y="136" text-anchor="middle" fill="var(--text-muted)">capture prototype</text></svg><strong>Onboarding bancaire</strong><small>6 écrans · mobile</small></article><article><svg viewBox="0 0 400 260" role="img" aria-label="Aperçu de la console d’administration"><defs><pattern id="capture-two" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--border)" stroke-width="2"></line></pattern></defs><rect x="1" y="1" width="398" height="258" rx="12" fill="url(#capture-two)" opacity=".5"></rect><text x="200" y="136" text-anchor="middle" fill="var(--text-muted)">capture prototype</text></svg><strong>Console d’administration</strong><small>4 écrans · desktop</small></article><article><svg viewBox="0 0 400 260" role="img" aria-label="Aperçu du tunnel d’abonnement"><defs><pattern id="capture-three" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="8" stroke="var(--border)" stroke-width="2"></line></pattern></defs><rect x="1" y="1" width="398" height="258" rx="12" fill="url(#capture-three)" opacity=".5"></rect><text x="200" y="136" text-anchor="middle" fill="var(--text-muted)">capture prototype</text></svg><strong>Tunnel d’abonnement</strong><small>3 écrans · responsive</small></article></div>
+        </section>
 
+        <section class="landing-section landing-testimonials" data-coden-reveal aria-labelledby="testimonials-title"><div class="landing-section-heading"><p class="landing-section-kicker">Témoignages</p><h2 id="testimonials-title">Ce qu’en disent les équipes</h2></div><div class="landing-testimonial-grid"><article><span class="landing-quote-mark">“</span><p>Remplacez cet espace par une citation réelle sur le problème résolu et le résultat obtenu.</p><div class="landing-testimonial-metric">— <small>résultat chiffré à renseigner</small></div><footer><strong>Prénom Nom</strong><small>Fonction, Société</small></footer></article><article><span class="landing-quote-mark">“</span><p>Remplacez cet espace par une citation réelle sur le problème résolu et le résultat obtenu.</p><div class="landing-testimonial-metric">— <small>résultat chiffré à renseigner</small></div><footer><strong>Prénom Nom</strong><small>Fonction, Société</small></footer></article><article><span class="landing-quote-mark">“</span><p>Remplacez cet espace par une citation réelle sur le problème résolu et le résultat obtenu.</p><div class="landing-testimonial-metric">— <small>résultat chiffré à renseigner</small></div><footer><strong>Prénom Nom</strong><small>Fonction, Société</small></footer></article></div></section>
 
-  <section aria-label="Technologies for your projects" style="padding:clamp(38px,5.5vw,64px) clamp(16px,3vw,24px)">
-    <p class="cdn-stack-caption">Built with familiar technologies</p><div class="cdn-marquee" style="max-width:1200px;margin:0 auto;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)">
-      <div class="cdn-track" style="display:flex;width:max-content;align-items:center;animation:cdnMarquee 34s linear infinite">
-        <div class="cdn-tech-group">
-          <span class="cdn-tech-brand is-react"><svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="2.4" fill="currentColor"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8" transform="rotate(60 16 16)"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8" transform="rotate(120 16 16)"/></svg><span>React</span></span>
-          <span class="cdn-tech-brand is-typescript"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="4" fill="currentColor"/><text x="16" y="22" text-anchor="middle" fill="#fff" font-size="13" font-family="Geist, sans-serif" font-weight="700">TS</text></svg><span>TypeScript</span></span>
-          <span class="cdn-tech-brand is-vite"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 5.5 15 28 28 5.5 16 8Z" fill="currentColor"/><path d="m18 3-8 14h6l-2 11 9-16h-6z" fill="#f6c445"/></svg><span>Vite</span></span>
-          <span class="cdn-tech-brand is-node"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2.5 28 9.2v13.6L16 29.5 4 22.8V9.2Z" fill="currentColor"/><text x="16" y="20.5" text-anchor="middle" fill="#fff" font-size="10" font-family="Geist, sans-serif" font-weight="700">JS</text></svg><span>Node.js</span></span>
-          <span class="cdn-tech-brand is-supabase"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M18.2 2.5 6.3 18h10.2L14 29.5 25.7 14H15.6Z" fill="currentColor"/><path d="M6.3 18h10.2l1.7-15.5Z" fill="#78e2b4"/></svg><span>Supabase</span></span>
-          <span class="cdn-tech-brand is-github"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M16 3C8.8 3 3 8.9 3 16.2c0 5.8 3.7 10.7 8.9 12.5.7.1.9-.3.9-.6v-2.5c-3.6.8-4.4-1.6-4.4-1.6-.6-1.5-1.4-1.9-1.4-1.9-1.2-.8.1-.8.1-.8 1.3.1 2 1.4 2 1.4 1.2 2 3 1.4 3.8 1.1.1-.9.5-1.4.8-1.8-2.9-.3-5.9-1.5-5.9-6.5 0-1.4.5-2.6 1.3-3.5-.1-.3-.6-1.7.1-3.5 0 0 1.1-.4 3.6 1.3a12.3 12.3 0 0 1 6.5 0c2.5-1.7 3.6-1.3 3.6-1.3.7 1.8.3 3.2.1 3.5.8.9 1.3 2.1 1.3 3.5 0 5.1-3 6.2-5.9 6.5.5.4.9 1.2.9 2.5v3.7c0 .4.2.8.9.6A13.2 13.2 0 0 0 29 16.2C29 8.9 23.2 3 16 3Z"/></svg><span>GitHub</span></span>
-        </div>
-        <div class="cdn-tech-group" aria-hidden="true">
-          <span class="cdn-tech-brand is-react"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="2.4" fill="currentColor"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8" transform="rotate(60 16 16)"/><ellipse cx="16" cy="16" rx="13" ry="5.2" fill="none" stroke="currentColor" stroke-width="1.8" transform="rotate(120 16 16)"/></svg><span>React</span></span>
-          <span class="cdn-tech-brand is-typescript"><svg viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="currentColor"/><text x="16" y="22" text-anchor="middle" fill="#fff" font-size="13" font-family="Geist, sans-serif" font-weight="700">TS</text></svg><span>TypeScript</span></span>
-          <span class="cdn-tech-brand is-vite"><svg viewBox="0 0 32 32"><path d="M4 5.5 15 28 28 5.5 16 8Z" fill="currentColor"/><path d="m18 3-8 14h6l-2 11 9-16h-6z" fill="#f6c445"/></svg><span>Vite</span></span>
-          <span class="cdn-tech-brand is-node"><svg viewBox="0 0 32 32"><path d="M16 2.5 28 9.2v13.6L16 29.5 4 22.8V9.2Z" fill="currentColor"/><text x="16" y="20.5" text-anchor="middle" fill="#fff" font-size="10" font-family="Geist, sans-serif" font-weight="700">JS</text></svg><span>Node.js</span></span>
-          <span class="cdn-tech-brand is-supabase"><svg viewBox="0 0 32 32"><path d="M18.2 2.5 6.3 18h10.2L14 29.5 25.7 14H15.6Z" fill="currentColor"/><path d="M6.3 18h10.2l1.7-15.5Z" fill="#78e2b4"/></svg><span>Supabase</span></span>
-          <span class="cdn-tech-brand is-github"><svg viewBox="0 0 32 32"><path fill="currentColor" d="M16 3C8.8 3 3 8.9 3 16.2c0 5.8 3.7 10.7 8.9 12.5.7.1.9-.3.9-.6v-2.5c-3.6.8-4.4-1.6-4.4-1.6-.6-1.5-1.4-1.9-1.4-1.9-1.2-.8.1-.8.1-.8 1.3.1 2 1.4 2 1.4 1.2 2 3 1.4 3.8 1.1.1-.9.5-1.4.8-1.8-2.9-.3-5.9-1.5-5.9-6.5 0-1.4.5-2.6 1.3-3.5-.1-.3-.6-1.7.1-3.5 0 0 1.1-.4 3.6 1.3a12.3 12.3 0 0 1 6.5 0c2.5-1.7 3.6-1.3 3.6-1.3.7 1.8.3 3.2.1 3.5.8.9 1.3 2.1 1.3 3.5 0 5.1-3 6.2-5.9 6.5.5.4.9 1.2.9 2.5v3.7c0 .4.2.8.9.6A13.2 13.2 0 0 0 29 16.2C29 8.9 23.2 3 16 3Z"/></svg><span>GitHub</span></span>
-        </div>
-      </div>
+        <section class="landing-section landing-pricing-section" id="tarifs" data-coden-reveal aria-labelledby="pricing-title"><div class="landing-section-heading landing-centered-heading"><h2 id="pricing-title">Tarifs</h2><div class="landing-cycle" role="group" aria-label="Période de facturation"><button type="button" aria-pressed="true" data-pricing-cycle="monthly">Mensuel</button><button type="button" aria-pressed="false" data-pricing-cycle="yearly">Annuel</button></div></div><div class="landing-pricing-grid"><article><p>Solo</p><div class="landing-price"><strong>0 €</strong><small> / mois</small></div><small>3 prototypes</small><hr><ul><li>Génération illimitée en bêta</li><li>Partage par lien</li><li>Export HTML</li></ul><a href="/auth.html?mode=signup&redirect=%2Fdashboard.html">Commencer</a></article><article class="is-featured"><span class="landing-popular">Populaire</span><p>Équipe</p><div class="landing-price"><strong data-price-monthly="29 €" data-price-yearly="24 €">29 €</strong><small> / éditeur</small></div><small data-price-note="monthly">facturation mensuelle</small><hr><ul><li>Prototypes illimités</li><li>Commentaires et versions</li><li>Bibliothèque de composants</li></ul><a href="/pricing.html">Essayer 14 jours</a></article><article><p>Entreprise</p><div class="landing-price"><strong>Sur devis</strong></div><small>facturation annuelle</small><hr><ul><li>SSO et SCIM</li><li>Hébergement dédié</li><li>Accompagnement onboarding</li></ul><a href="mailto:contact@coden.fun">Nous contacter</a></article></div></section>
+
+        <section class="landing-section landing-faq-section" id="faq" data-coden-reveal aria-labelledby="faq-title"><div class="landing-section-heading landing-centered-heading"><h2 id="faq-title">Questions fréquentes</h2></div><div class="landing-faq-list"><details class="cdn-faq"><summary>Le prototype est-il du vrai code ?<span>+</span></summary><p>Oui : Coden génère un projet web avec des fichiers, des interactions et un aperçu. La preview sert à vérifier le parcours avant publication.</p></details><details class="cdn-faq"><summary>Puis-je partir de mon design system ?<span>+</span></summary><p>Décrivez vos tokens, votre direction et vos contraintes dans le brief. Coden garde le système du projet au lieu d’imposer un style générique.</p></details><details class="cdn-faq"><summary>Combien de temps pour un parcours de quatre écrans ?<span>+</span></summary><p>La première version dépend du brief et du contexte. Le workspace permet ensuite de demander des révisions ciblées sans reprendre les écrans à la main.</p></details><details class="cdn-faq"><summary>Mes données servent-elles à l’entraînement ?<span>+</span></summary><p>Les données de votre projet restent dans les limites prévues par les pages de confidentialité et les contrôles de votre espace.</p></details></div></section>
+
+        <section class="landing-final-cta" data-coden-reveal aria-labelledby="final-cta-title"><h2 id="final-cta-title">Testez votre prochain parcours cet après-midi</h2><p>Trois prototypes gratuits, sans carte bancaire.</p><a href="/auth.html?mode=signup&redirect=%2Fdashboard.html">Créer un compte</a></section>
+      </main>
+
+      <footer class="landing-footer"><div class="landing-footer-grid"><div class="landing-footer-brand"><a class="landing-brand" data-coden-logo="brand" href="/" aria-label="Accueil Coden"><svg class="landing-logo-mark" data-coden-logo="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)" /><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)" /><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)" /></svg><span>Coden</span></a><p>Prototypes cliquables générés depuis une description, pour tester avant de construire.</p><span class="landing-operational"><i></i>Tous les services opérationnels</span></div><div><h2>Produit</h2><a href="#produit">Fonctionnalités</a><a href="#exemples">Exemples</a><a href="#tarifs">Tarifs</a><a href="/features.html">Nouveautés</a></div><div><h2>Ressources</h2><a href="/documentation.html">Documentation</a><a href="/documentation.html#start">Guide de démarrage</a><a href="#faq">FAQ</a><a href="/security.html">Statut</a></div><div><h2>Confiance</h2><a href="/security.html">Sécurité</a><a href="/privacy.html">Confidentialité</a><a href="/terms.html">Conditions</a><a href="mailto:contact@coden.fun">Contact</a></div></div><div class="landing-footer-bottom"><span>© 2026 Coden · Paris</span><span><button class="landing-theme-toggle" data-theme-toggle type="button"><span class="landing-theme-swatch" aria-hidden="true"></span><span>Sombre</span></button><a href="/privacy.html">Confidentialité</a><a href="/terms.html">Conditions</a><a href="mailto:contact@coden.fun">Contact</a></span></div></footer>
     </div>
-  </section>
-
-
-  <section id="manifesto" class="cdn-manifesto" aria-labelledby="manifesto-title">
-    <div class="cdn-manifesto-mark" aria-hidden="true"><span></span></div>
-    <div class="cdn-manifesto-inner">
-      <p class="cdn-manifesto-eyebrow">A product workspace, not another black box</p>
-      <h2 id="manifesto-title" aria-label="Your idea deserves more than a mockup. Coden carries it to a working product.">
-        <span data-word-reveal>Your</span> <span data-word-reveal>idea</span> <span data-word-reveal>deserves</span><br/>
-        <span data-word-reveal>more</span> <span data-word-reveal>than</span> <span data-word-reveal>a</span> <span data-word-reveal>mockup.</span>
-      </h2>
-      <p>Coden keeps the work visible: plan the change, inspect the result and publish only when the product is ready.</p>
-      <ul class="cdn-manifesto-proof" aria-label="Coden workflow principles">
-        <li>Plan before changes</li><li>Preview before publish</li><li>One focused workspace</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="workflow" class="cdn-workflow-section" aria-labelledby="workflow-title">
-    <div class="cdn-workflow-intro">
-      <p class="cdn-workflow-eyebrow">A calmer way to build</p>
-      <h2 id="workflow-title">Bring the idea.<br/><span>Keep the momentum.</span></h2>
-      <p>Move from a clear request to a working product with one conversation, one preview and one place to publish.</p>
-    </div>
-
-    <div class="cdn-workflow-grid">
-      <article class="cdn-workflow-card cdn-interaction-16">
-        <div class="cdn-workflow-visual" aria-label="Coden prompt composer preview">
-          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot"></span><span>Coden workspace</span><span class="cdn-workflow-window-status">Ready</span></div>
-          <div class="cdn-workflow-prompt">Build a client portal with tasks, billing and a clear activity feed.</div>
-          <div class="cdn-workflow-prompt-footer"><span>Describe the outcome</span><span class="cdn-workflow-send" aria-hidden="true">↑</span></div>
-        </div>
-        <div class="cdn-workflow-copy">
-          <h3>You bring the idea. Coden gives it shape.</h3>
-          <p>Explain what the product should do in plain language. Coden turns the request into a concrete build brief before it touches your project.</p>
-        </div>
-      </article>
-
-      <article class="cdn-workflow-card cdn-interaction-17">
-        <div class="cdn-workflow-visual cdn-workflow-visual-preview" aria-label="Coden preview and plan preview">
-          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot cdn-workflow-dot-blue"></span><span>Preview</span><span class="cdn-workflow-window-status">Live draft</span></div>
-          <div class="cdn-workflow-preview-layout">
-            <div class="cdn-workflow-preview-panel"><span class="cdn-workflow-preview-label">Plan</span><strong>Clear steps before changes</strong><span class="cdn-workflow-line"></span><span class="cdn-workflow-line short"></span></div>
-            <div class="cdn-workflow-preview-panel active"><span class="cdn-workflow-preview-label">App preview</span><strong>Client portal</strong><span class="cdn-workflow-preview-card"></span></div>
-          </div>
-        </div>
-        <div class="cdn-workflow-copy">
-          <h3>Refine the product while you can see it.</h3>
-          <p>Review the plan, inspect the preview and ask for focused changes. Your conversation, files and result stay together.</p>
-        </div>
-      </article>
-
-      <article class="cdn-workflow-card cdn-interaction-18">
-        <div class="cdn-workflow-visual cdn-workflow-visual-publish" aria-label="Coden publish verification preview">
-          <div class="cdn-workflow-windowbar"><span class="cdn-workflow-dot cdn-workflow-dot-green"></span><span>Publish check</span><span class="cdn-workflow-window-status">Verified</span></div>
-          <div class="cdn-workflow-checklist"><div><span class="cdn-workflow-check">✓</span><span>Preview checked</span><span>Done</span></div><div><span class="cdn-workflow-check">✓</span><span>Build verified</span><span>Done</span></div><div><span class="cdn-workflow-check">✓</span><span>Domain ready</span><span>Live</span></div></div>
-          <div class="cdn-workflow-domain"><span>coden.fun</span><strong>Publish</strong></div>
-        </div>
-        <div class="cdn-workflow-copy">
-          <h3>Publish when the result is ready.</h3>
-          <p>Check the real preview first, then publish through a verified flow. Keep your Coden URL or connect a custom domain when you are ready.</p>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section id="system" style="padding:clamp(52px,6.5vw,76px) clamp(16px,3vw,24px)">
-	    <div style="max-width:1200px;margin:0 auto;overflow:hidden;border:1px solid var(--horizon-border);border-radius:24px;background:linear-gradient(180deg,var(--horizon-surface),var(--horizon-surface) 70%);padding:clamp(30px,5vw,60px) clamp(20px,4vw,52px);box-shadow:0 1px 0 color-mix(in srgb,currentColor 6%,transparent) inset, 0 18px 48px rgba(0,0,0,.55)">
-      <div style="max-width:620px">
-        <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--horizon-muted)">Design system</p>
-        <h2 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(30px,4vw,46px);line-height:1.06;letter-spacing:-.02em;margin:16px 0 0">
-          Build with <span style="font-style:italic;color:var(--horizon-blue)">your</span> design system
-        </h2>
-        <p style="margin:14px 0 0;font-size:16.5px;color:var(--horizon-muted);text-wrap:pretty">Share your tokens, components and visual references to guide a consistent interface.</p>
-      </div>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:clamp(28px,4vw,44px);align-items:start">
-        <div style="border:1px solid var(--horizon-border);border-radius:14px;background:var(--horizon-surface);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--horizon-border)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8d98a8" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M14 3v5h5"></path><path d="M19 8v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5z"></path></svg>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">tokens.css</span>
-            <span style="margin-left:auto;padding:2px 8px;border-radius:9999px;background:color-mix(in srgb, var(--horizon-success) 14%, transparent);color:var(--horizon-success);font-family:'JetBrains Mono',monospace;font-size:10px;white-space:nowrap">imported</span>
-          </div>
-          <div style="display:grid">
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--horizon-border)">
-              <span style="flex:none;width:16px;height:16px;border-radius:5px;background:var(--horizon-blue)"></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--primary</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">#4f8cff</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--horizon-border)">
-              <span style="flex:none;width:16px;height:16px;border-radius:5px;background:var(--horizon-surface);border:1px solid var(--horizon-border)"></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--surface</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">#151a22</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--horizon-border)">
-              <span style="flex:none;display:grid;place-items:center;width:16px;height:16px;font-family:Geist,system-ui,sans-serif;font-size:14px;color:var(--horizon-text)">A</span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--font-display</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">Serif</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--horizon-border)">
-              <span aria-hidden="true" style="flex:none;width:16px;height:16px;border-top:2px solid var(--horizon-border);border-left:2px solid var(--horizon-border);border-top-left-radius:7px"></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--radius-lg</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">14px</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:11px 16px">
-              <span aria-hidden="true" style="flex:none;display:flex;align-items:center;gap:2px;width:16px"><span style="width:3px;height:10px;border-radius:1px;background:var(--horizon-border-strong)"></span><span style="width:3px;height:10px;border-radius:1px;background:var(--horizon-raised)"></span><span style="width:3px;height:10px;border-radius:1px;background:var(--horizon-raised)"></span></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--space-*</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">4 → 128</span>
-            </div>
-          </div>
-        </div>
-
-        <div style="border:1px solid var(--horizon-border);border-radius:14px;background:var(--horizon-surface);overflow:hidden">
-          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--horizon-border)">
-            <span style="display:flex;gap:5px"><span style="width:8px;height:8px;border-radius:9999px;background:var(--horizon-raised)"></span><span style="width:8px;height:8px;border-radius:9999px;background:var(--horizon-raised)"></span><span style="width:8px;height:8px;border-radius:9999px;background:var(--horizon-raised)"></span></span>
-            <span style="margin-left:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted)">What Coden builds</span>
-          </div>
-          <div style="padding:clamp(18px,3vw,24px)">
-	            <div style="border:1px solid var(--horizon-border);border-radius:14px;background:var(--horizon-surface);padding:20px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-              <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--horizon-muted)">Invoice</p>
-              <p style="margin:10px 0 0;font-family:Geist,system-ui,sans-serif;font-size:30px;letter-spacing:-.02em;line-height:1">€2,480.00</p>
-              <p style="margin:6px 0 0;font-size:13.5px;color:var(--horizon-muted)">Due in 6 days · Northwind Ltd</p>
-              <div style="display:flex;gap:8px;margin-top:18px">
-                <span style="flex:1;text-align:center;padding:9px;border-radius:10px;background:var(--horizon-blue);color:var(--horizon-blue-ink);font-size:13.5px;font-weight:600">Send reminder</span>
-                <span style="text-align:center;padding:9px 14px;border-radius:10px;border:1px solid var(--horizon-border);color:var(--horizon-muted);font-size:13.5px;font-weight:600">View</span>
-              </div>
-            </div>
-            <p style="margin:16px 0 0;font-size:13.5px;color:var(--horizon-muted);text-wrap:pretty">Same accent, same radius, same type scale — pulled straight from your tokens, not guessed.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="platform" style="background:var(--horizon-surface);border-top:1px solid var(--horizon-border);border-bottom:1px solid var(--horizon-border);padding:clamp(52px,6.5vw,76px) clamp(16px,3vw,24px)">
-    <div style="max-width:1200px;margin:0 auto">
-      <h2 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(30px,4vw,46px);line-height:1.06;letter-spacing:-.02em;margin:0;text-align:center;color:var(--horizon-muted)">
-        Everything you need to scale<br/><span style="color:var(--horizon-text)">Built in.</span>
-      </h2>
-      <p style="text-align:center;margin:18px auto 0;max-width:580px;font-size:16.5px;color:var(--horizon-muted);text-wrap:pretty">
-        Build your interface, connect the services your app needs and prepare it for publication from the same workspace.
-      </p>
-
-      <div style="display:grid;gap:16px;margin-top:clamp(32px,5vw,52px)">
-	        <div class="cdn-span2" style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);overflow:hidden;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
-          <div style="padding:clamp(24px,3.4vw,34px)">
-            <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--horizon-muted)">Hosting</p>
-            <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(22px,2.8vw,28px);letter-spacing:-.015em;margin:12px 0 0">One click from preview to production</h3>
-            <p style="margin:10px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Check the working preview before publishing. Deployment options depend on your plan and connected services.</p>
-          </div>
-          <div style="border-left:1px solid var(--horizon-border);background:var(--horizon-surface);padding:clamp(20px,3vw,28px);display:grid;gap:10px;align-content:center">
-            <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface)">
-              <span style="width:7px;height:7px;border-radius:9999px;background:var(--horizon-success);flex:none"></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">app.example.com</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--horizon-muted);white-space:nowrap">live</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface)">
-              <span style="width:7px;height:7px;border-radius:9999px;background:var(--horizon-blue);flex:none"></span>
-              <span style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">preview-4c1e</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--horizon-muted);white-space:nowrap">building</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;gap:12px;padding:0 4px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--horizon-muted)">
-              <span>build checks</span><span>SSL auto</span><span>preview → publish</span>
-            </div>
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px">
-	          <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-17">
-            <div>
-              <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Connected databases</h3>
-              <p style="margin:8px 0 0;font-size:14px;color:var(--horizon-muted);text-wrap:pretty">Connect a database when your app needs persistent data.</p>
-            </div>
-            <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:11px">
-              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;border-bottom:1px solid var(--horizon-border);color:var(--horizon-muted)"><span>invoices</span><span>1,248</span></div>
-              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;border-bottom:1px solid var(--horizon-border);color:var(--horizon-muted)"><span>customers</span><span>312</span></div>
-              <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 13px;color:var(--horizon-muted)"><span>reminders</span><span>74</span></div>
-            </div>
-          </div>
-
-	          <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-18">
-            <div>
-              <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Users &amp; auth</h3>
-              <p style="margin:8px 0 0;font-size:14px;color:var(--horizon-muted);text-wrap:pretty">Build sign-in and account flows around your configured authentication provider.</p>
-            </div>
-            <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:13px;display:grid;gap:9px">
-              <div style="display:flex;align-items:center;gap:9px">
-                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:var(--horizon-raised);font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--horizon-muted)">AM</span>
-                <span style="flex:1;height:5px;border-radius:4px;background:var(--horizon-raised)"></span>
-                <span style="padding:1px 7px;border-radius:9999px;background:color-mix(in srgb, var(--horizon-blue) 14%, transparent);color:var(--horizon-blue);font-family:'JetBrains Mono',monospace;font-size:9.5px">admin</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:9px">
-                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:var(--horizon-raised);font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--horizon-muted)">JD</span>
-                <span style="flex:1;height:5px;border-radius:4px;background:var(--horizon-raised)"></span>
-                <span style="padding:1px 7px;border-radius:9999px;background:var(--horizon-raised);color:var(--horizon-muted);font-family:'JetBrains Mono',monospace;font-size:9.5px">member</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:9px">
-                <span style="flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:9999px;background:var(--horizon-raised);font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--horizon-muted)">SR</span>
-                <span style="flex:1;height:5px;border-radius:4px;background:var(--horizon-raised)"></span>
-                <span style="padding:1px 7px;border-radius:9999px;background:var(--horizon-raised);color:var(--horizon-muted);font-family:'JetBrains Mono',monospace;font-size:9.5px">member</span>
-              </div>
-            </div>
-          </div>
-
-	          <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-19">
-            <div>
-              <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">SEO out of the box</h3>
-              <p style="margin:8px 0 0;font-size:14px;color:var(--horizon-muted);text-wrap:pretty">Include metadata and responsive pages, then check your app before launch.</p>
-            </div>
-            <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:14px;display:grid;gap:11px">
-              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--horizon-muted)">Lighthouse</span>
-                <span style="font-family:Geist,system-ui,sans-serif;font-size:26px;line-height:1;color:var(--horizon-text)">Check</span>
-              </div>
-              <span style="display:block;height:4px;border-radius:4px;background:var(--horizon-raised);overflow:hidden"><span style="display:block;width:100%;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--horizon-blue),var(--horizon-success))"></span></span>
-              <div style="display:flex;justify-content:space-between;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--horizon-muted)"><span>Loading</span><span>Stability</span><span>Interaction</span></div>
-            </div>
-          </div>
-
-	          <div class="cdn-span2" style="grid-column:span 2;border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:22px;align-items:center;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-            <div>
-              <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">A workflow you can inspect</h3>
-              <p style="margin:8px 0 0;font-size:14px;color:var(--horizon-muted);text-wrap:pretty">Review project changes, test important flows and keep publication under your control.</p>
-            </div>
-            <div aria-hidden="true" style="border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:10.5px">
-              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--horizon-border)"><span style="color:var(--horizon-muted);flex:none">09:42</span><span style="color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">deploy · a.morel</span></div>
-              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--horizon-border)"><span style="color:var(--horizon-muted);flex:none">09:31</span><span style="color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">role changed · s.reyes</span></div>
-              <div style="display:flex;align-items:center;gap:9px;padding:9px 13px"><span style="color:var(--horizon-muted);flex:none">09:12</span><span style="color:var(--horizon-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">SSO login · j.dupont</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="roles" style="padding:clamp(52px,6.5vw,76px) clamp(16px,3vw,24px)">
-    <div style="max-width:1200px;margin:0 auto">
-      <h2 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(30px,4vw,46px);line-height:1.06;letter-spacing:-.02em;margin:0;text-align:center;color:var(--horizon-muted)">
-        Whatever your role<br/><span style="color:var(--horizon-text)">Coden gives you superpowers</span>
-      </h2>
-      <p style="text-align:center;margin:18px auto 0;max-width:560px;font-size:16.5px;color:var(--horizon-muted);text-wrap:pretty">From idea to live product, Coden adapts to the way you work.</p>
-
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;margin-top:clamp(32px,5vw,52px)">
-	        <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-20">
-          <div>
-            <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Product managers</h3>
-            <p style="margin:8px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Go from insight to prototype in hours and test ideas with your team before the day is over.</p>
-          </div>
-          <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:13px;display:grid;gap:9px">
-            <span style="font-size:12.5px;font-weight:600;color:var(--horizon-muted)">Version history</span>
-            <span style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--horizon-surface);border:1px solid var(--horizon-border)"><span style="width:6px;height:6px;border-radius:9999px;background:var(--horizon-blue)"></span><span style="flex:1;height:5px;border-radius:4px;background:var(--horizon-raised)"></span></span>
-            <span style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--horizon-surface);border:1px solid var(--horizon-border)"><span style="width:6px;height:6px;border-radius:9999px;background:var(--horizon-border-strong)"></span><span style="flex:1;height:5px;border-radius:4px;background:var(--horizon-raised)"></span></span>
-          </div>
-        </div>
-	        <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-21">
-          <div>
-            <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Entrepreneurs</h3>
-            <p style="margin:8px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Launch a full business in days, not months. From landing page to product, all in one flow.</p>
-          </div>
-          <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:13px;display:grid;gap:8px">
-            <span style="font-size:12.5px;font-weight:600;color:var(--horizon-muted)">Publish your project</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--horizon-blue);word-break:break-all">studio.example.com</span>
-            <span style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--horizon-muted)"><span style="width:6px;height:6px;border-radius:9999px;background:var(--horizon-success)"></span>Live · updated 1 min ago</span>
-          </div>
-        </div>
-	        <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;flex-direction:column;gap:18px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-22">
-          <div>
-            <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Marketers</h3>
-            <p style="margin:8px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Spin up high-performing campaign pages in hours, with SEO and hosting built in.</p>
-          </div>
-          <div aria-hidden="true" style="margin-top:auto;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:13px">
-            <span style="display:block;font-size:12.5px;font-weight:600;color:var(--horizon-muted)">Unique visitors</span>
-            <span style="display:flex;align-items:flex-end;gap:5px;height:60px;margin-top:12px">
-              <span style="flex:1;height:22%;border-radius:3px;background:var(--horizon-raised)"></span>
-              <span style="flex:1;height:38%;border-radius:3px;background:var(--horizon-raised)"></span>
-              <span style="flex:1;height:30%;border-radius:3px;background:var(--horizon-raised)"></span>
-              <span style="flex:1;height:58%;border-radius:3px;background:var(--horizon-raised)"></span>
-              <span style="flex:1;height:74%;border-radius:3px;background:var(--horizon-blue)"></span>
-              <span style="flex:1;height:92%;border-radius:3px;background:var(--horizon-blue)"></span>
-            </span>
-          </div>
-        </div>
-	        <div style="border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45);transition:transform 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-23">
-          <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Agencies</h3>
-          <p style="margin:8px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Multiply your impact: deliver more projects, faster, without scaling headcount.</p>
-        </div>
-	        <div class="cdn-span2" style="grid-column:span 2;border:1px solid var(--horizon-border);border-radius:18px;background:var(--horizon-surface);padding:24px;display:flex;gap:22px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 0 color-mix(in srgb,currentColor 5%,transparent) inset, 0 6px 16px rgba(0,0,0,.45)">
-          <div style="flex:1;min-width:220px">
-            <h3 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:21px;letter-spacing:-.015em;margin:0">Students &amp; builders</h3>
-            <p style="margin:8px 0 0;font-size:14.5px;color:var(--horizon-muted);text-wrap:pretty">Learn by doing. Take ideas from class or side projects and turn them into working apps.</p>
-          </div>
-          <div aria-hidden="true" style="flex:1;min-width:220px;border:1px solid var(--horizon-border);border-radius:12px;background:var(--horizon-surface);padding:13px;display:grid;gap:8px">
-            <span style="font-size:12.5px;font-weight:600;color:var(--horizon-muted)">Plan</span>
-            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--horizon-muted)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#36c98f" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Analyze project structure</span>
-            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--horizon-muted)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#36c98f" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="4 12 10 18 20 6"></polyline></svg>Design component structure</span>
-            <span style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--horizon-muted)"><span style="width:13px;height:13px;border-radius:9999px;border:2px solid var(--horizon-border)"></span>Implement state management</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-
-  <section id="faq" style="padding:clamp(52px,6.5vw,76px) clamp(16px,3vw,24px)">
-    <div style="max-width:820px;margin:0 auto">
-      <h2 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(30px,4vw,46px);line-height:1.08;letter-spacing:-.02em;margin:0;text-align:center">Questions, answered</h2>
-      <div style="display:grid;gap:10px;margin-top:34px">
-        <details class="cdn-faq" open><summary>Do I own the code Coden generates?<span aria-hidden="true">⌄</span></summary><p>Your project contains standard source files. You can inspect the code in the Builder and continue working on it as your application grows.</p></details>
-<details class="cdn-faq"><summary>Can I connect my own database or Stripe account?<span aria-hidden="true">⌄</span></summary><p>You can request integrations such as Supabase or Stripe. Services need their own configuration and credentials; Coden will ask for the information required by your project.</p></details>
-<details class="cdn-faq"><summary>What happens when I publish?<span aria-hidden="true">⌄</span></summary><p>Preview your application and check the result first. Publishing is a separate confirmed action in the Builder and uses the deployment configuration.</p></details>
-<details class="cdn-faq"><summary>Can Coden follow my existing design system?<span aria-hidden="true">⌄</span></summary><p>Attach a reference or provide your styles, tokens and component conventions with your request. Coden can use them while building your interface.</p></details>
-      </div>
-    </div>
-  </section>
-
-
-  <section id="cta" style="position:relative;overflow:hidden;background:var(--horizon-canvas);border-top:1px solid var(--horizon-border);padding:clamp(52px,6.5vw,76px) clamp(20px,4vw,40px) clamp(52px,6.5vw,76px)">
-      <div aria-hidden="true" style="position:absolute;inset:0;background-image:repeating-linear-gradient(30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px),repeating-linear-gradient(-30deg, rgba(143,183,255,.07) 0 1px, transparent 1px 46px);mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 38%, #000 74%);-webkit-mask-image:linear-gradient(180deg, transparent, rgba(0,0,0,.5) 38%, #000 74%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:58%;background:radial-gradient(120% 100% at 50% 118%, var(--horizon-blue) 0%, color-mix(in srgb, var(--horizon-blue) 50%, transparent) 18%, rgba(29,78,216,.28) 42%, transparent 82%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:30%;background:radial-gradient(44% 72% at 50% 124%, rgba(214,231,255,.58), rgba(143,183,255,.18) 48%, transparent 78%)"></div>
-      <div aria-hidden="true" style="position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--horizon-blue) 45%, transparent) 32%, rgba(214,231,255,.7) 50%, color-mix(in srgb, var(--horizon-blue) 45%, transparent) 68%, transparent)"></div>
-      <div style="position:relative;max-width:700px;margin:0 auto;text-align:center">
-        <h2 style="font-family:Geist,system-ui,sans-serif;font-weight:400;font-size:clamp(30px,4vw,46px);line-height:1.06;letter-spacing:-.02em;margin:0;text-wrap:balance">Ready to build something real?</h2>
-        <p style="margin:14px auto 0;font-size:clamp(16px,2vw,18px);color:color-mix(in srgb, var(--horizon-text) 86%, transparent)">Try it out and start building for free.</p>
-	        <div style="margin:30px auto 0;max-width:600px;text-align:left;border:1px solid var(--horizon-border);background:var(--horizon-surface);border-radius:16px;box-shadow:0 1px 0 color-mix(in srgb,currentColor 6%,transparent) inset, 0 18px 48px rgba(0,0,0,.55)">
-          <textarea aria-label="Describe your app" maxlength="12000" rows="2" placeholder="Let's build…" style="width:100%;resize:none;border:0;outline:0;background:transparent;color:var(--horizon-text);font-size:16px;line-height:1.6;padding:18px 18px 4px"></textarea>
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px 12px 14px">
-            <button type="button" aria-label="Attach a file" data-prompt-action="upload" style="display:grid;place-items:center;width:32px;height:32px;border-radius:9px;border:0;background:transparent;color:var(--horizon-muted);cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),color 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-31">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-              <button type="button" data-mode-toggle aria-pressed="false" aria-label="Switch to Plan mode" title="Coden chooses the best action." class="coden-agent-mode-trigger">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"></path></svg>
-                <span data-mode-label>Auto</span>
-              </button>
-              <button type="button" aria-label="Build now" data-build style="display:grid;place-items:center;width:38px;height:38px;border-radius:10px;border:0;background:var(--horizon-blue);color:var(--horizon-blue-ink);cursor:pointer;transition:background 160ms cubic-bezier(.16,1,.3,1),transform 160ms cubic-bezier(.16,1,.3,1)" class="cdn-interaction-32">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-  </section>
-
-  </main>
-<footer class="cdn-marketing-footer" aria-label="Coden footer">
-    <div class="cdn-footer-intro">
-      <div>
-        <span class="cdn-footer-brand">
-          <svg class="cdn-footer-brand-mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-            <rect width="32" height="32" rx="8"></rect>
-            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z"></path>
-            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z"></path>
-            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z"></path>
-          </svg>
-          <span>coden</span>
-        </span>
-        <p>Plan, build, verify and publish from one focused workspace.</p>
-      </div>
-      <a class="cdn-footer-cta" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Create your first app</a>
-    </div>
-    <div class="cdn-footer-grid">
-      <div>
-        <p>Product</p>
-        <div>
-          <a href="/features.html">Features</a>
-          <a href="/pricing.html">Pricing</a>
-          <a href="/security.html">Security</a>
-        </div>
-      </div>
-      <div>
-        <p>Build</p>
-        <div>
-          <a href="/dashboard.html">Dashboard</a>
-          <a href="/builder.html">New project</a>
-          <a href="/documentation.html">Documentation</a>
-        </div>
-      </div>
-      <div>
-        <p>Explore</p>
-        <div>
-          <a href="/#workflow">How Coden works</a>
-          <a href="/#faq">Common questions</a>
-          <a href="/documentation.html">Guides</a>
-        </div>
-      </div>
-      <div>
-        <p>Company</p>
-        <div>
-          <a href="mailto:contact@coden.fun">Contact</a>
-          <a href="https://github.com/Braand-web/coden" rel="noreferrer">GitHub</a>
-          <a href="/security.html">Trust and security</a>
-        </div>
-      </div>
-      <div>
-        <p>Legal</p>
-        <div>
-          <a href="/privacy.html">Privacy</a>
-          <a href="/terms.html">Terms</a>
-          <a href="/privacy.html">Data handling</a>
-        </div>
-      </div>
-    </div>
-    <div class="cdn-footer-bottom">
-      <span>© 2026 Coden</span>
-      <span>Built for products that need to ship.</span>
-    </div>
-  </footer>
-</div>
-<p id="landing-notice" role="status" aria-live="polite" hidden></p>
-<script type="module" src="/src/landing-v3.ts"></script>
-</body>
+    <script type="module" src="/src/landing-new.ts"></script>
+  </body>
 </html>

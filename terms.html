@@ -13,7 +13,7 @@
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
   <meta property="og:title" content="Coden Terms - Product Terms and Usage Rules" />
@@ -37,6 +37,7 @@
   "url": "https://coden.fun/terms.html"
 }</script>
   <!-- CODEN_SEO_END -->
+  <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
@@ -45,8 +46,8 @@
     <link rel="stylesheet" href="/src/index.css">
     <style>
         body {
-            background: var(--bg);
-            color: var(--text);
+            background: var(--surface);
+            color: var(--foreground);
         }
 
         .legal-page {
@@ -58,7 +59,7 @@
         .legal-page h1 {
             max-width: 760px;
             margin: 0;
-            color: var(--text);
+            color: var(--foreground);
             font-size: clamp(2.6rem, 6vw, 5.8rem);
             line-height: .94;
             letter-spacing: -.055em;
@@ -67,7 +68,7 @@
         .legal-page .lead {
             max-width: 680px;
             margin: 24px 0 44px;
-            color: var(--text-sub);
+            color: var(--text-secondary);
             font-size: 1.05rem;
             line-height: 1.75;
         }
@@ -76,30 +77,30 @@
             display: grid;
             gap: 28px;
             padding: 32px;
-            border: 1px solid var(--border-light);
+            border: 1px solid var(--border-subtle);
             border-radius: 28px;
-            background: color-mix(in srgb, var(--horizon-surface) 72%, transparent);
-            box-shadow: 0 22px 70px rgba(18, 55, 130, .08);
+            background: color-mix(in srgb, var(--surface) 72%, transparent);
+            box-shadow: 0 22px 70px color-mix(in srgb, var(--syntax-cyan) 8%, transparent);
         }
 
         .legal-section h2 {
             margin: 0 0 10px;
-            color: var(--text);
+            color: var(--foreground);
             font-size: 1.1rem;
             letter-spacing: -.02em;
         }
 
         .legal-section p {
             margin: 0;
-            color: var(--text-sub);
+            color: var(--text-secondary);
             line-height: 1.72;
         }
 
         .legal-section a {
-            color: var(--text);
+            color: var(--foreground);
             font-weight: 700;
             text-decoration: none;
-            border-bottom: 1px solid rgba(18, 55, 130, .28);
+            border-bottom: 1px solid color-mix(in srgb, var(--syntax-cyan) 28%, transparent);
         }
 
         @media (max-width: 720px) {
@@ -118,7 +119,7 @@
     <div id="coden-marketing-header-root" aria-live="off"></div>
     <nav class="topbar" hidden aria-hidden="true">
         <a class="brand" href="/">
-            <span class="logo-mark" data-coden-logo aria-hidden="true"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--text)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/></svg></span>
+            <span class="logo-mark" data-coden-logo aria-hidden="true"><svg width="32" height="32" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span>
             <span>Coden</span>
         </a>
         <div class="nav-links">
@@ -162,10 +163,10 @@
                 <a href="/" class="logo">
                     <div class="logo-mark">
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                            <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
+                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
+                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
+                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
                         </svg>
                     </div>
                     <span class="logo-text">Coden</span>

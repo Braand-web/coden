@@ -1,11 +1,10 @@
 :root {
-  --coden-motion-instant: 90ms;
-  --coden-motion-fast: 140ms;
-  --coden-motion-medium: 220ms;
-  --coden-motion-slow: 360ms;
-  --coden-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --coden-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-  --coden-shadow-soft-blue: 0 0 0 4px var(--coden-blue-soft, rgba(59, 130, 246, 0.1));
+  --motion-instant: 120ms;
+  --motion-fast: 180ms;
+  --motion-medium: 280ms;
+  --motion-slow: 280ms;
+  --motion-ease: cubic-bezier(.32, .72, 0, 1);
+  --motion-enter: cubic-bezier(.16, 1, .3, 1);
 }
 
 html {
@@ -33,7 +32,7 @@ body {
   .seo-card,
   .seo-panel
 ) {
-  animation: coden-panel-reveal var(--coden-motion-slow) var(--coden-ease-enter) both;
+  animation: coden-panel-reveal var(--motion-slow) var(--motion-enter) both;
 }
 
 :where(.feature-card, .pricing-card, .testimonial-card, .project-card, .seo-card, .seo-panel, .create-section) {
@@ -64,12 +63,12 @@ body {
   .badge
 ) {
   transition:
-    transform var(--coden-motion-fast) var(--coden-ease-standard),
-    opacity var(--coden-motion-fast) var(--coden-ease-standard),
-    color var(--coden-motion-fast) var(--coden-ease-standard),
-    border-color var(--coden-motion-fast) var(--coden-ease-standard),
-    background-color var(--coden-motion-fast) var(--coden-ease-standard),
-    box-shadow var(--coden-motion-fast) var(--coden-ease-standard);
+    transform var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
 }
 
 :where(
@@ -108,36 +107,36 @@ body {
   .prompt-mode-btn
 ):active:not(:disabled) {
   transform: scale(0.985);
-  transition-duration: var(--coden-motion-instant);
+  transition-duration: var(--motion-instant);
 }
 
 :where(input, textarea, select, .input-wrapper, .coden-ai-input, .chat-input-area) {
   transition:
-    border-color var(--coden-motion-fast) var(--coden-ease-standard),
-    box-shadow var(--coden-motion-medium) var(--coden-ease-standard),
-    background-color var(--coden-motion-fast) var(--coden-ease-standard),
-    transform var(--coden-motion-medium) var(--coden-ease-standard);
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    transform var(--motion-medium) var(--motion-ease);
 }
 
 :where(.input-wrapper, .coden-ai-input, .chat-input-area):focus-within {
-  box-shadow: var(--coden-shadow-soft-blue);
+  box-shadow: 0 0 0 4px var(--focus-ring);
 }
 
 :where(.dropdown, .project-menu-panel, .coden-model-dropdown, .model-provider-panel, .prompt-mode-menu, #chat-mode-menu) {
-  animation: coden-popover-in var(--coden-motion-medium) var(--coden-ease-enter) both;
+  animation: coden-popover-in var(--motion-medium) var(--motion-enter) both;
   transform-origin: top center;
 }
 
 :where(.toast, .attachment-chip, .prompt-attachment-chip, .feedback-modal, .publish-popover) {
-  animation: coden-soft-rise var(--coden-motion-medium) var(--coden-ease-enter) both;
+  animation: coden-soft-rise var(--motion-medium) var(--motion-enter) both;
 }
 
 :where(.preview-frame-wrapper, .preview-content, .preview-empty, .web-preview, .artifact-preview) {
   transition:
-    opacity var(--coden-motion-medium) var(--coden-ease-standard),
-    transform var(--coden-motion-medium) var(--coden-ease-standard),
-    border-color var(--coden-motion-fast) var(--coden-ease-standard),
-    background-color var(--coden-motion-fast) var(--coden-ease-standard);
+    opacity var(--motion-medium) var(--motion-ease),
+    transform var(--motion-medium) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease);
 }
 
 :where(.preview-frame-wrapper, .web-preview, .artifact-preview)[data-loading="true"],
@@ -147,19 +146,19 @@ body {
 
 :where(.skeleton, .analysis-skeleton, .preview-skeleton, .shimmer, .coden-shimmer) {
   background-size: 220% 100%;
-  animation: coden-premium-shimmer 1.35s var(--coden-ease-standard) infinite;
+  animation: coden-premium-shimmer 1.35s var(--motion-ease) infinite;
 }
 
 :where(.coden-message) {
-  animation: coden-soft-rise var(--coden-motion-medium) var(--coden-ease-enter) both;
+  animation: coden-soft-rise var(--motion-medium) var(--motion-enter) both;
 }
 
 :where(.coden-message-content) {
   transition:
-    background-color var(--coden-motion-fast) var(--coden-ease-standard),
-    border-color var(--coden-motion-fast) var(--coden-ease-standard),
-    box-shadow var(--coden-motion-fast) var(--coden-ease-standard),
-    transform var(--coden-motion-fast) var(--coden-ease-standard);
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
 }
 
 :where(.coden-message-content):hover {

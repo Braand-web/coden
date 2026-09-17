@@ -10,18 +10,18 @@ html[data-local-preview="true"] .coden-local-preview-banner {
   max-width: calc(100vw - 24px);
   min-height: 32px;
   padding: 7px 12px;
-  border: 1px solid color-mix(in srgb, var(--horizon-blue) 46%, var(--border, var(--horizon-border)));
+  border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-elevated, var(--horizon-raised)) 92%, transparent);
-  color: var(--foreground, var(--horizon-text));
-  box-shadow: 0 10px 30px rgb(0 0 0 / 18%);
-  font: 600 11px/1.2 Instrument Sans, Inter, system-ui, sans-serif;
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  color: var(--foreground);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--foreground) 7.1%, transparent);
+  font: 600 11px/1.2 var(--font-sans);
   transform: none;
   backdrop-filter: blur(14px);
 }
 
 html[data-local-preview="true"] .coden-local-preview-note {
-  color: var(--muted-foreground, var(--horizon-muted));
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -30,8 +30,8 @@ html[data-local-preview="true"] .coden-local-preview-dot {
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--horizon-warning);
-  box-shadow: 0 0 0 3px rgb(242 184 75 / 15%);
+  background: var(--syntax-orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--syntax-yellow) 5.9%, transparent);
 }
 
 @media (max-width: 700px) {

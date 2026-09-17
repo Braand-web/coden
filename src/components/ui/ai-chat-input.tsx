@@ -208,7 +208,7 @@ function AttachmentThumb({
       aria-label={`Ouvrir l'aperçu de ${attachment.name}`}
     >
       <img src={attachment.url} alt={attachment.name} className="size-full object-cover" draggable={false} />
-      <span className={cn("absolute inset-0 flex items-start justify-end bg-black/0 transition-colors duration-200", isHovered && "bg-black/25")}>
+      <span className={cn("absolute inset-0 flex items-start justify-end bg-var(--foreground)/0 transition-colors duration-200", isHovered && "bg-var(--foreground)/25")}>
         <span
           role="button" tabIndex={-1}
           onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -298,7 +298,7 @@ function AttachmentGalleryModal({
           position: "fixed",
           top: geometry.top, left: geometry.left, width: geometry.width, height: geometry.height,
           borderRadius: geometry.radius, transition: flipTransition, overflow: "hidden",
-          boxShadow: isOpen ? "0 24px 60px -12px rgb(0 0 0 / 0.35)" : "0 0px 0px 0px rgb(0 0 0 / 0)",
+          boxShadow: isOpen ? "0 24px 60px -12px color-mix(in srgb, var(--foreground) 35%, transparent)" : "0 0px 0px 0px color-mix(in srgb, var(--foreground) 0%, transparent)",
         }}
         className="bg-muted"
         onTransitionEnd={() => { if (phase === "closing") onClose(); }}
@@ -852,11 +852,11 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
             <div
               ref={topFadeRef}
-              className="absolute left-4 right-12 top-0 z-[2] h-8 bg-gradient-to-b from-card via-card/90 to-transparent pointer-events-none"
+              className="coden-prompt-fade absolute left-4 right-12 top-0 z-[2] h-8 pointer-events-none"
             />
             <div
               ref={bottomFadeRef}
-              className="absolute left-4 right-12 z-[2] h-8 bg-gradient-to-t from-card via-card/90 to-transparent pointer-events-none"
+              className="coden-prompt-fade absolute left-4 right-12 z-[2] h-8 pointer-events-none"
               style={{
                 opacity: 0,
                 top: `${textareaHeight - 32}px`,

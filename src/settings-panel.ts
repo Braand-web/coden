@@ -178,7 +178,7 @@ function escapeHtml(value: unknown): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&var(--syntax-cyan);');
 }
 
 function defaultTimezone() {
@@ -314,7 +314,7 @@ function installSettingsStyle() {
       position: fixed;
       inset: 0;
       z-index: 9000;
-      background: color-mix(in srgb, var(--horizon-surface) 34%, transparent);
+      background: color-mix(in srgb, var(--surface) 34%, transparent);
       opacity: 0;
       visibility: hidden;
       backdrop-filter: blur(8px);
@@ -334,10 +334,10 @@ function installSettingsStyle() {
       display: flex;
       flex-direction: column;
       width: min(620px, 100vw);
-      background: var(--bg, var(--horizon-canvas));
-      color: var(--text, var(--horizon-text));
-      border-left: 1px solid var(--border, var(--horizon-border));
-      box-shadow: -24px 0 80px rgba(28,28,28,.12);
+      background: var(--surface);
+      color: var(--foreground);
+      border-left: 1px solid var(--border);
+      box-shadow: -24px 0 80px color-mix(in srgb, var(--foreground) 12%, transparent);
       transform: translateX(100%);
       opacity: 0;
       visibility: hidden;
@@ -365,7 +365,7 @@ function installSettingsStyle() {
       justify-content: space-between;
       gap: 16px;
       padding: 18px 20px;
-      border-bottom: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
     }
 
     .settings-header h2 {
@@ -380,10 +380,10 @@ function installSettingsStyle() {
       justify-content: center;
       width: 28px;
       height: 28px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 7px;
       background: transparent;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       cursor: pointer;
     }
 
@@ -391,7 +391,7 @@ function installSettingsStyle() {
       display: flex;
       gap: 6px;
       padding: 10px 14px;
-      border-bottom: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       overflow-x: auto;
     }
 
@@ -401,7 +401,7 @@ function installSettingsStyle() {
       border-radius: 7px;
       padding: 0 10px;
       background: transparent;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       cursor: pointer;
       flex: 0 0 auto;
       font-size: 12px;
@@ -409,9 +409,9 @@ function installSettingsStyle() {
     }
 
     .settings-tab.active {
-      border-color: var(--border-focus, var(--border, var(--horizon-border)));
-      background: var(--accent-blue-soft, var(--bg-elevated, var(--horizon-raised)));
-      color: var(--accent-blue, var(--text, var(--horizon-text)));
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
     }
 
     .settings-content {
@@ -426,7 +426,7 @@ function installSettingsStyle() {
     }
 
     .settings-title-stack small {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       line-height: 1.4;
     }
@@ -436,30 +436,30 @@ function installSettingsStyle() {
       align-items: center;
       height: 24px;
       padding: 0 9px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 999px;
-      background: var(--bg-surface, var(--horizon-canvas));
-      color: var(--text-sub, var(--horizon-muted));
+      background: var(--surface);
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       font-weight: 800;
       white-space: nowrap;
     }
 
     .settings-status[data-tone="saving"] {
-      color: var(--accent-blue, var(--horizon-blue));
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 32%, var(--border, var(--horizon-border)));
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
     }
 
     .settings-status[data-tone="success"] {
-      color: var(--horizon-success);
-      border-color: rgba(17, 132, 91, .28);
-      background: rgba(17, 132, 91, .08);
+      color: var(--success);
+      border-color: color-mix(in srgb, var(--success) 28%, transparent);
+      background: color-mix(in srgb, var(--success) 8%, transparent);
     }
 
     .settings-status[data-tone="error"] {
-      color: var(--horizon-danger);
-      border-color: rgba(180, 35, 24, .28);
-      background: rgba(180, 35, 24, .08);
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+      background: color-mix(in srgb, var(--danger) 8%, transparent);
     }
 
     .tab-panel.hidden {
@@ -467,9 +467,9 @@ function installSettingsStyle() {
     }
 
     .settings-card {
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 14px;
-      background: var(--bg-surface, var(--horizon-canvas));
+      background: var(--surface);
       padding: 14px;
       margin-bottom: 12px;
       transition:
@@ -479,7 +479,7 @@ function installSettingsStyle() {
     }
 
     .settings-card:hover {
-      border-color: var(--border-focus, var(--border, var(--horizon-border)));
+      border-color: var(--accent);
       transform: translateY(-1px);
     }
 
@@ -491,7 +491,7 @@ function installSettingsStyle() {
 
     .settings-card p {
       margin: 0;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 12px;
       line-height: 1.55;
     }
@@ -500,10 +500,7 @@ function installSettingsStyle() {
       display: grid;
       grid-template-columns: auto 1fr auto;
       gap: 14px;
-      align-items: center;
-      background:
-        radial-gradient(circle at 10% 0%, var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 14%, transparent)), transparent 38%),
-        var(--bg-surface, var(--horizon-surface));
+      align-items: center;background: var(--surface);
     }
 
     .settings-avatar {
@@ -512,11 +509,11 @@ function installSettingsStyle() {
       border-radius: 16px;
       display: grid;
       place-items: center;
-      color: var(--bg, var(--horizon-text));
-      background: var(--accent-blue, var(--horizon-blue));
+      color: var(--text-on-accent);
+      background: var(--accent);
       font-size: 18px;
       font-weight: 900;
-      box-shadow: 0 16px 34px rgba(37, 99, 235, .22);
+      box-shadow: 0 16px 34px color-mix(in srgb, var(--syntax-cyan) 22%, transparent);
     }
 
     .settings-plan-badge,
@@ -527,9 +524,9 @@ function installSettingsStyle() {
       min-height: 24px;
       padding: 0 9px;
       border-radius: 999px;
-      border: 1px solid var(--border, var(--horizon-border));
-      background: var(--bg-elevated, var(--horizon-raised));
-      color: var(--text, var(--horizon-text));
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--foreground);
       font-size: 10px;
       font-weight: 900;
       letter-spacing: .06em;
@@ -555,7 +552,7 @@ function installSettingsStyle() {
 
     .settings-field label,
     .settings-control-label {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 10px;
       font-weight: 850;
       letter-spacing: .08em;
@@ -567,10 +564,10 @@ function installSettingsStyle() {
     .settings-field textarea {
       width: 100%;
       min-height: 38px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 10px;
-      background: var(--bg, var(--horizon-canvas));
-      color: var(--text, var(--horizon-text));
+      background: var(--surface);
+      color: var(--foreground);
       padding: 9px 11px;
       outline: none;
       font: inherit;
@@ -588,8 +585,8 @@ function installSettingsStyle() {
     .settings-field input:focus,
     .settings-field select:focus,
     .settings-field textarea:focus {
-      border-color: var(--accent-blue, var(--horizon-blue));
-      box-shadow: 0 0 0 3px var(--accent-blue-soft, rgba(59,130,246,.14));
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 14%, transparent));
     }
 
     .settings-row {
@@ -598,7 +595,7 @@ function installSettingsStyle() {
       justify-content: space-between;
       gap: 14px;
       padding: 12px 0;
-      border-top: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-top: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
     }
 
     .settings-row:first-child {
@@ -609,13 +606,13 @@ function installSettingsStyle() {
     .settings-row strong {
       display: block;
       margin-bottom: 3px;
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 13px;
     }
 
     .settings-row span,
     .settings-row code {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 12px;
     }
 
@@ -627,11 +624,11 @@ function installSettingsStyle() {
     .settings-action-button,
     .settings-danger-button {
       min-height: 32px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 9px;
       padding: 0 11px;
-      background: var(--bg, var(--horizon-canvas));
-      color: var(--text, var(--horizon-text));
+      background: var(--surface);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 850;
       cursor: pointer;
@@ -643,23 +640,20 @@ function installSettingsStyle() {
     .settings-action-button:hover,
     .settings-danger-button:hover {
       transform: translateY(-1px);
-      background: var(--bg-elevated, var(--horizon-raised));
+      background: var(--surface-soft);
     }
 
     .settings-danger-button {
-      color: var(--horizon-danger);
-      border-color: rgba(180, 35, 24, .24);
-      background: rgba(180, 35, 24, .06);
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+      background: color-mix(in srgb, var(--danger) 6%, transparent);
     }
 
     .billing-balance-card {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      gap: 16px;
-      background:
-        radial-gradient(circle at 8% 0%, var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 14%, transparent)), transparent 42%),
-        var(--bg-surface, var(--horizon-surface));
+      gap: 16px;background: var(--surface);
     }
 
     .billing-balance-value {
@@ -682,13 +676,13 @@ function installSettingsStyle() {
       gap: 12px;
       min-width: 0;
       padding: 14px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 12px;
-      background: var(--bg, var(--horizon-canvas));
+      background: var(--surface);
     }
 
     .billing-plan-card[data-plan="pro"] {
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 35%, var(--border, var(--horizon-border)));
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
     }
 
     .billing-plan-head,
@@ -701,16 +695,16 @@ function installSettingsStyle() {
 
     .billing-plan-head strong { font-size: 14px; }
     .billing-plan-price strong { font-size: 22px; letter-spacing: -.035em; }
-    .billing-plan-price span { color: var(--text-sub, var(--horizon-muted)); font-size: 11px; }
+    .billing-plan-price span { color: var(--text-secondary, var(--text-muted)); font-size: 11px; }
 
     .billing-tier-select {
       width: 100%;
       height: 36px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 9px;
       padding: 0 10px;
-      color: var(--text, var(--horizon-text));
-      background: var(--bg-surface, var(--horizon-canvas));
+      color: var(--foreground);
+      background: var(--surface);
       font: inherit;
       font-size: 12px;
     }
@@ -730,7 +724,7 @@ function installSettingsStyle() {
       margin: 0;
       padding: 0;
       list-style: none;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       line-height: 1.45;
     }
@@ -738,15 +732,15 @@ function installSettingsStyle() {
     .billing-plan-features li::before {
       content: '✓';
       margin-right: 6px;
-      color: var(--accent-blue, var(--horizon-blue));
+      color: var(--accent);
       font-weight: 900;
     }
 
     .billing-plan-card .settings-action-button {
       width: 100%;
-      color: var(--bg, var(--horizon-text));
-      border-color: var(--accent-blue, var(--horizon-blue));
-      background: var(--accent-blue, var(--horizon-blue));
+      color: var(--text-on-accent);
+      border-color: var(--accent);
+      background: var(--accent);
     }
 
     .billing-plan-card .settings-action-button:disabled {
@@ -771,20 +765,20 @@ function installSettingsStyle() {
 
     .settings-segment button {
       min-height: 32px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 999px;
       padding: 0 12px;
-      background: var(--bg, var(--horizon-canvas));
-      color: var(--text-sub, var(--horizon-muted));
+      background: var(--surface);
+      color: var(--text-secondary, var(--text-muted));
       font-size: 12px;
       font-weight: 850;
       cursor: pointer;
     }
 
     .settings-segment button.active {
-      border-color: var(--accent-blue, var(--horizon-blue));
-      background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 14%, transparent));
-      color: var(--accent-blue, var(--horizon-blue));
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
     }
 
     .settings-integration-grid {
@@ -795,30 +789,28 @@ function installSettingsStyle() {
     }
 
     .settings-integration {
-      border: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 11px;
       padding: 10px;
-      background: var(--bg, var(--horizon-canvas));
+      background: var(--surface);
     }
 
     .settings-integration strong {
       display: block;
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 12px;
       margin-bottom: 5px;
     }
 
     .settings-integration span {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       line-height: 1.45;
     }
 
     .settings-danger-zone {
-      border-color: rgba(180, 35, 24, .2);
-      background:
-        linear-gradient(180deg, rgba(180, 35, 24, .05), transparent 58%),
-        var(--bg-surface, var(--horizon-surface));
+      border-color: color-mix(in srgb, var(--danger) 20%, transparent);
+      background: var(--surface);
     }
 
     .usage-summary-grid {
@@ -837,17 +829,17 @@ function installSettingsStyle() {
 
     .usage-summary-card,
     .cloud-summary-card {
-      border: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 10px;
       padding: 10px;
-      background: var(--bg-elevated, var(--horizon-raised));
+      background: var(--surface-soft);
     }
 
     .usage-summary-label,
     .cloud-summary-label {
       display: block;
       margin-bottom: 6px;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 10px;
       font-weight: 800;
       letter-spacing: .08em;
@@ -856,7 +848,7 @@ function installSettingsStyle() {
 
     .usage-summary-value,
     .cloud-summary-value {
-      color: var(--accent-blue, var(--text, var(--horizon-text)));
+      color: var(--accent);
       font-size: 18px;
       font-weight: 850;
       letter-spacing: -.03em;
@@ -865,10 +857,10 @@ function installSettingsStyle() {
 
     .usage-row,
     .model-rate-row {
-      border: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 10px;
       padding: 10px;
-      background: var(--bg, var(--horizon-canvas));
+      background: var(--surface);
     }
 
     .usage-row + .usage-row,
@@ -886,7 +878,7 @@ function installSettingsStyle() {
 
     .usage-row-title,
     .model-rate-title {
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 800;
     }
@@ -894,18 +886,18 @@ function installSettingsStyle() {
     .usage-row-meta,
     .model-rate-meta {
       margin-top: 4px;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       line-height: 1.45;
     }
 
     .usage-credit-pill,
     .model-tier-pill {
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 999px;
       padding: 3px 7px;
-      background: var(--bg-elevated, var(--horizon-raised));
-      color: var(--text, var(--horizon-text));
+      background: var(--surface-soft);
+      color: var(--foreground);
       font-size: 10px;
       font-weight: 850;
       white-space: nowrap;
@@ -919,16 +911,16 @@ function installSettingsStyle() {
     }
 
     .model-credit-cell {
-      border: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 8px;
       padding: 7px;
-      background: var(--bg-elevated, var(--horizon-raised));
+      background: var(--surface-soft);
     }
 
     .model-credit-cell span {
       display: block;
       margin-bottom: 4px;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 9px;
       font-weight: 850;
       letter-spacing: .08em;
@@ -936,16 +928,16 @@ function installSettingsStyle() {
     }
 
     .model-credit-cell strong {
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 11px;
     }
 
     .usage-empty {
-      border: 1px dashed var(--border, var(--horizon-border));
+      border: 1px dashed var(--border);
       border-radius: 10px;
       padding: 12px;
-      color: var(--text-sub, var(--horizon-muted));
-      background: var(--bg-elevated, var(--horizon-raised));
+      color: var(--text-secondary, var(--text-muted));
+      background: var(--surface-soft);
       font-size: 12px;
       line-height: 1.5;
     }
@@ -955,31 +947,31 @@ function installSettingsStyle() {
       justify-content: flex-end;
       gap: 8px;
       padding: 14px 16px;
-      border-top: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
-      background: var(--bg, var(--horizon-canvas));
+      border-top: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
+      background: var(--surface);
     }
 
     .settings-footer button {
       height: 30px;
-      border: 1px solid var(--border, var(--horizon-border));
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 0 12px;
       background: transparent;
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 800;
       cursor: pointer;
     }
 
     .settings-footer .primary {
-      background: var(--text, var(--horizon-surface));
-      color: var(--bg, var(--horizon-text));
-      border-color: var(--text, var(--horizon-border));
+      background: var(--accent);
+      color: var(--text-on-accent);
+      border-color: var(--accent);
     }
 
     /* Shared centered settings workspace */
     .settings-overlay {
-      background: rgba(3, 5, 8, .68);
+      background: color-mix(in srgb, var(--background) 68%, transparent);
       backdrop-filter: blur(14px) saturate(.75);
       -webkit-backdrop-filter: blur(14px) saturate(.75);
       transition:
@@ -1004,10 +996,10 @@ function installSettingsStyle() {
       max-height: calc(100dvh - 40px);
       display: block;
       overflow: hidden;
-      border: 1px solid var(--border-mid, var(--border, var(--horizon-border)));
+      border: 1px solid var(--border-strong);
       border-radius: 16px;
-      background: var(--bg-surface, var(--horizon-canvas));
-      box-shadow: 0 30px 96px rgba(0, 0, 0, .34);
+      background: var(--surface);
+      box-shadow: 0 30px 96px color-mix(in srgb, var(--foreground) 34%, transparent);
       transform: translate(-50%, -47%) scale(.985);
       transition:
         transform 220ms cubic-bezier(.22, 1, .36, 1),
@@ -1038,8 +1030,8 @@ function installSettingsStyle() {
       flex-direction: column;
       gap: 12px;
       padding: 16px 12px 14px;
-      background: color-mix(in srgb, var(--bg, var(--horizon-canvas)) 92%, transparent);
-      border-right: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      background: color-mix(in srgb, var(--background) 92%, transparent);
+      border-right: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
     }
 
     .settings-search {
@@ -1052,16 +1044,16 @@ function installSettingsStyle() {
       border: 1px solid transparent;
       border-radius: 11px;
       padding: 0 11px;
-      background: var(--bg-elevated, var(--horizon-raised));
-      color: var(--text-sub, var(--horizon-muted));
+      background: var(--surface-soft);
+      color: var(--text-secondary, var(--text-muted));
       transition:
         border-color 140ms cubic-bezier(.22, 1, .36, 1),
         background 140ms cubic-bezier(.22, 1, .36, 1);
     }
 
     .settings-search:focus-within {
-      border-color: var(--border-focus, var(--border, var(--horizon-border)));
-      background: var(--bg-input, var(--bg-surface, var(--horizon-canvas)));
+      border-color: var(--accent);
+      background: var(--input);
     }
 
     .settings-search svg,
@@ -1078,18 +1070,18 @@ function installSettingsStyle() {
       border: 0;
       outline: 0;
       background: transparent;
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font: inherit;
       font-size: 14px;
     }
 
     .settings-search input::placeholder {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
     }
 
     .settings-nav-label {
       margin: 4px 10px -6px;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       font-weight: 700;
     }
@@ -1118,7 +1110,7 @@ function installSettingsStyle() {
       border: 0;
       border-radius: 10px;
       padding: 0 10px;
-      color: var(--text-muted, var(--horizon-muted));
+      color: var(--text-muted);
       font-size: 13px;
       font-weight: 600;
       text-align: left;
@@ -1129,15 +1121,15 @@ function installSettingsStyle() {
     }
 
     .settings-tab:hover {
-      color: var(--text, var(--horizon-text));
-      background: var(--accent-dim, rgba(28,28,28,.06));
+      color: var(--foreground);
+      background: var(--surface-soft, color-mix(in srgb, var(--background) 6%, transparent));
       transform: translateX(1px);
     }
 
     .settings-tab.active {
       border: 0;
-      background: var(--bg-elevated, var(--horizon-raised));
-      color: var(--text, var(--horizon-text));
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
 
     .settings-tab[hidden] {
@@ -1148,16 +1140,16 @@ function installSettingsStyle() {
       display: grid;
       gap: 7px;
       padding: 12px 10px 0;
-      border-top: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-top: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
     }
 
     .settings-sidebar-footer strong {
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 12px;
     }
 
     .settings-sidebar-footer span {
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 11px;
       line-height: 1.45;
     }
@@ -1167,7 +1159,7 @@ function installSettingsStyle() {
       min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
-      background: var(--bg-surface, var(--horizon-canvas));
+      background: var(--surface);
     }
 
     .settings-header {
@@ -1200,15 +1192,15 @@ function installSettingsStyle() {
       height: 30px;
       border: 0;
       border-radius: 9px;
-      color: var(--text-muted, var(--horizon-muted));
+      color: var(--text-muted);
       transition:
         color 140ms cubic-bezier(.22, 1, .36, 1),
         background 140ms cubic-bezier(.22, 1, .36, 1);
     }
 
     .settings-close:hover {
-      color: var(--text, var(--horizon-text));
-      background: var(--accent-dim, rgba(28,28,28,.06));
+      color: var(--foreground);
+      background: var(--surface-soft, color-mix(in srgb, var(--background) 6%, transparent));
     }
 
     .settings-content {
@@ -1226,7 +1218,7 @@ function installSettingsStyle() {
       content: attr(data-settings-heading);
       display: block;
       margin: 2px 0 22px;
-      color: var(--text, var(--horizon-text));
+      color: var(--foreground);
       font-size: 18px;
       font-weight: 760;
       letter-spacing: -.025em;
@@ -1234,7 +1226,7 @@ function installSettingsStyle() {
 
     .settings-card {
       border: 0;
-      border-bottom: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 0;
       background: transparent;
       padding: 0 0 22px;
@@ -1247,7 +1239,7 @@ function installSettingsStyle() {
     }
 
     .settings-card:hover {
-      border-color: var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+      border-color: var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       transform: none;
     }
 
@@ -1297,7 +1289,7 @@ function installSettingsStyle() {
       min-height: 38px;
       border-color: transparent;
       border-radius: 10px;
-      background: var(--bg-elevated, var(--horizon-raised));
+      background: var(--surface-soft);
     }
 
     .settings-field textarea {
@@ -1318,12 +1310,12 @@ function installSettingsStyle() {
     .cloud-summary-card,
     .usage-row,
     .model-rate-row {
-      background: var(--bg-elevated, var(--horizon-raised));
+      background: var(--surface-soft);
     }
 
     .settings-footer {
       padding: 12px 34px 16px;
-      background: color-mix(in srgb, var(--bg-surface, var(--horizon-canvas)) 94%, transparent);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
     }
 
     .settings-footer button {
@@ -1335,7 +1327,7 @@ function installSettingsStyle() {
     .settings-search-empty {
       display: none;
       padding: 16px 12px;
-      color: var(--text-sub, var(--horizon-muted));
+      color: var(--text-secondary, var(--text-muted));
       font-size: 12px;
       line-height: 1.5;
     }
@@ -1345,32 +1337,18 @@ function installSettingsStyle() {
     }
 
     [data-theme="dark"] .settings-panel {
-      --bg: #0e1116;
-      --bg-surface: #11161e;
-      --bg-elevated: #171e28;
-      --bg-input: #171e28;
-      --text: #f5f7fa;
-      --text-muted: #aab3c1;
-      --text-sub: #8d98a8;
-      --border: #273241;
-      --border-light: rgba(151, 162, 178, .14);
-      --border-mid: #273241;
-      --border-focus: #4f8cff;
-      --accent-dim: rgba(79, 140, 255, .1);
-      --accent-blue-soft: rgba(79, 140, 255, .12);
-      --accent-blue: #9ebeff;
-      background: var(--horizon-surface);
-      color: var(--horizon-text);
-      box-shadow: 0 30px 96px rgba(0,0,0,.58);
+      background: var(--surface);
+      color: var(--foreground);
+      box-shadow: 0 30px 96px color-mix(in srgb, var(--foreground) 58%, transparent);
     }
 
     [data-theme="dark"] .settings-sidebar {
-      background: var(--horizon-canvas);
+      background: var(--surface);
     }
 
     [data-theme="dark"] .settings-main,
     [data-theme="dark"] .settings-footer {
-      background: var(--horizon-surface);
+      background: var(--surface);
     }
 
     @media (max-width: 900px) {
@@ -1390,7 +1368,7 @@ function installSettingsStyle() {
         gap: 10px;
         padding: 12px;
         border-right: 0;
-        border-bottom: 1px solid var(--border-light, color-mix(in srgb, var(--horizon-border) 78%, transparent));
+        border-bottom: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       }
 
       .settings-nav-label,
@@ -1704,7 +1682,7 @@ function settingsMarkup() {
             <div class="settings-field"><label for="settings-agent-max-steps">Max tool steps</label><input id="settings-agent-max-steps" type="number" min="1" max="20" value="10" disabled></div>
             <div class="settings-field"><label for="settings-agent-concurrency">Concurrent runs</label><input id="settings-agent-concurrency" type="number" min="1" max="3" value="3" disabled></div>
           </div>
-          <p style="margin-top:12px;font-size:12px;color:var(--text-sub)">Limits are enforced server-side. Contact your workspace owner to change plan-level budgets.</p>
+          <p style="margin-top:12px;font-size:12px;color:var(--text-secondary)">Limits are enforced server-side. Contact your workspace owner to change plan-level budgets.</p>
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-connecteurs" data-settings-heading="Connectors">

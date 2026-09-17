@@ -40,7 +40,7 @@ export function providerIconSvg(icon: ProviderIconName): string {
         <svg class="provider-mark provider-mark-auto" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <circle cx="12" cy="12" r="9.1" fill="none" stroke="currentColor" stroke-width="1.6"/>
           <path d="M15.6 8.4l-2.05 5.15-5.15 2.05 2.05-5.15 5.15-2.05Z" fill="currentColor"/>
-          <circle cx="12" cy="12" r="1.15" fill="var(--provider-icon-bg, #fff)"/>
+          <circle cx="12" cy="12" r="1.15" fill="var(--provider-icon-bg, var(--foreground))"/>
         </svg>
       `;
 
@@ -63,9 +63,9 @@ export function providerIconSvg(icon: ProviderIconName): string {
         <svg class="provider-mark provider-mark-google" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <defs>
             <linearGradient id="${GEMINI_GRADIENT_ID}" x1="0" y1="24" x2="24" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stop-color="#4285F4"/>
-              <stop offset=".52" stop-color="#9B72CB"/>
-              <stop offset="1" stop-color="#D96570"/>
+              <stop offset="0" stop-color="var(--syntax-cyan)"/>
+              <stop offset=".52" stop-color="var(--syntax-purple)"/>
+              <stop offset="1" stop-color="var(--danger)"/>
             </linearGradient>
           </defs>
           <path fill="url(#${GEMINI_GRADIENT_ID})" d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81Z"/>

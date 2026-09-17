@@ -70,7 +70,7 @@ describe('Coden projects dashboard surface contract', () => {
     expect(css).toContain('.coden-dashboard-project-list');
     expect(css).toContain('.coden-dashboard-project-card');
     expect(css).toContain('grid-template-columns: repeat(3');
-    expect(css).toContain('--dashboard-sidebar-width: 228px');
+    expect(css).toContain('--app-sidebar-width: 228px');
     expect(css).toContain('width: 64px');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
   });

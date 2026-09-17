@@ -42,7 +42,7 @@ function escapeHtml(value: string) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&var(--syntax-cyan);');
 }
 
 function formatBytes(bytes: number) {
@@ -75,13 +75,13 @@ function notify(message: string, kind: 'info' | 'success' | 'error' = 'info') {
     'bottom:18px',
     'z-index:99999',
     'max-width:min(360px,calc(100vw - 32px))',
-    'border:1px solid var(--border,rgba(9,9,11,.16))',
+    'border:1px solid var(--border,color-mix(in srgb, var(--border) 16%, transparent))',
     'border-radius:12px',
     'padding:10px 12px',
     'font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-    'color:var(--text,var(--horizon-text))',
-    kind === 'error' ? 'background:var(--horizon-danger-soft)' : kind === 'success' ? 'background:var(--horizon-success-soft)' : 'background:var(--bg-surface,var(--horizon-canvas))',
-    'box-shadow:0 18px 60px rgba(9,9,11,.16)',
+    'color:var(--foreground)',
+    kind === 'error' ? 'background:var(--danger-background)' : kind === 'success' ? 'background:var(--success-background)' : 'background:var(--surface)',
+    'box-shadow:0 18px 60px color-mix(in srgb, var(--foreground) 16%, transparent)',
   ].join(';');
   toast.textContent = message;
   document.body.appendChild(toast);
@@ -104,14 +104,14 @@ function ensureStyles() {
       align-items: center;
       max-width: 100%;
       gap: 8px;
-      border: 1px solid color-mix(in srgb, var(--border, rgba(24,24,27,.16)) 86%, transparent);
-      background: color-mix(in srgb, var(--bg-input, var(--horizon-surface)) 94%, var(--text, var(--horizon-surface)) 6%);
-      color: var(--text, var(--horizon-text));
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--input) 94%, var(--foreground) 6%);
+      color: var(--foreground);
       border-radius: 12px;
       padding: 6px 7px;
       font-size: 11px;
       line-height: 1.15;
-      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
     }
     .prompt-attachment-thumb {
       width: 28px;
@@ -122,9 +122,9 @@ function ensureStyles() {
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      background: color-mix(in srgb, var(--accent, var(--horizon-warning)) 12%, transparent);
-      border: 1px solid color-mix(in srgb, var(--accent, var(--horizon-warning)) 18%, transparent);
-      color: var(--text-muted, var(--horizon-muted));
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+      color: var(--text-muted);
       font-size: 9px;
       font-weight: 800;
       letter-spacing: .04em;
@@ -148,7 +148,7 @@ function ensureStyles() {
       font-weight: 650;
     }
     .prompt-attachment-sub {
-      color: var(--text-muted, var(--horizon-muted));
+      color: var(--text-muted);
       font-size: 10px;
       white-space: nowrap;
     }
@@ -158,21 +158,21 @@ function ensureStyles() {
       height: 6px;
       border-radius: 999px;
       flex: 0 0 auto;
-      background: var(--text-sub, var(--horizon-border-strong));
+      background: var(--text-secondary, var(--border-strong));
     }
-    .prompt-attachment-status.is-uploaded { background: var(--horizon-success); }
-    .prompt-attachment-status.is-failed { background: var(--horizon-danger); }
-    .prompt-attachment-status.is-pending { background: var(--horizon-warning); }
+    .prompt-attachment-status.is-uploaded { background: var(--success); }
+    .prompt-attachment-status.is-failed { background: var(--danger); }
+    .prompt-attachment-status.is-pending { background: var(--syntax-orange); }
     .prompt-attachment-chip.is-failed {
-      border-color: color-mix(in srgb, var(--horizon-danger) 40%, transparent);
+      border-color: color-mix(in srgb, var(--danger) 40%, transparent);
     }
     .prompt-attachment-chip button {
       width: 20px;
       height: 20px;
       border: 0;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--text, var(--horizon-surface)) 8%, transparent);
-      color: var(--text-muted, var(--horizon-muted));
+      background: color-mix(in srgb, var(--foreground) 8%, transparent);
+      color: var(--text-muted);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -183,9 +183,9 @@ function ensureStyles() {
     }
     [data-prompt-action="voice"].is-recording,
     .btn-voice.is-recording {
-      color: var(--accent-blue, var(--horizon-blue)) !important;
-      border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 45%, transparent) !important;
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue, #2f6df6) 16%, transparent);
+      color: var(--accent) !important;
+      border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
     }
   `;
   document.head.appendChild(style);

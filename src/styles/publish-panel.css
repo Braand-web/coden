@@ -12,12 +12,12 @@
   position: absolute;
   width: min(380px, calc(100vw - 24px));
   border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--foreground);
   border-radius: 16px;
-  box-shadow: var(--shadow-lg, 0 18px 48px rgba(0, 0, 0, .45));
+  box-shadow: var(--shadow-lg, 0 18px 48px color-mix(in srgb, var(--foreground) 45%, transparent));
   overflow: hidden;
-  font-family: var(--font-body, Inter, ui-sans-serif, system-ui);
+  font-family: var(--font-sans);
   transform-origin: top right;
   animation: cdn-pub-in 140ms cubic-bezier(.22, 1, .36, 1) both;
 }
@@ -55,7 +55,7 @@
   line-height: 1.1;
   letter-spacing: -.02em;
   font-weight: 800;
-  color: var(--text);
+  color: var(--foreground);
 }
 
 .cdn-pub__dot {
@@ -63,10 +63,10 @@
   height: 8px;
   border-radius: 50%;
   flex: 0 0 auto;
-  background: var(--text-sub, var(--horizon-border-strong));
+  background: var(--text-secondary, var(--border-strong));
 }
 
-.cdn-pub__dot--live { background: var(--success, var(--horizon-success)); }
+.cdn-pub__dot--live { background: var(--success); }
 
 .cdn-pub__icon-btn {
   display: grid;
@@ -81,7 +81,7 @@
   padding: 0;
 }
 
-.cdn-pub__icon-btn:hover { background: var(--bg-input); }
+.cdn-pub__icon-btn:hover { background: var(--input); }
 
 /* ── body ───────────────────────────────────────────────── */
 
@@ -105,14 +105,14 @@
 }
 
 .cdn-pub__section-head strong {
-  color: var(--text);
+  color: var(--foreground);
   font-size: 13px;
 }
 
 .cdn-pub__error {
-  border: 1px solid var(--error-dim, rgba(248, 113, 113, .25));
-  background: var(--error-dim, rgba(248, 113, 113, .10));
-  color: var(--error, var(--horizon-danger));
+  border: 1px solid var(--danger-background, color-mix(in srgb, var(--danger) 25%, transparent));
+  background: var(--danger-background, color-mix(in srgb, var(--danger) 10%, transparent));
+  color: var(--danger);
   border-radius: 10px;
   padding: 9px 11px;
   font-size: 12px;
@@ -132,9 +132,9 @@
   padding: 2px 16px 14px;
 }
 
-.cdn-pub__confirm strong { color: var(--text); font-size: 13.5px; }
+.cdn-pub__confirm strong { color: var(--foreground); font-size: 13.5px; }
 .cdn-pub__confirm p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
-.cdn-pub__confirm p span { color: var(--text); font-weight: 700; }
+.cdn-pub__confirm p span { color: var(--foreground); font-weight: 700; }
 
 .cdn-pub__actions-row {
   display: grid;
@@ -159,8 +159,8 @@
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-  border: 1.5px solid color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 25%, transparent);
-  border-top-color: var(--accent-blue, var(--horizon-blue));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: cdn-pub-spin .8s linear infinite;
 }
@@ -173,7 +173,7 @@
   gap: 8px;
   min-width: 0;
   border: 1px solid var(--border);
-  background: var(--bg-input);
+  background: var(--input);
   border-radius: 11px;
   padding: 9px 11px;
 }
@@ -181,7 +181,7 @@
 /*
  * The pending URL row.
  *
- * The placeholder used to be a bare div tinted `var(--bg-input)`, which on a
+ * The placeholder used to be a bare div tinted `var(--input)`, which on a
  * dark surface is the panel's own colour: an invisible box, so the panel read
  * as broken rather than busy. It now keeps the real row's frame and glyph and
  * animates a bar inside it, so the shape a user is waiting for is the shape
@@ -192,13 +192,7 @@
 .cdn-pub__shimmer {
   flex: 1;
   height: 11px;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--text-muted) 16%, transparent) 0%,
-    color-mix(in srgb, var(--text-muted) 30%, transparent) 50%,
-    color-mix(in srgb, var(--text-muted) 16%, transparent) 100%
-  );
+  border-radius: 999px;background: var(--surface);
   background-size: 200% 100%;
   animation: cdn-pub-shimmer 1.35s ease-in-out infinite;
 }
@@ -225,16 +219,16 @@
 .cdn-pub__primary[data-variant='retry'] {
   background: transparent;
   border: 1px solid var(--border);
-  color: var(--text);
+  color: var(--foreground);
 }
 
 .cdn-pub__primary[data-variant='retry']:hover {
-  background: var(--bg-input);
+  background: var(--input);
   border-color: var(--text-muted);
 }
 
 .cdn-pub__primary[data-variant='idle']:disabled {
-  background: var(--bg-input);
+  background: var(--input);
   border: 1px solid var(--border);
   color: var(--text-muted);
   opacity: 1;
@@ -242,7 +236,7 @@
 
 /* A summary that reports a failure is not the same voice as one that reports
    a state, and the panel has room to say which. */
-.cdn-pub__summary[data-tone='warn'] { color: var(--warning, var(--horizon-warning)); }
+.cdn-pub__summary[data-tone='warn'] { color: var(--syntax-orange); }
 
 .cdn-pub__detail { margin: 0 -16px; }
 
@@ -252,7 +246,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
+  color: var(--foreground);
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: -.01em;
@@ -274,8 +268,8 @@
 .cdn-pub__primary {
   height: 40px;
   border: 0;
-  background: var(--accent-blue, var(--horizon-blue));
-  color: var(--horizon-text);
+  background: var(--surface);
+  color: var(--foreground);
   border-radius: 11px;
   font-size: 13.5px;
   font-weight: 800;
@@ -290,22 +284,22 @@
 .cdn-pub__secondary {
   height: 34px;
   border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--foreground);
   border-radius: 11px;
   font-size: 12px;
   font-weight: 850;
   cursor: pointer;
 }
 
-.cdn-pub__secondary:hover:not(:disabled) { background: var(--bg-input); }
+.cdn-pub__secondary:hover:not(:disabled) { background: var(--input); }
 .cdn-pub__secondary:disabled { opacity: .5; cursor: default; }
 
 .cdn-pub__small {
   height: 28px;
   border: 1px solid var(--border);
-  background: var(--bg-input);
-  color: var(--text);
+  background: var(--input);
+  color: var(--foreground);
   border-radius: 9px;
   padding: 0 10px;
   font-size: 12px;
@@ -336,7 +330,7 @@
 }
 
 .cdn-pub__link:disabled { opacity: .5; cursor: default; }
-.cdn-pub__link--go { color: var(--accent-blue-deep); font-weight: 700; }
+.cdn-pub__link--go { color: var(--accent); font-weight: 700; }
 
 .cdn-pub__count {
   display: inline-grid;
@@ -344,14 +338,14 @@
   min-width: 17px;
   height: 17px;
   border-radius: 999px;
-  background: var(--accent-blue-soft);
-  color: var(--accent-blue-deep);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 10px;
   font-weight: 800;
 }
 
-.cdn-pub__count[data-tone="fail"] { background: var(--error, var(--horizon-danger)); color: var(--horizon-text); }
-.cdn-pub__count[data-tone="warn"] { background: var(--warning, var(--horizon-warning)); color: var(--horizon-text); }
+.cdn-pub__count[data-tone="fail"] { background: var(--danger); color: var(--foreground); }
+.cdn-pub__count[data-tone="warn"] { background: var(--syntax-orange); color: var(--foreground); }
 
 /* ── checks ─────────────────────────────────────────────── */
 
@@ -363,7 +357,7 @@
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--bg-input);
+  background: var(--input);
 }
 
 .cdn-pub__check-icon {
@@ -376,7 +370,7 @@
 
 .cdn-pub__check strong {
   display: block;
-  color: var(--text);
+  color: var(--foreground);
   font-size: 12px;
   line-height: 1.2;
 }
@@ -401,8 +395,8 @@
   min-width: 0;
   height: 34px;
   border: 1px solid var(--border);
-  background: var(--bg-input);
-  color: var(--text);
+  background: var(--input);
+  color: var(--foreground);
   border-radius: 10px;
   padding: 0 11px;
   font-size: 12.5px;
@@ -411,7 +405,7 @@
 
 .cdn-dom__input::placeholder { color: var(--text-muted); }
 .cdn-dom__input:focus-visible {
-  outline: 2px solid var(--accent-blue, #6366f1);
+  outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -427,7 +421,7 @@
 
 .cdn-dom__row {
   border: 1px solid var(--border);
-  background: var(--bg-input);
+  background: var(--input);
   border-radius: 12px;
   padding: 11px;
   display: grid;
@@ -447,7 +441,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
+  color: var(--foreground);
   font-size: 12.5px;
   font-weight: 700;
 }
@@ -476,20 +470,20 @@
 }
 
 .cdn-dom__state[data-state="active"] {
-  color: var(--success, var(--horizon-success));
-  background: color-mix(in srgb, var(--success, var(--horizon-success)) 12%, transparent);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="error"] {
-  color: var(--error, var(--horizon-danger));
-  background: color-mix(in srgb, var(--error, var(--horizon-danger)) 12%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="dns_verification"],
 .cdn-dom__state[data-state="dns_propagation"],
 .cdn-dom__state[data-state="configuration_required"] {
-  color: var(--warning, var(--horizon-warning));
-  background: color-mix(in srgb, var(--warning, var(--horizon-warning)) 12%, transparent);
+  color: var(--syntax-orange);
+  background: color-mix(in srgb, var(--syntax-orange) 12%, transparent);
 }
 
 .cdn-dom__state[data-state="dns_propagation"]::before {
@@ -511,7 +505,7 @@
   grid-template-columns: 52px 1fr;
   gap: 8px;
   align-items: baseline;
-  background: var(--bg-surface);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 7px 9px;
@@ -528,7 +522,7 @@
   min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
-  color: var(--text);
+  color: var(--foreground);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -546,8 +540,8 @@
 }
 
 .cdn-dom__danger {
-  color: var(--error, var(--horizon-danger));
-  border-color: color-mix(in srgb, var(--error, var(--horizon-danger)) 30%, var(--border));
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
 }
 
 @media (prefers-reduced-motion: reduce) {

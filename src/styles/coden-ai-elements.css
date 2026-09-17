@@ -5,7 +5,7 @@
 .coden-confirm {
   display: grid;
   gap: 10px;
-  color: var(--text, var(--horizon-text));
+  color: var(--foreground);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -22,10 +22,10 @@
 }
 
 .coden-confirm-actions button {
-  border: 1px solid color-mix(in srgb, var(--border, var(--horizon-border)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-surface, var(--horizon-canvas)) 88%, transparent);
-  color: var(--text, var(--horizon-text));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--foreground);
   min-height: 30px;
   padding: 0 12px;
   font: inherit;
@@ -35,7 +35,7 @@
 }
 
 .coden-confirm-actions button:hover {
-  border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 42%, var(--border, var(--horizon-border)));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
 .coden-chat-stream .coden-message-response,
@@ -49,7 +49,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-  color: var(--text-muted, var(--horizon-muted));
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 750;
 }
@@ -63,21 +63,13 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent-blue, var(--horizon-blue)), #9fc4ff);
-  box-shadow: 0 0 0 4px var(--accent-blue-soft, rgba(59, 130, 246, .10));
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 10%, transparent));
   flex: 0 0 auto;
 }
 
 .coden-shimmer {
-  color: transparent;
-  background: linear-gradient(
-    110deg,
-    color-mix(in srgb, var(--text-muted, var(--horizon-muted)) 92%, transparent) 0%,
-    color-mix(in srgb, var(--text-muted, var(--horizon-muted)) 92%, transparent) 35%,
-    var(--accent-blue, #3b82f6) 50%,
-    color-mix(in srgb, var(--text-muted, var(--horizon-muted)) 92%, transparent) 75%,
-    color-mix(in srgb, var(--text-muted, var(--horizon-muted)) 92%, transparent) 100%
-  );
+  color: transparent;background: var(--surface);
   background-size: calc(100% * var(--coden-shimmer-spread, 2)) 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -92,15 +84,10 @@
 .coden-mission-stream .coden-test-results,
 .coden-mission-stream .coden-terminal,
 .coden-mission-stream .coden-stack-trace {
-  border: 1px solid color-mix(in srgb, var(--border, var(--horizon-border)) 82%, transparent);
-  border-radius: 16px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--bg-surface, var(--horizon-surface)) 98%, transparent),
-    color-mix(in srgb, var(--bg-input, var(--horizon-surface)) 96%, transparent)
-  );
-  box-shadow: 0 16px 36px rgba(25, 22, 16, .10);
-  color: var(--text, var(--horizon-text));
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 16px;background: var(--surface);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
 }
 
 .coden-mission-stream {
@@ -138,27 +125,27 @@
   font-size: 13px;
   font-weight: 850;
   letter-spacing: 0;
-  color: var(--text, var(--horizon-text));
+  color: var(--foreground);
 }
 
 .coden-ai-agent-description,
 .coden-artifact-content p,
 .coden-web-preview p {
   margin: 2px 0 0;
-  color: color-mix(in srgb, var(--text, var(--horizon-text)) 68%, transparent);
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .coden-mission-elapsed {
-  color: var(--text-muted, var(--horizon-muted));
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
 }
 
 .coden-mission-objective {
   margin: 10px 0 0;
-  color: var(--text, var(--horizon-text));
+  color: var(--foreground);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -178,19 +165,19 @@
 .coden-message-action,
 .coden-checkpoint-trigger,
 .coden-queue-item-action {
-  border: 1px solid color-mix(in srgb, var(--border, var(--horizon-border)) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-input, var(--horizon-canvas)) 94%, transparent);
-  color: var(--text, var(--horizon-text));
+  background: color-mix(in srgb, var(--input, var(--background)) 94%, transparent);
+  color: var(--foreground);
   font-size: 11px;
   font-weight: 800;
   padding: 6px 9px;
 }
 
 .coden-mission-meta .coden-mission-status {
-  border-color: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 35%, var(--border, var(--horizon-border)));
-  background: var(--accent-blue-soft, color-mix(in srgb, var(--horizon-blue) 10%, transparent));
-  color: var(--accent-blue-deep, var(--horizon-blue));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+  color: var(--accent);
 }
 
 .coden-mission-waiting {
@@ -198,7 +185,7 @@
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  color: var(--text-muted, var(--horizon-muted));
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 750;
 }
@@ -219,7 +206,7 @@
 }
 
 .coden-queue-section-label {
-  color: var(--text, var(--horizon-text));
+  color: var(--foreground);
   font-size: 12px;
   font-weight: 850;
 }
@@ -244,8 +231,8 @@
   min-width: 0;
   border-radius: 12px;
   padding: 9px 10px;
-  background: color-mix(in srgb, var(--bg-input, var(--horizon-canvas)) 78%, transparent);
-  color: var(--text, var(--horizon-text));
+  background: color-mix(in srgb, var(--input, var(--background)) 78%, transparent);
+  color: var(--foreground);
   font-size: 12px;
 }
 
@@ -263,34 +250,34 @@
 
 .coden-queue-item-content strong,
 .coden-ai-agent-item strong {
-  color: var(--text, var(--horizon-text));
+  color: var(--foreground);
   font-size: 12px;
 }
 
 .coden-queue-item-content small,
 .coden-ai-agent-item span {
-  color: var(--text-muted, var(--horizon-muted));
+  color: var(--text-muted);
   font-size: 11px;
   line-height: 1.35;
 }
 
 .coden-ai-agent-item-active,
 .coden-queue-item:has(.coden-queue-item-indicator:not(.coden-queue-item-indicator-completed)) {
-  background: color-mix(in srgb, var(--accent-blue, var(--horizon-blue)) 9%, var(--bg-input, var(--horizon-canvas)));
+  background: color-mix(in srgb, var(--accent) 9%, var(--input, var(--background)));
 }
 
 .coden-file-tree-item-created .coden-file-tree-status,
 .coden-test-result-item-passed .coden-test-result-status,
 .coden-queue-item-indicator-completed {
-  background: var(--horizon-success);
-  box-shadow: 0 0 0 4px rgba(47, 191, 113, .12);
+  background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent);
 }
 
 .coden-file-tree-item-deleted .coden-file-tree-status,
 .coden-file-tree-item-failed .coden-file-tree-status,
 .coden-test-result-item-failed .coden-test-result-status,
 .coden-terminal-line-error {
-  background: color-mix(in srgb, var(--horizon-danger) 10%, var(--bg-input, var(--horizon-canvas)));
+  background: color-mix(in srgb, var(--danger) 10%, var(--input, var(--background)));
 }
 
 .coden-code-block,
@@ -299,8 +286,8 @@
   max-height: 220px;
   margin: 10px 0 0;
   border-radius: 12px;
-  background: var(--horizon-canvas);
-  color: var(--horizon-text);
+  background: var(--surface);
+  color: var(--foreground);
   font-size: 11px;
   line-height: 1.55;
   padding: 12px;
@@ -324,7 +311,7 @@
 .coden-web-preview-skeleton span {
   height: 10px;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(47, 107, 255, .08), rgba(47, 107, 255, .18), rgba(47, 107, 255, .08));
+  background: var(--surface);
   animation: coden-preview-skeleton 1.4s ease-in-out infinite;
 }
 
@@ -359,10 +346,10 @@
 
 .coden-attachment {
   position: relative;
-  border: 1px solid var(--border, var(--horizon-border));
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 8px;
-  background: var(--bg-surface, var(--horizon-canvas));
+  background: var(--surface);
 }
 
 .coden-attachment-preview {
