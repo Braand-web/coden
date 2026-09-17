@@ -125,17 +125,33 @@ body[data-coden-surface="auth"] .btn-submit {
   border-color: var(--accent) !important;
 }
 
-/* Dashboard uses a flat application shell. Its own stylesheet owns layout. */
+/* Dashboard owns a floating workspace composition. Keep the global atmosphere
+   visible around the transparent sidebar and the single rounded workspace. */
 body:has(#coden-dashboard-react-root),
 body[data-coden-surface="dashboard"] {
   background: var(--background) !important;
-  background-image: none !important;
+  background-image: url('/dashboard-ambient-light.svg') !important;
+  background-size: cover;
+  background-attachment: fixed;
   color: var(--foreground);
 }
 
+html[data-theme="dark"] body:has(#coden-dashboard-react-root),
+html[data-theme="dark"] body[data-coden-surface="dashboard"] {
+  background-image: url('/dashboard-ambient-dark.svg') !important;
+}
+
 body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
-  background: var(--sidebar) !important;
-  border-color: var(--border) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+@media (max-width: 767px) {
+  body[data-coden-surface="dashboard"] .coden-dashboard-sidebar {
+    background: var(--sidebar) !important;
+    border-right: 1px solid var(--border-subtle) !important;
+  }
 }
 
 body[data-coden-surface="dashboard"] .coden-dashboard-main,

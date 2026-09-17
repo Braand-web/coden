@@ -22,9 +22,6 @@
   --transition-menu: var(--transition-control);
 }
 
-html[data-theme="light"] {
-}
-
 #coden-dashboard-react-root,
 #coden-dashboard-react-root *,
 #coden-dashboard-react-root *::before,
@@ -40,12 +37,17 @@ body:has(#coden-dashboard-react-root) {
 
 body:has(#coden-dashboard-react-root) {
   overflow: hidden;
-  background: var(--surface);
-  background-image: none;
+  background: var(--background);
+  background-image: url('/dashboard-ambient-light.svg');
+  background-size: cover;
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans, Geist, system-ui, sans-serif);
   -webkit-font-smoothing: antialiased;
+}
+
+html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
+  background-image: url('/dashboard-ambient-dark.svg');
 }
 
 /* Transparent, so the page's gradient is what shows through the panel. */
@@ -95,9 +97,9 @@ body:has(#coden-dashboard-react-root) {
   flex-direction: column;
   padding: 6px 6px 6px 8px;
   overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--app-panel-radius);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   transition: flex-basis var(--transition-control), width var(--transition-control);
 }
 
