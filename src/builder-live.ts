@@ -5995,8 +5995,17 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   setBusy(true);
   activeAbort = new AbortController();
 
-  const status = appendMessage('assistant', '');
+  const status = appendMessage('assistant', '', { working: true });
   if (status) status.dataset.workingStartedAt = String(Date.now());
+  /*
+   * Say something from the click, not from the first server event.
+   *
+   * The conversation branch above has always done this; the build branch — the
+   * one people actually use — created a silent card and left it empty through
+   * the whole preflight: the credit gate, the project creation and the intent
+   * round all happen before `startLiveRun` is reached.
+   */
+  setMessageShimmer(status, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
   let generationTouchesPreview = false;
   activeGenerationTouchesPreview = false;
   let streamedText = '';

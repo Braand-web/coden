@@ -522,7 +522,22 @@ export function createStore(storageKey = conversationStorageKey()) {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        ensureLiveRun(message, { activeText: label });
+        const run = ensureLiveRun(message, { activeText: label });
+        /*
+         * A working message has to have something to draw.
+         *
+         * The shimmer lives in `AgentMessage`, behind `streaming &&
+         * state.thinking`, and `state` is `liveRun.chat`. This set the
+         * `working` flag and an `activeText` and created no `chat`, so the
+         * render fell through to `message.content` — empty on a fresh card —
+         * and drew nothing at all. The bubble sat blank for the whole
+         * intent-classification round, which is several seconds.
+         *
+         * `is-working` on the wrapper carries no styling anywhere, so the flag
+         * alone was never going to show.
+         */
+        if (!run.chat) run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], thinking: true, activity: label || null };
+        else if (run.chat.status === 'streaming') run.chat = { ...run.chat, thinking: true, activity: label || run.chat.activity };
         message.working = true;
       });
     },
@@ -574,7 +589,20 @@ export function createStore(storageKey = conversationStorageKey()) {
         message.liveRun = undefined;
         message.content = '';
         const run = ensureLiveRun(message, meta);
-        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId };
+        /*
+         * A run that has just started is thinking, by definition.
+         *
+         * `EMPTY_MESSAGE` carries `thinking: false`, so the shimmer only lit
+         * once the first `run_started` or `activity` envelope arrived from the
+         * server — after auth, the project lookup, the harness turn and the
+         * intent classification, which the run ledger times at four to eight
+         * seconds. For that whole window the user watched an empty bubble.
+         *
+         * The reducer turns it off again on the first `text_delta` or on any
+         * terminal event, so starting true cannot leave it stuck on.
+         */
+        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId, thinking: true, activity: meta.activeText || run.activeText || null };
+        message.working = true;
       });
     },
     applyChatEvent(id, event) {
