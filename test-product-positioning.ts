@@ -26,8 +26,10 @@ const root = readFileSync('index.html', 'utf8');
 const landingI18n = readFileSync('src/landing-i18n.ts', 'utf8');
 const flow = readFileSync('src/services/create-project-flow.ts', 'utf8');
 
-assert.match(root, /data-coden-surface="landing-retired"/, 'the root explicitly marks the landing handoff');
-assert.match(root, /noindex, nofollow/, 'the temporary root is not indexed');
+// Same retired-landing assumption as in test-public-value-proposition: the
+// real landing shipped, so the root is the landing and is meant to be found.
+assert.match(root, /data-coden-surface="landing-new"/, 'the root explicitly marks its surface');
+assert.match(root, /name="robots" content="index, follow"/, 'the landing is indexable');
 assert.doesNotMatch(root, /landing-v3|landing-reference|cdn-nav|data-build/, 'the legacy landing is absent');
 assert.match(landingI18n, /FR_POSITIONING = getProductPositioning\('fr'\)/);
 assert.match(landingI18n, /'nav\.open'/);

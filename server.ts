@@ -5,6 +5,7 @@ import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
+import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
 import {
   UNIFIED_USAGE_CATEGORIES,
   spendableByCategory,
@@ -8293,6 +8294,99 @@ async function saveAgentRunStep(input: {
   return row;
 }
 
+/**
+ * Write the resume point for a run that is about to end badly.
+ *
+ * Merged onto whatever `afterRound` already stored, so the round it reached
+ * and the checks that passed survive, and the failure is added to them. The
+ * files come from `project_files`, which `onSnapshot` has been keeping current
+ * all along — the work was never the thing that was lost.
+ *
+ * Never throws. A failing run must not be made worse by the bookkeeping for
+ * its own recovery.
+ */
+async function saveResumeCheckpointForTurn(input: {
+  harnessContext: { harness: CodenAgentHarness; thread: { id: string }; turn: { id: string } } | null | undefined;
+  prompt: string;
+  projectId: string;
+  failure: { code?: string; message?: string };
+}) {
+  const context = input.harnessContext;
+  if (!context) return;
+  try {
+    const turn = await context.harness.store.getTurn(context.turn.id).catch(() => null);
+    const existing = (turn?.checkpoint || {}) as Record<string, unknown>;
+    const thread = await context.harness.store.getThread(context.thread.id).catch(() => null);
+    const files = await loadProjectFiles(input.projectId).catch(() => [] as GeneratedFile[]);
+    const checks = existing.checks as { problems?: Array<{ severity?: string; message?: string }> } | undefined;
+    const checkpoint: ResumeCheckpoint = {
+      turnId: context.turn.id,
+      prompt: String(input.prompt || '').slice(0, 4000),
+      round: Number(existing.round || 0) || 0,
+      planSummary: typeof existing.planSummary === 'string' ? existing.planSummary : undefined,
+      files: files.map(file => file.path).filter(Boolean).slice(0, 200),
+      outstanding: (checks?.problems || [])
+        .filter(problem => problem?.severity !== 'warning')
+        .map(problem => String(problem?.message || '').slice(0, 200))
+        .filter(Boolean)
+        .slice(0, 20),
+      failure: {
+        code: input.failure.code,
+        message: redactSecrets(String(input.failure.message || ''), '[redacted]').slice(0, 400),
+      },
+      modelId: typeof existing.modelId === 'string' ? existing.modelId : undefined,
+    };
+    await context.harness.saveCheckpoint(context.turn.id, { ...existing, resume: checkpoint });
+    /*
+     * And on the thread, which is where the next turn looks.
+     *
+     * The store exposes no way to list a thread's turns, and a resume point is
+     * a property of the conversation rather than of the turn that happened to
+     * die in it: one slot, always the most recent failure, replaced rather
+     * than accumulated.
+     */
+    await context.harness.store.updateThread(context.thread.id, {
+      metadata: { ...(thread?.metadata || {}), resume: checkpoint },
+    }).catch(() => null);
+  } catch (error) {
+    console.warn('[coden:resume_checkpoint_skipped]', {
+      project_id: input.projectId,
+      message: redactSecrets(String(error), '[redacted]'),
+    });
+  }
+}
+
+/**
+ * The resume point left by this project's last run, if it is worth using.
+ *
+ * Only a failure a rerun can actually help with, and only once: the checkpoint
+ * is cleared as it is handed out, so a brief is never replayed into a second
+ * run and a resumed run that fails again resumes from its own state rather
+ * than from a stale one.
+ */
+async function consumeResumeCheckpoint(
+  harness: CodenAgentHarness | null | undefined,
+  threadId: string | undefined,
+  currentTurnId: string | undefined,
+): Promise<ResumeCheckpoint | null> {
+  if (!harness || !threadId) return null;
+  try {
+    const thread = await harness.store.getThread(threadId).catch(() => null);
+    const metadata = (thread?.metadata || {}) as Record<string, unknown>;
+    const resume = metadata.resume;
+    if (!isResumableCheckpoint(resume)) return null;
+    if (resume.turnId === currentTurnId) return null;
+    if (!isResumableFailure(resume.failure?.code)) return null;
+    // Spend it as it is read. A brief replayed into a second run tells the
+    // model that work it has already finished is still outstanding.
+    const { resume: _spent, ...rest } = metadata;
+    await harness.store.updateThread(threadId, { metadata: rest }).catch(() => null);
+    return resume;
+  } catch {
+    return null;
+  }
+}
+
 async function saveDurableRunCheckpoint(input: {
   agentRunId: string;
   project: GeneratedProject;
@@ -12766,12 +12860,45 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         projectId: project.id,
       });
 
+      /*
+       * Pick up a run that died, instead of starting it again.
+       *
+       * The files a failed run wrote are already in the workspace — the loop
+       * is the only thing that was lost. Handed the brief, the model is told
+       * what the plan was, what exists, what was verified and why it stopped,
+       * in a few thousand tokens rather than the hundreds of thousands a
+       * replayed transcript would cost.
+       *
+       * Prepended to the request rather than replacing it: what the user just
+       * typed is still the instruction, and the brief is the context it was
+       * missing.
+       */
+      const resumeFrom = await consumeResumeCheckpoint(
+        harnessContext?.harness,
+        harnessContext?.thread.id,
+        harnessContext?.turn.id,
+      );
+      if (resumeFrom) {
+        console.info('[coden:run_resumed]', {
+          project_id: project.id,
+          from_turn: resumeFrom.turnId,
+          round: resumeFrom.round,
+          failure: resumeFrom.failure?.code,
+        });
+        eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
+      }
+      const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
+
+---
+
+${agentPrompt}` : agentPrompt;
+
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
         projectName: project.name,
         userId,
-        prompt: agentPrompt,
+        prompt: pipelinePrompt,
         memoryContext: projectMemory,
         backendEnv,
         route: pipelineRoute,
@@ -12961,8 +13088,27 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         recoverable: true,
       });
     } catch (error: any) {
+      /*
+       * Leave a resume point on the way out.
+       *
+       * `afterRound` writes a checkpoint once a round completes, which is why
+       * 35 of 144 turns carry one and not a single failed turn does: a run
+       * that dies mid-round never reaches it. The runs that most need somewhere
+       * to restart from are exactly the ones that never wrote it.
+       *
+       * Best-effort by construction — a failed run must not be made worse by
+       * the bookkeeping for its own recovery.
+       */
+      const interrupted = generationAbortController.signal.aborted;
+      const failureCode = interrupted ? 'RUN_INTERRUPTED' : String(error?.diagnosticCode || 'AGENT_EXECUTION_FAILED');
+      await saveResumeCheckpointForTurn({
+        harnessContext,
+        prompt: agentPrompt,
+        projectId: project.id,
+        failure: { code: failureCode, message: interrupted ? 'generation interrupted' : String(error?.message || '') },
+      });
       // Partial files are retained by onSnapshot; surface the failure for recovery.
-      if (generationAbortController.signal.aborted) {
+      if (interrupted) {
         return respondJson(499,{ success: false, diagnostic_code:'RUN_INTERRUPTED', error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' });
       }
       console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
