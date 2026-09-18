@@ -3,19 +3,23 @@
  *
  * Both stops are theme tokens, so the band reads as a lightening in dark mode
  * and a darkening in light mode without a second definition.
+ *
+ * Three stops and a 150% tile, rather than a narrow band on a wide one. The
+ * highlight has to be somewhere on the text nearly all the time or the line
+ * spends most of its cycle as flat grey and reads as frozen — measured across
+ * the loop, a narrow band on a 220% tile was lit in 4 frames of 10, this is
+ * lit in 11 of 12 and never falls back to the flat colour.
  */
 .coden-shimmer-text {
   display: inline-block;
   background-image: linear-gradient(
     100deg,
     var(--text-muted) 0%,
-    var(--text-muted) 38%,
     var(--foreground) 50%,
-    var(--text-muted) 62%,
     var(--text-muted) 100%
   );
-  background-size: 220% 100%;
-  background-position: 120% 0%;
+  background-size: 150% 100%;
+  background-position: 0% 0%;
   color: var(--text-muted);
 }
 
@@ -38,9 +42,19 @@
 
 .coden-shimmer-text { animation: coden-shimmer-sweep 2.1s linear infinite; }
 
+/*
+ * Exactly one tile of travel, so the loop has no seam.
+ *
+ * The background tiles, so shifting it by its own width lands on a pattern
+ * identical to the one it started from and the restart is invisible. At
+ * `background-size: 150%` the tile is 1.5x the element, and a percentage
+ * position moves it by 0.5x per 100% — so one tile is 300%. The previous
+ * values travelled 2.88 element-widths against a 2.2-wide tile, which is
+ * 1.31 tiles: the sweep jumped back every 2.1 seconds.
+ */
 @keyframes coden-shimmer-sweep {
-  from { background-position: 120% 0%; }
-  to { background-position: -120% 0%; }
+  from { background-position: 0% 0%; }
+  to { background-position: -300% 0%; }
 }
 
 /* Still legible, just still. */

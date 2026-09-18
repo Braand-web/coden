@@ -54,6 +54,43 @@ describe('ShimmeringText', () => {
     expect(transparentBlocks.some(block => block.includes('background-clip: text') && block.includes('color: transparent'))).toBe(true);
   });
 
+  /*
+   * The loop has to travel a whole number of tiles, or it visibly jumps.
+   *
+   * The background repeats, so shifting it by exactly its own width lands on a
+   * pattern identical to the one it started from. The first version travelled
+   * 2.88 element-widths against a 2.2-wide tile — 1.31 tiles — and snapped back
+   * every 2.1 seconds. This is arithmetic on the two numbers rather than a
+   * screenshot, so it holds whoever next retunes the sweep.
+   */
+  it('slides by exactly one tile, so the restart is invisible', () => {
+    const size = Number(css.match(/background-size:\s*([\d.]+)%/)?.[1]);
+    const stops = [...css.matchAll(/background-position:\s*(-?[\d.]+)%/g)].map(match => Number(match[1]));
+    expect(size).toBeGreaterThan(100);
+    expect(stops.length).toBeGreaterThanOrEqual(2);
+
+    const tiles = size / 100;
+    // A percentage position moves the image by (tile - 1) element-widths per 100%.
+    const travel = ((tiles - 1) * (Math.max(...stops) - Math.min(...stops))) / 100;
+    expect(travel / tiles).toBeCloseTo(Math.round(travel / tiles), 5);
+    expect(Math.round(travel / tiles)).toBeGreaterThanOrEqual(1);
+  });
+
+  /*
+   * A narrow band on a wide tile leaves the text flat for most of the cycle,
+   * which reads as frozen rather than as working. Measured across the loop,
+   * the first shape was lit in 4 frames of 10.
+   */
+  it('keeps the highlight over the text rather than off to one side', () => {
+    const size = Number(css.match(/background-size:\s*([\d.]+)%/)?.[1]);
+    const gradient = css.match(/linear-gradient\(([\s\S]*?)\);/)?.[1] ?? '';
+    const positions = [...gradient.matchAll(/([\d.]+)%/g)].map(match => Number(match[1]));
+    // The lit part of the tile, as a fraction of the element, has to be wide
+    // enough to still be on screen as it travels.
+    const litSpan = (Math.max(...positions) - Math.min(...positions)) / 100;
+    expect(litSpan * (size / 100)).toBeGreaterThanOrEqual(1);
+  });
+
   it('leaves something legible when motion is reduced', () => {
     const reduced = ruleFor('prefers-reduced-motion');
     expect(reduced).toContain('animation: none');
