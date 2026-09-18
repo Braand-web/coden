@@ -1,8 +1,9 @@
-import type { ChatEvent, FileAction } from '../../lib/agent-chat-protocol';
+import type { ChatEvent, DecisionQuestion, FileAction } from '../../lib/agent-chat-protocol';
+import { normalizeDecisionQuestions } from '../../lib/decision-questions';
 export type TextPart = { id: string; type: 'text'; text: string; done: boolean };
 export type ToolPart = { id: string; type: 'tool'; kind: 'read' | 'write'; verb: string; files: string[] };
 export type AgentPart = TextPart | ToolPart;
-export type DecisionNotice = { type: 'decision'; id: string; question: string; options: Array<{ id: string; label: string; description?: string; recommended?: boolean }>; allowFreeText: boolean };
+export type DecisionNotice = { type: 'decision'; id: string; question: string; options: Array<{ id: string; label: string; description?: string; recommended?: boolean }>; allowFreeText: boolean; questions?: DecisionQuestion[] };
 export type ArtifactNotice = { type: 'artifact'; id: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number };
 export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number };
 export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice;
@@ -36,7 +37,23 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     case 'run_failed': closeText(); next.status = 'error'; next.error = event.message; next.thinking = false; next.activity = null; break;
     case 'run_paused': closeText(); next.thinking = false; next.activity = null; next.pausedReason = event.reason; break;
     case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
-    case 'decision_required': closeText(); next.thinking = false; next.activity = null; next.notices = [...(next.notices || []).filter(notice => notice.id !== event.decisionId), { type: 'decision', id: event.decisionId, question: event.question, options: event.options, allowFreeText: event.allowFreeText }]; break;
+    case 'decision_required': {
+      closeText(); next.thinking = false; next.activity = null;
+      /*
+       * A questionnaire only exists once it is known to be usable.
+       *
+       * `questions` is optional and comes off the wire, so a malformed one —
+       * a question with no options, an empty array — has to leave the notice
+       * exactly as it was before questionnaires existed. Normalising to `[]`
+       * here and dropping the field makes the single-question view the
+       * fallback everywhere, rather than something each reader has to check.
+       */
+      const questions = normalizeDecisionQuestions(event.questions);
+      const notice: DecisionNotice = { type: 'decision', id: event.decisionId, question: event.question, options: event.options, allowFreeText: event.allowFreeText };
+      if (questions.length) notice.questions = questions;
+      next.notices = [...(next.notices || []).filter(existing => existing.id !== event.decisionId), notice];
+      break;
+    }
     case 'artifact_ready': next.notices = [...(next.notices || []).filter(notice => notice.id !== event.artifactId), { type: 'artifact', id: event.artifactId, artifactType: event.artifactType, title: event.title, version: event.version }]; break;
     case 'cost_checkpoint': closeText(); next.thinking = false; next.activity = null; next.notices = [...(next.notices || []).filter(notice => notice.id !== event.checkpointId), { type: 'cost', id: event.checkpointId, creditsUsed: event.creditsUsed, nextThreshold: event.nextThreshold, completed: event.completed, next: event.next, estimatedRemaining: event.estimatedRemaining }]; break;
     case 'heartbeat': break;

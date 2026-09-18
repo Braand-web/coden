@@ -16,7 +16,7 @@ import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
-import { AgentMessage } from './components/agent/agent-message';
+import { AgentMessage, type DecisionAnswersHandler } from './components/agent/agent-message';
 import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState, type DecisionNotice } from './components/agent/agent-parts';
 import type { AgentEnvelope } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
@@ -145,6 +145,7 @@ export type CodenConversationApi = {
 
 type ConversationCallbacks = {
   onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void;
+  onDecisionAnswers?: DecisionAnswersHandler;
   onArtifactOpen?: (artifactId: string) => void;
   onApprovalDecision?: (itemId: string, approved: boolean) => void | Promise<void>;
 };
@@ -1611,7 +1612,7 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
           {message.block
             ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
             : message.liveRun?.chat
-              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
+              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onDecisionAnswers={callbacks.onDecisionAnswers} onArtifactOpen={callbacks.onArtifactOpen} />
               : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
           {!message.block && message.actions?.length ? (
             <div className="coden-chat-actions">

@@ -1,0 +1,38 @@
+/*
+ * The travelling highlight.
+ *
+ * Geometry — `top`, `height`, `opacity` — is set inline by the component from
+ * a live measurement; everything here is appearance, so a caller can restyle
+ * the shape through `highlightClassName` without touching how it moves.
+ *
+ * `left`/`right` rather than a width: the shape spans the list whatever the
+ * row contains, and only travels vertically.
+ */
+.coden-glide-menu-highlight {
+  left: 0;
+  right: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+  transition: top 220ms cubic-bezier(0.22, 1, 0.36, 1), height 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms linear;
+}
+
+/*
+ * The shape sits behind the rows without the rows being positioned.
+ *
+ * It has to go behind something: absolute positioning paints it over its own
+ * row's text otherwise. Raising the rows with `position: relative` instead
+ * would make whichever wrapper holds them the `offsetParent` of every option,
+ * and the component measures `offsetTop` against the menu — so the options
+ * would be measured from their wrapper and a sibling text field from the menu,
+ * and the highlight would land on neither.
+ *
+ * `isolation` is what makes `z-index: -1` safe: the menu becomes its own
+ * stacking context, so the shape drops behind the rows and no further — not
+ * behind the card the menu is sitting in.
+ */
+.coden-glide-menu { isolation: isolate; }
+.coden-glide-menu-highlight { z-index: -1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-glide-menu-highlight { transition: opacity 140ms linear; }
+}

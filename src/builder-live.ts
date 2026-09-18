@@ -10,6 +10,7 @@ import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
+import { composeDecisionInstruction } from './lib/decision-questions';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -1998,6 +1999,17 @@ function ensureConversationApi() {
   conversationApi = mountBuilderConversation(scroll, {
     onDecisionSelect: (_decisionId, option) => {
       void sendActiveHarnessInstruction(option.label);
+    },
+    /*
+     * A questionnaire answers in one instruction, not one per question.
+     *
+     * The point of asking several things at once is that the run stops once;
+     * sending each answer separately would give back every round trip the
+     * card was built to save.
+     */
+    onDecisionAnswers: (_decisionId, questions, answers) => {
+      const instruction = composeDecisionInstruction(questions, answers);
+      if (instruction) void sendActiveHarnessInstruction(instruction);
     },
     onApprovalDecision: (itemId, approved) => resolveHarnessApproval(itemId, approved),
   });

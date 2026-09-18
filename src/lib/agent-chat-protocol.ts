@@ -1,13 +1,29 @@
 export type FileAction = 'read' | 'search' | 'create' | 'edit' | 'delete';
 
 export type DecisionOption = { id: string; label: string; description?: string; recommended?: boolean };
+
+/**
+ * One question in a decision that asks several at once.
+ *
+ * `decision_required` has always carried exactly one question, so an agent
+ * that needed three answers had to stop three times and wait for a round trip
+ * between each. A questionnaire asks them together and answers them together.
+ *
+ * `radio` takes one answer and moves on by itself; `check` takes any number
+ * and waits. Both accept free text beside the options, because the useful
+ * answer is regularly not on the list.
+ */
+export type DecisionQuestion = { q: string; type: 'radio' | 'check'; options: string[] };
+
+/** What the user answered: chosen option indices, plus anything they typed. */
+export type DecisionAnswer = { selected: number[]; custom?: string };
 export type ChatEvent =
   | { type: 'run_started'; messageId: string }
   | { type: 'activity'; label: string }
   | { type: 'text_delta'; delta: string }
   | { type: 'text_end' }
   | { type: 'files_touched'; action: FileAction; paths: string[] }
-  | { type: 'decision_required'; decisionId: string; question: string; options: DecisionOption[]; allowFreeText: boolean }
+  | { type: 'decision_required'; decisionId: string; question: string; options: DecisionOption[]; allowFreeText: boolean; questions?: DecisionQuestion[] }
   | { type: 'artifact_ready'; artifactId: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number }
   | { type: 'cost_checkpoint'; checkpointId: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number }
   | { type: 'run_paused'; reason: 'decision' | 'cost' | 'user' | 'provider' }
