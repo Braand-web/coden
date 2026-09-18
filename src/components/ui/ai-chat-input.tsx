@@ -339,6 +339,23 @@ export interface PromptInputProps {
   defaultValue?: string;
   value?: string;
   onChange?: (value: string) => void;
+  /**
+   * The model and the effort, controllable exactly like `value`.
+   *
+   * They used to be internal state seeded from `models[0]`, which made the
+   * choice a property of the mounted component rather than of the session:
+   * anything that remounted the composer — and the Builder remounts it — put
+   * the selector back on Auto without telling anyone. A host that owns the
+   * session passes `model`/`effort` and listens to the change callbacks; a
+   * host that does not can still seed the first render with `defaultModel`
+   * and `defaultEffort` and let the component hold the rest.
+   */
+  model?: string;
+  defaultModel?: string;
+  onModelChange?: (model: string) => void;
+  effort?: string;
+  defaultEffort?: string;
+  onEffortChange?: (effort: string) => void;
   maxAttachments?: number;
   /** Collapsed and expanded widths. The surfaces size this differently. */
   collapsedWidth?: number;
@@ -367,6 +384,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       defaultValue = "",
       value: controlledValue,
       onChange,
+      model: controlledModel,
+      defaultModel,
+      onModelChange,
+      effort: controlledEffort,
+      defaultEffort,
+      onEffortChange,
       maxAttachments = 6,
       collapsedWidth = 320,
       expandedWidth = 480,
@@ -380,9 +403,16 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [isSmoothResize, setIsSmoothResize] = useState(false);
     const [localValue, setLocalValue] = useState(defaultValue);
-    const [selectedModel, setSelectedModel] = useState(models[0]);
-    const [effortIndex, setEffortIndex] = useState(
-      Math.max(0, efforts.indexOf(DEFAULT_AGENT_EFFORT)),
+    /*
+     * A seed that is offered, not imposed: a stored model the current surface
+     * does not list (a retired id, a model above the plan) falls back to the
+     * first option rather than displaying a choice the menu cannot honour.
+     */
+    const [localModel, setLocalModel] = useState(
+      () => (defaultModel && models.includes(defaultModel) ? defaultModel : models[0]),
+    );
+    const [localEffort, setLocalEffort] = useState(
+      () => (defaultEffort && efforts.includes(defaultEffort) ? defaultEffort : DEFAULT_AGENT_EFFORT),
     );
     const [isModelSelectOpen, setIsModelSelectOpen] = useState(false);
 
@@ -409,6 +439,31 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const value = isControlled ? controlledValue : localValue;
     const hasValue = value.trim() !== "" || attachments.length > 0;
     const hasAttachments = attachments.length > 0;
+
+    /*
+     * The same controlled/uncontrolled resolution the value uses.
+     *
+     * A host that owns the session sends the model and the effort down and is
+     * told about every change; a host that does not keeps them here. Either
+     * way the rendered choice is always one of the options on offer, so the
+     * label and the menu cannot disagree.
+     */
+    const isModelControlled = controlledModel !== undefined;
+    const rawModel = isModelControlled ? controlledModel : localModel;
+    const selectedModel = models.includes(rawModel) ? rawModel : models[0];
+    const isEffortControlled = controlledEffort !== undefined;
+    const rawEffort = isEffortControlled ? controlledEffort : localEffort;
+    const effortIndex = Math.max(0, efforts.indexOf(efforts.includes(rawEffort) ? rawEffort : DEFAULT_AGENT_EFFORT));
+
+    const handleModelChange = useCallback((next: string) => {
+      if (!isModelControlled) setLocalModel(next);
+      onModelChange?.(next);
+    }, [isModelControlled, onModelChange]);
+
+    const handleEffortChange = useCallback((next: string) => {
+      if (!isEffortControlled) setLocalEffort(next);
+      onEffortChange?.(next);
+    }, [isEffortControlled, onEffortChange]);
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const internalContainerRef = useRef<HTMLDivElement>(null);
@@ -663,7 +718,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const cycleEffort = (e: React.MouseEvent) => {
       e.stopPropagation();
-      setEffortIndex((prev) => (prev + 1) % efforts.length);
+      handleEffortChange(efforts[(effortIndex + 1) % efforts.length]);
     };
 
     const openFileChooser = (e: React.MouseEvent) => {
@@ -931,7 +986,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                             transition: prev.opacity === 0 ? "opacity 0.15s ease-out" : "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.15s ease",
                           }));
                         }}
-                        onClick={(e) => { e.stopPropagation(); setSelectedModel(model); setIsModelSelectOpen(false); }}
+                        onClick={(e) => { e.stopPropagation(); handleModelChange(model); setIsModelSelectOpen(false); }}
                         className="group relative flex h-8 w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-xs font-medium text-foreground/80 outline-none active:scale-[0.98] cursor-default"
                       >
                         <span className="flex items-center gap-2">

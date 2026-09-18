@@ -4,6 +4,12 @@ import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { CREDIT_TIERS, priceFor, type BillingInterval } from './config/billing-v2';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
+import {
+  readPreferredEffort,
+  readPreferredModelSelection,
+  writePreferredEffort,
+  writePreferredModelSelection,
+} from './lib/composer-preferences';
 
 function installRevealObserver() {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-coden-reveal], [data-coden-reveal-item]'));
@@ -210,6 +216,11 @@ function setupLandingComposer() {
     collapsedWidth: 880,
     expandedWidth: 880,
     isBusy: busy,
+    // Someone who already chose a model should find it here, not Auto.
+    defaultModel: readPreferredModelSelection(),
+    defaultEffort: readPreferredEffort(),
+    onModelChange: writePreferredModelSelection,
+    onEffortChange: writePreferredEffort,
     onSubmit: (value, meta) => {
       if (busy) return;
       busy = true;

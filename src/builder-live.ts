@@ -28,6 +28,14 @@ import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
 import { openConnectorsPanel } from './connectors-panel';
 import { redactSecretPayload, redactSecrets } from './services/secret-redaction';
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
+import { DEFAULT_AGENT_EFFORT, normalizeAgentEffort } from './services/agent-effort';
+import {
+  SELECTED_MODEL_STORAGE_KEY,
+  readPreferredEffort,
+  readPreferredModelSelection,
+  writePreferredEffort,
+  writePreferredModelSelection,
+} from './lib/composer-preferences';
 import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
 import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-mode';
@@ -321,8 +329,15 @@ let isGenerating = false;
  * `dispatchEvent` is a no-op because the setter already re-renders.
  */
 let composerValue = '';
-let composerModel = 'auto';
-let composerEffort = 'Medium';
+/*
+ * The effort the session is running at.
+ *
+ * Seeded from the stored preference so a level chosen once survives a reload,
+ * and kept here rather than inside the composer because it has to reach the
+ * request body — it was read off the submit event and then dropped, which is
+ * why the control changed nothing at all.
+ */
+let composerEffort: string = DEFAULT_AGENT_EFFORT;
 let renderComposer: () => void = () => {};
 
 type ComposerHandle = {
@@ -383,7 +398,7 @@ let mediaSettings: MediaSettings = {
 let selectedModelId = 'auto';
 let selectedPreviewDevice: PreviewDevice = 'desktop';
 let currentProjectName = 'Projet sans titre';
-let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; shouldAutoRun?: boolean } | null = null;
+let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; model?: string; effort?: string; shouldAutoRun?: boolean } | null = null;
 let initialGenerationStarted = false;
 let analysisPollTimer: number | null = null;
 let analysisRange = '30d';
@@ -405,7 +420,6 @@ let modelSelectionBridgeBound = false;
 let connectorsBridgeBound = false;
 let settingsPanelModulePromise: Promise<typeof import('./settings-panel')> | null = null;
 const LAST_BUILDER_PROJECT_STORAGE_KEY = 'coden-last-builder-project-id';
-const SELECTED_MODEL_STORAGE_KEY = 'coden-selected-model';
 const ACTIVE_WORKSHOP_STORAGE_KEY = 'coden-active-workshop';
 const DESIGN_SETTINGS_STORAGE_KEY = 'coden-design-settings';
 const MEDIA_SETTINGS_STORAGE_KEY = 'coden-media-settings';
@@ -1581,6 +1595,11 @@ function getInitialBuilderHandoff() {
     mode: rawMode === 'plan' ? 'plan' : rawMode === 'build' ? 'build' : 'auto',
     importContext,
     source: pendingFlow?.source,
+    // The landing already carried the model and the effort through the flow;
+    // only the model was ever read back, so an app started on Max Effort ran
+    // its very first build — the longest one it will ever do — on Medium.
+    model: pendingFlow?.model,
+    effort: pendingFlow?.effort,
     shouldAutoRun: Boolean(pendingFlow?.prompt) || new URLSearchParams(window.location.search).get('run') === 'initial',
   };
   clearCreateProjectFlow();
@@ -1611,23 +1630,28 @@ function normalizeBuilderModelSelection(value: unknown) {
 }
 
 function readStoredSelectedModel() {
-  try {
-    return normalizeBuilderModelSelection(localStorage.getItem(SELECTED_MODEL_STORAGE_KEY));
-  } catch {
-    return 'auto';
-  }
+  return normalizeBuilderModelSelection(readPreferredModelSelection());
 }
 
 function applySelectedModel(modelId: unknown, options: { persist?: boolean; saveWorkspace?: boolean } = {}) {
   const normalized = normalizeBuilderModelSelection(modelId);
+  const changed = selectedModelId !== normalized;
   selectedModelId = normalized;
-  try {
-    localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, normalized);
-  } catch {
-    // Local storage is an optimization; the workspace state remains authoritative.
-  }
+  writePreferredModelSelection(normalized);
   syncModelLabelFromSelection();
+  // The composer renders the current selection, so a choice made anywhere else
+  // — the legacy selector, another tab, a restored workspace — has to reach it.
+  if (changed) renderComposer();
   if (options.saveWorkspace) scheduleWorkspaceSave({ selected_model: selectedModelId }, Boolean(options.persist));
+}
+
+/** The effort level, kept in step with the composer and with storage. */
+function applySelectedEffort(value: unknown) {
+  const normalized = normalizeAgentEffort(value);
+  const changed = composerEffort !== normalized;
+  composerEffort = normalized;
+  writePreferredEffort(normalized);
+  if (changed) renderComposer();
 }
 
 function bindSharedModelSelectionEvents() {
@@ -6325,6 +6349,16 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       requestedMode,
       useLastPlan,
       modelId: selectedModel(),
+      /*
+       * The level the composer is showing.
+       *
+       * `/generate` has read `req.body.effort` since the control shipped — it
+       * scales the route budget and prices the run accordingly — but nothing
+       * ever put it in the body, so every request arrived without one and
+       * `normalizeAgentEffort` handed back Medium. Low was never cheaper and
+       * Max Effort never bought a longer run.
+       */
+      effort: composerEffort,
       clientMessageId: messageHandleId(status) || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),
       ...effectiveExtra,
@@ -8010,10 +8044,26 @@ function bindChat() {
     void generateFromPrompt(value, selectedChatMode, false, { studioContext: studioPromptContextPayload() });
   };
 
+  /*
+   * The session owns the model and the effort; the composer only displays
+   * them.
+   *
+   * They were the component's own state, and this function re-renders on
+   * every keystroke — so the choice survived exactly until the next character
+   * was typed. Passing them down as controlled props makes the Builder the
+   * single place either value lives, which is also the only place that can
+   * put the effort into the request body.
+   */
+  const handoff = getInitialBuilderHandoff();
+  if (handoff.model) applySelectedModel(handoff.model);
+  composerEffort = normalizeAgentEffort(handoff.effort || readPreferredEffort());
+
   void import('./mount-prompt-input').then(({ mountPromptInput }) => {
     renderComposer = () => mountPromptInput(row, {
       placeholder: currentWorkshopConfig().placeholder || 'Demandez à Coden…',
       value: composerValue,
+      model: selectedModel(),
+      effort: composerEffort,
       onChange: next => {
         // Encoding repair stays: the Builder receives pasted prose from
         // everywhere, and mojibake reaching a prompt is a real failure mode.
@@ -8021,12 +8071,14 @@ function bindChat() {
         renderComposer();
         scheduleWorkspaceSave();
       },
+      // The workspace remembers the model between sessions; the island is
+      // just where the choice is made. Recorded when it is made rather than
+      // on submit, so a model picked and never sent is still remembered.
+      onModelChange: next => applySelectedModel(next, { persist: true, saveWorkspace: true }),
+      onEffortChange: next => applySelectedEffort(next),
       onSubmit: (_value, meta) => {
-        composerModel = meta.model;
-        composerEffort = meta.effort;
-        // The workspace still remembers the model between sessions; the
-        // island is just where the choice is made now.
         applySelectedModel(meta.model, { persist: true, saveWorkspace: true });
+        applySelectedEffort(meta.effort);
         send();
       },
       isBusy: isGenerating,

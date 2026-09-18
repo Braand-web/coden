@@ -6,6 +6,7 @@ import {
   type ModelProvider,
 } from './config/ai-models';
 import { providerIconSvg } from './model-provider-icons';
+import { SELECTED_MODEL_STORAGE_KEY } from './lib/composer-preferences';
 
 type SelectorOptions = {
   selector?: string;
@@ -13,7 +14,7 @@ type SelectorOptions = {
 };
 
 const DEFAULT_SELECTOR = '.input-wrapper .model-select';
-const DEFAULT_STORAGE_KEY = 'coden-selected-model';
+const DEFAULT_STORAGE_KEY = SELECTED_MODEL_STORAGE_KEY;
 
 function escapeHtml(value: string): string {
   return value

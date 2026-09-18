@@ -31,6 +31,12 @@ import {
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
 import { PromptInput } from './components/ui/ai-chat-input';
+import {
+  readPreferredEffort,
+  readPreferredModelSelection,
+  writePreferredEffort,
+  writePreferredModelSelection,
+} from './lib/composer-preferences';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
@@ -579,6 +585,12 @@ function DashboardHome() {
               placeholder="Créez un CRM moderne, une boutique, un portfolio…"
               value={prompt}
               onChange={setPrompt}
+              // Same preference the Builder and the landing read, so the three
+              // surfaces show one choice instead of three.
+              defaultModel={readPreferredModelSelection()}
+              defaultEffort={readPreferredEffort()}
+              onModelChange={writePreferredModelSelection}
+              onEffortChange={writePreferredEffort}
               onSubmit={(text, meta) => { void createFromPrompt(text, meta); }}
               disabled={creating}
               defaultExpanded

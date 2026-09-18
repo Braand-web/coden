@@ -19,8 +19,24 @@ import './styles/coden-composer.css';
 const roots = new WeakMap<Element, Root>();
 
 export function mountPromptInput(host: Element, props: PromptInputProps): () => void {
+  /*
+   * A second call re-renders; it does not remount.
+   *
+   * Unmounting and recreating the root threw away every piece of component
+   * state, and the Builder calls this on each keystroke to push the repaired
+   * value back down — so the chosen model, the effort level and any attached
+   * screenshots were reset between one character and the next. React already
+   * reconciles a re-render into the same tree; the unmount was doing nothing
+   * but destroying the session's choices.
+   */
   const existing = roots.get(host);
-  if (existing) existing.unmount();
+  if (existing) {
+    existing.render(<PromptInput {...props} />);
+    return () => {
+      existing.unmount();
+      roots.delete(host);
+    };
+  }
 
   host.innerHTML = '';
   /*
