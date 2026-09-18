@@ -566,7 +566,6 @@ function DashboardHome() {
               <WandSparkles size={20} />
             </span>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
-            <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
             {/*
               * The composer is the PromptInput now, on all three surfaces.
               *
