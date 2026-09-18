@@ -2,8 +2,22 @@ import { motion, useReducedMotion } from 'motion/react';
 import { ShimmeringText } from '../ui/shimmering-text';
 
 /**
- * The line that says what the run is doing right now.
+ * What the run says it is doing, from the click onwards.
  *
+ * Nothing is known about the work for the first few seconds — auth, the
+ * project lookup, the harness turn and the intent round all happen before the
+ * first `activity` event, four to eight seconds by the run ledger. That gap
+ * used to be three static bullets, which say "waiting" rather than "working".
+ * It now says the same thing the server will say when it finally speaks.
+ *
+ * Deliberately the exact string the server sends as its own first label: the
+ * caller keys this component on the text being shown, so the handover from the
+ * placeholder to the real event changes neither the key nor the glyphs, and
+ * the shimmer carries on uninterrupted instead of crossfading into itself.
+ */
+export const THINKING_LABEL = 'Coden réfléchit…';
+
+/**
  * One label at a time, and each one leaves before the next arrives: the
  * transition is a crossfade with a direction — the outgoing phrase lifts away,
  * the incoming one rises into its place. Without it the text was replaced in
@@ -25,6 +39,6 @@ export function AgentThinkingLine({ label }: { label?: string | null }) {
     exit={reduced ? { opacity: 0 } : { opacity: 0, y: -10 }}
     transition={{ duration: reduced ? 0 : 0.3 }}
   >
-    {label ? <ShimmeringText text={label} /> : <span aria-hidden="true">•••</span>}
+    <ShimmeringText text={label?.trim() || THINKING_LABEL} />
   </motion.div>;
 }

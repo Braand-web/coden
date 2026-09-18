@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Copy, FileText, RotateCcw } from 'lucide-react';
 import { Response } from '../ui/response';
-import { AgentThinkingLine } from './agent-thinking-line';
+import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
 import type { AgentMessageState, AgentNotice, DecisionNotice } from './agent-parts';
@@ -56,6 +56,14 @@ function StreamNotice({ notice, onDecisionSelect, onDecisionAnswers, onArtifactO
 
 export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecisionAnswers, onArtifactOpen }: { state: AgentMessageState; onCopy?: () => void; onRetry?: () => void; onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void; onDecisionAnswers?: DecisionAnswersHandler; onArtifactOpen?: (artifactId: string) => void }) {
   const streaming = state.status === 'streaming';
+  /*
+   * Keyed on the text, not on the slot and not on the raw activity.
+   *
+   * `state.activity || 'thinking'` meant the key flipped the moment the first
+   * server label landed — including when that label is the very string already
+   * on screen, which crossfaded the line into an identical copy of itself.
+   */
+  const thinkingLabel = state.activity?.trim() || THINKING_LABEL;
   return <section className="coden-agent-message" aria-busy={streaming} data-status={state.status}>
     {state.parts.map(part => part.type === 'text' ? <Response key={part.id} isStreaming={streaming && !part.done}>{part.text}</Response> : <AgentToolLine key={part.id} part={part} />)}
     {(state.notices || []).map(notice => <StreamNotice key={`${notice.type}-${notice.id}`} notice={notice} onDecisionSelect={onDecisionSelect} onDecisionAnswers={onDecisionAnswers} onArtifactOpen={onArtifactOpen} />)}
@@ -72,7 +80,7 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
       */}
     <AnimatePresence mode="wait">
       {streaming && state.thinking
-        ? <AgentThinkingLine key={state.activity || 'thinking'} label={state.activity} />
+        ? <AgentThinkingLine key={thinkingLabel} label={thinkingLabel} />
         : null}
     </AnimatePresence>
     {state.error ? (
