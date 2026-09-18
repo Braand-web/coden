@@ -1,0 +1,53 @@
+/*
+ * The sweeping highlight, in Coden's tokens.
+ *
+ * Both stops are theme tokens, so the band reads as a lightening in dark mode
+ * and a darkening in light mode without a second definition.
+ */
+.coden-shimmer-text {
+  display: inline-block;
+  background-image: linear-gradient(
+    100deg,
+    var(--text-muted) 0%,
+    var(--text-muted) 38%,
+    var(--foreground) 50%,
+    var(--text-muted) 62%,
+    var(--text-muted) 100%
+  );
+  background-size: 220% 100%;
+  background-position: 120% 0%;
+  color: var(--text-muted);
+}
+
+/*
+ * Transparent text only where the background can be clipped to it.
+ *
+ * This is the guard the previous version did not have: it set `color:
+ * transparent` unconditionally, so anything that stopped the background from
+ * painting — an unsupported property, an invalid value — left nothing on
+ * screen. Here the text keeps a real colour unless clipping is available to
+ * replace it.
+ */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .coden-shimmer-text {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+.coden-shimmer-text { animation: coden-shimmer-sweep 2.1s linear infinite; }
+
+@keyframes coden-shimmer-sweep {
+  from { background-position: 120% 0%; }
+  to { background-position: -120% 0%; }
+}
+
+/* Still legible, just still. */
+@media (prefers-reduced-motion: reduce) {
+  .coden-shimmer-text {
+    animation: none;
+    background-image: none;
+    color: var(--text-secondary);
+  }
+}
