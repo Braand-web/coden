@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "../../lib/utils";
-import { MODEL_REGISTRY, PROVIDER_META } from "../../config/ai-models";
+import { MODEL_REGISTRY, PROVIDER_META, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
 import { providerIconSvg } from "../../model-provider-icons";
 import { AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT } from "../../services/agent-effort";
 
@@ -38,10 +38,10 @@ interface Attachment {
  */
 export const AUTO_MODEL = "auto";
 
-type ModelOption = { id: string; label: string; icon: string };
+type ModelOption = { id: string; label: string; icon: string; minPlan: CanonicalUserPlan };
 
 const MODEL_OPTIONS: ModelOption[] = [
-  { id: AUTO_MODEL, label: "Auto", icon: "auto" },
+  { id: AUTO_MODEL, label: "Auto", icon: "auto", minPlan: "free" },
   ...Array.from(
     new Map(
       MODEL_REGISTRY.map((model: any) => [
@@ -50,6 +50,7 @@ const MODEL_OPTIONS: ModelOption[] = [
           id: model.id as string,
           label: model.label as string,
           icon: PROVIDER_META[model.provider as keyof typeof PROVIDER_META]?.icon || "auto",
+          minPlan: model.minPlan as CanonicalUserPlan,
         },
       ]),
     ).values(),
@@ -58,6 +59,37 @@ const MODEL_OPTIONS: ModelOption[] = [
 
 const MODEL_LABELS = new Map(MODEL_OPTIONS.map(option => [option.id, option.label]));
 const MODEL_ICONS = new Map(MODEL_OPTIONS.map(option => [option.id, option.icon]));
+const MODEL_MIN_PLANS = new Map(MODEL_OPTIONS.map(option => [option.id, option.minPlan]));
+
+const PLAN_LABELS: Record<CanonicalUserPlan, string> = {
+  free: "Free",
+  pro: "Pro",
+  business: "Business",
+  enterprise: "Enterprise",
+};
+
+/*
+ * Which models this plan may actually run.
+ *
+ * The menu listed the whole catalogue and the plan was never consulted, so on
+ * a free workspace nine of the fourteen entries were traps: the request
+ * reached `modelRouter.selectModel`, threw `ModelNotAllowedForPlanError`, and
+ * came back as a bare GENERATION_FAILED. Production logged exactly that twice
+ * in fourteen seconds on `anthropic/claude-opus-5`.
+ *
+ * Locked models stay visible — the required plan is the reason to upgrade, and
+ * hiding it sells nothing — but they cannot be selected, and a selection that
+ * is already stored for a model this plan cannot run resolves back to Auto
+ * rather than failing every turn until the user works out why.
+ *
+ * `plan` left undefined means "not known here" and locks nothing, which is the
+ * landing page: it has no session to ask.
+ */
+function isModelLockedForPlan(modelId: string, plan?: string): boolean {
+  if (!plan) return false;
+  const minPlan = MODEL_MIN_PLANS.get(modelId);
+  return minPlan ? !isPlanAtLeast(plan, minPlan) : false;
+}
 
 // ----------------------------------------------------------------------
 // Sub-components
@@ -353,6 +385,13 @@ export interface PromptInputProps {
   model?: string;
   defaultModel?: string;
   onModelChange?: (model: string) => void;
+  /**
+   * The workspace plan, so the menu can only offer what it can actually run.
+   *
+   * Omitted means the surface does not know — nothing is locked, which is the
+   * landing page's case. Every surface that has a session should pass it.
+   */
+  plan?: string;
   effort?: string;
   defaultEffort?: string;
   onEffortChange?: (effort: string) => void;
@@ -387,6 +426,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       model: controlledModel,
       defaultModel,
       onModelChange,
+      plan,
       effort: controlledEffort,
       defaultEffort,
       onEffortChange,
@@ -450,15 +490,21 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
      */
     const isModelControlled = controlledModel !== undefined;
     const rawModel = isModelControlled ? controlledModel : localModel;
-    const selectedModel = models.includes(rawModel) ? rawModel : models[0];
+    // A model this plan cannot run resolves back to the first option rather
+    // than being displayed and sent. Otherwise a stored selection made before
+    // a downgrade — or picked from a menu that used to offer everything —
+    // fails every single turn with no way for the user to see why.
+    const offeredModel = models.includes(rawModel) ? rawModel : models[0];
+    const selectedModel = isModelLockedForPlan(offeredModel, plan) ? models[0] : offeredModel;
     const isEffortControlled = controlledEffort !== undefined;
     const rawEffort = isEffortControlled ? controlledEffort : localEffort;
     const effortIndex = Math.max(0, efforts.indexOf(efforts.includes(rawEffort) ? rawEffort : DEFAULT_AGENT_EFFORT));
 
     const handleModelChange = useCallback((next: string) => {
+      if (isModelLockedForPlan(next, plan)) return;
       if (!isModelControlled) setLocalModel(next);
       onModelChange?.(next);
-    }, [isModelControlled, onModelChange]);
+    }, [isModelControlled, onModelChange, plan]);
 
     const handleEffortChange = useCallback((next: string) => {
       if (!isEffortControlled) setLocalEffort(next);
@@ -975,26 +1021,47 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 >
                   <div className="relative flex flex-col gap-0.5">
                     <div style={hoverStyle} className="absolute left-0 right-0 top-0 h-8 -z-10 rounded-xl bg-accent pointer-events-none" />
-                    {models.map((model, idx) => (
+                    {models.map((model, idx) => {
+                      const locked = isModelLockedForPlan(model, plan);
+                      const requiredPlan = MODEL_MIN_PLANS.get(model);
+                      return (
                       <button
                         key={model}
                         type="button"
+                        disabled={locked}
+                        aria-disabled={locked}
+                        title={locked && requiredPlan ? `Requiert le plan ${PLAN_LABELS[requiredPlan]}` : undefined}
                         onMouseDown={(e) => e.preventDefault()}
                         onMouseEnter={() => {
+                          if (locked) return;
                           setHoverStyle((prev) => ({
                             opacity: 1, transform: `translateY(${idx * 34}px) scale(1)`,
                             transition: prev.opacity === 0 ? "opacity 0.15s ease-out" : "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.15s ease",
                           }));
                         }}
-                        onClick={(e) => { e.stopPropagation(); handleModelChange(model); setIsModelSelectOpen(false); }}
-                        className="group relative flex h-8 w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-xs font-medium text-foreground/80 outline-none active:scale-[0.98] cursor-default"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (locked) return;
+                          handleModelChange(model);
+                          setIsModelSelectOpen(false);
+                        }}
+                        className={cn(
+                          "group relative flex h-8 w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-xs font-medium outline-none cursor-default",
+                          locked ? "text-foreground/35 cursor-not-allowed" : "text-foreground/80 active:scale-[0.98]",
+                        )}
                       >
                         <span className="flex items-center gap-2">
-                          <ModelIcon model={model} className="size-3.5 opacity-85 group-hover:opacity-100 transition-opacity" />
+                          <ModelIcon model={model} className={cn("size-3.5 transition-opacity", locked ? "opacity-40" : "opacity-85 group-hover:opacity-100")} />
                           {MODEL_LABELS.get(model) || model}
                         </span>
+                        {locked && requiredPlan ? (
+                          <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                            {PLAN_LABELS[requiredPlan]}
+                          </span>
+                        ) : null}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

@@ -77,6 +77,31 @@ assert.match(builder, /onEffortChange: next => applySelectedEffort\(next\)/,
 assert.match(builder, /modelId: selectedModel\(\),[\s\S]{0,700}?\n\s*effort: composerEffort,/,
   'the generation request carries the effort the composer is showing');
 
+/*
+ * A menu may only offer what the workspace can actually run.
+ *
+ * It listed the whole catalogue and never consulted the plan, so nine of the
+ * fourteen entries were traps on a free workspace: the request reached the
+ * router, threw `ModelNotAllowedForPlanError`, and came back as a bare
+ * GENERATION_FAILED. Production logged exactly that twice in fourteen seconds
+ * on `anthropic/claude-opus-5`.
+ */
+assert.match(component, /plan\?: string;/, 'the composer is told which plan it is rendering for');
+assert.match(component, /function isModelLockedForPlan\(modelId: string, plan\?: string\): boolean/,
+  'the composer knows which models the plan cannot run');
+assert.match(component, /if \(isModelLockedForPlan\(next, plan\)\) return;/,
+  'a locked model cannot be selected');
+assert.match(component, /isModelLockedForPlan\(offeredModel, plan\) \? models\[0\] : offeredModel/,
+  'a stored selection the plan cannot run resolves back to Auto instead of failing every turn');
+assert.match(component, /disabled=\{locked\}/, 'a locked entry is disabled, not merely styled');
+assert.match(component, /Requiert le plan \$\{PLAN_LABELS\[requiredPlan\]\}/,
+  'a locked entry says which plan it needs rather than failing silently');
+
+assert.match(builder, /plan: currentPlanKey,/, 'the Builder passes its workspace plan to the composer');
+assert.match(builder, /applySelectedModel\('auto', \{ persist: true, saveWorkspace: true \}\)/,
+  'a stored model the plan cannot run is dropped once the plan is known');
+assert.match(dashboard, /plan=\{profile\?\.plan\?\.key\}/, 'the dashboard passes its plan too');
+
 const preferences = read('src/lib/composer-preferences.ts');
 assert.match(preferences, /export const SELECTED_MODEL_STORAGE_KEY = 'coden-selected-model';/,
   'one module owns the stored model key');

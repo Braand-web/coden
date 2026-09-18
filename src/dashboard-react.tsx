@@ -589,6 +589,8 @@ function DashboardHome() {
               // surfaces show one choice instead of three.
               defaultModel={readPreferredModelSelection()}
               defaultEffort={readPreferredEffort()}
+              // The menu only offers what this workspace can run.
+              plan={profile?.plan?.key}
               onModelChange={writePreferredModelSelection}
               onEffortChange={writePreferredEffort}
               onSubmit={(text, meta) => { void createFromPrompt(text, meta); }}

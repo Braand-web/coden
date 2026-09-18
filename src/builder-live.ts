@@ -21,7 +21,7 @@ import {
   storePendingPromptAttachments,
   type PendingPromptAttachment,
 } from './prompt-input-actions';
-import { MODEL_REGISTRY, PROVIDER_META } from './config/ai-models';
+import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, type AllowedModelId } from './config/ai-models';
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
@@ -585,7 +585,22 @@ function planRank(plan: PlanKey) {
 
 function syncBuilderPlanBadges(planInput: unknown) {
   const plan = normalizePlanKey(planInput);
+  const planChanged = currentPlanKey !== plan;
   currentPlanKey = plan;
+  /*
+   * The plan arrives after the composer has already mounted, so this is where
+   * a selection the workspace cannot run gets dropped.
+   *
+   * Without it, a stored `anthropic/claude-opus-5` on a free plan survived
+   * every reload and failed every turn — `ModelNotAllowedForPlanError` inside
+   * the router, surfaced as a bare GENERATION_FAILED with nothing on screen
+   * explaining that the model was the problem.
+   */
+  if (selectedModelId !== 'auto' && !isPlanAtLeast(plan, AI_MODEL_PLAN_ACCESS[selectedModelId as AllowedModelId] || 'free')) {
+    applySelectedModel('auto', { persist: true, saveWorkspace: true });
+  } else if (planChanged) {
+    renderComposer();
+  }
   document.querySelectorAll<HTMLElement>('#builder-plan-badge').forEach(badge => {
     badge.textContent = planLabel(plan);
     badge.classList.remove('free', 'pro', 'scale', 'business', 'enterprise');
@@ -8064,6 +8079,10 @@ function bindChat() {
       value: composerValue,
       model: selectedModel(),
       effort: composerEffort,
+      // What this workspace may actually run. Without it the menu offered the
+      // whole catalogue and nine of its fourteen entries failed on a free
+      // plan, after the request had already reached the router.
+      plan: currentPlanKey,
       onChange: next => {
         // Encoding repair stays: the Builder receives pasted prose from
         // everywhere, and mojibake reaching a prompt is a real failure mode.
