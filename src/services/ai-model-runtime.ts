@@ -8,6 +8,7 @@ import {
   type ModelProvider,
 } from '../config/ai-models.ts';
 export { publicRuntimeErrorMessage } from '../lib/runtime-error-presentation.ts';
+import { normalizeAgentEffort, type AgentEffort } from './agent-effort.ts';
 
 export type AIWorkflowTask =
   | 'conversation'
@@ -103,6 +104,15 @@ export type AIModelRuntimeConfig = {
   reasoning: {
     enabled: boolean;
     effort: 'low' | 'medium' | 'high';
+    /**
+     * Send the token budget instead of the effort enum.
+     *
+     * OpenRouter's unified reasoning parameter accepts `effort` of
+     * low/medium/high or an explicit `max_tokens`, and nothing in between:
+     * there is no `xhigh`. Ultra therefore has to be expressed as a budget, or
+     * it silently collapses into `high` and the level buys nothing.
+     */
+    useBudget: boolean;
   };
   thinking: {
     enabled: boolean;
@@ -261,6 +271,77 @@ function reasoningEffortForTask(profile: AIModelCapabilityProfile, task: AIWorkf
   return 'low';
 }
 
+const EFFORT_ORDER = ['low', 'medium', 'high'] as const;
+
+/**
+ * What the user's effort level asks the provider for.
+ *
+ * The composer has offered an effort control since it shipped, and it reached
+ * the loop budget and nothing else: the level actually sent to the provider
+ * was `reasoningEffortForTask`, derived from the task, capped at `high`, with
+ * no way for the user to influence it. A control named "Max Effort" bought
+ * more wall clock and not one extra token of thinking.
+ *
+ * The task's level becomes a floor rather than the decision. A `security` task
+ * never drops below what its own risk demands even when the user asks for
+ * Low — a weaker audit that returns "nothing found" reads exactly like a real
+ * one — while a user who asks for more gets more.
+ *
+ * Ultra is the level `effort` cannot express. OpenRouter's unified reasoning
+ * parameter takes `effort` of low/medium/high or an explicit `max_tokens`
+ * budget, so anything above `high` has to be a budget. That is also what makes
+ * it expensive: reasoning is billed at the output rate.
+ */
+export function reasoningForEffort(
+  profile: AIModelCapabilityProfile,
+  task: AIWorkflowTask,
+  effort: AgentEffort,
+): { effort: 'low' | 'medium' | 'high'; budgetTokens: number } {
+  const taskFloor = reasoningEffortForTask(profile, task);
+  if (!profile.supports.reasoningControl) return { effort: taskFloor, budgetTokens: 0 };
+
+  if (effort === 'Ultra') {
+    return { effort: 'high', budgetTokens: ultraReasoningBudget(profile) };
+  }
+  const requested = effort === 'Low' ? 'low' : effort === 'High' ? 'high' : 'medium';
+  /*
+   * The task overrides the user on `security` and nowhere else.
+   *
+   * A floor on every task made the control inert in the direction that saves
+   * money: `debug` on a frontier model floors at `high`, so Low, Medium and
+   * High all sent `high` and only the loop budget moved — the same defect the
+   * level was introduced to fix, one layer down. The user asked for less; less
+   * is what a cheap level means.
+   *
+   * `security` keeps its floor because a weaker audit reporting "nothing
+   * found" reads exactly like a thorough one that found nothing, and nowhere
+   * else does a shallower answer disguise itself as a complete one.
+   */
+  const chosen = task === 'security'
+    ? EFFORT_ORDER[Math.max(EFFORT_ORDER.indexOf(taskFloor), EFFORT_ORDER.indexOf(requested))]
+    : requested;
+  return { effort: chosen, budgetTokens: thinkingBudgetForTask(profile, task) };
+}
+
+/**
+ * How far a model may think at Ultra, bounded by capability and by its own price.
+ *
+ * Scaled by what the model can do with the room rather than flat, because a
+ * budget is a ceiling the model draws on and a weak reasoner handed 48k tokens
+ * spends them without getting better. And halved against `maxOutputTokens`
+ * because Anthropic rejects a thinking budget that is not strictly below the
+ * output cap — the answer still has to fit.
+ *
+ * Worst case per call at these ceilings: $1.20 on Opus 5, $2.40 on Astra,
+ * $0.48 on Sonnet 5, about a cent on Luna.
+ */
+export function ultraReasoningBudget(profile: AIModelCapabilityProfile): number {
+  const capabilityCap = profile.reasoning === 'frontier' ? 48_000
+    : profile.reasoning === 'high' ? 24_000
+    : 12_000;
+  return Math.min(capabilityCap, Math.floor(profile.recommended.maxTokens / 2));
+}
+
 function thinkingBudgetForTask(profile: AIModelCapabilityProfile, task: AIWorkflowTask): number {
   if (!profile.supports.reasoningControl) return 0;
   if (['security', 'database'].includes(task) && (profile.reasoning === 'frontier' || profile.reasoning === 'high')) return 16384;
@@ -412,6 +493,12 @@ export function buildAIModelRuntimeConfig(input: {
   estimatedInputTokens?: number;
   timeoutMs?: number;
   maxTokens?: number;
+  /**
+   * The level the user asked for. Raises the task's own reasoning floor and,
+   * at Ultra, replaces the effort enum with an explicit budget. Omitted keeps
+   * the task-derived behaviour every existing caller already gets.
+   */
+  effort?: AgentEffort;
 }): AIModelRuntimeConfig {
   const profile = getAIModelCapabilityProfile(input.modelId);
   const task = input.task;
@@ -419,7 +506,9 @@ export function buildAIModelRuntimeConfig(input: {
     ? { type: 'text' } as RuntimeResponseFormat
     : responseFormatForTask(profile, task);
   const tools = input.allowTools === false ? [] : toolsForTask(profile, task);
-  const reasoningEffort = reasoningEffortForTask(profile, task);
+  const requestedEffort = normalizeAgentEffort(input.effort);
+  const resolvedReasoning = reasoningForEffort(profile, task, requestedEffort);
+  const reasoningEffort = resolvedReasoning.effort;
   const stream = Boolean(input.stream && profile.supports.streaming);
   const longContextEnabled = profile.supports.longContext && (
     taskNeedsLongContext(task) || Number(input.estimatedInputTokens || 0) > 90_000
@@ -456,7 +545,8 @@ export function buildAIModelRuntimeConfig(input: {
   if (tools.length) notes.push(`tools:${tools.length}`);
   if (input.hasVisionInput && profile.supports.vision) notes.push('vision:enabled');
   if (longContextEnabled) notes.push('long_context:enabled');
-  if (reasoningEnabled) notes.push(`thinking_budget:${thinkingBudgetForTask(profile, task)}`);
+  if (reasoningEnabled) notes.push(`thinking_budget:${resolvedReasoning.budgetTokens}`);
+  notes.push(`effort:${requestedEffort}`);
 
   return {
     profile,
@@ -471,10 +561,11 @@ export function buildAIModelRuntimeConfig(input: {
     reasoning: {
       enabled: reasoningEnabled,
       effort: reasoningEffort,
+      useBudget: requestedEffort === 'Ultra' && resolvedReasoning.budgetTokens > 0,
     },
     thinking: {
       enabled: reasoningEnabled,
-      budgetTokens: thinkingBudgetForTask(profile, task),
+      budgetTokens: resolvedReasoning.budgetTokens,
       includeInResponse: false,
     },
     vision: {

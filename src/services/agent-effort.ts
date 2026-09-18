@@ -14,15 +14,35 @@ import { DEFAULT_AGENT_LOOP_BUDGET, type AgentLoopBudget } from './llm-tool-loop
  * keeps its exact shape and the other two move away from it in one direction
  * each.
  */
-export const AGENT_EFFORT_LEVELS = ['Low', 'Medium', 'Max Effort'] as const;
+export const AGENT_EFFORT_LEVELS = ['Low', 'Medium', 'High', 'Ultra'] as const;
 
 export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number];
 
 export const DEFAULT_AGENT_EFFORT: AgentEffort = 'Medium';
 
+/** What the composer shows. The values above are the wire format. */
+export const AGENT_EFFORT_LABELS: Record<AgentEffort, string> = {
+  Low: 'Faible',
+  Medium: 'Moyen',
+  High: 'Élevé',
+  Ultra: 'Ultra',
+};
+
+/*
+ * `Max Effort` was the old top level and cost 2.5x Medium. `High` costs the
+ * same 2.5x, so a stored preference lands on the level the user was actually
+ * paying for rather than being promoted into Ultra — which costs twice again —
+ * by a rename they did not ask for.
+ */
+const LEGACY_EFFORT_ALIASES: Record<string, AgentEffort> = {
+  'Max Effort': 'High',
+  max_effort: 'High',
+};
+
 export function normalizeAgentEffort(value: unknown): AgentEffort {
   const raw = String(value ?? '').trim();
-  return (AGENT_EFFORT_LEVELS as readonly string[]).includes(raw) ? (raw as AgentEffort) : DEFAULT_AGENT_EFFORT;
+  if ((AGENT_EFFORT_LEVELS as readonly string[]).includes(raw)) return raw as AgentEffort;
+  return LEGACY_EFFORT_ALIASES[raw] || DEFAULT_AGENT_EFFORT;
 }
 
 /*
@@ -44,11 +64,24 @@ const EFFORT_BUDGETS: Record<AgentEffort, AgentLoopBudget> = {
     compactAboveChars: 120_000,
   },
   Medium: { ...DEFAULT_AGENT_LOOP_BUDGET },
-  'Max Effort': {
+  High: {
     maxSteps: 120,
     maxToolCalls: 500,
     maxDurationMs: 30 * 60_000,
     compactAboveChars: 480_000,
+  },
+  /*
+   * Ultra is the level where the model is allowed to think, not just to work
+   * longer — the reasoning budget is what separates it from High, and that is
+   * billed at the output rate. Its loop budget grows less than its price does
+   * for that reason: doubling the wall clock is cheap, and letting a frontier
+   * model reason for 48k tokens a call is not.
+   */
+  Ultra: {
+    maxSteps: 200,
+    maxToolCalls: 900,
+    maxDurationMs: 60 * 60_000,
+    compactAboveChars: 720_000,
   },
 };
 
@@ -71,7 +104,20 @@ export function budgetForEffort(effort: unknown): AgentLoopBudget {
 export function effortCostMultiplier(effort: unknown): number {
   const level = normalizeAgentEffort(effort);
   if (level === 'Low') return 0.6;
-  if (level === 'Max Effort') return 2.5;
+  if (level === 'High') return 2.5;
+  /*
+   * Ultra is priced at twice High because it buys a different thing.
+   *
+   * High extends the loop; Ultra also hands the model a reasoning budget, and
+   * reasoning is billed at the output rate — 48k tokens on Opus 5 is $1.20 of
+   * thinking in a single call, before a word of the answer. The multiplier is
+   * an expectation, not the worst case: adaptive thinking spends what the task
+   * needs and usually far less than the ceiling, which is why this is 5x and
+   * not the 12x a full budget on every call would imply. The measured cost is
+   * recorded beside the charge, so the number can be corrected from evidence
+   * rather than from this comment.
+   */
+  if (level === 'Ultra') return 5;
   return 1;
 }
 
@@ -87,16 +133,25 @@ export function effortCostMultiplier(effort: unknown): number {
  * round cannot produce anything, so "Low" has to mean a shorter run rather
  * than a broken one.
  */
+const ROUTE_BUDGET_SCALE: Record<AgentEffort, { rounds: number; toolCalls: number; deadline: number }> = {
+  Low: { rounds: 0.7, toolCalls: 0.5, deadline: 0.5 },
+  Medium: { rounds: 1, toolCalls: 1, deadline: 1 },
+  High: { rounds: 1.5, toolCalls: 2, deadline: 2 },
+  // Ultra widens the clock more than the rounds: what it buys is depth per
+  // round, which the reasoning budget provides, not more rounds of the same.
+  Ultra: { rounds: 2, toolCalls: 3, deadline: 4 },
+};
+
 export function scaleRouteBudgetForEffort<
   T extends { maxRounds: number; maxToolCallsPerRound: number; maxStalledRounds: number; runDeadlineMs: number },
 >(budget: T, effort: unknown): T {
   const level = normalizeAgentEffort(effort);
   if (level === 'Medium') return budget;
-  const factor = level === 'Low' ? 0.5 : 2;
+  const scale = ROUTE_BUDGET_SCALE[level];
   return {
     ...budget,
-    maxRounds: Math.max(1, Math.round(budget.maxRounds * (level === 'Low' ? 0.7 : 1.5))),
-    maxToolCallsPerRound: Math.max(6, Math.round(budget.maxToolCallsPerRound * factor)),
-    runDeadlineMs: Math.max(60_000, Math.round(budget.runDeadlineMs * factor)),
+    maxRounds: Math.max(1, Math.round(budget.maxRounds * scale.rounds)),
+    maxToolCallsPerRound: Math.max(6, Math.round(budget.maxToolCallsPerRound * scale.toolCalls)),
+    runDeadlineMs: Math.max(60_000, Math.round(budget.runDeadlineMs * scale.deadline)),
   };
 }

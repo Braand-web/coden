@@ -112,3 +112,37 @@ for (const [surface, source] of [['the landing', read('src/landing-new.ts')], ['
 }
 
 console.log('prompt input composer tests passed');
+
+/*
+ * Four levels, and the level reaches the provider.
+ *
+ * The control shipped with three levels that moved `AgentLoopBudget` and
+ * nothing else: what the provider received was `reasoningEffortForTask`,
+ * derived from the task, capped at `high`, with no way for the user to
+ * influence it. "Max Effort" bought wall clock and not one token of thinking.
+ */
+const effortModule = read('src/services/agent-effort.ts');
+const runtime = read('src/services/ai-model-runtime.ts');
+const adapters = read('src/services/provider-adapters.ts');
+
+assert.match(effortModule, /AGENT_EFFORT_LEVELS = \['Low', 'Medium', 'High', 'Ultra'\]/,
+  'the composer offers four levels');
+assert.match(effortModule, /'Max Effort': 'High'/,
+  'the retired top level lands on the level it was actually priced as, not on Ultra');
+assert.match(effortModule, /if \(level === 'Ultra'\) return 5;/,
+  'Ultra is priced for the reasoning it buys');
+
+assert.match(runtime, /export function reasoningForEffort\(/,
+  'the user level decides what the provider is asked for');
+assert.match(runtime, /const chosen = task === 'security'/,
+  'only security overrides the user, so a cheap level is genuinely cheaper');
+assert.match(runtime, /export function ultraReasoningBudget\(/,
+  'Ultra gets a budget bounded by the model, not a flat number');
+assert.match(runtime, /Math\.floor\(profile\.recommended\.maxTokens \/ 2\)/,
+  'the thinking budget stays strictly below the output cap');
+
+assert.match(adapters, /runtime\.reasoning\.useBudget && runtime\.thinking\?\.budgetTokens/,
+  'Ultra sends the budget, since the effort enum cannot express it');
+
+assert.match(component, /AGENT_EFFORT_LABELS\[value as AgentEffort\]/,
+  'the composer shows the level name and sends the wire value');

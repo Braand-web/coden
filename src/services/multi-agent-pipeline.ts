@@ -295,7 +295,7 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean;
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
   /**
    * The design system, from `designContextForRoute`.
    *
@@ -317,6 +317,9 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     task: 'debug',
     preferStructuredOutput: false,
     allowTools: true,
+    // The level the user chose reaches the provider here. Without it the
+    // control moved the loop budget and nothing else.
+    effort: input.effort,
     // The coder turn streams in production, and its deadline is the model's
     // own — a frontier model gets the frontier allowance, not a constant
     // written for whichever model happened to be default the day this was
@@ -796,6 +799,7 @@ export async function runMultiAgentPipeline(input: {
       designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       deadline: runDeadline,
       allowFallback: input.selectedModel === undefined,
+      effort: input.effort,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;

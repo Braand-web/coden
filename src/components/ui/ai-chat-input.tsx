@@ -3,7 +3,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "../../lib/utils";
 import { MODEL_REGISTRY, PROVIDER_META, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
 import { providerIconSvg } from "../../model-provider-icons";
-import { AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT } from "../../services/agent-effort";
+import { AGENT_EFFORT_LABELS, AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT, type AgentEffort } from "../../services/agent-effort";
 
 // ----------------------------------------------------------------------
 // Transition Physics
@@ -60,6 +60,11 @@ const MODEL_OPTIONS: ModelOption[] = [
 const MODEL_LABELS = new Map(MODEL_OPTIONS.map(option => [option.id, option.label]));
 const MODEL_ICONS = new Map(MODEL_OPTIONS.map(option => [option.id, option.icon]));
 const MODEL_MIN_PLANS = new Map(MODEL_OPTIONS.map(option => [option.id, option.minPlan]));
+
+/** The level's display name; the raw value is what crosses the wire. */
+function effortLabel(value: string): string {
+  return AGENT_EFFORT_LABELS[value as AgentEffort] || value;
+}
 
 const PLAN_LABELS: Record<CanonicalUserPlan, string> = {
   free: "Free",
@@ -184,14 +189,18 @@ function CloseIcon() {
 }
 
 function DynamicBarsIcon({ level }: { level: string }) {
-  const isMediumOrHigh = level === "Medium" || level === "Max Effort";
-  const isHigh = level === "Max Effort";
+  // Four levels, four bars: Ultra has to look like a step beyond High, not
+  // share its icon. Lit by rank so an unknown value degrades to one bar
+  // rather than to none.
+  const rank = Math.max(0, (AGENT_EFFORT_LEVELS as readonly string[]).indexOf(level));
+  const lit = (index: number) => (rank >= index ? 1 : 0.3);
 
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <rect x="1.5" y="8" width="2.5" height="4.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={1} />
-      <rect x="5.75" y="5" width="2.5" height="7.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={isMediumOrHigh ? 1 : 0.3} />
-      <rect x="10" y="2" width="2.5" height="10.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={isHigh ? 1 : 0.3} />
+    <svg width="16" height="14" viewBox="0 0 16 14" fill="none" aria-hidden="true">
+      <rect x="0.5" y="9" width="2.5" height="3.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={1} />
+      <rect x="4" y="6.5" width="2.5" height="6" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(1)} />
+      <rect x="7.5" y="4" width="2.5" height="8.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(2)} />
+      <rect x="11" y="1.5" width="2.5" height="11" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(3)} />
     </svg>
   );
 }
@@ -1069,10 +1078,10 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={cycleEffort}
                 className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default"
-                aria-label={`Effort : ${efforts[effortIndex]}`}
+                aria-label={`Niveau de raisonnement : ${effortLabel(efforts[effortIndex])}`}
               >
                 <DynamicBarsIcon level={efforts[effortIndex]} />
-                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={efforts[effortIndex]} /></span>
+                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={effortLabel(efforts[effortIndex])} /></span>
               </button>
 
               <button
