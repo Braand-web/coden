@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
-import { consumeAgentStream, type AgentEnvelope } from './agent-chat-protocol';
+import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './agent-chat-protocol';
 import { createAgentEventStream } from '../services/agent-event-stream';
 import { EMPTY_MESSAGE, reduceAgentMessage } from '../components/agent/agent-parts';
 import { createNarrationFilter } from '../services/narration-filter';
@@ -22,6 +22,49 @@ describe('agent streaming protocol', () => {
     const result = await consumeAgentStream(response(text + text + encode(2, 'workspace', { type: 'result', result: { success: true, files: [] } }) + encode(3, 'chat', { type: 'run_finished', reason: 'completed' })), e => events.push(e));
     expect(events).toHaveLength(3); expect(events[0].payload).toEqual({ type: 'text_delta', delta: 'Création 🌍' }); expect(result.success).toBe(true);
   });
+  it('reads a connection cut mid-envelope as an interruption, not a protocol error', async () => {
+    /*
+     * The Builder only retries on `AgentStreamInterruptedError`, so a JSON
+     * SyntaxError from a half-arrived envelope skipped its eight-attempt
+     * replay from `Last-Event-ID` entirely — the most ordinary network
+     * failure was the one case the recovery could not see.
+     */
+    const events: AgentEnvelope[] = [];
+    const truncated = encode(1, 'chat', { type: 'activity', label: 'travaille' })
+      + 'id: 2\r\ndata: {"seq":2,"runId":"run-1","cha';
+    const error = await consumeAgentStream(response(truncated), e => events.push(e)).then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AgentStreamInterruptedError);
+    expect((error as AgentStreamInterruptedError).lastSequence).toBe(1);
+    expect(events.map(e => e.payload.type)).toEqual(['activity']);
+  });
+
+  it('keeps streaming after a persistence failure instead of muting the run', async () => {
+    /*
+     * `pending` is what every later event chains onto, and `.then()` on a
+     * rejected promise never runs its callback: one transient persist error
+     * silently dropped every event that followed while the generation carried
+     * on writing files. The client then saw a stream that simply stopped.
+     */
+    const written: string[] = [];
+    const res = Object.assign(new EventEmitter(), {
+      status: () => res, set: () => res, flushHeaders: () => {},
+      write: (chunk: string) => { written.push(chunk); return true; },
+      end: () => {}, destroy: () => {},
+      writableLength: 0, writableEnded: false, destroyed: false,
+    }) as any;
+    let calls = 0;
+    const stream = createAgentEventStream(res, 'run-1', {
+      persistAttempts: 1,
+      persist: async () => { calls += 1; if (calls === 1) throw new Error('supabase timeout'); },
+    });
+    stream.chat({ type: 'activity', label: 'un' });
+    stream.chat({ type: 'activity', label: 'deux' });
+    stream.chat({ type: 'activity', label: 'trois' });
+    await expect(stream.drain()).rejects.toThrow('supabase timeout');
+    expect(written.filter(chunk => chunk.includes('"deux"'))).toHaveLength(1);
+    expect(written.filter(chunk => chunk.includes('"trois"'))).toHaveLength(1);
+  });
+
   it('does not silently complete on a disconnected stream', async () => {
     await expect(consumeAgentStream(response(encode(1, 'chat', { type: 'activity', label: 'Test' })), () => {})).rejects.toThrow('interrompue');
   });

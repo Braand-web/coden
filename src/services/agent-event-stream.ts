@@ -15,6 +15,8 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   let seq = Math.max(0, Math.floor(options.initialSequence || 0));
   let finalized = false; let closing = false; let transportOpen = true; let textOpen = false;
   let pending: Promise<void> = Promise.resolve();
+  /** The first transport or persistence failure, reported by drain and finish. */
+  let streamFailure: Error | null = null;
   let textBuffer = '';
   let transcript = '';
   let textTimer: ReturnType<typeof setTimeout> | undefined;
@@ -44,10 +46,24 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
       if (!transportOpen || res.destroyed || res.writableEnded) return;
       if (res.writableLength > 8 * 1024 * 1024) throw new Error('AGENT_STREAM_BACKPRESSURE_LIMIT');
       res.write(`id: ${envelope.seq}\ndata: ${JSON.stringify(envelope)}\n\n`);
+    }).catch(error => {
+      /*
+       * Remember the failure; do not leave it in the chain.
+       *
+       * `pending` is what every later event chains onto, and `.then()` on a
+       * rejected promise never runs its callback — so a single transient
+       * persist error or one burst of backpressure silently muted the entire
+       * rest of the run. The generation carried on writing files, the client
+       * received nothing more, and the stream ended without a terminal event:
+       * an interruption caused by one slow database write.
+       *
+       * The first failure is still the one `drain` and `finish` report, so the
+       * run is not quietly declared healthy either.
+       */
+      streamFailure = streamFailure || (error instanceof Error ? error : new Error(String(error)));
     });
-    // Observe a rejection immediately; drain/finish still receive the original failure.
-    void pending.catch(() => undefined);
   };
+  const settled = () => pending.then(() => { if (streamFailure) throw streamFailure; });
   const flushText = () => {
     if (textTimer) clearTimeout(textTimer);
     textTimer = undefined;
@@ -80,7 +96,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   return {
     chat,
     workspace,
-    drain: () => { flushText(); return pending; },
+    drain: () => { flushText(); return settled(); },
     get lastSequence() { return seq; },
     get transcript() { return transcript.trim(); },
     async finish(payload: any, status: number) {
@@ -96,7 +112,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
           ? { type: 'run_failed', message: String(payload.error || payload.message || 'La génération nécessite une correction. Les résultats disponibles sont conservés.'), diagnosticCode: payload.diagnostic_code, recoverable: Boolean(payload.recoverable) }
           : { type: 'run_finished', reason: 'completed' });
       try {
-        await pending;
+        await settled();
         if (transportOpen && !res.destroyed && !res.writableEnded) res.end();
         cleanup();
       } catch (error) {
