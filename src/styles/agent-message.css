@@ -24,9 +24,35 @@
 .coden-agent-message .coden-response pre { font-size:12.5px; }
 .coden-agent-message .coden-response blockquote { margin:10px 0; }
 .coden-agent-message .coden-response hr { margin:14px 0; }
-.coden-tool-line { display:flex; align-items:center; gap:9px; min-width:0; color:var(--text-muted); font-size:14.5px; }
-.coden-tool-line svg,.coden-tool-line>span:first-of-type { flex-shrink:0; }
+.coden-tool-block { display:grid; gap:0; min-width:0; }
+.coden-tool-line {
+  display:flex; align-items:center; gap:9px; width:100%; min-width:0;
+  padding:0; border:0; background:transparent;
+  color:var(--text-muted); font:inherit; font-size:14.5px; text-align:left;
+  transition:color 160ms ease;
+}
+button.coden-tool-line { cursor:pointer; }
+button.coden-tool-line:hover { color:var(--text-secondary); }
+button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+.coden-tool-line svg,.coden-tool-verb,.coden-tool-chevron { flex-shrink:0; }
 .coden-tool-paths { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px/1.6 ui-monospace,monospace; }
+.coden-tool-chevron { display:grid; place-items:center; width:16px; height:16px; }
+
+/*
+ * The expanded list is the same monospace as the summary it came out of, so
+ * the disclosure reads as the line growing rather than as a new panel.
+ */
+.coden-tool-files {
+  overflow:hidden;
+  margin:0; padding:0 0 0 24px;
+  list-style:none;
+}
+.coden-tool-files li {
+  padding-top:5px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--text-muted); font:12.5px/1.6 ui-monospace,monospace;
+}
+.coden-tool-files li:first-child { padding-top:8px; }
 .coden-message-actions { display:flex; gap:4px; }
 .coden-message-actions button { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; }
 .coden-message-actions button:hover { background:var(--input); color:var(--foreground); }
