@@ -4,6 +4,7 @@ import { normalizeAgentEffort, effortCostMultiplier } from './src/services/agent
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
+import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
 import {
   UNIFIED_USAGE_CATEGORIES,
   spendableByCategory,
@@ -96,6 +97,9 @@ import {
   MODEL_REGISTRY,
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_CREDIT_RATES,
+  AUTO_MODEL_IDS,
+  AI_MODEL_PLAN_ACCESS,
+  isPlanAtLeast,
   PROVIDER_META,
   UserPlan,
   getModelsByProvider,
@@ -5465,11 +5469,37 @@ function isExplicitProviderModelSelection(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' && value !== 'auto';
 }
 
-function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown) {
+/**
+ * The worst a routed Auto turn can cost on this plan.
+ *
+ * Auto was priced at the floor of `DEFAULT_PROVIDER_MODEL_ID` — Luna Pro, two
+ * credits — while being free to route to Opus 5 at fifteen. Charging the
+ * cheapest model's floor for whatever the router picks is a straight loss
+ * whenever it picks anything else, and the router picks by task, not by price
+ * alone.
+ *
+ * Bounded by the plan rather than by the catalogue, because a plan that cannot
+ * reach a model cannot be charged for the risk of reaching it: on `free` the
+ * routable set is Luna and Gemini, so the ceiling stays at two and no free
+ * turn is gated harder than it is today. It rises only where Auto can genuinely
+ * route somewhere expensive.
+ */
+function autoWorstCaseCreditFloor(plan?: unknown): number {
+  // Unknown plan keeps the old number rather than guessing the ceiling. The
+  // alternative — assuming the whole Auto pool — would gate every free turn at
+  // Opus 5's floor and lock out the plan that can never reach it.
+  if (!plan) return MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID];
+  const routable = (AUTO_MODEL_IDS as readonly AllowedModelId[])
+    .filter(modelId => isPlanAtLeast(plan, AI_MODEL_PLAN_ACCESS[modelId]));
+  const pool = routable.length ? routable : [DEFAULT_PROVIDER_MODEL_ID];
+  return Math.max(...pool.map(modelId => MODEL_ACTION_CREDIT_FLOORS[modelId] || 0));
+}
+
+function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown, plan?: unknown) {
   if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0 };
   if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0 };
   const selectedModelFloor = modelId === 'auto' && intent.intent !== 'plan'
-    ? MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID]
+    ? autoWorstCaseCreditFloor(plan)
     : modelCreditFloor(modelId);
   if (intent.intent === 'conversation') return costEstimator.calculateRequiredCredits({
     openrouter_cost_usd: 0.0002,
@@ -5515,12 +5545,26 @@ async function chargeCompletedAgentAction(
     model?: string | null;
     providerCostUsd?: number;
     completeCostUsd?: number;
+    /** Private reasoning billed at the output rate, for per-step attribution. */
+    reasoningTokens?: number;
   } = {},
 ) {
   if (!CODEN_MONETIZATION_ENABLED) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
   if (CODEN_MONETIZATION_ENABLED) {
-    const completeCostUsd = Math.max(0.000001, Number(options.completeCostUsd ?? options.providerCostUsd ?? 0));
+    /*
+     * The cost the ledger records is the money that left the account.
+     *
+     * A provider's reported `usage.cost` is the tokens only; OpenRouter's
+     * 5.5% is charged when the credits are bought, so it never shows up in a
+     * response and every margin in `usage_settlements` was overstated by that
+     * much. It is applied here, once, rather than at each of the callers that
+     * would each have to remember.
+     */
+    const providerCostUsd = Number(options.providerCostUsd ?? 0);
+    const grossedUpProviderCost = withProviderPurchaseFee(providerCostUsd);
+    const platformAllowance = Math.max(0, Number(options.completeCostUsd ?? 0) - providerCostUsd);
+    const completeCostUsd = Math.max(0.000001, grossedUpProviderCost + platformAllowance);
     const reservation = await reserveUnifiedUsage({
       accountId: userId,
       category: options.category || 'ai_gateway',
@@ -5536,11 +5580,37 @@ async function chargeCompletedAgentAction(
       resource: options.resource || 'agent_action',
       provider: options.provider || 'openrouter',
       model: options.model || null,
-      providerCostUsd: Number(options.providerCostUsd ?? completeCostUsd),
-      allocatedPlatformCostUsd: Math.max(0, completeCostUsd - Number(options.providerCostUsd ?? 0)),
+      providerCostUsd: grossedUpProviderCost || completeCostUsd,
+      allocatedPlatformCostUsd: platformAllowance,
       completeCostUsd,
       idempotencyKey: `${referenceId}:usage`,
-      providerPayload: { description },
+      /*
+       * What the measured cost says this action should have cost, beside what
+       * it was actually charged.
+       *
+       * Recorded, not enforced. Flipping the charge onto the measurement in
+       * the same change would have been a billing change made blind: nobody
+       * has ever seen a measured build cost in this ledger, the free plan
+       * grants five build credits a day, and a measured build is worth more
+       * than that — every free user would have been cut off by an estimate
+       * nobody had checked. So the two numbers are written side by side, and
+       * the switch is a one-line change once a week of real runs has said
+       * what it costs.
+       */
+      providerPayload: {
+        description,
+        charged_credits: amount,
+        measured_credits: costEstimator.calculateRequiredCredits({
+          openrouter_cost_usd: grossedUpProviderCost,
+          infra_cost_usd: platformAllowance,
+          storage_cost_usd: 0,
+          build_cost_usd: 0,
+          domain_operation_cost_usd: 0,
+          minimum_action_credits: 1,
+        }).finalCredits,
+        provider_fee_rate: OPENROUTER_PURCHASE_FEE_RATE,
+        reasoning_tokens: options.reasoningTokens ?? null,
+      },
     });
     await settleUnifiedUsage({ reservation, usageEventId: eventId, creditsCharged: amount, completeCostUsd });
     return;
@@ -12760,7 +12830,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
          * enforces `minimum_action_credits` internally but does not report it,
          * and no action is free.
          */
-        const baseCost = estimateActionCost(prompt, decision, requestedModelSelection);
+        const baseCost = estimateActionCost(prompt, decision, requestedModelSelection, routingPlan);
         const pipelineCost = {
           ...baseCost,
           finalCredits: Math.max(

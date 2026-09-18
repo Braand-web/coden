@@ -348,7 +348,46 @@ const buildRecord = <T>(mapper: (model: ModelDefinition) => T) => (
 export const AI_MODEL_DISPLAY_NAMES = buildRecord(model => model.label);
 export const AI_MODEL_TIERS = buildRecord(model => model.tier);
 export const AI_MODEL_PLAN_ACCESS = buildRecord(model => model.minPlan);
-export const MODEL_ACTION_CREDIT_FLOORS = buildRecord(model => model.creditFloor);
+/**
+ * Output-weighted price of a model, the basis every cost comparison uses.
+ *
+ * Generations are output-heavy, so a straight average of the two rates ranks
+ * the catalogue wrongly. `model-selection.ts` exports the same formula for the
+ * router; it is restated here because the floors below cannot import from a
+ * module that already imports this one.
+ */
+function blendedUnitCost(model: ModelDefinition): number {
+  return model.inputUsdPerMillion * 0.25 + model.outputUsdPerMillion * 0.75;
+}
+
+/**
+ * The least a single action on a model may cost, and never less than its cost.
+ *
+ * The declared `creditFloor` values were not derived from anything: across the
+ * catalogue they spanned a factor of eight in credits-per-unit-of-cost, and
+ * the two worst offenders were the two models that actually lost money.
+ * `usage_settlements` recorded a Kimi K3 conversation at −58% margin — Kimi
+ * costs 1.5x Sonnet 5 and carried 0.43x its floor.
+ *
+ * So the floor is now the higher of what was declared and what the model's own
+ * price justifies. `max` rather than a straight replacement on purpose: a
+ * derived floor that came out lower would cut a published per-action price,
+ * and nothing here should make a customer's displayed rate move downward as a
+ * side effect of a rounding constant.
+ *
+ * Five models move, all upward, all previously under-priced against their own
+ * cost: Gemini 3.8 Flash 1→2, Terra 5→6, Kimi K3 3→8, Fable 5.1 22→24,
+ * Astra 20→24.
+ */
+const COST_TO_CREDIT_FLOOR = 0.6;
+
+export function costJustifiedCreditFloor(model: ModelDefinition): number {
+  return Math.max(1, Math.ceil(blendedUnitCost(model) * COST_TO_CREDIT_FLOOR));
+}
+
+export const MODEL_ACTION_CREDIT_FLOORS = buildRecord(model =>
+  Math.max(model.creditFloor, costJustifiedCreditFloor(model)),
+);
 export const AI_MODEL_CAPABILITIES = buildRecord<ModelCapabilities>(model => ({
   ...model.capabilities,
   maxContextTokens: model.contextWindow,
