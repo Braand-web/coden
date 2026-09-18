@@ -1119,7 +1119,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               disabled={disabled}
               aria-label={showArrow ? "Envoyer" : isRecording ? "Arrêter la dictée" : isBusy ? "Arrêter la génération" : "Dicter"}
               style={{ borderRadius: 9999 }}
-              className="absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-50"
+              className="coden-prompt-submit absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-50"
             >
               <span className="relative flex h-full w-full items-center justify-center">
                 <span className={cn("absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.175,0.885,0.32,1.275)]", showArrow ? "opacity-100 scale-100 rotate-0 blur-none" : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none")}>

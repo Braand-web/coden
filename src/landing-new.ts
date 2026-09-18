@@ -186,10 +186,13 @@ function setupGalleryDialog() {
     populated = true;
   };
 
-  trigger.addEventListener('click', () => {
+  trigger.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     populate();
     returnFocus = trigger;
-    dialog.showModal();
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
     closeButton.focus();
   });
   closeButton.addEventListener('click', close);
@@ -203,40 +206,44 @@ function setupGalleryDialog() {
 }
 
 function setupLandingComposer() {
-  const host = document.getElementById('landing-composer');
-  const status = document.getElementById('landing-composer-status');
-  if (!host) return;
-  let busy = false;
-  const setStatus = (value: CreateProjectFlowStatus) => {
-    if (status) status.textContent = formatCreateProjectFlowStatus(value, 'fr');
+  const mount = (hostId: string, statusId: string) => {
+    const host = document.getElementById(hostId);
+    const status = document.getElementById(statusId);
+    if (!host) return;
+    let busy = false;
+    const setStatus = (value: CreateProjectFlowStatus) => {
+      if (status) status.textContent = formatCreateProjectFlowStatus(value, 'fr');
+    };
+    mountPromptInput(host, {
+      placeholder: 'Décrivez l’application que vous voulez créer…',
+      defaultExpanded: true,
+      collapsedWidth: 880,
+      expandedWidth: 880,
+      isBusy: busy,
+      // Keep the selected model and effort consistent across both landing composers.
+      defaultModel: readPreferredModelSelection(),
+      defaultEffort: readPreferredEffort(),
+      onModelChange: writePreferredModelSelection,
+      onEffortChange: writePreferredEffort,
+      onSubmit: (value, meta) => {
+        if (busy) return;
+        busy = true;
+        setStatus('preparing');
+        void startCreateProjectFlow({
+          prompt: value,
+          model: meta.model,
+          effort: meta.effort,
+          source: 'landing',
+          theme: document.documentElement.dataset.theme || 'light',
+        }, { onStatus: setStatus }).catch(() => {
+          busy = false;
+          if (status) status.textContent = 'Le démarrage a échoué. Votre demande est conservée : réessayez depuis le bouton ci-dessus.';
+        });
+      },
+    });
   };
-  mountPromptInput(host, {
-    placeholder: 'Décrivez l’application que vous voulez créer…',
-    defaultExpanded: true,
-    collapsedWidth: 880,
-    expandedWidth: 880,
-    isBusy: busy,
-    // Someone who already chose a model should find it here, not Auto.
-    defaultModel: readPreferredModelSelection(),
-    defaultEffort: readPreferredEffort(),
-    onModelChange: writePreferredModelSelection,
-    onEffortChange: writePreferredEffort,
-    onSubmit: (value, meta) => {
-      if (busy) return;
-      busy = true;
-      setStatus('preparing');
-      void startCreateProjectFlow({
-        prompt: value,
-        model: meta.model,
-        effort: meta.effort,
-        source: 'landing',
-        theme: document.documentElement.dataset.theme || 'light',
-      }, { onStatus: setStatus }).catch(() => {
-        busy = false;
-        if (status) status.textContent = 'Le démarrage a échoué. Votre demande est conservée : réessayez depuis le bouton ci-dessus.';
-      });
-    },
-  });
+  mount('landing-composer', 'landing-composer-status');
+  mount('landing-final-composer', 'landing-final-composer-status');
 }
 
 function init() {

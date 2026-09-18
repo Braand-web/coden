@@ -19,7 +19,6 @@ import {
   Plus,
   Search,
   Settings,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
@@ -568,9 +567,11 @@ function DashboardHome() {
 
         <div className="coden-dashboard-content">
           <section className="coden-dashboard-create" aria-labelledby="dashboard-create-title">
-            <span className="coden-dashboard-create-mark" aria-hidden="true">
-              <WandSparkles size={20} />
-            </span>
+            <div className="coden-dashboard-tools-badge" aria-label="Connectez tous vos outils">
+              <span className="coden-dashboard-tools-icons" aria-hidden="true"><i className="is-drive">◉</i><i className="is-gmail">●</i><i className="is-slack">✣</i></span>
+              <span>Connectez tous vos outils</span>
+              <ArrowRight size={15} aria-hidden="true" />
+            </div>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
             {/*
               * The composer is the PromptInput now, on all three surfaces.
