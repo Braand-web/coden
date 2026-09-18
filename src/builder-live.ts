@@ -44,6 +44,7 @@ import { parsePlanPresentation, type PlanSectionId } from './lib/plan-presentati
 import {
   getRuntimeRecoveryPresentation,
   normalizeRuntimeDiagnosticCode,
+  publicRuntimeErrorMessage,
 } from './lib/runtime-error-presentation';
 
 initThemeController();
@@ -2727,18 +2728,16 @@ function runtimeDiagnosticCodeFromError(error: unknown) {
   return '';
 }
 
-function safeBuilderFailureText(error: unknown, speaksFrench: boolean) {
+function safeBuilderFailureText(error: unknown, _speaksFrench: boolean) {
   const diagnostic = runtimeDiagnosticCodeFromError(error);
-  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE);
   if (recovery) return `${recovery.title}. ${recovery.body}`;
   const raw = String(error instanceof Error ? error.message : error || '').trim()
     .replace(/\s*(?:diagnostic(?:_code)?|code)\s*[:=]\s*[A-Z][A-Z0-9_]{2,}\.?/gi, '')
     .replace(/\s*request\s*id\s*[:=]\s*[^.\s]+\.?/gi, '')
     .trim();
   if (!raw || /openrouter|anthropic|provider|api[_ ]?key|billing|quota|request id/i.test(raw)) {
-    return speaksFrench
-      ? 'La demande ne peut pas être terminée pour le moment. Elle est conservée et peut être relancée.'
-      : 'The request cannot be completed right now. It is kept and can be retried.';
+    return 'La demande ne peut pas être terminée pour le moment. Elle est conservée et peut être relancée.';
   }
   return raw;
 }
@@ -2754,15 +2753,45 @@ function prepareMessageForRun(card: HTMLElement | null, label: string) {
   setMessageShimmer(card, label);
 }
 
+/*
+ * A failure is chrome, not content.
+ *
+ * The reply itself follows the language the user wrote in, which is why
+ * `speaksFrench` is threaded through the generation path. The recovery panel
+ * is not the reply: it sits next to "La génération est interrompue" and
+ * "Exécution annulée", which are French wherever the interface is drawn. A
+ * prompt that reads as English — a short one, a stack trace, an app name —
+ * therefore used to put an English sentence inside a French panel.
+ */
+const UI_LOCALE = 'fr' as const;
+
 function showRuntimeRecovery(
   card: HTMLElement | null,
   error: unknown,
-  speaksFrench: boolean,
+  _speaksFrench: boolean,
   actions: { retry?: () => void; useAuto?: () => void } = {},
 ) {
   const diagnostic = runtimeDiagnosticCodeFromError(error);
-  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
-  if (!recovery) return false;
+  /*
+   * Every failure gets a way out, not only the ones that were foreseen.
+   *
+   * `getRuntimeRecoveryPresentation` only answers for diagnostics it knows, so
+   * anything unexpected — including a run that died with no code at all, which
+   * is what a container replaced mid-stream produces — returned null here and
+   * the panel was drawn with no actions. It told the user their work was kept
+   * and that they could retry, and gave them nothing to retry with. The
+   * unforeseen failure is precisely the one a person cannot reason about
+   * alone.
+   *
+   * Auto is not offered here: switching model answers a model-shaped failure,
+   * and an unrecognised one is not known to be one.
+   */
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE) ?? {
+    title: 'La génération est interrompue',
+    body: publicRuntimeErrorMessage(diagnostic, UI_LOCALE),
+    canRetry: true,
+    shouldOfferAuto: false,
+  };
 
   const fallbackText = `${recovery.title}. ${recovery.body}`;
   clearMessageShimmer(card);
@@ -2774,12 +2803,12 @@ function showRuntimeRecovery(
   });
   clearMessageActions(card);
   if (recovery.canRetry && actions.retry) {
-    addInlineAction(card, speaksFrench ? 'Réessayer' : 'Retry', actions.retry);
+    addInlineAction(card, 'Réessayer', actions.retry);
   }
   // Switching from a pinned model to Auto is never silent. This button is the
   // user's explicit agreement to let the router select another compatible one.
   if (recovery.shouldOfferAuto && selectedModel() !== 'auto' && actions.useAuto) {
-    addInlineAction(card, speaksFrench ? 'Utiliser Auto' : 'Use Auto', actions.useAuto);
+    addInlineAction(card, 'Utiliser Auto', actions.useAuto);
   }
   return true;
 }

@@ -7,13 +7,47 @@ import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
 import type { AgentMessageState, AgentNotice, DecisionNotice } from './agent-parts';
 import type { DecisionAnswer, DecisionQuestion } from '../../lib/agent-chat-protocol';
+import { getRuntimeRecoveryPresentation, publicRuntimeErrorMessage } from '../../lib/runtime-error-presentation';
 import '../../styles/agent-message.css';
+
+/*
+ * What to say about a failure, and in which language.
+ *
+ * The interface is French throughout — the heading beside this, the cancelled
+ * note, the decision card. The server, meanwhile, phrases its failures in the
+ * language it guesses from the prompt, so a short or English-looking request
+ * put an English sentence under a French heading.
+ *
+ * The diagnostic is the durable part of a failure, so the client phrases it
+ * itself whenever there is one. The server's sentence stays as the fallback
+ * for a failure that carries no code at all — which is what a connection cut
+ * mid-stream produces.
+ */
+const UI_LOCALE = 'fr' as const;
+
+function failureCopy(state: AgentMessageState): { title: string; body: string } {
+  const code = state.diagnosticCode?.trim();
+  if (code) {
+    const recovery = getRuntimeRecoveryPresentation(code, UI_LOCALE);
+    if (recovery) return recovery;
+    return { title: 'La génération est interrompue', body: publicRuntimeErrorMessage(code, UI_LOCALE) };
+  }
+  return { title: 'La génération est interrompue', body: recoveryCopy(state.error || '') };
+}
 
 function recoveryCopy(value: string) {
   const raw = String(value || '').trim();
   if (!raw) return 'La génération s’est interrompue. Votre travail enregistré reste disponible.';
+  /*
+   * Provider internals are for the logs. They are also the shape a message
+   * takes when it was written for another audience — including the server's
+   * English fallback, which must not land here verbatim.
+   */
   if (/(request\s*id|\bcode\s*:|provider|quota|billing|rate.?limit|stack|digest method)/i.test(raw)) {
     return 'La génération est momentanément indisponible. Votre demande et les changements déjà enregistrés sont conservés.';
+  }
+  if (/^[\x00-\x7F]*$/.test(raw) && /\b(the|your|cannot|request|retry|kept)\b/i.test(raw)) {
+    return 'La demande ne peut pas être terminée pour le moment. Votre travail est conservé et vous pouvez la relancer.';
   }
   return raw.slice(0, 280);
 }
@@ -83,12 +117,24 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
         ? <AgentThinkingLine key={thinkingLabel} label={thinkingLabel} />
         : null}
     </AnimatePresence>
-    {state.error ? (
-      <section role="alert" className="coden-agent-message-error">
-        <strong>La génération est interrompue</strong>
-        <p>{recoveryCopy(state.error)}</p>
-      </section>
-    ) : null}
+    {/*
+      * Drawn from the status, not from the text.
+      *
+      * The condition was `state.error`, and a run can fail with an empty
+      * message — a dropped connection has nothing to say about itself. The
+      * panel then rendered nothing at all: the reply simply stopped, with no
+      * error, no explanation and no retry. A failed run is always visible now,
+      * whether or not it managed to describe itself.
+      */}
+    {state.status === 'error' ? (() => {
+      const failure = failureCopy(state);
+      return (
+        <section role="alert" className="coden-agent-message-error">
+          <strong>{failure.title}</strong>
+          <p>{failure.body}</p>
+        </section>
+      );
+    })() : null}
     {state.status === 'cancelled' ? <p className="coden-agent-message-note">Exécution annulée.</p> : null}
     {!streaming && (onCopy || onRetry) ? <div className="coden-message-actions">
       {onCopy ? <button type="button" aria-label="Copier" title="Copier" onClick={onCopy}><Copy size={15} aria-hidden="true" /></button> : null}

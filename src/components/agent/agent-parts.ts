@@ -10,7 +10,7 @@ export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice;
 export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
   status: 'streaming' | 'done' | 'error' | 'cancelled';
-  error?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider';
+  error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider';
 };
 export const EMPTY_MESSAGE: AgentMessageState = { parts: [], activity: null, thinking: false, status: 'streaming', notices: [] };
 const VERBS = { read: 'A lu', search: 'A cherché', create: 'A créé', edit: 'A modifié', delete: 'A supprimé' };
@@ -34,7 +34,16 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     case 'files_touched': closeText(); next.parts.push(toolPart(`tool-${next.parts.length}`, event.action, event.paths)); next.thinking = false; next.activity = null; break;
     case 'run_finished': closeText(); next.status = event.reason === 'cancelled' ? 'cancelled' : 'done'; next.thinking = false; next.activity = null; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
     case 'run_cancelled': closeText(); next.status = 'cancelled'; next.thinking = false; next.activity = null; break;
-    case 'run_failed': closeText(); next.status = 'error'; next.error = event.message; next.thinking = false; next.activity = null; break;
+    /*
+     * The code is kept beside the sentence, not instead of it.
+     *
+     * The server phrases the failure in the language it guessed from the
+     * prompt, and the interface is French throughout — so an English-looking
+     * prompt put an English sentence under a French heading. Keeping the
+     * diagnostic lets the client say it itself; the server's own text stays as
+     * the fallback for a failure that carries no code.
+     */
+    case 'run_failed': closeText(); next.status = 'error'; next.error = event.message; next.diagnosticCode = event.diagnosticCode; next.thinking = false; next.activity = null; break;
     case 'run_paused': closeText(); next.thinking = false; next.activity = null; next.pausedReason = event.reason; break;
     case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
     case 'decision_required': {
