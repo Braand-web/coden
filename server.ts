@@ -1,6 +1,6 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
-import { normalizeAgentEffort, effortCostMultiplier } from './src/services/agent-effort.ts';
+import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort } from './src/services/agent-effort.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
@@ -12420,7 +12420,25 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const generationAbortController = new AbortController();
-  const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), 15 * 60_000);
+  /*
+   * The ceiling follows the level the user paid for.
+   *
+   * It was a flat fifteen minutes. Élevé already asks for a thirty-minute loop
+   * budget and Ultra for sixty, so both were killed by a constant that knew
+   * nothing about them — the run would be aborted mid-work and answered as
+   * `RUN_INTERRUPTED`, which is the most frequent failure code in the ledger.
+   * A level that promises a longer run has to be allowed one.
+   *
+   * Read from the body rather than from `requestedEffort`, which is parsed two
+   * hundred lines below this: the timer has to start before any of that.
+   * Floored at the old fifteen minutes so nothing gets shorter than it is
+   * today, and capped at an hour so a stuck run still ends by itself.
+   */
+  const generationCeilingMs = Math.min(
+    60 * 60_000,
+    Math.max(15 * 60_000, Math.round(budgetForEffort(normalizeAgentEffort(req.body?.effort)).maxDurationMs * 1.5)),
+  );
+  const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), generationCeilingMs);
   generationDeadline.unref();
   const durableStreamRun = Boolean(harnessContext && req.headers.accept?.includes('text/event-stream'));
   const releaseGenerationResources = () => {
