@@ -6,10 +6,6 @@ import { CodenBrand } from "./brand/coden-logo";
 import { Button, IconButton } from "./ui/primitives";
 import { focusFirst, setInertExcept, trapFocus } from "../lib/focus-management";
 
-export function MarketingShell({ children, className }: { children: React.ReactNode; className?: string }) { return <div className={cn("coden-marketing-shell", className)}>{children}</div>; }
-export function AuthShell({ children, aside, className }: { children: React.ReactNode; aside?: React.ReactNode; className?: string }) { return <div className={cn("coden-auth-shell", className)}><main className="coden-auth-main">{children}</main>{aside ? <aside className="coden-auth-aside">{aside}</aside> : null}</div>; }
-export function DashboardShell({ sidebar, children, className }: { sidebar: React.ReactNode; children: React.ReactNode; className?: string }) { return <div className={cn("coden-dashboard-shell", className)}>{sidebar}<main className="coden-dashboard-main">{children}</main></div>; }
-export function BuilderShell({ toolbar, sidebar, conversation, preview, className }: { toolbar: React.ReactNode; sidebar?: React.ReactNode; conversation: React.ReactNode; preview: React.ReactNode; className?: string }) { return <div className={cn("coden-builder-shell", className)}><header className="coden-builder-toolbar">{toolbar}</header><div className="coden-builder-grid">{sidebar ? <aside className="coden-builder-sidebar">{sidebar}</aside> : null}<section className="coden-builder-conversation">{conversation}</section><section className="coden-builder-preview">{preview}</section></div></div>; }
 
 export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const [open, setOpen] = React.useState(false);
