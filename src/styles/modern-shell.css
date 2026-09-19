@@ -124,9 +124,14 @@ body.coden-react-surface-home { padding-top: 76px; }
 .coden-react-brand .coden-logo-mark { width: 30px; height: 30px; }
 .coden-react-brand-mark { display: none; }
 .coden-react-nav { display: flex; align-items: center; gap: 4px; margin-inline: auto; }
-.coden-react-nav a, .coden-react-mobile-nav a { min-height: 40px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 9px; color: var(--text-muted); font-size: 13px; transition: color var(--transition-control), background-color var(--transition-control); }
+.coden-react-nav a, .coden-react-mobile-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 13px; transition: color var(--transition-control), background-color var(--transition-control); }
 .coden-react-nav a:hover, .coden-react-nav a[aria-current="page"], .coden-react-mobile-nav a:hover, .coden-react-mobile-nav a[aria-current="page"] { color: var(--foreground); background: var(--accent-soft); }
-.coden-react-header-actions { display: flex; align-items: center; gap: 8px; }
+.coden-react-header-actions { display: flex; align-items: center; gap: 0; }
+/* This link had no rule of its own, so it inherited --foreground and read
+   near-black here while the landing showed the same link in
+   --text-secondary, and it carried no hit area at all. */
+.coden-react-signin { display: inline-flex; min-height: 44px; align-items: center; padding-inline: 10px; color: var(--text-secondary); transition: color var(--transition-control); }
+.coden-react-signin:hover { color: var(--accent); }
 .coden-react-theme-toggle, .coden-react-menu { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--surface) 72%, transparent); transition: color var(--transition-control), border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .coden-react-theme-toggle:hover, .coden-react-menu:hover { color: var(--foreground); border-color: var(--border-strong, var(--border)); background: var(--surface); }
 .coden-react-theme-toggle:active, .coden-react-menu:active { transform: scale(.97); }

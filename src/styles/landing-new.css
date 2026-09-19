@@ -33,13 +33,15 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 }
 
 .landing-page-shell { width: min(1180px, calc(100% - 56px)); margin: 0 auto; }
-.landing-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 0; background: var(--background); }
-.landing-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
+/* The header keeps its 68px. The links inside it grew to a 44px hit area,
+   so the vertical padding gives that height back instead of adding it. */
+.landing-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 0; background: var(--background); }
+.landing-brand { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; color: var(--foreground); font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
 .landing-logo-mark { width: 22px; height: 22px; }
-.landing-nav { display: flex; align-items: center; gap: 26px; margin-left: auto; margin-right: auto; color: var(--text-secondary); font-size: 12px; }
-.landing-nav a, .landing-signin { transition: color var(--transition-control); }
+.landing-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: auto; color: var(--text-secondary); font-size: 12px; }
+.landing-nav a, .landing-signin { display: inline-flex; min-height: 44px; align-items: center; padding-inline: 10px; transition: color var(--transition-control); }
 .landing-nav a:hover, .landing-signin:hover { color: var(--accent); }
-.landing-header-actions { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 12px; }
+.landing-header-actions { display: flex; align-items: center; gap: 0; color: var(--text-secondary); font-size: 12px; }
 .landing-header-cta { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--text-on-accent) !important; font-weight: 600; transition: background-color var(--transition-control), transform var(--transition-micro); }
 .landing-header-cta:hover { background: color-mix(in srgb, var(--accent) 84%, var(--foreground)); }
 .landing-header-cta:active { transform: translateY(1px); }
