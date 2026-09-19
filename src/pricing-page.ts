@@ -1,7 +1,7 @@
 import './main';
 import './pricing-page.css';
+import { ANNUAL_DISCOUNT, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
 
-type BillingInterval = 'monthly' | 'annual';
 type PricingPlan = {
   key: 'free' | 'pro' | 'business';
   capabilities?: string[];
@@ -24,6 +24,8 @@ const tiers = Array.from(document.querySelectorAll<HTMLSelectElement>('[data-pri
 const status = document.getElementById('pricing-data-status');
 let selectedInterval: BillingInterval = 'monthly';
 let prices: PublicPrice[] = [];
+let signedIn = false;
+let currentPlan: string | null = null;
 
 function money(value: number, currency = 'XAF') {
   return new Intl.NumberFormat('fr-FR', {
@@ -33,16 +35,25 @@ function money(value: number, currency = 'XAF') {
   }).format(value);
 }
 
+/*
+ * The same computation the server bills from, not a copy of its numbers.
+ *
+ * This used to multiply credits by a rate written here — 150 for Pro, 300 for
+ * Business — which happened to match the catalogue and had no way of staying
+ * that way. A price shown on this page and a price charged at checkout that
+ * disagree is the one bug a pricing page must not have, so the fallback now
+ * runs `priceFor` from the billing configuration: the network may be down, the
+ * arithmetic is still the real one.
+ */
 function fallbackPrice(plan: 'pro' | 'business', credits: number, interval: BillingInterval): PublicPrice {
-  const monthly = (plan === 'pro' ? 150 : 300) * credits;
-  const amount = interval === 'annual' ? monthly * 12 * 0.8 : monthly;
+  const price = catalogPriceFor(plan, credits, interval);
   return {
     plan,
     credits,
     interval,
-    amount: Math.round(amount),
-    monthlyEquivalent: Math.round(interval === 'annual' ? amount / 12 : amount),
-    currency: 'XAF',
+    amount: price.amount,
+    monthlyEquivalent: price.monthlyEquivalent,
+    currency: price.currency,
   };
 }
 
@@ -51,10 +62,46 @@ function priceFor(plan: 'pro' | 'business', credits: number) {
     || fallbackPrice(plan, credits, selectedInterval);
 }
 
+/**
+ * Where choosing a plan takes you, which depends on who you are.
+ *
+ * Signed out, the choice has to survive the detour through authentication, so
+ * it travels in the redirect and is waiting on the other side.
+ *
+ * Signed in, there is no detour to make: sending someone who already has an
+ * account to a signup page — which is what this did for everyone — is asking
+ * them to prove again something the page already knows.
+ */
 function planRedirect(plan: 'free' | 'pro' | 'business', credits?: number) {
   const query = new URLSearchParams({ settings: 'facturation', plan, interval: selectedInterval });
   if (credits) query.set('credits', String(credits));
-  return `/auth.html?mode=signup&redirect=${encodeURIComponent(`/dashboard.html?${query.toString()}`)}`;
+  const destination = `/dashboard.html?${query.toString()}`;
+  return signedIn ? destination : `/auth.html?mode=signup&redirect=${encodeURIComponent(destination)}`;
+}
+
+/**
+ * Saying which plan is already theirs, and not selling it twice.
+ *
+ * Someone on Pro looking at the Pro card is not a buyer: the useful thing to
+ * tell them is that they already have it, and the useful button is the one
+ * that manages it rather than one that starts a second checkout.
+ */
+function markCurrentPlan() {
+  for (const key of ['free', 'pro', 'business'] as const) {
+    const card = document.querySelector<HTMLElement>(`[data-pricing-plan="${key}"]`);
+    const cta = document.querySelector<HTMLAnchorElement>(`[data-plan-cta="${key}"]`);
+    const isCurrent = signedIn && currentPlan === key;
+    card?.classList.toggle('is-current-plan', isCurrent);
+    if (isCurrent) {
+      card?.setAttribute('data-current-plan-label', 'Plan actuel');
+      if (cta) {
+        cta.textContent = 'Gérer mon abonnement';
+        cta.href = '/dashboard.html?settings=facturation';
+      }
+    } else {
+      card?.removeAttribute('data-current-plan-label');
+    }
+  }
 }
 
 function updateCard(plan: 'pro' | 'business') {
@@ -80,6 +127,7 @@ function updateAllCards() {
   updateCard('business');
   const freeCta = document.querySelector<HTMLAnchorElement>('[data-plan-cta="free"]');
   if (freeCta) freeCta.href = planRedirect('free');
+  markCurrentPlan();
 }
 
 function setInterval(next: BillingInterval) {
@@ -122,7 +170,7 @@ void fetch('/api/billing/plans', { headers: { Accept: 'application/json' } })
     if (!data.catalog) throw new Error('missing catalog');
     prices = Array.isArray(data.catalog.prices) ? data.catalog.prices : [];
     (data.catalog.plans || []).forEach(renderCapabilities);
-    const discount = Number(data.catalog.annualDiscountPercent || 20);
+    const discount = Number(data.catalog.annualDiscountPercent || Math.round(ANNUAL_DISCOUNT * 100));
     const annualButton = document.querySelector<HTMLButtonElement>('[data-pricing-interval="annual"] strong');
     if (annualButton && Number.isFinite(discount)) annualButton.textContent = `−${discount} %`;
     if (status) status.textContent = 'Tarifs synchronisés avec le catalogue Coden.';
@@ -133,3 +181,24 @@ void fetch('/api/billing/plans', { headers: { Accept: 'application/json' } })
   });
 
 updateAllCards();
+
+/*
+ * Who is reading this, asked once.
+ *
+ * The wallet is the only endpoint that knows both whether there is a session
+ * and which plan it is on. It needs credentials and answers 401 to a visitor,
+ * which is the answer rather than a failure — a pricing page must render
+ * completely for someone who has never signed in, so this only ever upgrades
+ * what is already on screen.
+ */
+void fetch('/api/billing/wallet', { headers: { Accept: 'application/json' }, credentials: 'include' })
+  .then(response => (response.ok ? response.json() : null))
+  .then((data: { plan?: { key?: string } | null; planKey?: string } | null) => {
+    if (!data) return;
+    signedIn = true;
+    currentPlan = String(data.plan?.key || data.planKey || '') || null;
+    updateAllCards();
+  })
+  .catch(() => {
+    // A visitor, or an offline wallet. Either way the page stays as it is.
+  });

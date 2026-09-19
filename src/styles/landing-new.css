@@ -291,3 +291,32 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
   .landing-proof-logos-track, .landing-feature-panel:not([hidden]) { animation: none; }
   .landing-feature-row small, .landing-pricing-grid article > a, .landing-header-cta, .landing-faq-list summary span, .landing-example-card small::after, .landing-case-study { transition: none; }
 }
+
+/*
+ * The landing points at the pricing page instead of restating it.
+ *
+ * The section this replaces carried its own plan cards with prices written
+ * into the markup — a second source of truth that could drift from the
+ * catalogue, and did not know whether the reader already had a plan. One
+ * sentence and a link is the whole job here; everything that needs the
+ * catalogue, the interval, the credit tier and the signed-in state lives on
+ * the page built for it.
+ */
+.landing-pricing-invite .landing-section-heading { gap: 18px; }
+.landing-pricing-invite-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  padding: 11px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 550;
+  text-decoration: none;
+  transition: border-color 180ms ease, background-color 180ms ease, gap 180ms ease;
+}
+.landing-pricing-invite-cta:hover { border-color: var(--foreground); background: var(--surface-hover); gap: 12px; }
+.landing-pricing-invite-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .landing-pricing-invite-cta { transition: none; } }

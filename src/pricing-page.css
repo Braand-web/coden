@@ -120,3 +120,28 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
   .pricing-skip-link, .pricing-interval button, .pricing-plan-card, .pricing-plan-action { transition: none; }
   .pricing-plan-card:hover, .pricing-plan-action:hover { transform: none; }
 }
+
+/*
+ * The plan someone already has.
+ *
+ * Quieter than the recommended card, not louder: this is a statement of fact,
+ * not an offer. The label is written by the page from the wallet, so it only
+ * ever appears for a signed-in reader on the plan that is actually theirs.
+ */
+.pricing-plan-card.is-current-plan {
+  border-color: var(--foreground);
+}
+.pricing-plan-card.is-current-plan::after {
+  content: attr(data-current-plan-label);
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.pricing-plan-card.is-current-plan { position: relative; }

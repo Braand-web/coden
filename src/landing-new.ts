@@ -2,7 +2,6 @@ import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
 import { initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
-import { CREDIT_TIERS, priceFor, type BillingInterval } from './config/billing-v2';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
 import {
   readPreferredEffort,
@@ -103,41 +102,6 @@ function setupFeatureTabs() {
     isVisible = true;
     startTimer();
   }
-}
-
-function setupPricingCycle() {
-  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-pricing-cycle]'));
-  const selects = Array.from(document.querySelectorAll<HTMLSelectElement>('[data-pricing-tier]'));
-  if (!buttons.length) return;
-  let interval: BillingInterval = 'monthly';
-  const money = (amount: number) => `${new Intl.NumberFormat('fr-FR').format(amount)} FCFA`;
-  const update = () => {
-    buttons.forEach(button => {
-      const active = (button.dataset.pricingCycle === interval);
-      button.setAttribute('aria-pressed', String(active));
-      button.classList.toggle('is-active', active);
-    });
-    selects.forEach(select => {
-      const plan = select.dataset.pricingTier;
-      if (plan !== 'pro' && plan !== 'business') return;
-      const credits = Number(select.value || CREDIT_TIERS[0]);
-      const price = priceFor(plan, credits, interval);
-      document.querySelector<HTMLElement>(`[data-pricing-price="${plan}"]`)?.replaceChildren(document.createTextNode(money(price.monthlyEquivalent)));
-      const note = document.querySelector<HTMLElement>(`[data-pricing-price-note="${plan}"]`);
-      if (note) note.textContent = interval === 'annual' ? `Paiement annuel de ${money(price.amount)}` : 'Facturé mensuellement';
-      const cta = document.querySelector<HTMLAnchorElement>(`[data-pricing-cta="${plan}"]`);
-      if (cta) {
-        const query = new URLSearchParams({ settings: 'facturation', plan, interval, credits: String(credits) });
-        cta.href = `/auth.html?mode=signup&redirect=${encodeURIComponent(`/dashboard.html?${query.toString()}`)}`;
-      }
-    });
-  };
-  buttons.forEach(button => button.addEventListener('click', () => {
-    interval = button.dataset.pricingCycle === 'yearly' ? 'annual' : 'monthly';
-    update();
-  }));
-  selects.forEach(select => select.addEventListener('change', update));
-  update();
 }
 
 function setupTestimonialMotion() {
@@ -251,7 +215,6 @@ function init() {
   initCodenNavigationTransitions();
   setupMobileNavigation();
   setupFeatureTabs();
-  setupPricingCycle();
   setupTestimonialMotion();
   setupGalleryDialog();
   setupLandingComposer();
