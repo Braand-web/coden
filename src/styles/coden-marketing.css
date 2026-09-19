@@ -3,13 +3,8 @@
   font-family: var(--font-sans);
 }
 
-:where(h1, h2, h3, .pricing-hero h1, .checkout-header h1) {
+:where(h1, h2, h3) {
   text-wrap: balance;
-}
-
-:where(.hero h1, .pricing-hero h1, .checkout-header h1) {
-  font-family: var(--font-display);
-  font-weight: 400;
 }
 
 :where(.navbar, .checkout-nav, .topbar) {
