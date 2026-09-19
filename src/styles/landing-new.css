@@ -200,7 +200,7 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-case-study { display: grid; gap: 28px; min-height: 420px; padding: clamp(24px, 4vw, 48px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-soft); transition: border-color var(--transition-panel), box-shadow var(--transition-panel), transform var(--transition-panel); }
 .landing-case-study.is-active { border-color: var(--accent-soft); box-shadow: 0 20px 54px color-mix(in srgb, var(--accent) 12%, transparent); }
 .landing-case-study-brand { display: inline-flex; align-items: center; gap: 11px; color: var(--text-strong); font-size: 16px; }
-.landing-case-study-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: var(--foreground); color: var(--background); font-size: 20px; }
+.landing-case-study-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--radius-md); background: var(--foreground); color: var(--background); font-size: 20px; }
 .landing-case-study-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(220px, .75fr); gap: 48px; align-items: center; }
 .landing-case-study-context { max-width: 560px; margin: 0 0 26px; color: var(--text-secondary); font-size: 15px; line-height: 1.55; }
 .landing-case-study blockquote { max-width: 620px; margin: 0; padding-left: 24px; border-left: 2px solid var(--accent); color: var(--text-strong); font-size: clamp(24px, 3.5vw, 42px); font-weight: 650; letter-spacing: -.022em; line-height: 1.08; text-wrap: balance; }
@@ -210,7 +210,7 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-case-study dd { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
 .landing-case-study-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 22px; border-top: 1px solid var(--border); }
 .landing-case-study-person { display: inline-flex; align-items: center; gap: 11px; }
-.landing-case-study-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--foreground); font: 700 11px var(--font-mono); }
+.landing-case-study-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--foreground); font: 700 11px var(--font-mono); }
 .landing-case-study-person span:last-child { display: grid; gap: 3px; }
 .landing-case-study-person strong { color: var(--text-strong); font-size: 13px; }
 .landing-case-study-person small { color: var(--text-muted); font-size: 11px; }

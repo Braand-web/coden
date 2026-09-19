@@ -85,7 +85,7 @@
 .coden-mission-stream .coden-terminal,
 .coden-mission-stream .coden-stack-trace {
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 16px;background: var(--surface);
+  border-radius: var(--radius-lg);background: var(--surface);
   box-shadow: 0 16px 36px color-mix(in srgb, var(--foreground) 10%, transparent);
   color: var(--foreground);
 }
@@ -229,7 +229,7 @@
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 9px 10px;
   background: color-mix(in srgb, var(--input, var(--background)) 78%, transparent);
   color: var(--foreground);
@@ -285,7 +285,7 @@
   overflow: auto;
   max-height: 220px;
   margin: 10px 0 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--foreground);
   font-size: 11px;
@@ -347,7 +347,7 @@
 .coden-attachment {
   position: relative;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 8px;
   background: var(--surface);
 }

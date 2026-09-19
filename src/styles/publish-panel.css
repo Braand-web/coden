@@ -14,7 +14,7 @@
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--foreground);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg, 0 18px 48px color-mix(in srgb, var(--foreground) 45%, transparent));
   overflow: hidden;
   font-family: var(--font-sans);
@@ -74,7 +74,7 @@
   width: 26px;
   height: 26px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -356,7 +356,7 @@
   align-items: start;
   padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--input);
 }
 
@@ -411,7 +411,7 @@
 
 .cdn-dom__empty {
   border: 1px dashed var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 14px 12px;
   color: var(--text-muted);
   font-size: 12px;
@@ -422,7 +422,7 @@
 .cdn-dom__row {
   border: 1px solid var(--border);
   background: var(--input);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 11px;
   display: grid;
   gap: 9px;

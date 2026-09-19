@@ -111,6 +111,24 @@ for (const requiredValue of requiredTokenValues) {
   }
 }
 
+const definedProperties = new Set();
+const bareUses = [];
+
+for (const file of listFiles(root)) {
+  const relativePath = path.relative(root, file).replace(/\\/g, '/');
+  if (!isProductSource(relativePath) && !relativePath.includes('src/')) continue;
+
+  const propertySource = fs.readFileSync(file, 'utf8');
+  for (const definition of propertySource.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) {
+    definedProperties.add(definition[1]);
+  }
+  // var(--x) with no comma has no fallback: if --x is never defined, the whole
+  // declaration is invalid at computed-value time and silently disappears.
+  for (const use of propertySource.matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*\)/g)) {
+    bareUses.push({ file, source: propertySource, offset: use.index, name: use[1] });
+  }
+}
+
 for (const file of listFiles(root)) {
   const relativePath = path.relative(root, file).replace(/\\/g, '/');
   if (!isProductSource(relativePath) || file === tokenFile) continue;
@@ -160,6 +178,27 @@ for (const file of listFiles(root)) {
     if (variableMatch) {
       addFailure(failures, file, source, variableMatch.index, 'obsolete palette variable ' + variableMatch[0]);
     }
+  }
+}
+
+/*
+ * A custom property used without a fallback must exist somewhere.
+ *
+ * --shell-max was used in four declarations and defined in none, so the
+ * public header and footer lost their horizontal padding entirely and sat
+ * flush against the viewport edge; --font-display did the same to a heading
+ * rule. Neither fails a build or logs anything — the declaration simply is
+ * not there. This is the check that would have caught both.
+ */
+for (const use of bareUses) {
+  if (!definedProperties.has(use.name)) {
+    addFailure(
+      failures,
+      use.file,
+      use.source,
+      use.offset,
+      'var(' + use.name + ') has no definition and no fallback, so the declaration is dropped',
+    );
   }
 }
 

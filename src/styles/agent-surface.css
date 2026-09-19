@@ -55,7 +55,7 @@
   width: min(292px, calc(100vw - 32px));
   padding: 6px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-lg, 0 18px 52px color-mix(in srgb, var(--foreground) 16%, transparent));
 }
@@ -67,7 +67,7 @@
   align-items: center;
   gap: 9px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   text-align: left;
