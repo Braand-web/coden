@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EASE_DRAWER } from "../lib/ease";
 import { cn } from "../lib/utils";
 import "../styles/site-footer.css";
+import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV, type PublicLocale } from "../config/public-routes";
 import { CodenBrand } from "./brand/coden-logo";
 import { Button, IconButton } from "./ui/primitives";
 import { focusFirst, setInertExcept, trapFocus } from "../lib/focus-management";
@@ -21,26 +22,16 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const labels = locale === "fr"
-    ? { product: "Produit", examples: "Exemples", pricing: "Tarifs", faq: "FAQ", signIn: "Connexion", cta: signInLabel || "Essayer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
-    : { product: "Product", examples: "Examples", pricing: "Pricing", faq: "FAQ", signIn: "Sign in", cta: signInLabel || "Try it", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+    ? { signIn: navLabel(PUBLIC_ACTIONS.signIn, "fr"), cta: signInLabel || navLabel(PUBLIC_ACTIONS.cta, "fr"), open: "Ouvrir la navigation", close: "Fermer la navigation" }
+    : { signIn: navLabel(PUBLIC_ACTIONS.signIn, "en"), cta: signInLabel || navLabel(PUBLIC_ACTIONS.cta, "en"), open: "Open navigation", close: "Close navigation" };
   /*
-   * The same navigation the landing draws, not a second one.
+   * One menu, read rather than restated.
    *
-   * The landing carries its header in its own markup and lists Produit,
-   * Exemples, Tarifs, FAQ; this component listed Fonctionnalités, Tarifs,
-   * Documentation. So following "Tarifs" from the home page landed on a page
-   * whose header offered a different site — which reads as an older version
-   * of the product, because that is what it was.
-   *
-   * The anchors are absolute: they point back at the landing sections, which
-   * do not exist on the page this header is drawn on.
+   * This listed its own destinations and the landing listed different ones, so
+   * arriving from the home page changed the site. Both now read the policy the
+   * server, the build and the SEO generator already read.
    */
-  const links = [
-    { href: "/#produit", label: labels.product, match: "/#produit" },
-    { href: "/#exemples", label: labels.examples, match: "/#exemples" },
-    { href: "/pricing.html", label: labels.pricing, match: "/pricing.html" },
-    { href: "/#faq", label: labels.faq, match: "/#faq" },
-  ];
+  const links = PUBLIC_NAV.map(link => ({ href: link.href, label: navLabel(link, locale as PublicLocale), match: link.href }));
 
   const closeMenu = React.useCallback((restoreFocus = false) => {
     setOpen(false);
@@ -140,9 +131,7 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
  */
 export function MarketingFooter() {
   const english = typeof document !== "undefined" && (document.documentElement.dataset.lang === "en" || document.documentElement.lang.toLowerCase().startsWith("en"));
-  const copy = english
-    ? { theme: "Toggle theme", privacy: "Privacy", terms: "Terms", contact: "Contact" }
-    : { theme: "Changer de thème", privacy: "Confidentialité", terms: "Conditions", contact: "Contact" };
+  const copy = english ? { theme: "Toggle theme" } : { theme: "Changer de thème" };
   return <footer className="coden-site-footer">
     <div className="coden-site-footer-bottom">
       <span>@coden{new Date().getFullYear()}</span>
@@ -156,9 +145,7 @@ export function MarketingFooter() {
           <svg data-theme-icon="dark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 1 1 8.7 3.5 8.5 8.5 0 0 0 20.5 15.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           <svg data-theme-icon="light" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
         </button>
-        <a href="/privacy.html">{copy.privacy}</a>
-        <a href="/terms.html">{copy.terms}</a>
-        <a href="mailto:contact@coden.fun">{copy.contact}</a>
+        {PUBLIC_LEGAL_LINKS.map(link => <a key={link.href} href={link.href}>{navLabel(link, english ? "en" : "fr")}</a>)}
       </span>
     </div>
   </footer>;

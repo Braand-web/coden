@@ -1,4 +1,75 @@
 {
+  "nav": {
+    "primary": [
+      {
+        "label": {
+          "fr": "Produit",
+          "en": "Product"
+        },
+        "href": "/#produit"
+      },
+      {
+        "label": {
+          "fr": "Exemples",
+          "en": "Examples"
+        },
+        "href": "/#exemples"
+      },
+      {
+        "label": {
+          "fr": "Tarifs",
+          "en": "Pricing"
+        },
+        "href": "/pricing.html"
+      },
+      {
+        "label": {
+          "fr": "FAQ",
+          "en": "FAQ"
+        },
+        "href": "/#faq"
+      }
+    ],
+    "legal": [
+      {
+        "label": {
+          "fr": "Confidentialité",
+          "en": "Privacy"
+        },
+        "href": "/privacy.html"
+      },
+      {
+        "label": {
+          "fr": "Conditions",
+          "en": "Terms"
+        },
+        "href": "/terms.html"
+      },
+      {
+        "label": {
+          "fr": "Contact",
+          "en": "Contact"
+        },
+        "href": "mailto:contact@coden.fun"
+      }
+    ],
+    "actions": {
+      "signIn": {
+        "label": {
+          "fr": "Connexion",
+          "en": "Sign in"
+        },
+        "href": "/auth.html"
+      },
+      "cta": {
+        "label": {
+          "fr": "Essayer",
+          "en": "Try it"
+        },
+        "href": "/auth.html?mode=signup&redirect=%2Fdashboard.html"
+      }
+    }
+  },
   "canonicalPublic": [
     "/",
     "/pricing.html",
