@@ -2,6 +2,7 @@ import * as React from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EASE_DRAWER } from "../lib/ease";
 import { cn } from "../lib/utils";
+import "../styles/site-footer.css";
 import { CodenBrand } from "./brand/coden-logo";
 import { Button, IconButton } from "./ui/primitives";
 import { focusFirst, setInertExcept, trapFocus } from "../lib/focus-management";
@@ -20,8 +21,8 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const labels = locale === "fr"
-    ? { product: "Produit", examples: "Exemples", pricing: "Tarifs", faq: "FAQ", signIn: "Se connecter", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
-    : { product: "Product", examples: "Examples", pricing: "Pricing", faq: "FAQ", signIn: "Sign in", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+    ? { product: "Produit", examples: "Exemples", pricing: "Tarifs", faq: "FAQ", signIn: "Connexion", cta: signInLabel || "Essayer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
+    : { product: "Product", examples: "Examples", pricing: "Pricing", faq: "FAQ", signIn: "Sign in", cta: signInLabel || "Try it", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
   /*
    * The same navigation the landing draws, not a second one.
    *
@@ -98,11 +99,6 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
       {links.map(link => <a key={link.href} href={link.href} aria-current={pathname === link.match ? "page" : undefined}>{link.label}</a>)}
     </nav>
       <div className="coden-react-header-actions">
-        <button type="button" className="coden-react-theme-toggle" data-theme-toggle aria-label={labels.theme} title={labels.theme}>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-          <path d="M20.8 15.1A8.5 8.5 0 0 1 8.9 3.2 8.5 8.5 0 1 0 20.8 15.1Z" />
-        </svg>
-      </button>
       <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="navbar" href="/auth.html">{labels.signIn}</a>
       <a className="coden-react-cta sign-in-btn" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">{labels.cta}</a>
       <IconButton
@@ -130,10 +126,40 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   </header>;
 }
 
+/**
+ * The same footer the landing draws.
+ *
+ * This was a four-column sitemap — brand statement, Produit, Ressources,
+ * Confiance, Légal, plus its own call to action — while the landing ended on
+ * one quiet line. Two footers for one site, so following any link out of the
+ * home page changed the furniture underneath you.
+ *
+ * The landing's is the one that survived, so this is it: the year, the theme
+ * control, and the three links somebody actually goes looking for down here.
+ * Everything the columns listed is in the header or on the page above.
+ */
 export function MarketingFooter() {
   const english = typeof document !== "undefined" && (document.documentElement.dataset.lang === "en" || document.documentElement.lang.toLowerCase().startsWith("en"));
   const copy = english
-    ? { statement: "Plan, build, test and publish from one workspace.", invite: "Turn your next idea into a working product.", cta: "Start building", product: "Product", features: "Features", pricing: "Pricing", resources: "Resources", docs: "Documentation", trust: "Trust", security: "Security", legal: "Legal", privacy: "Privacy", terms: "Terms", contact: "Contact", closing: "Built for products that need to ship." }
-    : { statement: "Planifiez, construisez, testez et publiez depuis un seul espace.", invite: "Transformez votre prochaine idée en produit fonctionnel.", cta: "Commencer", product: "Produit", features: "Fonctionnalités", pricing: "Tarifs", resources: "Ressources", docs: "Documentation", trust: "Confiance", security: "Sécurité", legal: "Légal", privacy: "Confidentialité", terms: "Conditions", contact: "Contact", closing: "Conçu pour les produits qui doivent être publiés." };
-  return <footer className="coden-react-footer"><div className="coden-react-footer-top"><div><CodenBrand className="coden-react-brand" /><p>{copy.statement}</p></div><div className="coden-react-footer-cta"><span>{copy.invite}</span><Button onClick={() => { window.location.href = "/auth.html?mode=signup&redirect=%2Fdashboard.html"; }}>{copy.cta}</Button></div></div><div className="coden-react-footer-grid"><div><h2>{copy.product}</h2><a href="/features.html">{copy.features}</a><a href="/pricing.html">{copy.pricing}</a></div><div><h2>{copy.resources}</h2><a href="/documentation.html">{copy.docs}</a></div><div><h2>{copy.trust}</h2><a href="/security.html">{copy.security}</a></div><div><h2>{copy.legal}</h2><a href="/privacy.html">{copy.privacy}</a><a href="/terms.html">{copy.terms}</a><a href="mailto:contact@coden.fun">{copy.contact}</a></div></div><div className="coden-react-footer-bottom"><span>© {new Date().getFullYear()} Coden</span><span>{copy.closing}</span></div></footer>;
+    ? { theme: "Toggle theme", privacy: "Privacy", terms: "Terms", contact: "Contact" }
+    : { theme: "Changer de thème", privacy: "Confidentialité", terms: "Conditions", contact: "Contact" };
+  return <footer className="coden-site-footer">
+    <div className="coden-site-footer-bottom">
+      <span>@coden{new Date().getFullYear()}</span>
+      <span>
+        {/*
+          * `data-theme-toggle` is the contract `initThemeController` binds to,
+          * and it is the same attribute the landing's own button carries — one
+          * controller, both surfaces.
+          */}
+        <button className="coden-site-theme-toggle" data-theme-toggle type="button" aria-label={copy.theme} title={copy.theme}>
+          <svg data-theme-icon="dark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 1 1 8.7 3.5 8.5 8.5 0 0 0 20.5 15.3Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg data-theme-icon="light" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+        </button>
+        <a href="/privacy.html">{copy.privacy}</a>
+        <a href="/terms.html">{copy.terms}</a>
+        <a href="mailto:contact@coden.fun">{copy.contact}</a>
+      </span>
+    </div>
+  </footer>;
 }
