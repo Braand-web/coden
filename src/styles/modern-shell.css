@@ -130,7 +130,13 @@ body.coden-react-surface-home { padding-top: 76px; }
 .coden-react-theme-toggle, .coden-react-menu { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--surface) 72%, transparent); transition: color var(--transition-control), border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .coden-react-theme-toggle:hover, .coden-react-menu:hover { color: var(--foreground); border-color: var(--border-strong, var(--border)); background: var(--surface); }
 .coden-react-theme-toggle:active, .coden-react-menu:active { transform: scale(.97); }
-.coden-react-cta { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 10px; background: var(--surface); color: var(--foreground) !important; font-size: 14px; line-height: 20px; font-weight: 600; }
+/* The primary call to action, one spec. It was a white 36px button on a
+   10px radius here, an accent 32px button on 8px in the landing header and
+   an accent 44px button on 8px on the pricing page — three buttons for one
+   job, one of them on a radius the token scale does not have. This follows
+   the pricing page, which already matched coherence.css. */
+.coden-react-cta { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--text-on-accent) !important; font-size: 14px; line-height: 20px; font-weight: 600; transition: background-color var(--transition-control); }
+.coden-react-cta:hover { background: color-mix(in srgb, var(--accent) 84%, var(--foreground)); }
 .coden-react-menu { display: none; }
 .coden-react-mobile-backdrop { position: fixed; inset: 0; z-index: -1; background: var(--overlay, color-mix(in srgb, var(--background) 62%, transparent)); }
 .coden-react-mobile-nav { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 2; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-soft); box-shadow: var(--shadow-lg); }
