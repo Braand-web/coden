@@ -20,12 +20,25 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const labels = locale === "fr"
-    ? { features: "Fonctionnalités", pricing: "Tarifs", documentation: "Documentation", signIn: "Se connecter", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
-    : { features: "Features", pricing: "Pricing", documentation: "Documentation", signIn: "Sign in", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+    ? { product: "Produit", examples: "Exemples", pricing: "Tarifs", faq: "FAQ", signIn: "Se connecter", cta: signInLabel || "Commencer", open: "Ouvrir la navigation", close: "Fermer la navigation", theme: "Changer de thème" }
+    : { product: "Product", examples: "Examples", pricing: "Pricing", faq: "FAQ", signIn: "Sign in", cta: signInLabel || "Start building", open: "Open navigation", close: "Close navigation", theme: "Change theme" };
+  /*
+   * The same navigation the landing draws, not a second one.
+   *
+   * The landing carries its header in its own markup and lists Produit,
+   * Exemples, Tarifs, FAQ; this component listed Fonctionnalités, Tarifs,
+   * Documentation. So following "Tarifs" from the home page landed on a page
+   * whose header offered a different site — which reads as an older version
+   * of the product, because that is what it was.
+   *
+   * The anchors are absolute: they point back at the landing sections, which
+   * do not exist on the page this header is drawn on.
+   */
   const links = [
-    { href: "/features.html", label: labels.features, match: "/features.html" },
+    { href: "/#produit", label: labels.product, match: "/#produit" },
+    { href: "/#exemples", label: labels.examples, match: "/#exemples" },
     { href: "/pricing.html", label: labels.pricing, match: "/pricing.html" },
-    { href: "/documentation.html", label: labels.documentation, match: "/documentation.html" },
+    { href: "/#faq", label: labels.faq, match: "/#faq" },
   ];
 
   const closeMenu = React.useCallback((restoreFocus = false) => {
