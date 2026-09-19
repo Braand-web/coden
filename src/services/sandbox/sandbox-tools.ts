@@ -19,6 +19,7 @@ import { sandboxRegistry } from './sandbox-registry.ts';
 import type { ProjectSandbox } from './project-sandbox.ts';
 import { decideCommand } from './command-policy.ts';
 import { needsRestart } from './launch.ts';
+import { DecisionRequiredError, isDecisionRequiredError, readDecisionRequest } from '../agent-decision.ts';
 
 export type ToolResult =
   | { ok: true; [key: string]: unknown }
@@ -103,6 +104,44 @@ export const SANDBOX_TOOL_SCHEMAS = [
     name: 'restart_server',
     description: 'Restart the dev server. Only needed after a dependency or build-config change; an edit to a component is hot-reloaded already.',
     parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    /*
+     * The one tool that stops the run.
+     *
+     * Written to be hard to reach on purpose. A build that pauses to ask which
+     * shade of blue costs the user a round trip and their confidence, and the
+     * model's instinct when a task is under-specified is to ask rather than to
+     * choose — so the description spends most of its length saying when NOT to
+     * call this, and names the default behaviour (decide, state the choice,
+     * carry on) that applies everywhere else.
+     */
+    name: 'request_decision',
+    description: [
+      'Stop the run and ask the user to decide. Use this ONLY when continuing would mean guessing at something you cannot recover from: deleting or overwriting work that is not yours to discard, picking between two incompatible directions that would each take the project somewhere different, or acting on a requirement that contradicts what is already built.',
+      'Do NOT use it for preferences, naming, styling, or anything you can pick a sensible default for. Do NOT use it to confirm that you understood. Do NOT use it because a request is short or vague — make the reasonable choice, say which choice you made in your reply, and continue.',
+      'Calling this ends the run until the user answers, so call it at most once, and only when you genuinely cannot proceed.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'One sentence: what you cannot decide alone, and why it blocks you.' },
+        questions: {
+          type: 'array',
+          description: 'One to three questions, each answerable by picking from its options.',
+          items: {
+            type: 'object',
+            properties: {
+              q: { type: 'string', description: 'The question, in the user language.' },
+              type: { type: 'string', enum: ['radio', 'check'], description: 'radio for one answer, check for several.' },
+              options: { type: 'array', items: { type: 'string' }, description: 'Two to six concrete options.' },
+            },
+            required: ['q', 'type', 'options'],
+          },
+        },
+      },
+      required: ['reason', 'questions'],
+    },
   },
 ] as const;
 
@@ -275,6 +314,21 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       return { ok: true, logs: entries.map(entry => `[${entry.stream}] ${entry.line}`) };
     },
 
+    /*
+     * Raises rather than returns.
+     *
+     * Every other handler answers the model. This one has nothing to answer
+     * with: the run is over until a person replies, so it throws a type the
+     * loop re-raises instead of feeding back as a tool result. A request the
+     * card could not draw is not a decision — the run carries on and the model
+     * is told to choose, which is better than stopping to show an empty box.
+     */
+    async request_decision(args: unknown) {
+      const request = readDecisionRequest(args);
+      if (!request) return fail('A decision needs at least one question with options. Choose a sensible default and continue.');
+      throw new DecisionRequiredError(request.questions, request.reason);
+    },
+
     async restart_server() {
       const before = sandbox.status();
       await sandbox.stop();
@@ -297,8 +351,17 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       try {
         return await handler(args || {});
       } catch (error: any) {
-        // A tool that throws ends the run. A tool that reports lets the model
-        // try something else, which is the whole point of a tool loop.
+        /*
+         * One throw is allowed through: the one that means "stop".
+         *
+         * Everything else becomes a result, because a tool that reports lets
+         * the model try something else — the whole point of a tool loop. A
+         * decision is the opposite: turned into a result here it would reach
+         * the model as "the tool failed", and it would work around the very
+         * point it had just said it could not pass. Both this dispatcher and
+         * the loop above it had to stop swallowing it.
+         */
+        if (isDecisionRequiredError(error)) throw error;
         return fail(error?.message || 'The tool failed.');
       }
     },

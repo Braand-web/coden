@@ -10,7 +10,7 @@ import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
-import { composeDecisionInstruction } from './lib/decision-questions';
+import { composeDecisionInstruction, normalizeDecisionQuestions } from './lib/decision-questions';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -2287,9 +2287,65 @@ async function restoreHarnessApprovalState() {
     activeHarnessThreadId = String(thread.id);
     activeHarnessTurnId = String(thread.activeTurnId);
     startHarnessApprovalPolling();
+    await restorePendingDecision();
   } catch {
     // Older projects may not have a harness thread yet; normal chat history
     // remains fully usable in that case.
+  }
+}
+
+/**
+ * The question that was on screen before the page went away.
+ *
+ * A decision outlives the stream that announced it — the tab is refreshed, the
+ * connection drops, the container is replaced mid-answer. The events that drew
+ * the card are gone in all three cases, and without this the person comes back
+ * to a conversation that simply stops, with no sign anything is waiting on
+ * them. The server holds the decision on the thread, so it can be asked again.
+ */
+async function restorePendingDecision() {
+  if (!currentProjectId || !activeHarnessThreadId || !conversationApi) return;
+  try {
+    const payload = await apiFetch<{ decision?: { id: string; turn_id?: string; questions?: unknown } | null }>(
+      `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/decision`,
+    );
+    const decision = payload?.decision;
+    const questions = normalizeDecisionQuestions(decision?.questions);
+    if (!decision?.id || !questions.length) return;
+    if (decision.turn_id) activeHarnessTurnId = String(decision.turn_id);
+
+    const card = appendMessage('assistant', '', { working: false });
+    const id = messageHandleId(card);
+    if (!id) return;
+    /*
+     * Replayed through the reducer rather than pushed as a block, so the card
+     * that comes back is the same component drawn by the same path as the one
+     * the live stream draws. Two ways to render one decision is how the two
+     * drift apart.
+     */
+    conversationApi.startLiveRun(id);
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 1, timestamp: Date.now(), type: 'decision_required', channel: 'chat',
+      payload: {
+        type: 'decision_required',
+        decisionId: decision.id,
+        question: questions[0]?.q || '',
+        options: (questions[0]?.options || []).map((label, index) => ({ id: String(index), label })),
+        allowFreeText: true,
+        questions,
+      },
+    });
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 2, timestamp: Date.now(), type: 'run_paused', channel: 'chat',
+      payload: { type: 'run_paused', reason: 'decision' },
+    });
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 3, timestamp: Date.now(), type: 'run_finished', channel: 'chat',
+      payload: { type: 'run_finished', reason: 'completed' },
+    });
+  } catch {
+    // No decision endpoint on an older deployment, or none waiting. Either way
+    // the conversation stays exactly as it was.
   }
 }
 
@@ -6667,10 +6723,25 @@ async function sendActiveHarnessInstruction(text: string) {
         ? `/api/projects/${encodeURIComponent(currentProjectId)}/agent/runs/${encodeURIComponent(lastAgentRunId)}/instructions`
         : '';
     if (!endpoint) throw new Error('The active agent turn is not ready to receive instructions yet.');
-    const response = await apiFetch<{ message?: string }>(endpoint, {
+    const response = await apiFetch<{ message?: string; resumed?: boolean; prompt?: string }>(endpoint, {
       method: 'POST',
       body: JSON.stringify({ instruction }),
     });
+    /*
+     * Answering a waiting question restarts the run; steering does not.
+     *
+     * A run paused on a decision has already ended, so queueing the answer for
+     * "the next safe checkpoint" would queue it for a checkpoint that never
+     * comes — the agent would sit there answered and stopped. The server says
+     * which of the two happened, and only it can: it is the one that knows
+     * whether the decision was still open, and whether this answer was the
+     * first. A second click gets `resumed: false` and starts nothing.
+     */
+    if (response.resumed && response.prompt) {
+      appendMessage('assistant', response.message || 'Décision enregistrée. Coden reprend le travail.');
+      await generateFromPrompt(response.prompt, 'auto', false, { __codenResumedFromDecision: true }, instruction);
+      return;
+    }
     appendMessage('assistant', response.message || 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.');
   } catch (error) {
     appendMessage('assistant', error instanceof Error ? error.message : 'The instruction could not be queued.');

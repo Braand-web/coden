@@ -72,3 +72,28 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-agent-message-error strong { font-size: 13px; font-weight: 700; }
 .coden-agent-message-error p,.coden-agent-message-note { margin:0; font-size:13px; line-height:1.55; }
 @media(prefers-reduced-motion:reduce) { .coden-agent-message * { animation:none!important; transition:none!important; } }
+
+/*
+ * The line that says the run is waiting rather than broken.
+ *
+ * Deliberately not the error panel's colours: nothing has gone wrong, so it
+ * reads as a note, with the accent only on its marker.
+ */
+.coden-agent-message-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.coden-agent-message-waiting::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}

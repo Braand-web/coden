@@ -135,6 +135,17 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
         </section>
       );
     })() : null}
+    {/*
+      * Waiting is not finishing.
+      *
+      * A run paused on a decision ends its stream like any other, so without
+      * this the reply just stops above a card, and the difference between "the
+      * agent is waiting for you" and "the agent died" is left for the user to
+      * guess. It sits under the card because the card is the thing to act on.
+      */}
+    {state.pausedReason === 'decision' && state.status !== 'error' ? (
+      <p className="coden-agent-message-waiting" role="status">Coden attend votre décision pour continuer. Votre travail est enregistré.</p>
+    ) : null}
     {state.status === 'cancelled' ? <p className="coden-agent-message-note">Exécution annulée.</p> : null}
     {!streaming && (onCopy || onRetry) ? <div className="coden-message-actions">
       {onCopy ? <button type="button" aria-label="Copier" title="Copier" onClick={onCopy}><Copy size={15} aria-hidden="true" /></button> : null}

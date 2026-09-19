@@ -3,6 +3,7 @@ import type { ProviderGateway } from './provider-gateway.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
 import { createNarrationFilter } from './narration-filter.ts';
 import { getAgentToolDefinition, toolNeedsApproval } from './agent-tools.ts';
+import { isDecisionRequiredError } from './agent-decision.ts';
 
 export type LlmToolHandler = (args: Record<string, unknown>) => Promise<unknown> | unknown;
 
@@ -364,6 +365,16 @@ export async function runLlmToolLoop(input: {
           }
         } catch (error: any) {
           input.signal?.throwIfAborted();
+          /*
+           * A decision is a stopping condition, not a tool that broke.
+           *
+           * Everything else caught here is handed back to the model as a tool
+           * result, which is right for a failure it can work around. A request
+           * for a decision has to leave the loop: fed back, the model would
+           * read "tool execution failed", try something else, and the run
+           * would carry on past the very point it said it could not pass.
+           */
+          if (isDecisionRequiredError(error)) throw error;
           output = { error: String(error?.message || 'Tool execution failed.').slice(0, 500) };
         }
       }

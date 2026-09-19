@@ -32,7 +32,25 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     }
     case 'text_end': closeText(); break;
     case 'files_touched': closeText(); next.parts.push(toolPart(`tool-${next.parts.length}`, event.action, event.paths)); next.thinking = false; next.activity = null; break;
-    case 'run_finished': closeText(); next.status = event.reason === 'cancelled' ? 'cancelled' : 'done'; next.thinking = false; next.activity = null; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
+    case 'run_finished': {
+      closeText();
+      /*
+       * A run that stopped to ask keeps its question.
+       *
+       * Notices are cleared here because a finished run's decision and cost
+       * checkpoints are stale — they belonged to work that is over. The one a
+       * paused run is waiting on is the opposite: it is the reason the run
+       * ended, and clearing it would erase the card a second before the person
+       * could answer it, leaving a reply that simply stops.
+       */
+      const awaitingDecision = next.pausedReason === 'decision';
+      next.status = event.reason === 'cancelled' ? 'cancelled' : 'done';
+      next.thinking = false;
+      next.activity = null;
+      next.pausedReason = awaitingDecision ? 'decision' : undefined;
+      next.notices = next.notices?.filter(notice => notice.type === 'artifact' || (awaitingDecision && notice.type === 'decision'));
+      break;
+    }
     case 'run_cancelled': closeText(); next.status = 'cancelled'; next.thinking = false; next.activity = null; break;
     /*
      * The code is kept beside the sentence, not instead of it.

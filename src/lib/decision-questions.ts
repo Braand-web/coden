@@ -7,7 +7,7 @@
  * reused by anything else that needs to ask several things at once.
  */
 
-import type { DecisionAnswer, DecisionQuestion } from './agent-chat-protocol';
+import type { DecisionAnswer, DecisionQuestion } from './agent-chat-protocol.ts';
 
 const MAX_QUESTIONS = 12;
 const MAX_OPTIONS = 12;
