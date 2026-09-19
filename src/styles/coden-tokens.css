@@ -8,6 +8,13 @@
   --radius-lg: 16px;
   --radius-xl: 24px;
   --radius-full: 9999px;
+  /* The public shell's content width. modern-shell.css centres the React
+     header and footer with calc((100vw - var(--shell-max)) / 2); with the
+     token undefined that calc was invalid at computed-value time, so the
+     whole padding declaration dropped and both sat flush against the
+     viewport edge. 1180px is what .landing-page-shell and
+     .pricing-page-main already use, so the chrome lines up with the page. */
+  --shell-max: 1180px;
   --ease-standard: cubic-bezier(.32, .72, 0, 1);
   --transition-micro: 120ms var(--ease-standard);
   --transition-control: 180ms var(--ease-standard);
