@@ -1,4 +1,27 @@
 import { createClient } from '@supabase/supabase-js';
+import { PUBLIC_PRICES, TOPUP_PRODUCTS_V2, TARGET_GROSS_MARGIN } from '../config/billing-v2.ts';
+
+/**
+ * What one credit actually sells for, at the worst price any customer pays.
+ *
+ * Derived, never typed in. The constant here read `0.02` while `priceFor()`
+ * was charging between `$0.20` and `$0.625` a credit — a tenfold error in the
+ * direction that under-charges, and `usage_settlements` recorded its effect on
+ * every row: `realized_revenue_usd = 0.0200` against costs up to `$0.0317`,
+ * which is how a Kimi K3 conversation settled at −58% margin.
+ *
+ * The minimum across every SKU is the only safe basis: price the margin at the
+ * cheapest credit a customer can buy and no other SKU can come out behind.
+ * Reading it from the catalogue means a new tier cannot silently invalidate it.
+ */
+export function minimumRealizedCreditPriceUsd(): number {
+  const perCredit = [
+    ...PUBLIC_PRICES.map(price => price.monthlyEquivalentUsd / price.credits),
+    ...TOPUP_PRODUCTS_V2.map(topup => topup.amountUsd / topup.credits),
+  ].filter(value => Number.isFinite(value) && value > 0);
+  if (!perCredit.length) throw new Error('The billing catalogue publishes no priced credit tier.');
+  return Math.min(...perCredit);
+}
 
 export interface ActionCostComponents {
   openrouter_cost_usd: number;
@@ -11,15 +34,14 @@ export interface ActionCostComponents {
 }
 
 export class CostEstimatorService {
-  // Real selling price of one credit in USD. This MUST track what a credit
-  // actually costs the customer across plans/top-ups, or the margin maths below
-  // is fictional. Realized price ranges from $0.0125 (Scale volume top-up) to
-  // $0.025 (Pro monthly); 0.02 is the floor we guarantee on every SKU, so the
-  // dynamic formula (cost * multiplier / sell_value) never under-charges.
-  // NOTE: was 0.20 — a 10x overestimate that made every reported margin false.
-  private sell_value_per_credit = 0.02;
-  // 3.4x cost coverage targets at least ~70% gross margin before payment fees.
-  private minimum_margin_multiplier = 3.4;
+  // Read from the billing catalogue rather than restated here, so the price
+  // the margin is computed against and the price the customer is charged
+  // cannot disagree again.
+  private sell_value_per_credit = minimumRealizedCreditPriceUsd();
+  // The multiplier that turns cost into the revenue the target margin needs:
+  // at 80%, revenue must be 5x cost. Derived from TARGET_GROSS_MARGIN for the
+  // same reason as the price above — a hardcoded 3.4 quietly targeted 71%.
+  private minimum_margin_multiplier = 1 / (1 - TARGET_GROSS_MARGIN);
 
   /**
    * Anti-negative margin formula to guarantee sustainable margins per request.

@@ -132,7 +132,23 @@ export async function consumeAgentStream(response: Response, onEvent: (event: Ag
       if (buffer.length > 32 * 1024 * 1024) throw new Error('Événement serveur trop volumineux.');
       if (chunk.done) break;
     }
-    if (buffer.trim()) frame(buffer);
+    /*
+     * A trailing fragment is an interruption, not a protocol error.
+     *
+     * A connection cut mid-event leaves half an envelope in the buffer, and
+     * parsing it threw a JSON SyntaxError — which is not an
+     * `AgentStreamInterruptedError`, so the Builder's reconnect loop, eight
+     * attempts replaying from `Last-Event-ID`, was skipped entirely and the
+     * run died on screen. The most ordinary network failure was the one case
+     * the recovery could not see.
+     *
+     * A complete trailing frame is still consumed: the loss is only the bytes
+     * that never arrived.
+     */
+    if (buffer.trim()) {
+      try { frame(buffer); }
+      catch { throw new AgentStreamInterruptedError(sequence, runId); }
+    }
     if (!terminal || ((options.requireResult ?? true) && !hasResult)) throw new AgentStreamInterruptedError(sequence, runId);
     return result;
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }

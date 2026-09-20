@@ -15,13 +15,10 @@ import {
   ChevronRight,
   FileCode2,
   LogOut,
-  Mic,
   Menu,
   Plus,
   Search,
-  ArrowUp,
   Settings,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
@@ -32,9 +29,13 @@ import {
   startCreateProjectFlow,
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
-import { AgentModeComposer } from './components/agent/agent-mode-composer';
-import type { AgentMode } from './services/agent-mode';
-import { initPromptInputActions } from './prompt-input-actions';
+import { PromptInput } from './components/ui/ai-chat-input';
+import {
+  readPreferredEffort,
+  readPreferredModelSelection,
+  writePreferredEffort,
+  writePreferredModelSelection,
+} from './lib/composer-preferences';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
@@ -111,7 +112,7 @@ async function fetchProjects() {
           name: 'Pulseboard',
           status: 'ready',
           preview_status: 'verified',
-          preview_html: '<!doctype html><html><body style="margin:0;font-family:system-ui;background:#f7f8fc;color:#182033"><main style="padding:28px"><nav style="display:flex;justify-content:space-between"><b>Pulseboard</b><span>Dashboard</span></nav><h1 style="margin-top:42px;font-size:34px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:28px"><div style="padding:18px;background:white;border-radius:12px">Projets<br><b style="font-size:24px">12</b></div><div style="padding:18px;background:white;border-radius:12px">Tâches<br><b style="font-size:24px">38</b></div><div style="padding:18px;background:white;border-radius:12px">Équipe<br><b style="font-size:24px">7</b></div></div></main></body></html>',
+          preview_html: '<!doctype html><html><body style="margin:0;font-family:system-ui;background:var(--surface);color:var(--foreground)"><main style="padding:28px"><nav style="display:flex;justify-content:space-between"><b>Pulseboard</b><span>Dashboard</span></nav><h1 style="margin-top:42px;font-size:34px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:28px"><div style="padding:18px;background:var(--surface);border-radius:12px">Projets<br><b style="font-size:24px">12</b></div><div style="padding:18px;background:var(--surface);border-radius:12px">Tâches<br><b style="font-size:24px">38</b></div><div style="padding:18px;background:var(--surface);border-radius:12px">Équipe<br><b style="font-size:24px">7</b></div></div></main></body></html>',
           updated_at: new Date().toISOString(),
         },
         { id: 'local-preview-project-002', name: 'TaskFlow', status: 'draft', updated_at: new Date(Date.now() - 86_400_000).toISOString() },
@@ -437,15 +438,12 @@ function DashboardHome() {
   });
   const [search, setSearch] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [composerMode, setComposerMode] = useState<AgentMode>('auto');
   const [creating, setCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState('');
   const [projectView, setProjectView] = useState<'all' | 'recent'>('all');
   const [showAllProjects, setShowAllProjects] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-  const composerFormRef = useRef<HTMLFormElement>(null);
   const wasSidebarOpen = useRef(false);
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
@@ -497,9 +495,8 @@ function DashboardHome() {
     };
   }, [projects.length, visibleProjects.length, projectView, search]);
 
-  const createFromPrompt = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const request = prompt.trim();
+  const createFromPrompt = async (text: string, meta: { model: string; effort: string }) => {
+    const request = text.trim();
     if (!request || creating) return;
     setCreating(true);
     setCreationStatus(formatCreateProjectFlowStatus('preparing', 'fr'));
@@ -512,7 +509,13 @@ function DashboardHome() {
     }
     try {
       await startCreateProjectFlow(
-        { prompt: request, mode: composerMode === 'plan' ? 'plan' : 'auto', source: 'dashboard' },
+        {
+          prompt: request,
+          mode: 'auto',
+          source: 'dashboard',
+          model: meta.model,
+          effort: meta.effort,
+        },
         {
           onStatus: (status: CreateProjectFlowStatus) => {
             setCreationStatus(formatCreateProjectFlowStatus(status, 'fr'));
@@ -528,21 +531,6 @@ function DashboardHome() {
   useEffect(() => {
     try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage can be unavailable */ }
   }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 52), 240);
-    textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY = textarea.scrollHeight > 240 ? 'auto' : 'hidden';
-  }, [prompt]);
-
-  useEffect(() => {
-    const root = composerFormRef.current?.parentElement;
-    if (!root) return;
-    initPromptInputActions({ root, persistForBuilder: true });
-  }, []);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
@@ -579,45 +567,39 @@ function DashboardHome() {
 
         <div className="coden-dashboard-content">
           <section className="coden-dashboard-create" aria-labelledby="dashboard-create-title">
-            <span className="coden-dashboard-create-mark" aria-hidden="true">
-              <WandSparkles size={20} />
-            </span>
+            <div className="coden-dashboard-tools-badge" aria-label="Connectez tous vos outils">
+              <span className="coden-dashboard-tools-icons" aria-hidden="true"><i className="is-drive">◉</i><i className="is-gmail">●</i><i className="is-slack">✣</i></span>
+              <span>Connectez tous vos outils</span>
+              <ArrowRight size={15} aria-hidden="true" />
+            </div>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
-            <p>Décrivez votre idée. Coden ouvrira un projet prêt à construire dans le Builder.</p>
-            <form ref={composerFormRef} className="coden-dashboard-composer input-wrapper" onSubmit={createFromPrompt}>
-              <textarea
-                ref={composerRef}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing) return;
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                rows={1}
-                placeholder="Créez un CRM moderne, une boutique, un portfolio…"
-                aria-label="Décrire le projet à créer"
-                disabled={creating}
-              />
-              <div className="coden-dashboard-composer-footer input-actions">
-                <div className="coden-dashboard-composer-actions actions-left" aria-label="Actions du composer">
-                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="upload" aria-label="Joindre des fichiers" disabled={creating}>
-                    <Plus size={16} aria-hidden="true" />
-                  </button>
-                  <button className="coden-dashboard-composer-icon icon-btn" type="button" data-prompt-action="voice" aria-label="Saisie vocale" disabled={creating}>
-                    <Mic size={15} aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="coden-dashboard-composer-actions actions-right">
-                  <AgentModeComposer mode={composerMode} onModeChange={setComposerMode} disabled={creating} locale="fr" />
-                  <button className="coden-dashboard-composer-submit" type="submit" disabled={!prompt.trim() || creating} aria-label={composerMode === 'plan' ? 'Planifier le projet' : 'Créer le projet'}>
-                    <ArrowUp size={17} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </form>
+            {/*
+              * The composer is the PromptInput now, on all three surfaces.
+              *
+              * It opens on this page rather than starting collapsed: the
+              * hero's whole job is to invite a prompt, and a 320px pill that
+              * has to be clicked before it can be typed into puts a step in
+              * front of the only action here.
+              */}
+            <PromptInput
+              className="coden-dashboard-prompt-input"
+              placeholder="Créez un CRM moderne, une boutique, un portfolio…"
+              value={prompt}
+              onChange={setPrompt}
+              // Same preference the Builder and the landing read, so the three
+              // surfaces show one choice instead of three.
+              defaultModel={readPreferredModelSelection()}
+              defaultEffort={readPreferredEffort()}
+              // The menu only offers what this workspace can run.
+              plan={profile?.plan?.key}
+              onModelChange={writePreferredModelSelection}
+              onEffortChange={writePreferredEffort}
+              onSubmit={(text, meta) => { void createFromPrompt(text, meta); }}
+              disabled={creating}
+              defaultExpanded
+              collapsedWidth={560}
+              expandedWidth={700}
+            />
             <div className="coden-dashboard-create-status" role="status" aria-live="polite">
               {creationStatus}
             </div>

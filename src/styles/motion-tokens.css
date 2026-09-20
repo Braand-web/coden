@@ -59,6 +59,46 @@
 .coden-enter-stagger > :nth-child(n+6) { animation-delay: 120ms; }
 
 /* ---------------------------------------------------------------------------
+ * `animate-in`, by hand
+ *
+ * The composer is written against tailwindcss-animate — `animate-in fade-in
+ * zoom-in-95`, `slide-in-from-top-3` — and that plugin is not installed here,
+ * so every one of those classes is currently a no-op: the attachment
+ * thumbnails and the morphing label appear with no entrance at all.
+ *
+ * Rather than add a plugin to a Tailwind v4 setup for six utilities, the same
+ * six are written out. The mechanism is the plugin's own: each utility sets a
+ * custom property, and one shared keyframe reads them, so `fade-in zoom-in-95`
+ * composes into a single animation instead of fighting over animation-name.
+ * ------------------------------------------------------------------------- */
+@keyframes coden-enter {
+  from {
+    opacity: var(--coden-enter-opacity, 1);
+    transform:
+      translate3d(var(--coden-enter-translate-x, 0), var(--coden-enter-translate-y, 0), 0)
+      scale3d(var(--coden-enter-scale, 1), var(--coden-enter-scale, 1), 1);
+  }
+}
+
+.animate-in {
+  animation-name: coden-enter;
+  animation-duration: 150ms;
+  animation-fill-mode: both;
+}
+
+.fade-in { --coden-enter-opacity: 0; }
+.zoom-in-90 { --coden-enter-scale: .9; }
+.zoom-in-95 { --coden-enter-scale: .95; }
+.slide-in-from-top-3 { --coden-enter-translate-y: -.75rem; }
+
+/* Not in Tailwind's default duration scale, and the composer asks for it. */
+.duration-400 { animation-duration: 400ms; transition-duration: 400ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+}
+
+/* ---------------------------------------------------------------------------
  * Reveal on scroll
  *
  * The rule that hides anything is gated on html[data-coden-reveal="on"], and
@@ -94,25 +134,17 @@ html[data-coden-reveal="on"] [data-coden-reveal].is-revealed {
  * Both tints derive from `currentColor`, so one class works on the sidebar's
  * light ink and on the panel's dark ink without a palette per surface.
  * ------------------------------------------------------------------------- */
-@keyframes coden-skeleton-sweep {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+@keyframes coden-skeleton-pulse {
+  0%, 100% { opacity: .62; }
+  50% { opacity: 1; }
 }
 
 .coden-skeleton {
   position: relative;
   overflow: hidden;
   background-color: color-mix(in srgb, currentColor 10%, transparent);
-  background-image: linear-gradient(
-    100deg,
-    transparent 38%,
-    color-mix(in srgb, currentColor 16%, transparent) 50%,
-    transparent 62%
-  );
-  background-size: 200% 100%;
-  background-repeat: no-repeat;
   border-radius: 8px;
-  animation: coden-skeleton-sweep 1.6s linear infinite;
+  animation: coden-skeleton-pulse 1.6s var(--ease-standard) infinite;
 }
 
 /*
@@ -126,7 +158,6 @@ html[data-coden-reveal="on"] [data-coden-reveal].is-revealed {
  */
 @media (prefers-reduced-motion: reduce) {
   .coden-skeleton {
-    background-image: none;
     animation: none;
   }
 

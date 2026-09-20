@@ -1,0 +1,27 @@
+/* Tailwind utilities are mapped directly to the canonical semantic tokens. */
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline {
+  --color-background: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--text-on-accent);
+  --color-secondary: var(--surface-soft);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-soft);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--accent);
+  --color-success: var(--success);
+}

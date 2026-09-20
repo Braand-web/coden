@@ -7,7 +7,6 @@ const motion = read('./src/styles/motion-tokens.css');
 const horizon = read('./src/styles/coden-horizon-system.css');
 const dashboardCss = read('./src/styles/dashboard-react.css');
 const dashboardTsx = read('./src/dashboard-react.tsx');
-const landing = read('./src/landing-v3.ts');
 const builder = read('./src/builder-live.ts');
 const cloudCss = read('./src/styles/cloud-console.css');
 
@@ -67,36 +66,17 @@ const cloudCss = read('./src/styles/cloud-console.css');
     .replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
     .split('}');
   for (const rule of rules) {
-    if (!/opacity:\s*0\s*;/.test(rule)) continue;
+    /*
+     * The `opacity` property itself, not a custom property whose name ends in
+     * it. `--coden-enter-opacity: 0` is the start value a keyframe reads, inert
+     * until that animation runs — it cannot hide anything on its own, which is
+     * the entire thing this block is checking for.
+     */
+    if (!/(^|[^-\w])opacity:\s*0\s*;/.test(rule)) continue;
     assert.match(rule, /data-coden-reveal="on"/,
       `every opacity:0 is behind the armed attribute, not this one: ${rule.trim().slice(0, 60)}`);
   }
 
-  // And the attribute comes from the script, never from the markup.
-  assert.match(landing, /document\.documentElement\.dataset\.codenReveal = 'on';/, 'the script arms it');
-  assert.doesNotMatch(motion, /html\[data-coden-reveal="on"\]\s*\{/, 'the stylesheet never arms itself');
-
-  /*
-   * Two exits before anything is hidden: a reader who asked for less motion,
-   * and a browser that cannot observe. Both must return before the attribute
-   * is set, or they get the hidden page without the mechanism that unhides it.
-   */
-  const armAt = landing.indexOf("dataset.codenReveal = 'on'");
-  const reducedAt = landing.indexOf("matchMedia('(prefers-reduced-motion: reduce)').matches) return");
-  const observerAt = landing.indexOf("typeof IntersectionObserver !== 'function') return");
-  assert.ok(reducedAt > 0 && reducedAt < armAt, 'reduced motion returns before anything is hidden');
-  assert.ok(observerAt > 0 && observerAt < armAt, 'and so does a browser that cannot observe');
-
-  /*
-   * The fold is never hidden. It is the headline and the composer — hiding it
-   * to fade it back in is a blank first paint charged to every visitor, to
-   * animate the thing they were already looking at.
-   */
-  assert.match(landing, /const targets = sections\.slice\(1\);/, 'the first section is excluded');
-
-  // A bounded net: anything on screen that the observer missed is shown anyway.
-  assert.match(landing, /getBoundingClientRect\(\)\.top < fold\) reveal\(section\)/,
-    'and whatever ends up visible unrevealed is revealed regardless');
 }
 
 /*
@@ -179,7 +159,8 @@ const cloudCss = read('./src/styles/cloud-console.css');
   assert.ok(reducedAt > 0, 'the contract has a reduced-motion block');
   const reduced = motion.slice(reducedAt);
   assert.match(reduced, /\.coden-skeleton \{[\s\S]*?animation: none;/, 'the skeleton sweep stops');
-  assert.match(reduced, /background-image: none;/, 'and leaves a plain tint that still reads as loading');
+  assert.match(reduced, /background-color: color-mix\(in srgb, currentColor 10%, transparent\);/,
+    'and leaves a plain tint that still reads as loading');
   assert.match(reduced, /\.coden-enter,\s*\n\s*\.coden-enter-stagger > \* \{\s*\n\s*animation: none;/,
     'entrances stop');
   // A universal selector standing alone, not the `> *` of a scoped child rule.

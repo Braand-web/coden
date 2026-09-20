@@ -18,6 +18,12 @@ export type CreateProjectFlowInput = {
   template?: string;
   theme?: string;
   model?: string;
+  /**
+   * The effort the composer asked for. Carried through the handoff because
+   * the run it pays for starts in the Builder, not here — dropping it would
+   * silently downgrade every Max Effort request to Medium at the door.
+   */
+  effort?: string;
   features?: string[];
   projectName?: string;
   source?: CreateProjectFlowSource;
@@ -79,6 +85,7 @@ export function persistCreateProjectFlow(input: CreateProjectFlowInput) {
     template: input.template || 'custom',
     theme: input.theme || 'light',
     model: input.model || 'auto',
+    effort: input.effort || '',
     features: Array.isArray(input.features) ? input.features : [],
     projectName: cleanText(input.projectName) || projectNameFromPrompt(prompt),
     source: input.source || 'landing',
@@ -108,6 +115,7 @@ export function readCreateProjectFlow(): CreateProjectFlowInput | null {
       template: parsed.template || 'custom',
       theme: parsed.theme || 'light',
       model: parsed.model || 'auto',
+      effort: parsed.effort || '',
       features: Array.isArray(parsed.features) ? parsed.features : [],
       projectName: cleanText(parsed.projectName),
       source: parsed.source || 'landing',
@@ -168,6 +176,7 @@ export async function startCreateProjectFlow(input: CreateProjectFlowInput, opti
           template: flow.template || 'custom',
           theme: flow.theme || 'light',
           model: flow.model || 'auto',
+          effort: flow.effort || '',
           prompt,
           features: flow.features || [],
           source: flow.source || 'landing',

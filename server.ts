@@ -1,8 +1,16 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
+import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort } from './src/services/agent-effort.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
+import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
+import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
+import {
+  UNIFIED_USAGE_CATEGORIES,
+  spendableByCategory,
+  sharedCredits,
+} from './src/services/credit-visibility.ts';
 import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
@@ -90,6 +98,9 @@ import {
   MODEL_REGISTRY,
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_CREDIT_RATES,
+  AUTO_MODEL_IDS,
+  AI_MODEL_PLAN_ACCESS,
+  isPlanAtLeast,
   PROVIDER_META,
   UserPlan,
   getModelsByProvider,
@@ -5459,11 +5470,37 @@ function isExplicitProviderModelSelection(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' && value !== 'auto';
 }
 
-function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown) {
+/**
+ * The worst a routed Auto turn can cost on this plan.
+ *
+ * Auto was priced at the floor of `DEFAULT_PROVIDER_MODEL_ID` — Luna Pro, two
+ * credits — while being free to route to Opus 5 at fifteen. Charging the
+ * cheapest model's floor for whatever the router picks is a straight loss
+ * whenever it picks anything else, and the router picks by task, not by price
+ * alone.
+ *
+ * Bounded by the plan rather than by the catalogue, because a plan that cannot
+ * reach a model cannot be charged for the risk of reaching it: on `free` the
+ * routable set is Luna and Gemini, so the ceiling stays at two and no free
+ * turn is gated harder than it is today. It rises only where Auto can genuinely
+ * route somewhere expensive.
+ */
+function autoWorstCaseCreditFloor(plan?: unknown): number {
+  // Unknown plan keeps the old number rather than guessing the ceiling. The
+  // alternative — assuming the whole Auto pool — would gate every free turn at
+  // Opus 5's floor and lock out the plan that can never reach it.
+  if (!plan) return MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID];
+  const routable = (AUTO_MODEL_IDS as readonly AllowedModelId[])
+    .filter(modelId => isPlanAtLeast(plan, AI_MODEL_PLAN_ACCESS[modelId]));
+  const pool = routable.length ? routable : [DEFAULT_PROVIDER_MODEL_ID];
+  return Math.max(...pool.map(modelId => MODEL_ACTION_CREDIT_FLOORS[modelId] || 0));
+}
+
+function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown, plan?: unknown) {
   if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0 };
   if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0 };
   const selectedModelFloor = modelId === 'auto' && intent.intent !== 'plan'
-    ? MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID]
+    ? autoWorstCaseCreditFloor(plan)
     : modelCreditFloor(modelId);
   if (intent.intent === 'conversation') return costEstimator.calculateRequiredCredits({
     openrouter_cost_usd: 0.0002,
@@ -5509,12 +5546,26 @@ async function chargeCompletedAgentAction(
     model?: string | null;
     providerCostUsd?: number;
     completeCostUsd?: number;
+    /** Private reasoning billed at the output rate, for per-step attribution. */
+    reasoningTokens?: number;
   } = {},
 ) {
   if (!CODEN_MONETIZATION_ENABLED) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
   if (CODEN_MONETIZATION_ENABLED) {
-    const completeCostUsd = Math.max(0.000001, Number(options.completeCostUsd ?? options.providerCostUsd ?? 0));
+    /*
+     * The cost the ledger records is the money that left the account.
+     *
+     * A provider's reported `usage.cost` is the tokens only; OpenRouter's
+     * 5.5% is charged when the credits are bought, so it never shows up in a
+     * response and every margin in `usage_settlements` was overstated by that
+     * much. It is applied here, once, rather than at each of the callers that
+     * would each have to remember.
+     */
+    const providerCostUsd = Number(options.providerCostUsd ?? 0);
+    const grossedUpProviderCost = withProviderPurchaseFee(providerCostUsd);
+    const platformAllowance = Math.max(0, Number(options.completeCostUsd ?? 0) - providerCostUsd);
+    const completeCostUsd = Math.max(0.000001, grossedUpProviderCost + platformAllowance);
     const reservation = await reserveUnifiedUsage({
       accountId: userId,
       category: options.category || 'ai_gateway',
@@ -5530,11 +5581,37 @@ async function chargeCompletedAgentAction(
       resource: options.resource || 'agent_action',
       provider: options.provider || 'openrouter',
       model: options.model || null,
-      providerCostUsd: Number(options.providerCostUsd ?? completeCostUsd),
-      allocatedPlatformCostUsd: Math.max(0, completeCostUsd - Number(options.providerCostUsd ?? 0)),
+      providerCostUsd: grossedUpProviderCost || completeCostUsd,
+      allocatedPlatformCostUsd: platformAllowance,
       completeCostUsd,
       idempotencyKey: `${referenceId}:usage`,
-      providerPayload: { description },
+      /*
+       * What the measured cost says this action should have cost, beside what
+       * it was actually charged.
+       *
+       * Recorded, not enforced. Flipping the charge onto the measurement in
+       * the same change would have been a billing change made blind: nobody
+       * has ever seen a measured build cost in this ledger, the free plan
+       * grants five build credits a day, and a measured build is worth more
+       * than that — every free user would have been cut off by an estimate
+       * nobody had checked. So the two numbers are written side by side, and
+       * the switch is a one-line change once a week of real runs has said
+       * what it costs.
+       */
+      providerPayload: {
+        description,
+        charged_credits: amount,
+        measured_credits: costEstimator.calculateRequiredCredits({
+          openrouter_cost_usd: grossedUpProviderCost,
+          infra_cost_usd: platformAllowance,
+          storage_cost_usd: 0,
+          build_cost_usd: 0,
+          domain_operation_cost_usd: 0,
+          minimum_action_credits: 1,
+        }).finalCredits,
+        provider_fee_rate: OPENROUTER_PURCHASE_FEE_RATE,
+        reasoning_tokens: options.reasoningTokens ?? null,
+      },
     });
     await settleUnifiedUsage({ reservation, usageEventId: eventId, creditsCharged: amount, completeCostUsd });
     return;
@@ -8217,6 +8294,99 @@ async function saveAgentRunStep(input: {
   return row;
 }
 
+/**
+ * Write the resume point for a run that is about to end badly.
+ *
+ * Merged onto whatever `afterRound` already stored, so the round it reached
+ * and the checks that passed survive, and the failure is added to them. The
+ * files come from `project_files`, which `onSnapshot` has been keeping current
+ * all along — the work was never the thing that was lost.
+ *
+ * Never throws. A failing run must not be made worse by the bookkeeping for
+ * its own recovery.
+ */
+async function saveResumeCheckpointForTurn(input: {
+  harnessContext: { harness: CodenAgentHarness; thread: { id: string }; turn: { id: string } } | null | undefined;
+  prompt: string;
+  projectId: string;
+  failure: { code?: string; message?: string };
+}) {
+  const context = input.harnessContext;
+  if (!context) return;
+  try {
+    const turn = await context.harness.store.getTurn(context.turn.id).catch(() => null);
+    const existing = (turn?.checkpoint || {}) as Record<string, unknown>;
+    const thread = await context.harness.store.getThread(context.thread.id).catch(() => null);
+    const files = await loadProjectFiles(input.projectId).catch(() => [] as GeneratedFile[]);
+    const checks = existing.checks as { problems?: Array<{ severity?: string; message?: string }> } | undefined;
+    const checkpoint: ResumeCheckpoint = {
+      turnId: context.turn.id,
+      prompt: String(input.prompt || '').slice(0, 4000),
+      round: Number(existing.round || 0) || 0,
+      planSummary: typeof existing.planSummary === 'string' ? existing.planSummary : undefined,
+      files: files.map(file => file.path).filter(Boolean).slice(0, 200),
+      outstanding: (checks?.problems || [])
+        .filter(problem => problem?.severity !== 'warning')
+        .map(problem => String(problem?.message || '').slice(0, 200))
+        .filter(Boolean)
+        .slice(0, 20),
+      failure: {
+        code: input.failure.code,
+        message: redactSecrets(String(input.failure.message || ''), '[redacted]').slice(0, 400),
+      },
+      modelId: typeof existing.modelId === 'string' ? existing.modelId : undefined,
+    };
+    await context.harness.saveCheckpoint(context.turn.id, { ...existing, resume: checkpoint });
+    /*
+     * And on the thread, which is where the next turn looks.
+     *
+     * The store exposes no way to list a thread's turns, and a resume point is
+     * a property of the conversation rather than of the turn that happened to
+     * die in it: one slot, always the most recent failure, replaced rather
+     * than accumulated.
+     */
+    await context.harness.store.updateThread(context.thread.id, {
+      metadata: { ...(thread?.metadata || {}), resume: checkpoint },
+    }).catch(() => null);
+  } catch (error) {
+    console.warn('[coden:resume_checkpoint_skipped]', {
+      project_id: input.projectId,
+      message: redactSecrets(String(error), '[redacted]'),
+    });
+  }
+}
+
+/**
+ * The resume point left by this project's last run, if it is worth using.
+ *
+ * Only a failure a rerun can actually help with, and only once: the checkpoint
+ * is cleared as it is handed out, so a brief is never replayed into a second
+ * run and a resumed run that fails again resumes from its own state rather
+ * than from a stale one.
+ */
+async function consumeResumeCheckpoint(
+  harness: CodenAgentHarness | null | undefined,
+  threadId: string | undefined,
+  currentTurnId: string | undefined,
+): Promise<ResumeCheckpoint | null> {
+  if (!harness || !threadId) return null;
+  try {
+    const thread = await harness.store.getThread(threadId).catch(() => null);
+    const metadata = (thread?.metadata || {}) as Record<string, unknown>;
+    const resume = metadata.resume;
+    if (!isResumableCheckpoint(resume)) return null;
+    if (resume.turnId === currentTurnId) return null;
+    if (!isResumableFailure(resume.failure?.code)) return null;
+    // Spend it as it is read. A brief replayed into a second run tells the
+    // model that work it has already finished is still outstanding.
+    const { resume: _spent, ...rest } = metadata;
+    await harness.store.updateThread(threadId, { metadata: rest }).catch(() => null);
+    return resume;
+  } catch {
+    return null;
+  }
+}
+
 async function saveDurableRunCheckpoint(input: {
   agentRunId: string;
   project: GeneratedProject;
@@ -9657,9 +9827,41 @@ async function loadUnifiedWalletSnapshot(organizationId: string) {
     return totals;
   }, {});
 
+  /*
+   * What each category can actually spend.
+   *
+   * `balance` and `breakdown` are both true and both useless as a gate
+   * readout, because they are on the wrong axis. `breakdown` is keyed by the
+   * grant's KIND — `daily_build`, `monthly_ai`, `topup` — while every debit
+   * filters on its usage_restriction: `coden_billing_reserve` only draws from
+   * grants restricted to the category being charged, or to `general`.
+   *
+   * On a free account that difference is the whole product. The plan issues
+   * build 5/day (capped 30/month), cloud 20/month and ai_gateway 4/month, so
+   * `balance` can read 30 while a chat has nothing to draw on — which is
+   * exactly what this account saw on 13 September: a counter promising 30
+   * credits, and "the model is temporarily unavailable" on the next message.
+   *
+   * It also made two slots in the settings panel permanently wrong: a top-up
+   * (kind `topup`, restriction `general`) is spendable on all three categories
+   * but appeared under none of them, and "General credits" read `breakdown`
+   * for a key that is a restriction and never a kind, so it never displayed
+   * anything at all.
+   *
+   * Computed from the rows already loaded, with the same predicate as the RPC,
+   * so the number shown and the number spent cannot drift apart.
+   */
+  const spendable = spendableByCategory(grants);
+
+  // Shared credit, reported once on its own so the categories above can be
+  // read as "what this can pay for" without double-counting it by hand.
+  const shared = sharedCredits(grants);
+
   return {
     balance: grants.reduce((sum, grant) => sum + grant.credits_remaining, 0),
     breakdown,
+    spendable,
+    shared,
     grants,
   };
 }
@@ -9667,7 +9869,7 @@ async function loadUnifiedWalletSnapshot(organizationId: string) {
 type UnifiedUsageReservation = {
   id: string;
   accountId: string;
-  category: 'build' | 'cloud' | 'ai_gateway' | 'email';
+  category: (typeof UNIFIED_USAGE_CATEGORIES)[number];
   credits: number;
   estimatedCogsUsd: number;
   idempotencyKey: string;
@@ -9966,6 +10168,15 @@ app.get('/api/billing/wallet', async (req, res) => {
     balance: CODEN_MONETIZATION_ENABLED ? (wallet?.balance || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     unlimited: hasUnlimitedTestCredits(orgId),
     breakdown: wallet?.breakdown || {},
+    /*
+     * What each category can actually spend, which is what a gate refuses on.
+     * `balance` sums every restriction together and so can promise credit the
+     * next request has no way to draw.
+     */
+    spendable: CODEN_MONETIZATION_ENABLED
+      ? (wallet?.spendable || {})
+      : Object.fromEntries(UNIFIED_USAGE_CATEGORIES.map(category => [category, CODEN_UNMETERED_USAGE_BUDGET])),
+    shared: CODEN_MONETIZATION_ENABLED ? (wallet?.shared || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     grants: wallet?.grants || [],
     legacy_shadow_balance: legacyShadowBalance,
   });
@@ -11162,6 +11373,12 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
       daily_promo_credits: unifiedWallet?.breakdown.daily_build || 0,
       topup_credits: unifiedWallet?.breakdown.topup || 0,
       breakdown: unifiedWallet?.breakdown || {},
+      // Per category, on the axis the debit actually uses. See
+      // loadUnifiedWalletSnapshot for why the two differ.
+      spendable: CODEN_MONETIZATION_ENABLED
+        ? (unifiedWallet?.spendable || {})
+        : Object.fromEntries(UNIFIED_USAGE_CATEGORIES.map(category => [category, CODEN_UNMETERED_USAGE_BUDGET])),
+      shared: CODEN_MONETIZATION_ENABLED ? (unifiedWallet?.shared || 0) : CODEN_UNMETERED_USAGE_BUDGET,
     },
     history,
   });
@@ -12297,7 +12514,25 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const generationAbortController = new AbortController();
-  const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), 15 * 60_000);
+  /*
+   * The ceiling follows the level the user paid for.
+   *
+   * It was a flat fifteen minutes. Élevé already asks for a thirty-minute loop
+   * budget and Ultra for sixty, so both were killed by a constant that knew
+   * nothing about them — the run would be aborted mid-work and answered as
+   * `RUN_INTERRUPTED`, which is the most frequent failure code in the ledger.
+   * A level that promises a longer run has to be allowed one.
+   *
+   * Read from the body rather than from `requestedEffort`, which is parsed two
+   * hundred lines below this: the timer has to start before any of that.
+   * Floored at the old fifteen minutes so nothing gets shorter than it is
+   * today, and capped at an hour so a stuck run still ends by itself.
+   */
+  const generationCeilingMs = Math.min(
+    60 * 60_000,
+    Math.max(15 * 60_000, Math.round(budgetForEffort(normalizeAgentEffort(req.body?.effort)).maxDurationMs * 1.5)),
+  );
+  const generationDeadline = setTimeout(() => generationAbortController.abort('RUN_DEADLINE_EXCEEDED'), generationCeilingMs);
   generationDeadline.unref();
   const durableStreamRun = Boolean(harnessContext && req.headers.accept?.includes('text/event-stream'));
   const releaseGenerationResources = () => {
@@ -12508,6 +12743,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
+  /*
+   * The effort the composer asked for. It widens or narrows the route budget
+   * in the pipeline and scales the credit estimate here, so a level that
+   * promises more work is priced for more work before the gate runs.
+   */
+  const requestedEffort = normalizeAgentEffort(req.body?.effort);
   const existingFiles = await loadProjectFiles(project.id);
   const lastPlan = await getLastProjectPlan(project.id);
   const recentHistory = await getRecentDecisionHistory(project.id, 6);
@@ -12619,12 +12860,45 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         projectId: project.id,
       });
 
+      /*
+       * Pick up a run that died, instead of starting it again.
+       *
+       * The files a failed run wrote are already in the workspace — the loop
+       * is the only thing that was lost. Handed the brief, the model is told
+       * what the plan was, what exists, what was verified and why it stopped,
+       * in a few thousand tokens rather than the hundreds of thousands a
+       * replayed transcript would cost.
+       *
+       * Prepended to the request rather than replacing it: what the user just
+       * typed is still the instruction, and the brief is the context it was
+       * missing.
+       */
+      const resumeFrom = await consumeResumeCheckpoint(
+        harnessContext?.harness,
+        harnessContext?.thread.id,
+        harnessContext?.turn.id,
+      );
+      if (resumeFrom) {
+        console.info('[coden:run_resumed]', {
+          project_id: project.id,
+          from_turn: resumeFrom.turnId,
+          round: resumeFrom.round,
+          failure: resumeFrom.failure?.code,
+        });
+        eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
+      }
+      const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
+
+---
+
+${agentPrompt}` : agentPrompt;
+
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
         projectName: project.name,
         userId,
-        prompt: agentPrompt,
+        prompt: pipelinePrompt,
         memoryContext: projectMemory,
         backendEnv,
         route: pipelineRoute,
@@ -12632,6 +12906,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         history: recentHistory,
         approvedPlan: req.body?.useLastPlan ? lastPlan || undefined : undefined,
         complexity: inferAgentTaskComplexity(agentPrompt, decision, existingFiles),
+        effort: requestedEffort,
         selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
         visionInputs,
         userPlan: routingPlan,
@@ -12686,7 +12961,28 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
          * work that reached their project, and a run that failed earlier
          * already returned above without passing through here.
          */
-        const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
+        /*
+         * Priced for the effort that was actually granted.
+         *
+         * Max Effort buys twice the wall clock and twice the tool calls per
+         * round, so it really does cost more provider time; charging it the
+         * Medium price is the same mistake as the September one, just earlier
+         * in the pipeline. Low is genuinely cheaper and is billed that way —
+         * a level that costs the same as Medium while doing less is a level
+         * nobody should pick.
+         *
+         * Floored at one credit rather than at the Medium price: the estimator
+         * enforces `minimum_action_credits` internally but does not report it,
+         * and no action is free.
+         */
+        const baseCost = estimateActionCost(prompt, decision, requestedModelSelection, routingPlan);
+        const pipelineCost = {
+          ...baseCost,
+          finalCredits: Math.max(
+            1,
+            Math.ceil(baseCost.finalCredits * effortCostMultiplier(requestedEffort) * 10000) / 10000,
+          ),
+        };
         const pipelineProviderCostUsd = Number(outcome.costUsd || 0);
         await chargeCompletedAgentAction(
           helpers,
@@ -12792,8 +13088,27 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         recoverable: true,
       });
     } catch (error: any) {
+      /*
+       * Leave a resume point on the way out.
+       *
+       * `afterRound` writes a checkpoint once a round completes, which is why
+       * 35 of 144 turns carry one and not a single failed turn does: a run
+       * that dies mid-round never reaches it. The runs that most need somewhere
+       * to restart from are exactly the ones that never wrote it.
+       *
+       * Best-effort by construction — a failed run must not be made worse by
+       * the bookkeeping for its own recovery.
+       */
+      const interrupted = generationAbortController.signal.aborted;
+      const failureCode = interrupted ? 'RUN_INTERRUPTED' : String(error?.diagnosticCode || 'AGENT_EXECUTION_FAILED');
+      await saveResumeCheckpointForTurn({
+        harnessContext,
+        prompt: agentPrompt,
+        projectId: project.id,
+        failure: { code: failureCode, message: interrupted ? 'generation interrupted' : String(error?.message || '') },
+      });
       // Partial files are retained by onSnapshot; surface the failure for recovery.
-      if (generationAbortController.signal.aborted) {
+      if (interrupted) {
         return respondJson(499,{ success: false, diagnostic_code:'RUN_INTERRUPTED', error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' });
       }
       console.warn('[coden:multi_agent_pipeline_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });

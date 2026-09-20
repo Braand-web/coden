@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="blue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 0) rotate(32) scale(960 760)">
+      <stop offset="0" stop-color="#3A83F7" stop-opacity=".32"/>
+      <stop offset="1" stop-color="#3A83F7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violet" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1580 20) rotate(145) scale(880 720)">
+      <stop offset="0" stop-color="#751ED9" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#751ED9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cyan" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1390 1000) rotate(-150) scale(920 680)">
+      <stop offset="0" stop-color="#25B4CA" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#25B4CA" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="#FFFFFF"/>
+  <rect width="1600" height="1000" fill="url(#blue)"/>
+  <rect width="1600" height="1000" fill="url(#violet)"/>
+  <rect width="1600" height="1000" fill="url(#cyan)"/>
+</svg>

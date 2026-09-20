@@ -22,21 +22,15 @@ assert.match(english.primaryCta, /Create my app/i);
 assert.match(french.refineLabel, /agent/i);
 assert.match(english.refineLabel, /agent/i);
 
-const landing = readFileSync('index.html', 'utf8');
+const root = readFileSync('index.html', 'utf8');
 const landingI18n = readFileSync('src/landing-i18n.ts', 'utf8');
 const flow = readFileSync('src/services/create-project-flow.ts', 'utf8');
 
-assert.equal((landing.match(/<h1\b/gi) || []).length, 1, 'landing must keep one H1');
-assert.match(landing, /data-coden-surface="landing-v3"/);
-assert.match(landing, /data-build/);
-assert.match(landing, /id="coden-marketing-header-root"/);
-assert.match(landing, /class="cdn-nav"/);
-assert.doesNotMatch(landing, /class="hero-flow-rail"/, 'the removed proof rail must not return');
-assert.doesNotMatch(landing, /class="hero-import-row"/, 'the removed import rail must not return');
-assert.equal((landing.match(/data-build\b/g) || []).length, 2, 'hero and footer both allow creation');
-assert.match(landing, /\/src\/landing-v3\.ts/);
-assert.doesNotMatch(landing, /<footer[\s\S]*?href="#"/i, 'landing footer must not contain dead placeholder links');
-assert.doesNotMatch(landing, /id="rotating-word"/i, 'hero positioning must not depend on rotating words');
+// Same retired-landing assumption as in test-public-value-proposition: the
+// real landing shipped, so the root is the landing and is meant to be found.
+assert.match(root, /data-coden-surface="landing-new"/, 'the root explicitly marks its surface');
+assert.match(root, /name="robots" content="index, follow"/, 'the landing is indexable');
+assert.doesNotMatch(root, /landing-v3|landing-reference|cdn-nav|data-build/, 'the legacy landing is absent');
 assert.match(landingI18n, /FR_POSITIONING = getProductPositioning\('fr'\)/);
 assert.match(landingI18n, /'nav\.open'/);
 assert.match(landingI18n, /'footer\.ctaButton'/);

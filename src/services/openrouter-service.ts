@@ -84,6 +84,18 @@ export interface ChatCompletionResult {
     completion_tokens: number;
     total_tokens: number;
     cached_tokens?: number;
+    /**
+     * Private reasoning the model was paid for.
+     *
+     * Providers bill these at the output rate and report them inside
+     * `completion_tokens_details`. Nothing read them, so a run at high effort
+     * was costed as though it had not reasoned at all — the one number that
+     * grows fastest with the effort control and the only one that was missing.
+     *
+     * They are part of `completion_tokens`, not additional to it: kept as a
+     * separate figure for attribution, never added to the total again.
+     */
+    reasoning_tokens?: number;
   };
   cost_usd: number;
 }
@@ -171,6 +183,7 @@ export class OpenRouterService {
         const completion_tokens = usage.completion_tokens || 0;
         const total_tokens = usage.total_tokens || 0;
         const cached_tokens = data?.usage?.prompt_tokens_details?.cached || 0;
+        const reasoning_tokens = Number(data?.usage?.completion_tokens_details?.reasoning_tokens || 0) || 0;
 
         // Custom price lookup matching OpenRouter standard rates where possible
         // or using estimated average fallback ($10 / million tokens for standard pro models)
@@ -187,7 +200,8 @@ export class OpenRouterService {
             prompt_tokens,
             completion_tokens,
             total_tokens,
-            cached_tokens
+            cached_tokens,
+            reasoning_tokens
           },
           cost_usd: real_or_est_cost
         };
@@ -317,6 +331,7 @@ export class OpenRouterService {
                   completion_tokens: completionTokens,
                   total_tokens: usage.total_tokens || promptTokens + completionTokens,
                   cached_tokens: usage?.prompt_tokens_details?.cached || 0,
+                  reasoning_tokens: Number(usage?.completion_tokens_details?.reasoning_tokens || 0) || 0,
                 },
                 cost_usd: Number.isFinite(Number(data?.usage?.cost ?? data?.cost ?? data?.price))
                   ? Number(data?.usage?.cost ?? data?.cost ?? data?.price)

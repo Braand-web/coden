@@ -98,15 +98,21 @@ const live = readFileSync(new URL('src/builder-live.ts', root), 'utf8');
 /*
  * The composer has a visible caret and no scrollbar.
  *
- * `src/builder.css` already said `caret-color: var(--text)` — the right
- * answer, since a caret is a text cursor. The textarea's inline style
- * overrode it with `var(--accent)`, and an inline style always wins: in the
- * dark theme `--accent` is `#f5f7fb`, so the blinking bar was pure white.
+ * A caret is a text cursor, so it follows the text colour. The textarea's
+ * inline style once overrode that with `var(--accent)`, and an inline style
+ * always wins: in the dark theme `--accent` is `#f5f7fb`, so the blinking bar
+ * was pure white.
+ *
+ * The token carrying the text colour is `--foreground` since the design
+ * system landed; this asserted the retired `--text` and failed on every run.
+ * The rule it exists for is unchanged and is now stated directly: the caret
+ * matches the text, and is never the accent.
  */
 {
   const textarea = markup.slice(markup.indexOf('id="chat-textarea-box"'), markup.indexOf('id="chat-textarea-box"') + 700);
 
-  assert.match(textarea, /caret-color: var\(--text\)/, 'the caret follows the text colour');
+  assert.match(textarea, /caret-color: var\(--foreground\)/, 'the caret follows the text colour');
+  assert.doesNotMatch(textarea, /caret-color: var\(--accent\)/, 'the caret is never the accent colour');
   assert.doesNotMatch(textarea, /caret-color: var\(--accent\)/, 'not the accent, which is white in the dark theme');
 
   // The bar goes; the scrolling stays. WebKit draws it inside the padding, so

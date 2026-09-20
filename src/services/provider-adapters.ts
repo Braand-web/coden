@@ -101,7 +101,15 @@ export function buildProviderRequestConfig(runtime: AIModelRuntimeConfig): Provi
       responseFormat,
       tools: tools.length ? tools : undefined,
       toolChoice: tools.length ? runtime.toolChoice : 'none',
-      reasoning: runtime.reasoning.enabled ? { effort: runtime.reasoning.effort } : undefined,
+      // At Ultra the budget is the request, not the enum: `effort` tops out at
+      // `high` upstream, so sending it would quietly cap the level the user
+      // paid for. Everywhere else the enum is the better signal — it lets the
+      // provider decide how much thinking the task deserves.
+      reasoning: runtime.reasoning.enabled
+        ? (runtime.reasoning.useBudget && runtime.thinking?.budgetTokens
+          ? { max_tokens: runtime.thinking.budgetTokens }
+          : { effort: runtime.reasoning.effort })
+        : undefined,
       thinking_budget: runtime.thinking?.enabled ? runtime.thinking.budgetTokens : undefined,
       include_reasoning: runtime.thinking?.enabled ? runtime.thinking.includeInResponse : undefined,
     };

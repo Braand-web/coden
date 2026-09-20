@@ -8,6 +8,7 @@ const reactDashboard = readFileSync(resolve(root, 'src/dashboard-react.tsx'), 'u
 const css = readFileSync(resolve(root, 'src/styles/dashboard-react.css'), 'utf8');
 const server = readFileSync(resolve(root, 'server.ts'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
+const promptInput = readFileSync(resolve(root, 'src/components/ui/ai-chat-input.tsx'), 'utf8');
 
 describe('Coden projects dashboard surface contract', () => {
   it('mounts one React Dashboard and removes the legacy document UI', () => {
@@ -28,15 +29,35 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain('Nouveau projet');
     expect(reactDashboard).toContain('Rechercher un projet');
     expect(reactDashboard).toContain('Que voulez-vous créer');
-    expect(reactDashboard).toContain('Décrire le projet à créer');
+    /*
+     * The composer is labelled, and the label moved with it.
+     *
+     * This used to pin the old textarea's own aria-label. The field belongs to
+     * the shared PromptInput now, which carries `aria-label="Prompt"`; what has
+     * to stay true is that the composer is reachable by name and still invites
+     * the same thing, not the exact string the previous markup used.
+     */
+    expect(reactDashboard).toContain('<PromptInput');
+    expect(reactDashboard).toContain('Créez un CRM moderne');
     expect(reactDashboard).toContain('Récemment vus');
     expect(reactDashboard).toContain('Tout parcourir');
     expect(reactDashboard).toContain('preview_html');
     expect(reactDashboard).toContain('sandbox="allow-scripts"');
     expect(reactDashboard).toContain('data-coden-preview-error');
-    expect(reactDashboard).toContain('data-prompt-action="upload"');
-    expect(reactDashboard).toContain('data-prompt-action="voice"');
-    expect(reactDashboard).toContain('initPromptInputActions');
+    /*
+     * Attaching and dictating are the composer's own affordances now.
+     *
+     * They used to be two buttons in this file wired by prompt-input-actions;
+     * the shared PromptInput brings both, so the assertion follows them rather
+     * than declaring the feature gone. Checked in the component, because that
+     * is where they would have to be removed from to actually disappear.
+     */
+    expect(promptInput).toContain('data-prompt-action="upload"');
+    expect(promptInput).toContain('startRecording');
+    expect(promptInput).toContain('<MicIcon />');
+    // The dashboard mounts the shared composer rather than wiring loose
+    // buttons through `initPromptInputActions`, which it no longer needs.
+    expect(reactDashboard).toContain("from './components/ui/ai-chat-input'");
     expect(server).toContain('preview_html: project.preview_html || \'\'');
     expect(reactDashboard).not.toContain('Que veux-tu accomplir');
     expect(reactDashboard).not.toContain('Demander à Coden');
@@ -49,7 +70,7 @@ describe('Coden projects dashboard surface contract', () => {
     expect(css).toContain('.coden-dashboard-project-list');
     expect(css).toContain('.coden-dashboard-project-card');
     expect(css).toContain('grid-template-columns: repeat(3');
-    expect(css).toContain('--dashboard-sidebar-width: 228px');
+    expect(css).toContain('--app-sidebar-width: 228px');
     expect(css).toContain('width: 64px');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
   });
@@ -69,8 +90,17 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain("'/builder.html?new=1&source=dashboard'");
     expect(reactDashboard).toContain('project=\${encodeURIComponent(projectId)}&source=dashboard');
     expect(reactDashboard).toContain('startCreateProjectFlow');
-    expect(reactDashboard).toContain("mode: composerMode === 'plan' ? 'plan' : 'auto'");
-    expect(reactDashboard).toContain('<AgentModeComposer mode={composerMode}');
+    /*
+     * Creation still names its mode, its model and its effort.
+     *
+     * The Auto/Plan toggle was the composer's only run-shaping control; the
+     * PromptInput carries a model selector and an effort level instead, and
+     * both have to reach `startCreateProjectFlow` or the choice the user made
+     * is discarded at the door.
+     */
+    expect(reactDashboard).toContain("mode: 'auto'");
+    expect(reactDashboard).toContain('model: meta.model');
+    expect(reactDashboard).toContain('effort: meta.effort');
     expect(reactDashboard).toContain("openSettings('profile')");
     expect(reactDashboard).toContain('data-auth-logout');
     expect(reactDashboard).toContain("localStorage.setItem('coden-dashboard-sidebar-collapsed'");

@@ -6,6 +6,7 @@ import {
   type ModelProvider,
 } from './config/ai-models';
 import { providerIconSvg } from './model-provider-icons';
+import { SELECTED_MODEL_STORAGE_KEY } from './lib/composer-preferences';
 
 type SelectorOptions = {
   selector?: string;
@@ -13,7 +14,7 @@ type SelectorOptions = {
 };
 
 const DEFAULT_SELECTOR = '.input-wrapper .model-select';
-const DEFAULT_STORAGE_KEY = 'coden-selected-model';
+const DEFAULT_STORAGE_KEY = SELECTED_MODEL_STORAGE_KEY;
 
 function escapeHtml(value: string): string {
   return value
@@ -21,7 +22,7 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&var(--syntax-cyan);');
 }
 
 function injectProviderSelectorStyle() {
@@ -44,20 +45,20 @@ function injectProviderSelectorStyle() {
         transform 180ms cubic-bezier(0.22,1,0.36,1);
     }
     .coden-provider-model-select[aria-expanded="true"] {
-      border-color: var(--border-focus, var(--accent));
-      background: var(--accent-blue-soft, var(--accent-hover));
-      color: var(--text);
+      border-color: var(--accent);
+      background: var(--accent-soft, var(--surface-hover));
+      color: var(--foreground);
     }
     .coden-provider-model-select:focus-visible {
       outline: none;
-      border-color: var(--border-focus, var(--accent));
-      box-shadow: 0 0 0 3px var(--accent-blue-soft, var(--accent-dim));
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft, var(--surface-soft));
     }
     .coden-provider-model-select .provider-dot {
       width: 16px;
       height: 16px;
       border-radius: 5px;
-      color: var(--accent-blue, var(--accent));
+      color: var(--accent);
       flex: 0 0 auto;
       display: inline-flex;
       align-items: center;
@@ -105,8 +106,8 @@ function injectProviderSelectorStyle() {
     .coden-provider-card {
       width: 100%;
       border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       border-radius: 8px;
       min-height: 30px;
       padding: 5px 6px;
@@ -124,12 +125,12 @@ function injectProviderSelectorStyle() {
     .coden-auto-model-option.active,
     .coden-provider-card:hover,
     .coden-provider-card.active {
-      background: var(--accent-blue-soft, var(--accent-hover, rgba(9,9,11,.08)));
-      border-color: var(--border-focus, var(--border));
+      background: var(--accent-soft);
+      border-color: var(--accent);
     }
     .coden-provider-card.open {
-      background: var(--accent-blue-hover, var(--accent-hover, rgba(9,9,11,.10)));
-      border-color: var(--border-focus, var(--border));
+      background: var(--accent-soft);
+      border-color: var(--accent);
       transform: translateX(2px);
     }
     .provider-icon {
@@ -137,7 +138,7 @@ function injectProviderSelectorStyle() {
       height: 18px;
       border-radius: 5px;
       color: var(--provider-color);
-      background: var(--bg-input);
+      background: var(--input);
       border: 1px solid var(--border);
       display: inline-flex;
       align-items: center;
@@ -146,7 +147,7 @@ function injectProviderSelectorStyle() {
       font-weight: 850;
       line-height: 1;
       flex: 0 0 auto;
-      --provider-icon-bg: var(--bg-input);
+      --provider-icon-bg: var(--input);
     }
     .provider-card-main {
       min-width: 0;
@@ -161,7 +162,7 @@ function injectProviderSelectorStyle() {
       min-width: 0;
     }
     .provider-name {
-      color: var(--text);
+      color: var(--foreground);
       font-size: 11px;
       font-weight: 720;
     }
@@ -192,8 +193,8 @@ function injectProviderSelectorStyle() {
     }
     .provider-expand-btn:hover,
     .provider-expand-btn.open {
-      background: var(--bg-elevated, var(--bg-input));
-      color: var(--text);
+      background: var(--surface-soft, var(--input));
+      color: var(--foreground);
     }
     .provider-expand-btn.open {
       transform: rotate(90deg);
@@ -205,10 +206,10 @@ function injectProviderSelectorStyle() {
       width: 236px;
       max-height: min(320px, 66vh);
       border: 1px solid var(--border);
-      background: var(--bg-elevated, var(--bg-surface));
-      color: var(--text);
+      background: var(--surface-soft, var(--surface));
+      color: var(--foreground);
       border-radius: 12px;
-      box-shadow: 0 14px 36px rgba(0,0,0,.16), 0 3px 10px rgba(0,0,0,.08);
+      box-shadow: 0 14px 36px color-mix(in srgb, var(--foreground) 16%, transparent), 0 3px 10px color-mix(in srgb, var(--foreground) 8%, transparent);
       opacity: 0;
       transform: translateX(-8px) scale(.97);
       pointer-events: none;
@@ -257,7 +258,7 @@ function injectProviderSelectorStyle() {
       width: 100%;
       border: 0;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       border-radius: 9px;
       padding: 7px 9px 7px 8px;
       display: grid;
@@ -273,11 +274,11 @@ function injectProviderSelectorStyle() {
         transform 150ms cubic-bezier(0.34,1.56,0.64,1);
     }
     .coden-model-item:hover {
-      background: var(--accent-dim, rgba(9,9,11,.08));
+      background: var(--surface-soft, color-mix(in srgb, var(--surface) 8%, transparent));
       transform: translateX(2px);
     }
     .coden-model-item.selected {
-      background: var(--accent-blue-soft, var(--accent-hover, rgba(9,9,11,.10)));
+      background: var(--accent-soft, var(--surface-hover, color-mix(in srgb, var(--surface) 10%, transparent)));
     }
     .coden-model-item.selected::before {
       content: "";
@@ -287,14 +288,14 @@ function injectProviderSelectorStyle() {
       bottom: 20%;
       width: 3px;
       border-radius: 0 999px 999px 0;
-      background: var(--accent-blue, var(--accent));
+      background: var(--surface);
     }
     .model-item-icon {
       width: 20px;
       height: 20px;
       border-radius: 6px;
       border: 1px solid var(--border);
-      background: var(--bg-input);
+      background: var(--input);
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -302,7 +303,7 @@ function injectProviderSelectorStyle() {
       flex: 0 0 auto;
       align-self: start;
       margin-top: 1px;
-      --provider-icon-bg: var(--bg-input);
+      --provider-icon-bg: var(--input);
     }
     .model-item-icon svg { width: 13px; height: 13px; display: block; }
     .model-item-body { min-width: 0; display: grid; gap: 2px; }
@@ -325,7 +326,7 @@ function injectProviderSelectorStyle() {
       width: 16px;
       height: 16px;
       flex: 0 0 auto;
-      color: var(--accent-blue, var(--accent));
+      color: var(--accent);
       opacity: 0;
       transform: scale(.6);
       transition: opacity 150ms ease, transform 200ms cubic-bezier(0.34,1.56,0.64,1);
@@ -335,7 +336,7 @@ function injectProviderSelectorStyle() {
     .model-item-name {
       font-size: 11.5px;
       font-weight: 720;
-      color: var(--text);
+      color: var(--foreground);
       line-height: 1.25;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -354,13 +355,13 @@ function injectProviderSelectorStyle() {
       letter-spacing: .05em;
       text-transform: uppercase;
       line-height: 1;
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--text-muted);
       border: 1px solid var(--border);
     }
-    .coden-model-badge.new { color: #166534; background: #dcfce7; border-color: #bbf7d0; }
-    .coden-model-badge.fast { color: #854d0e; background: #fef9c3; border-color: #fde68a; }
-    .coden-model-badge.premium { color: #6b21a8; background: #f3e8ff; border-color: #e9d5ff; }
+    .coden-model-badge.new { color: var(--success); background: var(--success-background); border-color: var(--success); }
+    .coden-model-badge.fast { color: var(--syntax-orange); background: var(--syntax-yellow); border-color: var(--syntax-orange); }
+    .coden-model-badge.premium { color: var(--accent); background: var(--surface-soft); border-color: var(--border); }
     @keyframes coden-model-enter {
       from { opacity: 0; transform: translateX(-8px); }
       to { opacity: 1; transform: translateX(0); }
@@ -505,7 +506,7 @@ export function initProviderModelSelectors(options: SelectorOptions = {}) {
       <div class="dropdown coden-provider-model-menu" id="${id ? 'model-dropdown' : ''}">
         <div class="dropdown-header">Models</div>
         <button type="button" class="coden-auto-model-option${selectedId === 'auto' ? ' active' : ''}" data-model-id="auto" data-model-name="Auto">
-          <span class="provider-icon" style="--provider-color:var(--accent);--provider-text:var(--bg);">${selectorIcon('auto')}</span>
+          <span class="provider-icon" style="--provider-color:var(--accent);--provider-text:var(--background);">${selectorIcon('auto')}</span>
           <span class="provider-card-main">
             <span class="provider-name">Auto</span>
             <span class="provider-count">Best fit</span>

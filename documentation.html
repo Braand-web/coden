@@ -13,7 +13,7 @@
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
   <meta property="og:title" content="Coden Documentation — Build Production Apps With AI" />
@@ -37,6 +37,7 @@
   "url": "https://coden.fun/documentation.html"
 }</script>
   <!-- CODEN_SEO_END -->
+  <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
@@ -53,10 +54,10 @@
         <a href="/" class="logo">
             <div class="logo-mark">
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <rect width="32" height="32" rx="8" fill="var(--text)"/>
-                    <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
-                    <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
-                    <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                    <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
+                    <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
+                    <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
+                    <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
                 </svg>
             </div>
             <span class="logo-text">Coden</span>
@@ -109,10 +110,10 @@
                 <a href="/" class="logo">
                     <div class="logo-mark">
                         <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--text)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--bg)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--bg)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--bg)"/>
+                            <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
+                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
+                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
+                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
                         </svg>
                     </div>
                     <span class="logo-text">Coden</span>

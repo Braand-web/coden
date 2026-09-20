@@ -267,7 +267,7 @@ export function decideWebResearch(input: { prompt: string; intent?: string; requ
   const isSimpleLocalBuild = /\b(todo|to do|to-do|pomodoro|pomodero|timer|calculator|calculatrice|notes?|weather app|quiz)\b/i.test(prompt)
     && /\b(create|build|make|generate|cr[eé]e|g[eé]n[eè]re|app|application)\b/i.test(prompt)
     && !/\b(url|http|docs?|documentation|latest|recent|actuel|r[eé]cent|pricing|api|sdk|stripe|supabase|vercel|railway|github|figma|import|clone|rebuild|inspiration)\b/i.test(prompt);
-  const isInternalBugOnly = /\b(bug|erreur|error|preview blanche|white screen|corrige|fix)\b/i.test(prompt)
+  const isInternalBugOnly = /\b(bug|erreur|error|preview blanche|var(--surface) screen|corrige|fix)\b/i.test(prompt)
     && !/\b(docs?|documentation|api|sdk|provider|openrouter|stripe|supabase|vercel|railway|google|cloudflare|dns|domain|oauth|webhook|latest|recent|actuel|r[eé]cent|pricing|http|url)\b/i.test(prompt);
 
   if (!query || isShortGreeting || isSimpleLocalBuild || isInternalBugOnly) {

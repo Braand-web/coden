@@ -173,7 +173,7 @@ function escapeHtml(value: unknown) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(/'/g, "&var(--syntax-cyan);");
 }
 
 function escapeAttr(value: unknown) {
@@ -522,7 +522,22 @@ export function createStore(storageKey = conversationStorageKey()) {
       mutate(() => {
         const message = find(id);
         if (!message) return;
-        ensureLiveRun(message, { activeText: label });
+        const run = ensureLiveRun(message, { activeText: label });
+        /*
+         * A working message has to have something to draw.
+         *
+         * The shimmer lives in `AgentMessage`, behind `streaming &&
+         * state.thinking`, and `state` is `liveRun.chat`. This set the
+         * `working` flag and an `activeText` and created no `chat`, so the
+         * render fell through to `message.content` — empty on a fresh card —
+         * and drew nothing at all. The bubble sat blank for the whole
+         * intent-classification round, which is several seconds.
+         *
+         * `is-working` on the wrapper carries no styling anywhere, so the flag
+         * alone was never going to show.
+         */
+        if (!run.chat) run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], thinking: true, activity: label || null };
+        else if (run.chat.status === 'streaming') run.chat = { ...run.chat, thinking: true, activity: label || run.chat.activity };
         message.working = true;
       });
     },
@@ -574,7 +589,20 @@ export function createStore(storageKey = conversationStorageKey()) {
         message.liveRun = undefined;
         message.content = '';
         const run = ensureLiveRun(message, meta);
-        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId };
+        /*
+         * A run that has just started is thinking, by definition.
+         *
+         * `EMPTY_MESSAGE` carries `thinking: false`, so the shimmer only lit
+         * once the first `run_started` or `activity` envelope arrived from the
+         * server — after auth, the project lookup, the harness turn and the
+         * intent classification, which the run ledger times at four to eight
+         * seconds. For that whole window the user watched an empty bubble.
+         *
+         * The reducer turns it off again on the first `text_delta` or on any
+         * terminal event, so starting true cannot leave it stuck on.
+         */
+        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId, thinking: true, activity: meta.activeText || run.activeText || null };
+        message.working = true;
       });
     },
     applyChatEvent(id, event) {
@@ -672,14 +700,14 @@ function ensureConversationStyles() {
     .coden-conversation-empty {
       border: 1px dashed color-mix(in srgb, var(--border) 62%, transparent);
       border-radius: 12px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       padding: 16px;
-      background: color-mix(in srgb, var(--bg-surface) 56%, transparent);
+      background: color-mix(in srgb, var(--surface) 56%, transparent);
     }
 
     .coden-conversation-empty h3 {
       margin: 0 0 7px;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 13px;
       font-weight: 720;
     }
@@ -706,9 +734,9 @@ function ensureConversationStyles() {
       border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
       border-radius: 14px;
       padding: 12px 14px;
-      color: var(--text);
-      background: color-mix(in srgb, var(--bg-surface) 78%, transparent);
-      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--surface) 78%, transparent);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
       overflow-wrap: anywhere;
       word-break: break-word;
       font-size: 12.5px;
@@ -717,14 +745,14 @@ function ensureConversationStyles() {
 
     .coden-chat-message.user .coden-chat-bubble {
       max-width: min(86%, 520px);
-      background: var(--text);
-      color: var(--bg);
+      background: var(--foreground);
+      color: var(--background);
       border-color: transparent;
       white-space: pre-wrap;
     }
 
     .coden-chat-message.system .coden-chat-bubble {
-      color: var(--text-sub);
+      color: var(--text-secondary);
       background: transparent;
       border-style: dashed;
     }
@@ -733,7 +761,7 @@ function ensureConversationStyles() {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
 
     .coden-chat-working::before {
@@ -741,8 +769,8 @@ function ensureConversationStyles() {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
-      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, #3b82f6) 42%, transparent);
+      background: var(--surface);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 42%, transparent);
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
 
@@ -751,13 +779,13 @@ function ensureConversationStyles() {
       align-items: center;
       gap: 5px;
       min-height: 18px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
     }
     .coden-agent-pending > span {
       width: 5px;
       height: 5px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
+      background: var(--surface);
       animation: coden-typing-bounce 1s ease-in-out infinite;
     }
     .coden-agent-pending > span:nth-child(2) { animation-delay: 0.15s; }
@@ -778,7 +806,7 @@ function ensureConversationStyles() {
       align-items: center;
       justify-content: space-between;
       gap: 10px;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 12px;
       font-weight: 720;
     }
@@ -788,9 +816,9 @@ function ensureConversationStyles() {
       align-items: center;
       min-height: 20px;
       padding: 0 7px;
-      border: 1px solid var(--border, rgba(148,163,184,.25));
+      border: 1px solid var(--border, color-mix(in srgb, var(--accent) 25%, transparent));
       border-radius: 999px;
-      color: var(--text-muted, #94a3b8);
+      color: var(--text-muted, var(--text-secondary));
       font: 600 10px/1.2 "JetBrains Mono", monospace;
       letter-spacing: .01em;
       flex: 0 0 auto;
@@ -800,13 +828,13 @@ function ensureConversationStyles() {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: #10b981;
+      background: var(--success);
       flex: 0 0 auto;
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
 
-    .coden-live-dot.is-done { animation: none; background: #22c55e; }
-    .coden-live-dot.is-failed { animation: none; background: #ef4444; }
+    .coden-live-dot.is-done { animation: none; background: var(--success); }
+    .coden-live-dot.is-failed { animation: none; background: var(--danger); }
 
     .coden-live-time {
       color: var(--text-muted);
@@ -817,8 +845,8 @@ function ensureConversationStyles() {
 
     .coden-shimmer-text {
       display: inline;
-      color: color-mix(in srgb, var(--text) 86%, var(--accent, #3b82f6));
-      background: linear-gradient(90deg, var(--text-muted), var(--text), var(--accent, #3b82f6), var(--text));
+      color: color-mix(in srgb, var(--foreground) 86%, var(--accent));
+      background: var(--surface);
       background-size: 260% 100%;
       -webkit-background-clip: text;
       background-clip: text;
@@ -846,7 +874,7 @@ function ensureConversationStyles() {
       grid-template-columns: 14px minmax(0, 1fr);
       gap: 8px;
       align-items: start;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11.5px;
       line-height: 1.45;
     }
@@ -860,22 +888,22 @@ function ensureConversationStyles() {
     }
 
     .coden-live-line.is-active span:first-child {
-      background: var(--accent, #3b82f6);
+      background: var(--surface);
       animation: coden-pulse 1.25s ease-in-out infinite;
     }
 
-    .coden-live-line.is-done span:first-child { background: #22c55e; }
-    .coden-live-line.is-failed span:first-child { background: #ef4444; }
+    .coden-live-line.is-done span:first-child { background: var(--success); }
+    .coden-live-line.is-failed span:first-child { background: var(--danger); }
     .coden-live-line.is-muted { opacity: .65; }
 
     .coden-live-summary {
-      color: var(--text);
+      color: var(--foreground);
       font-size: 12.5px;
       line-height: 1.55;
     }
 
     .coden-rich-response {
-      color: var(--text);
+      color: var(--foreground);
     }
 
     .coden-rich-response > :first-child { margin-top: 0; }
@@ -900,8 +928,8 @@ function ensureConversationStyles() {
     .coden-rich-response blockquote {
       margin: 10px 0;
       padding-left: 11px;
-      border-left: 2px solid color-mix(in srgb, var(--accent, #3b82f6) 55%, var(--border));
-      color: var(--text-sub);
+      border-left: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+      color: var(--text-secondary);
     }
     .coden-rich-response table {
       width: 100%;
@@ -918,14 +946,14 @@ function ensureConversationStyles() {
       text-align: left;
     }
     .coden-rich-response th {
-      background: color-mix(in srgb, var(--bg-input) 80%, transparent);
+      background: color-mix(in srgb, var(--input) 80%, transparent);
       font-weight: 720;
     }
     .coden-rich-response code:not(pre code) {
       padding: 1px 5px;
       border-radius: 6px;
-      background: color-mix(in srgb, var(--bg-input) 90%, transparent);
-      color: var(--text);
+      background: color-mix(in srgb, var(--input) 90%, transparent);
+      color: var(--foreground);
       font-size: .92em;
     }
     .coden-code-block {
@@ -933,7 +961,7 @@ function ensureConversationStyles() {
       padding: 12px;
       border-radius: 11px;
       overflow: auto;
-      background: #0f1117;
+      background: var(--surface);
       border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
       font-size: 11.5px;
       line-height: 1.55;
@@ -952,8 +980,8 @@ function ensureConversationStyles() {
       height: 30px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       padding: 0 10px;
       font: inherit;
       font-size: 11px;
@@ -965,16 +993,16 @@ function ensureConversationStyles() {
       display: grid;
       gap: 11px;
       padding: 15px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 42%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
       border-radius: 15px;
-      background: color-mix(in srgb, var(--bg-input) 82%, transparent);
-      box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
+      background: color-mix(in srgb, var(--input) 82%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, var(--foreground) 9%, transparent);
     }
     .coden-approval-kicker {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11px;
       font-weight: 760;
       letter-spacing: .02em;
@@ -984,11 +1012,11 @@ function ensureConversationStyles() {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: #e7a32e;
-      box-shadow: 0 0 0 4px color-mix(in srgb, #e7a32e 14%, transparent);
+      background: var(--syntax-orange);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
     }
-    .coden-approval-card[data-state="approved"] .coden-approval-kicker > span { background: #22c55e; }
-    .coden-approval-card[data-state="rejected"] .coden-approval-kicker > span { background: #ef4444; }
+    .coden-approval-card[data-state="approved"] .coden-approval-kicker > span { background: var(--success); }
+    .coden-approval-card[data-state="rejected"] .coden-approval-kicker > span { background: var(--danger); }
     .coden-approval-heading {
       display: flex;
       align-items: flex-start;
@@ -998,7 +1026,7 @@ function ensureConversationStyles() {
     .coden-approval-heading h3 {
       min-width: 0;
       margin: 0;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 14px;
       line-height: 1.3;
       overflow-wrap: anywhere;
@@ -1012,7 +1040,7 @@ function ensureConversationStyles() {
     .coden-approval-card > p,
     .coden-approval-result {
       margin: 0;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 12px;
       line-height: 1.55;
     }
@@ -1029,7 +1057,7 @@ function ensureConversationStyles() {
       border-radius: 9px;
       padding: 0 12px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       font: inherit;
       font-size: 11.5px;
       font-weight: 720;
@@ -1037,23 +1065,23 @@ function ensureConversationStyles() {
       transition: transform 180ms cubic-bezier(.32,.72,0,1), background-color 180ms ease, border-color 180ms ease, opacity 180ms ease;
     }
     .coden-approval-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--text-on-accent);
     }
     .coden-approval-actions button:hover:not(:disabled) { filter: brightness(1.04); }
     .coden-approval-actions button:active:not(:disabled) { transform: scale(.98); }
     .coden-approval-actions button:disabled { cursor: wait; opacity: .55; }
-    .coden-approval-actions button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+    .coden-approval-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     .coden-plan-card {
       display: grid;
       gap: 12px;
       padding: 13px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 38%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
       border-radius: 16px;
-      background: color-mix(in srgb, var(--bg-input) 76%, transparent);
-      box-shadow: 0 10px 26px color-mix(in srgb, #000 9%, transparent);
+      background: color-mix(in srgb, var(--input) 76%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, var(--foreground) 9%, transparent);
     }
     /* Title and summary stay; the detail is what folds away. */
     .coden-plan-header {
@@ -1071,7 +1099,7 @@ function ensureConversationStyles() {
       display: flex;
       align-items: center;
       gap: 7px;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 13.5px;
       font-weight: 700;
       line-height: 1.3;
@@ -1079,11 +1107,11 @@ function ensureConversationStyles() {
     }
     .coden-plan-kicker svg {
       flex: none;
-      color: var(--accent, #3b82f6);
+      color: var(--accent);
     }
     .coden-plan-summary {
       margin: 0;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 12px;
       line-height: 1.55;
     }
@@ -1097,7 +1125,7 @@ function ensureConversationStyles() {
       border-radius: 999px;
       padding: 0 9px;
       background: transparent;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font: inherit;
       font-size: 11px;
       font-weight: 640;
@@ -1105,7 +1133,7 @@ function ensureConversationStyles() {
       transition: color .16s ease, border-color .16s ease;
     }
     .coden-plan-trigger:hover {
-      color: var(--text);
+      color: var(--foreground);
       border-color: var(--border);
     }
     .coden-plan-trigger svg { transition: transform .2s ease; }
@@ -1131,11 +1159,11 @@ function ensureConversationStyles() {
       padding: 9px 10px;
       border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
       border-radius: 11px;
-      background: color-mix(in srgb, var(--bg) 62%, transparent);
+      background: color-mix(in srgb, var(--background) 62%, transparent);
     }
     .coden-plan-section h4 {
       margin: 0 0 6px;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 10.5px;
       font-weight: 760;
       letter-spacing: .035em;
@@ -1152,7 +1180,7 @@ function ensureConversationStyles() {
       display: grid;
       grid-template-columns: 5px minmax(0, 1fr);
       gap: 8px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 11.5px;
       line-height: 1.45;
     }
@@ -1162,7 +1190,7 @@ function ensureConversationStyles() {
       height: 5px;
       margin-top: 5px;
       border-radius: 999px;
-      background: color-mix(in srgb, var(--accent, #3b82f6) 72%, var(--text-muted));
+      background: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
     }
     /* Bottom right: where the eye lands after the summary, not before it. */
     .coden-plan-actions {
@@ -1176,7 +1204,7 @@ function ensureConversationStyles() {
       margin-left: 7px;
       padding: 1px 4px;
       border-radius: 5px;
-      background: color-mix(in srgb, #000 16%, transparent);
+      background: color-mix(in srgb, var(--background) 16%, transparent);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 10px;
       font-weight: 600;
@@ -1189,16 +1217,16 @@ function ensureConversationStyles() {
       border-radius: 10px;
       padding: 0 11px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       font: inherit;
       font-size: 11px;
       font-weight: 720;
       cursor: pointer;
     }
     .coden-plan-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent);
+      background: var(--surface);
+      color: var(--foreground);
     }
     .coden-plan-actions button:hover { filter: brightness(1.04); }
 
@@ -1206,16 +1234,16 @@ function ensureConversationStyles() {
       display: grid;
       gap: 12px;
       padding: 16px;
-      border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 28%, var(--border));
+      border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
       border-radius: 16px;
-      background: color-mix(in srgb, var(--bg-input) 72%, transparent);
-      box-shadow: 0 10px 26px color-mix(in srgb, #000 8%, transparent);
+      background: color-mix(in srgb, var(--input) 72%, transparent);
+      box-shadow: 0 10px 26px color-mix(in srgb, var(--foreground) 8%, transparent);
     }
     .coden-recovery-kicker {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 12px;
       font-weight: 700;
     }
@@ -1223,19 +1251,19 @@ function ensureConversationStyles() {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: var(--accent, #3b82f6);
-      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+      background: var(--surface);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
     }
     .coden-recovery-card h3 {
       margin: 0;
-      color: var(--text);
+      color: var(--foreground);
       font-size: 14px;
       line-height: 1.3;
       letter-spacing: -.01em;
     }
     .coden-recovery-card p {
       margin: 0;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       font-size: 12px;
       line-height: 1.55;
     }
@@ -1250,7 +1278,7 @@ function ensureConversationStyles() {
       border-radius: 8px;
       padding: 0 12px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       font: inherit;
       font-size: 12px;
       font-weight: 700;
@@ -1258,14 +1286,14 @@ function ensureConversationStyles() {
       transition: transform 180ms cubic-bezier(0.32,0.72,0,1), background-color 180ms cubic-bezier(0.32,0.72,0,1), border-color 180ms cubic-bezier(0.32,0.72,0,1);
     }
     .coden-recovery-actions button.is-primary {
-      border-color: var(--accent, #3b82f6);
-      background: var(--accent, #3b82f6);
-      color: var(--accent-foreground, #fff);
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--text-on-accent);
     }
-    .coden-recovery-actions button:hover { background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent); }
-    .coden-recovery-actions button.is-primary:hover { background: var(--accent, #3b82f6); filter: brightness(1.04); }
+    .coden-recovery-actions button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+    .coden-recovery-actions button.is-primary:hover { background: var(--surface); filter: brightness(1.04); }
     .coden-recovery-actions button:active { transform: scale(.98); }
-    .coden-recovery-actions button:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+    .coden-recovery-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     @keyframes coden-message-in {
       from { opacity: 0; transform: translateY(4px); }
@@ -1291,30 +1319,30 @@ function ensureConversationStyles() {
     .coden-tool {
       border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
       border-radius: 10px;
-      background: color-mix(in srgb, var(--bg-input) 60%, transparent);
+      background: color-mix(in srgb, var(--input) 60%, transparent);
       overflow: hidden;
     }
     .coden-tool-header {
       display: flex; align-items: center; gap: 8px; width: 100%;
       padding: 8px 10px; background: transparent; border: 0; cursor: pointer;
-      color: var(--text); font: inherit; font-size: 12px; font-weight: 600;
+      color: var(--foreground); font: inherit; font-size: 12px; font-weight: 600;
     }
     .coden-tool-chevron { width: 12px; color: var(--text-muted); }
     .coden-tool-icon { display: inline-flex; }
     .coden-tool-name { flex: 1; text-align: left; }
     .coden-tool-status {
       font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
-      background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
-      color: color-mix(in srgb, var(--text) 80%, var(--accent, #3b82f6));
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      color: color-mix(in srgb, var(--foreground) 80%, var(--accent));
       text-transform: uppercase; letter-spacing: 0.04em;
     }
     .coden-tool-status.status-output-error {
-      background: color-mix(in srgb, #ef4444 18%, transparent);
-      color: #ef4444;
+      background: color-mix(in srgb, var(--danger) 18%, transparent);
+      color: var(--danger);
     }
     .coden-tool-status.status-output-available {
-      background: color-mix(in srgb, #22c55e 16%, transparent);
-      color: #16a34a;
+      background: color-mix(in srgb, var(--success) 16%, transparent);
+      color: var(--success);
     }
     .coden-tool-content {
       padding: 0 10px 10px;
@@ -1323,19 +1351,19 @@ function ensureConversationStyles() {
     }
     .coden-tool-input, .coden-tool-output-pre {
       margin: 8px 0 0; padding: 8px 10px;
-      background: #0f1117; color: #e5e7eb;
+      background: var(--surface); color: var(--foreground);
       border-radius: 8px; font-size: 11px; line-height: 1.5;
       overflow: auto; max-height: 280px;
     }
-    .coden-tool-output.is-error { color: #ef4444; font-size: 12px; margin-top: 8px; }
+    .coden-tool-output.is-error { color: var(--danger); font-size: 12px; margin-top: 8px; }
 
     .coden-reasoning {
-      border-left: 2px solid color-mix(in srgb, var(--accent, #3b82f6) 50%, var(--border));
-      padding-left: 10px; margin: 6px 0 10px; color: var(--text-sub);
+      border-left: 2px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+      padding-left: 10px; margin: 6px 0 10px; color: var(--text-secondary);
     }
     .coden-reasoning-trigger {
       background: transparent; border: 0; padding: 2px 0;
-      color: var(--text-sub); font-size: 11.5px; font-weight: 600;
+      color: var(--text-secondary); font-size: 11.5px; font-weight: 600;
       cursor: pointer;
     }
     .coden-reasoning-content { margin-top: 6px; font-size: 12px; }
@@ -1344,8 +1372,8 @@ function ensureConversationStyles() {
     .coden-attachment {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 6px 10px; border-radius: 8px; text-decoration: none;
-      background: color-mix(in srgb, var(--bg-input) 80%, transparent);
-      color: var(--text); font-size: 11.5px;
+      background: color-mix(in srgb, var(--input) 80%, transparent);
+      color: var(--foreground); font-size: 11.5px;
       border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     }
     .coden-attachment-meta { color: var(--text-muted); font-size: 10.5px; }

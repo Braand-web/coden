@@ -21,11 +21,11 @@ function installAiInputStyle() {
 
     .coden-ai-input.input-wrapper,
     .coden-ai-input {
-      border: 1px solid var(--horizon-border, var(--border, #e2e8f0)) !important;
+      border: 1px solid var(--border) !important;
       border-radius: 24px !important;
-      background: var(--horizon-surface, var(--bg-input, #ffffff)) !important;
-      color: var(--text, #0f172a) !important;
-      box-shadow: 0 12px 32px rgba(28,28,28,.07) !important;
+      background: var(--surface) !important;
+      color: var(--foreground) !important;
+      box-shadow: 0 12px 32px color-mix(in srgb, var(--foreground) 7%, transparent) !important;
       overflow: visible !important;
       text-align: left !important;
     }
@@ -36,19 +36,19 @@ function installAiInputStyle() {
     }
 
     .coden-ai-input:focus-within {
-      border-color: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
-      box-shadow: 0 0 0 4px var(--horizon-blue-soft, rgba(59,130,246,.12)), 0 12px 32px rgba(28,28,28,.08) !important;
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 4px var(--focus-ring), 0 12px 32px color-mix(in srgb, var(--foreground) 8%, transparent) !important;
     }
 
     .coden-ai-input textarea,
     .coden-ai-input #ai-textarea,
     .coden-ai-input #chat-textarea-box {
-      color: var(--text, #0f172a) !important;
+      color: var(--text-on-accent) !important;
       text-align: left !important;
     }
 
     .coden-ai-input textarea::placeholder {
-      color: var(--text-sub, #77736b) !important;
+      color: var(--text-secondary, var(--text-muted)) !important;
       opacity: .82 !important;
     }
 
@@ -96,9 +96,9 @@ function installAiInputStyle() {
       min-height: var(--chat-action-height) !important;
       height: var(--chat-action-height) !important;
       border-radius: var(--chat-action-radius) !important;
-      border: 1px solid var(--border, #e2e8f0) !important;
+      border: 1px solid var(--border) !important;
       background: transparent !important;
-      color: var(--text-sub, #77736b) !important;
+      color: var(--text-secondary, var(--text-muted)) !important;
       box-shadow: none !important;
       font-size: var(--chat-action-font) !important;
       font-weight: 750 !important;
@@ -128,10 +128,10 @@ function installAiInputStyle() {
       min-width: var(--chat-submit-size) !important;
       height: var(--chat-submit-size) !important;
       min-height: var(--chat-submit-size) !important;
-      border-color: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
+      border-color: var(--accent) !important;
       border-radius: 9999px !important;
-      background: var(--horizon-blue, var(--accent-blue, #3b82f6)) !important;
-      color: #ffffff !important;
+      background: var(--accent) !important;
+      color: var(--foreground) !important;
     }
 
     .coden-ai-input .icon-btn svg,
@@ -172,12 +172,12 @@ function installAiInputStyle() {
 
     .coden-ai-input .submit-btn.active,
     .coden-ai-input .submit-btn:not(:disabled).active {
-      background: var(--accent-blue, var(--text, #0f172a)) !important;
-      color: var(--bg, #f8fafc) !important;
-      border-color: var(--accent-blue, var(--text, #0f172a)) !important;
+      background: var(--accent) !important;
+      color: var(--text-on-accent) !important;
+      border-color: var(--accent) !important;
       cursor: pointer !important;
       pointer-events: auto !important;
-      box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-blue, #2f6df6) 18%, transparent) !important;
+      box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent) !important;
     }
 
     .coden-ai-input .submit-btn:not(.active) {
@@ -188,14 +188,14 @@ function installAiInputStyle() {
     .coden-ai-input .model-select:hover,
     .coden-ai-input .prompt-mode-btn:hover,
     .coden-ai-input #btn-chat-mode:hover {
-      border-color: var(--border-focus, rgba(47,109,246,.34)) !important;
-      color: var(--accent-blue, var(--text, #0f172a)) !important;
-      background: var(--accent-blue-soft, var(--bg-elevated, #f1f5f9)) !important;
+      border-color: color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
+      color: var(--accent) !important;
+      background: var(--accent-soft) !important;
     }
 
     [data-theme="dark"] .coden-ai-input.input-wrapper,
     [data-theme="dark"] .coden-ai-input {
-      box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 12px 34px rgba(0,0,0,.22) !important;
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset, 0 12px 34px color-mix(in srgb, var(--foreground) 22%, transparent) !important;
     }
 
     @media (max-width: 480px) {

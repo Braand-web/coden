@@ -51,9 +51,9 @@ function injectSharedPublicStyles() {
       height: 36px;
       display: inline-grid;
       place-items: center;
-      border: 1px solid var(--border, var(--seo-border, rgba(20, 20, 20, 0.14)));
+      border: 1px solid var(--border);
       border-radius: 8px;
-      color: var(--text-muted, var(--seo-muted, #777166));
+      color: var(--text-muted);
       background: transparent;
       cursor: pointer;
       font: inherit;
@@ -61,15 +61,15 @@ function injectSharedPublicStyles() {
     }
 
     .coden-public-theme-toggle:hover {
-      color: var(--text, var(--seo-text, #181613));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 92%, transparent);
-      border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
+      color: var(--foreground);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
       transform: translateY(-1px);
     }
 
     .coden-public-theme-toggle:focus-visible {
       outline: 0;
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #2563eb) 35%, transparent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
     }
 
     .back-home-link {
@@ -82,16 +82,14 @@ function injectSharedPublicStyles() {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      border: 1px solid var(--border, var(--seo-border, rgba(20, 20, 20, 0.14)));
+      border: 1px solid var(--border);
       border-radius: 999px;
-      color: var(--text-muted, var(--seo-muted, #777166));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 86%, transparent);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      color: var(--text-muted);
+      background: color-mix(in srgb, var(--surface) 86%, transparent);
       text-decoration: none;
       font-size: 13px;
       font-weight: 700;
-      box-shadow: 0 12px 40px rgba(24, 22, 17, 0.08);
+      box-shadow: 0 12px 40px color-mix(in srgb, var(--foreground) 8%, transparent);
       transition: transform 160ms ease, color 160ms ease, border-color 160ms ease, background 160ms ease;
     }
 
@@ -102,15 +100,15 @@ function injectSharedPublicStyles() {
     }
 
     .back-home-link:hover {
-      color: var(--text, var(--seo-text, #181613));
-      border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 96%, transparent);
+      color: var(--foreground);
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
       transform: translateX(-2px);
     }
 
     .back-home-link:focus-visible,
     .coden-shared-faq button:focus-visible {
-      outline: 2px solid color-mix(in srgb, var(--accent, #2563eb) 72%, white);
+      outline: 2px solid color-mix(in srgb, var(--accent) 72%, var(--surface));
       outline-offset: 3px;
     }
 
@@ -118,12 +116,9 @@ function injectSharedPublicStyles() {
       width: min(920px, calc(100vw - 40px));
       margin: 0 auto 72px;
       padding: clamp(28px, 5vw, 44px);
-      border: 1px solid var(--border, var(--seo-border, rgba(20, 20, 20, 0.14)));
-      border-radius: 28px;
-      background:
-        radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--accent, #2563eb) 10%, transparent), transparent 32%),
-        color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 92%, transparent);
-      box-shadow: var(--coden-shadow-card, 0 20px 70px rgba(24, 22, 17, 0.10));
+      border: 1px solid var(--border);
+      border-radius: 28px;background: var(--surface);
+      box-shadow: var(--shadow-lg);
     }
 
     .coden-shared-faq-header {
@@ -134,7 +129,7 @@ function injectSharedPublicStyles() {
     .coden-shared-faq-kicker {
       display: inline-flex;
       margin-bottom: 12px;
-      color: var(--text-muted, var(--seo-muted, #777166));
+      color: var(--text-muted);
       font-size: 11px;
       font-weight: 820;
       letter-spacing: 0.12em;
@@ -143,7 +138,7 @@ function injectSharedPublicStyles() {
 
     .coden-shared-faq h2 {
       margin: 0;
-      color: var(--text, var(--seo-text, #181613));
+      color: var(--foreground);
       font-size: clamp(2rem, 4vw, 3.4rem);
       line-height: 1;
       letter-spacing: 0;
@@ -155,17 +150,17 @@ function injectSharedPublicStyles() {
     }
 
     .coden-shared-faq-item {
-      border: 1px solid var(--border, var(--seo-border, rgba(20, 20, 20, 0.14)));
+      border: 1px solid var(--border);
       border-radius: 18px;
-      background: color-mix(in srgb, var(--bg-elevated, var(--seo-panel, #f6f2e9)) 72%, transparent);
+      background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
       overflow: hidden;
       transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
     }
 
     .coden-shared-faq-item:hover {
       transform: translateY(-1px);
-      border-color: var(--border-focus, var(--seo-border, rgba(20, 20, 20, 0.24)));
-      background: color-mix(in srgb, var(--bg-surface, var(--seo-surface, #ffffff)) 96%, transparent);
+      border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+      background: color-mix(in srgb, var(--surface) 96%, transparent);
     }
 
     .coden-shared-faq-question {
@@ -177,7 +172,7 @@ function injectSharedPublicStyles() {
       gap: 16px;
       border: 0;
       background: transparent;
-      color: var(--text, var(--seo-text, #181613));
+      color: var(--foreground);
       padding: 0 18px;
       text-align: left;
       font: inherit;
@@ -198,7 +193,7 @@ function injectSharedPublicStyles() {
     .coden-shared-faq-answer {
       display: none;
       padding: 0 18px 18px;
-      color: var(--text-muted, var(--seo-muted, #777166));
+      color: var(--text-muted);
       font-size: 14px;
       line-height: 1.68;
     }

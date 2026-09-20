@@ -21,13 +21,21 @@ import {
   storePendingPromptAttachments,
   type PendingPromptAttachment,
 } from './prompt-input-actions';
-import { MODEL_REGISTRY, PROVIDER_META } from './config/ai-models';
+import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, type AllowedModelId } from './config/ai-models';
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
 import { openConnectorsPanel } from './connectors-panel';
 import { redactSecretPayload, redactSecrets } from './services/secret-redaction';
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
+import { DEFAULT_AGENT_EFFORT, normalizeAgentEffort } from './services/agent-effort';
+import {
+  SELECTED_MODEL_STORAGE_KEY,
+  readPreferredEffort,
+  readPreferredModelSelection,
+  writePreferredEffort,
+  writePreferredModelSelection,
+} from './lib/composer-preferences';
 import { deriveProjectName } from './services/project-naming';
 import { buildExecutionContract } from './services/execution-contract';
 import { modeLabel, normalizeAgentMode, type AgentMode } from './services/agent-mode';
@@ -305,6 +313,58 @@ let currentProjectId = '';
 let currentFiles: GeneratedFile[] = [];
 let currentPreviewHtml = '';
 let isGenerating = false;
+
+/*
+ * The Builder's composer is the shared PromptInput, mounted as a React island.
+ *
+ * Eleven places in this file reached for `#chat-textarea-box` — reading its
+ * value, writing it, focusing it, nudging its height. A React-controlled
+ * textarea answers none of those honestly: writing `.value` sets the DOM
+ * property and the component overwrites it on its next render, which is a
+ * prefill that silently disappears.
+ *
+ * So the field's value lives here, and those eleven sites talk to this adapter
+ * instead. It implements exactly the surface they use and nothing more —
+ * `style` is accepted and ignored because the component sizes itself now, and
+ * `dispatchEvent` is a no-op because the setter already re-renders.
+ */
+let composerValue = '';
+/*
+ * The effort the session is running at.
+ *
+ * Seeded from the stored preference so a level chosen once survives a reload,
+ * and kept here rather than inside the composer because it has to reach the
+ * request body — it was read off the submit event and then dropped, which is
+ * why the control changed nothing at all.
+ */
+let composerEffort: string = DEFAULT_AGENT_EFFORT;
+let renderComposer: () => void = () => {};
+
+type ComposerHandle = {
+  value: string;
+  focus: () => void;
+  dispatchEvent: (event: Event) => boolean;
+  setSelectionRange: (start: number, end: number) => void;
+  style: { height: string; overflowY: string };
+  scrollHeight: number;
+  selectionStart: number;
+  selectionEnd: number;
+};
+
+function chatComposer(): ComposerHandle {
+  const field = () => document.querySelector<HTMLTextAreaElement>('.chat-input-row textarea');
+  return {
+    get value() { return composerValue; },
+    set value(next: string) { composerValue = next; renderComposer(); },
+    focus: () => field()?.focus(),
+    dispatchEvent: () => true,
+    setSelectionRange: (start, end) => field()?.setSelectionRange(start, end),
+    style: { height: '', overflowY: '' },
+    get scrollHeight() { return field()?.scrollHeight ?? 0; },
+    get selectionStart() { return field()?.selectionStart ?? composerValue.length; },
+    get selectionEnd() { return field()?.selectionEnd ?? composerValue.length; },
+  };
+}
 // Last known client-side wallet balance (credits). null = unknown -> defer to the
 // server credit gate. 0 = known-empty -> block the workspace reveal and show the
 // existing upgrade prompt instead.
@@ -338,7 +398,7 @@ let mediaSettings: MediaSettings = {
 let selectedModelId = 'auto';
 let selectedPreviewDevice: PreviewDevice = 'desktop';
 let currentProjectName = 'Projet sans titre';
-let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; shouldAutoRun?: boolean } | null = null;
+let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; model?: string; effort?: string; shouldAutoRun?: boolean } | null = null;
 let initialGenerationStarted = false;
 let analysisPollTimer: number | null = null;
 let analysisRange = '30d';
@@ -360,7 +420,6 @@ let modelSelectionBridgeBound = false;
 let connectorsBridgeBound = false;
 let settingsPanelModulePromise: Promise<typeof import('./settings-panel')> | null = null;
 const LAST_BUILDER_PROJECT_STORAGE_KEY = 'coden-last-builder-project-id';
-const SELECTED_MODEL_STORAGE_KEY = 'coden-selected-model';
 const ACTIVE_WORKSHOP_STORAGE_KEY = 'coden-active-workshop';
 const DESIGN_SETTINGS_STORAGE_KEY = 'coden-design-settings';
 const MEDIA_SETTINGS_STORAGE_KEY = 'coden-media-settings';
@@ -526,7 +585,22 @@ function planRank(plan: PlanKey) {
 
 function syncBuilderPlanBadges(planInput: unknown) {
   const plan = normalizePlanKey(planInput);
+  const planChanged = currentPlanKey !== plan;
   currentPlanKey = plan;
+  /*
+   * The plan arrives after the composer has already mounted, so this is where
+   * a selection the workspace cannot run gets dropped.
+   *
+   * Without it, a stored `anthropic/claude-opus-5` on a free plan survived
+   * every reload and failed every turn — `ModelNotAllowedForPlanError` inside
+   * the router, surfaced as a bare GENERATION_FAILED with nothing on screen
+   * explaining that the model was the problem.
+   */
+  if (selectedModelId !== 'auto' && !isPlanAtLeast(plan, AI_MODEL_PLAN_ACCESS[selectedModelId as AllowedModelId] || 'free')) {
+    applySelectedModel('auto', { persist: true, saveWorkspace: true });
+  } else if (planChanged) {
+    renderComposer();
+  }
   document.querySelectorAll<HTMLElement>('#builder-plan-badge').forEach(badge => {
     badge.textContent = planLabel(plan);
     badge.classList.remove('free', 'pro', 'scale', 'business', 'enterprise');
@@ -579,23 +653,23 @@ function ensureDesignControlsStyle() {
     .coden-design-controls.visible { display: flex; }
     .coden-design-pill {
       height: 23px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-input) 84%, transparent);
+      background: var(--input);
       color: var(--text-muted);
       padding: 0 8px;
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      font: 760 10px/1 "Instrument Sans", Inter, system-ui, sans-serif;
+      font: 760 10px/1 var(--font-sans);
       cursor: pointer;
       transition: border-color 140ms cubic-bezier(.22,1,.36,1), color 140ms cubic-bezier(.22,1,.36,1), background 140ms cubic-bezier(.22,1,.36,1), transform 140ms cubic-bezier(.22,1,.36,1);
     }
     .coden-design-pill:hover,
     .coden-design-pill[aria-expanded="true"] {
-      border-color: var(--border-focus);
-      background: var(--accent-dim);
-      color: var(--text);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--foreground);
       transform: translateY(-1px);
     }
     .coden-design-pill svg {
@@ -611,9 +685,8 @@ function ensureDesignControlsStyle() {
       padding: 6px;
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
-      box-shadow: 0 18px 52px rgba(28,28,28,.16);
-      backdrop-filter: blur(18px) saturate(150%);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
       display: grid;
       gap: 3px;
     }
@@ -623,7 +696,7 @@ function ensureDesignControlsStyle() {
       border: 0;
       border-radius: 9px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -634,7 +707,7 @@ function ensureDesignControlsStyle() {
     }
     .coden-design-menu-option:hover,
     .coden-design-menu-option.active {
-      background: var(--accent-dim);
+      background: var(--accent-soft);
     }
     .coden-design-menu-option strong {
       font-size: 11px;
@@ -767,31 +840,31 @@ function ensureMediaControlsStyle() {
     .coden-media-controls.visible { display: flex; }
     .coden-media-controls::before {
       content: "Media";
-      color: var(--text-faint);
-      font: 820 9px/1 "Instrument Sans", Inter, system-ui, sans-serif;
+      color: var(--text-muted);
+      font: 820 9px/1 var(--font-sans);
       letter-spacing: .08em;
       text-transform: uppercase;
       margin-right: 2px;
     }
     .coden-media-pill {
       height: 26px;
-      border: 1px solid var(--border-light);
+      border: 1px solid var(--border-subtle);
       border-radius: 999px;
-      background: color-mix(in srgb, var(--bg-input) 88%, transparent);
+      background: var(--input);
       color: var(--text-muted);
       padding: 0 9px;
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      font: 780 10.5px/1 "Instrument Sans", Inter, system-ui, sans-serif;
+      font: 780 10.5px/1 var(--font-sans);
       cursor: pointer;
       transition: border-color 140ms cubic-bezier(.22,1,.36,1), color 140ms cubic-bezier(.22,1,.36,1), background 140ms cubic-bezier(.22,1,.36,1), transform 140ms cubic-bezier(.22,1,.36,1);
     }
     .coden-media-pill:hover,
     .coden-media-pill[aria-expanded="true"] {
-      border-color: var(--border-focus);
-      background: var(--accent-dim);
-      color: var(--text);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--foreground);
       transform: translateY(-1px);
     }
     .coden-media-pill svg {
@@ -807,9 +880,8 @@ function ensureMediaControlsStyle() {
       padding: 6px;
       border: 1px solid var(--border);
       border-radius: 12px;
-      background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
-      box-shadow: 0 18px 52px rgba(28,28,28,.16);
-      backdrop-filter: blur(18px) saturate(150%);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
       display: grid;
       gap: 3px;
     }
@@ -819,7 +891,7 @@ function ensureMediaControlsStyle() {
       border: 0;
       border-radius: 9px;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -830,7 +902,7 @@ function ensureMediaControlsStyle() {
     }
     .coden-media-menu-option:hover,
     .coden-media-menu-option.active {
-      background: var(--accent-dim);
+      background: var(--accent-soft);
     }
     .coden-media-menu-option strong {
       font-size: 11.5px;
@@ -935,7 +1007,7 @@ function syncMediaControls() {
 }
 
 function refreshWorkshopInputContext() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const context = document.getElementById('coden-workshop-context') as HTMLElement | null;
   const label = document.getElementById('coden-workshop-context-label') as HTMLElement | null;
   const chatTab = document.getElementById('btn-sidebar-chat') as HTMLElement | null;
@@ -953,7 +1025,9 @@ function refreshWorkshopInputContext() {
     else option.removeAttribute('aria-current');
   });
 
-  if (input && !input.value.trim()) input.placeholder = config.placeholder;
+  /* The placeholder is a prop of the island now, so changing the workshop
+     re-renders it rather than writing onto a DOM node React owns. */
+  if (!composerValue.trim()) renderComposer();
   if (context && label) {
     context.classList.toggle('visible', activeWorkshop !== 'chat');
     context.setAttribute('aria-hidden', activeWorkshop === 'chat' ? 'true' : 'false');
@@ -974,7 +1048,7 @@ function setActiveWorkshop(workshop: StudioWorkshop, options: { focusInput?: boo
   syncWorkshopPreview();
   syncProjectReadinessClass();
   if (options.focusInput) {
-    document.getElementById('chat-textarea-box')?.focus();
+    chatComposer().focus();
   }
 }
 
@@ -1099,7 +1173,7 @@ function syncInternalPreviewTheme() {
  * path then turns this into a targeted patch — no full prompt required.
  */
 function applyVisualEditTarget(target: VisualEditTarget) {
-  const composer = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const composer = chatComposer();
   if (!composer) return;
   const existing = composer.value.trim();
   composer.value = existing ? `${target.instruction}${existing}` : target.instruction;
@@ -1169,6 +1243,23 @@ function isUsablePreviewHtml(html: unknown) {
   return true;
 }
 
+const EMBEDDED_PREVIEW_TOKENS = [
+  'background', 'sidebar', 'surface', 'surface-soft', 'surface-hover',
+  'border-subtle', 'border', 'border-strong', 'foreground', 'text-strong',
+  'text-secondary', 'text-muted', 'text-disabled', 'accent', 'accent-soft',
+  'accent-track', 'success', 'success-background', 'danger', 'danger-background',
+  'syntax-purple', 'syntax-orange', 'syntax-green', 'syntax-cyan', 'syntax-yellow',
+  'syntax-blue', 'control', 'input', 'text-on-accent',
+] as const;
+
+function embeddedPreviewTokenCss() {
+  const styles = getComputedStyle(document.documentElement);
+  const declarations = EMBEDDED_PREVIEW_TOKENS
+    .map(token => `--${token}:${styles.getPropertyValue(`--${token}`).trim()};`)
+    .join('');
+  return `:root{color-scheme:${getBuilderPreviewTheme()};${declarations}}`;
+}
+
 function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
   const isWorking = mode === 'working';
   const rawStatus = label || (isWorking ? 'Vérification en cours' : 'Preview non vérifiée');
@@ -1176,57 +1267,22 @@ function centeredPreviewLoaderHtml(mode: EmptyPreviewMode, label = '') {
   const letters = escapeHtml(rawStatus);
   const stateClass = isWorking ? 'working' : 'idle';
   const previewTheme = getBuilderPreviewTheme();
+  const embeddedTokens = embeddedPreviewTokenCss();
   return `<!DOCTYPE html>
 <html lang="en" data-preview-state="${stateClass}" data-theme="${previewTheme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root {
-  color-scheme: light dark;
-  --loader-text: #0f172a;
-  --loader-canvas: #f8fafc;
-  --loader-surface: #f1f5f9;
-  --loader-border: #e2e8f0;
-  --loader-accent: #3b82f6;
-  --loader-accent-soft: rgba(59,130,246,.10);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --loader-text: #f5f7fb;
-    --loader-canvas: #0e1116;
-    --loader-surface: #151a22;
-    --loader-border: rgba(226,232,240,.12);
-    --loader-accent: #4f8cff;
-    --loader-accent-soft: rgba(79,140,255,.14);
-  }
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --loader-text: #0f172a;
-  --loader-canvas: #f8fafc;
-  --loader-surface: #f1f5f9;
-  --loader-border: #e2e8f0;
-  --loader-accent: #3b82f6;
-  --loader-accent-soft: rgba(59,130,246,.10);
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --loader-text: #f5f7fb;
-  --loader-canvas: #0e1116;
-  --loader-surface: #151a22;
-  --loader-border: rgba(226,232,240,.12);
-  --loader-accent: #4f8cff;
-  --loader-accent-soft: rgba(79,140,255,.14);
-}
+${embeddedTokens}
 * { box-sizing: border-box; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
   overflow: hidden;
   font-family: Geist, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--loader-canvas);
-  color: var(--loader-text);
+  background: var(--background);
+  color: var(--foreground);
 }
 .preview-loader {
   position: fixed;
@@ -1250,22 +1306,22 @@ body {
   height: 40px;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--loader-accent) 34%, var(--loader-border));
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
   border-radius: 14px;
-  background: var(--loader-accent-soft);
-  color: var(--loader-accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
   animation: loaderMarkPulse 2.2s ease-in-out infinite;
 }
 .loader-mark svg { width: 22px; height: 22px; display: block; }
 .loader-copy { display: grid; gap: 4px; text-align: center; }
 .loader-title {
-  color: var(--loader-text);
+  color: var(--foreground);
   font-size: 14px;
   line-height: 20px;
   font-weight: 650;
 }
 .loader-status {
-  color: color-mix(in srgb, var(--loader-text) 64%, transparent);
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 18px;
   font-weight: 520;
@@ -1277,7 +1333,7 @@ body {
   gap: 5px;
   min-height: 8px;
 }
-.loader-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--loader-accent); opacity: .28; }
+.loader-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); opacity: .28; }
 .working .loader-dot { animation: loaderDot 1.05s ease-in-out infinite; }
 .working .loader-dot:nth-child(2) { animation-delay: .12s; }
 .working .loader-dot:nth-child(3) { animation-delay: .24s; }
@@ -1334,24 +1390,22 @@ function mediaPreviewShellHtml(state: 'idle' | 'working' = 'idle', title = 'Medi
   const helper = isWorking
     ? 'Coden is turning the request into a usable creative brief and preview.'
     : 'Describe a product image, UGC video, storyboard, thumbnail or campaign pack.';
+  const embeddedTokens = embeddedPreviewTokenCss();
   return `<!doctype html>
 <html lang="en" data-theme="${previewTheme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root{color-scheme:light dark;--bg:#f8fafc;--panel:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f1f5f9;--blue:#2f6df6}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25}}
-:root[data-theme=light]{color-scheme:light;--bg:#f8fafc;--panel:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f1f5f9;--blue:#2f6df6}
-:root[data-theme=dark]{color-scheme:dark;--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue:#4f8cff}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+${embeddedTokens}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--background);font-family:Geist,ui-sans-serif,system-ui,sans-serif;color:var(--foreground)}
 .wrap{min-height:100vh;display:grid;place-items:center;padding:clamp(18px,4vw,42px)}
-.empty{width:min(760px,100%);display:grid;gap:14px;color:var(--muted)}
-.status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);padding:9px 13px;color:var(--ink);font-size:13px;font-weight:780;box-shadow:0 8px 28px rgba(28,28,28,.06)}
-.dot{width:8px;height:8px;border-radius:999px;background:#2f6df6;box-shadow:0 0 0 5px rgba(47,109,246,.10);animation:${isWorking ? 'pulse 1.6s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
-.helper{margin:0;max-width:560px;font-size:clamp(15px,2.2vw,22px);line-height:1.35;color:var(--ink);font-weight:760;letter-spacing:-.02em}
-.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:4px}.mini-card{border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--panel) 90%,transparent);padding:14px;min-height:86px}.mini-card strong{display:block;color:var(--ink);font-size:13px;margin-bottom:6px}.mini-card span{display:block;color:var(--muted);font-size:12px;line-height:1.4}
-.bar{height:4px;width:min(360px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:38%;height:100%;border-radius:999px;background:#2f6df6;animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+.empty{width:min(760px,100%);display:grid;gap:14px;color:var(--text-muted)}
+.status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:999px;background:color-mix(in srgb,var(--surface) 88%,transparent);padding:9px 13px;color:var(--foreground);font-size:13px;font-weight:780;box-shadow:0 8px 28px color-mix(in srgb,var(--foreground) 6%,transparent)}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 10%,transparent);animation:${isWorking ? 'pulse 1.6s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+.helper{margin:0;max-width:560px;font-size:clamp(15px,2.2vw,22px);line-height:1.35;color:var(--foreground);font-weight:760;letter-spacing:-.02em}
+.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:4px}.mini-card{border:1px solid var(--border);border-radius:16px;background:color-mix(in srgb,var(--surface) 90%,transparent);padding:14px;min-height:86px}.mini-card strong{display:block;color:var(--foreground);font-size:13px;margin-bottom:6px}.mini-card span{display:block;color:var(--text-muted);font-size:12px;line-height:1.4}
+.bar{height:4px;width:min(360px,100%);overflow:hidden;border-radius:999px;background:var(--surface-soft);border:1px solid var(--border)}.bar::after{content:"";display:block;width:38%;height:100%;border-radius:999px;background:var(--accent);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 @keyframes pulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}@keyframes scan{0%{transform:translateX(-110%)}100%{transform:translateX(270%)}}
 @media(max-width:680px){.mini-grid{grid-template-columns:1fr}.helper{font-size:20px}.empty{gap:12px}}@media(prefers-reduced-motion:reduce){.dot,.bar::after{animation:none}}
 </style>
@@ -1398,26 +1452,24 @@ function designPreviewShellHtml(state: 'idle' | 'working' = 'idle', title = 'Des
   const helper = isWorking
     ? 'Coden is shaping a visual direction, checking brand fit and preparing a clean handoff.'
     : 'Describe a screen, section, prototype, deck or brand direction. Coden will keep the canvas calm and the app safe.';
+  const embeddedTokens = embeddedPreviewTokenCss();
   return `<!doctype html>
 <html lang="en" data-theme="${previewTheme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root{color-scheme:light dark;--bg:#f8fafc;--panel:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f1f5f9;--blue:#2f6df6;--blue-soft:rgba(47,109,246,.10)}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue-soft:rgba(79,140,255,.16)}}
-:root[data-theme=light]{color-scheme:light;--bg:#f8fafc;--panel:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--soft:#f1f5f9;--blue:#2f6df6;--blue-soft:rgba(47,109,246,.10)}
-:root[data-theme=dark]{color-scheme:dark;--bg:#0f1014;--panel:#15171c;--ink:#f5f7fb;--muted:#c6cad3;--line:rgba(226,232,240,.12);--soft:#1b1e25;--blue:#4f8cff;--blue-soft:rgba(79,140,255,.16)}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+${embeddedTokens}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--background);font-family:Geist,ui-sans-serif,system-ui,sans-serif;color:var(--foreground)}
 .wrap{min-height:100vh;display:grid;place-items:center;padding:clamp(18px,4vw,44px)}
 .studio{width:min(860px,100%);display:grid;gap:16px}
-.status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--panel) 88%,transparent);padding:9px 13px;font-size:13px;font-weight:780;box-shadow:0 8px 28px rgba(28,28,28,.06)}
-.dot{width:8px;height:8px;border-radius:999px;background:var(--blue);box-shadow:0 0 0 5px var(--blue-soft);animation:${isWorking ? 'pulse 1.6s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+.status{width:max-content;display:inline-flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:999px;background:color-mix(in srgb,var(--surface) 88%,transparent);padding:9px 13px;font-size:13px;font-weight:780;box-shadow:0 8px 28px color-mix(in srgb,var(--foreground) 6%,transparent)}
+.dot{width:8px;height:8px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 10%,transparent);animation:${isWorking ? 'pulse 1.6s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 h1{margin:0;max-width:720px;font-size:clamp(34px,6vw,70px);line-height:.98;letter-spacing:-.055em}
-p{margin:0;max-width:620px;color:var(--muted);font-size:clamp(15px,2vw,20px);line-height:1.45}
-.pills{display:flex;flex-wrap:wrap;gap:7px}.pill{border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,transparent);border-radius:999px;padding:8px 11px;color:var(--muted);font-size:12px;font-weight:760}.pill strong{color:var(--ink)}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:5px}.card{border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--panel) 90%,transparent);padding:15px;min-height:112px;box-shadow:0 20px 60px rgba(28,28,28,.05)}.card strong{display:block;font-size:13px;margin-bottom:8px}.card span{display:block;color:var(--muted);font-size:12px;line-height:1.45}
-.bar{height:4px;width:min(420px,100%);overflow:hidden;border-radius:999px;background:var(--soft);border:1px solid var(--line)}.bar::after{content:"";display:block;width:35%;height:100%;border-radius:999px;background:var(--blue);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
+p{margin:0;max-width:620px;color:var(--text-muted);font-size:clamp(15px,2vw,20px);line-height:1.45}
+.pills{display:flex;flex-wrap:wrap;gap:7px}.pill{border:1px solid var(--border);background:color-mix(in srgb,var(--surface) 88%,transparent);border-radius:999px;padding:8px 11px;color:var(--text-muted);font-size:12px;font-weight:760}.pill strong{color:var(--foreground)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:5px}.card{border:1px solid var(--border);border-radius:18px;background:color-mix(in srgb,var(--surface) 90%,transparent);padding:15px;min-height:112px;box-shadow:0 20px 60px color-mix(in srgb,var(--foreground) 5%,transparent)}.card strong{display:block;font-size:13px;margin-bottom:8px}.card span{display:block;color:var(--text-muted);font-size:12px;line-height:1.45}
+.bar{height:4px;width:min(420px,100%);overflow:hidden;border-radius:999px;background:var(--surface-soft);border:1px solid var(--border)}.bar::after{content:"";display:block;width:35%;height:100%;border-radius:999px;background:var(--accent);animation:${isWorking ? 'scan 1.35s cubic-bezier(.22,1,.36,1) infinite' : 'none'}}
 @keyframes pulse{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}@keyframes scan{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
 @media(max-width:760px){.grid{grid-template-columns:1fr 1fr}h1{font-size:42px}.studio{gap:13px}}@media(max-width:520px){.grid{grid-template-columns:1fr}.pills{gap:6px}}@media(prefers-reduced-motion:reduce){.dot,.bar::after{animation:none}}
 </style>
@@ -1558,6 +1610,11 @@ function getInitialBuilderHandoff() {
     mode: rawMode === 'plan' ? 'plan' : rawMode === 'build' ? 'build' : 'auto',
     importContext,
     source: pendingFlow?.source,
+    // The landing already carried the model and the effort through the flow;
+    // only the model was ever read back, so an app started on Max Effort ran
+    // its very first build — the longest one it will ever do — on Medium.
+    model: pendingFlow?.model,
+    effort: pendingFlow?.effort,
     shouldAutoRun: Boolean(pendingFlow?.prompt) || new URLSearchParams(window.location.search).get('run') === 'initial',
   };
   clearCreateProjectFlow();
@@ -1588,23 +1645,28 @@ function normalizeBuilderModelSelection(value: unknown) {
 }
 
 function readStoredSelectedModel() {
-  try {
-    return normalizeBuilderModelSelection(localStorage.getItem(SELECTED_MODEL_STORAGE_KEY));
-  } catch {
-    return 'auto';
-  }
+  return normalizeBuilderModelSelection(readPreferredModelSelection());
 }
 
 function applySelectedModel(modelId: unknown, options: { persist?: boolean; saveWorkspace?: boolean } = {}) {
   const normalized = normalizeBuilderModelSelection(modelId);
+  const changed = selectedModelId !== normalized;
   selectedModelId = normalized;
-  try {
-    localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, normalized);
-  } catch {
-    // Local storage is an optimization; the workspace state remains authoritative.
-  }
+  writePreferredModelSelection(normalized);
   syncModelLabelFromSelection();
+  // The composer renders the current selection, so a choice made anywhere else
+  // — the legacy selector, another tab, a restored workspace — has to reach it.
+  if (changed) renderComposer();
   if (options.saveWorkspace) scheduleWorkspaceSave({ selected_model: selectedModelId }, Boolean(options.persist));
+}
+
+/** The effort level, kept in step with the composer and with storage. */
+function applySelectedEffort(value: unknown) {
+  const normalized = normalizeAgentEffort(value);
+  const changed = composerEffort !== normalized;
+  composerEffort = normalized;
+  writePreferredEffort(normalized);
+  if (changed) renderComposer();
 }
 
 function bindSharedModelSelectionEvents() {
@@ -1802,7 +1864,7 @@ function bindPreviewDeviceToggle() {
 function scheduleWorkspaceSave(patch: Partial<WorkspaceState> = {}, immediate = false) {
   if (workspaceSaveTimer !== null) window.clearTimeout(workspaceSaveTimer);
   const save = async () => {
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     const body = {
       draft_prompt: input?.value || '',
       selected_mode: selectedChatMode,
@@ -1848,7 +1910,7 @@ function applySidebarWidthPreference(width?: number) {
   if (body.classList.contains('sidebar-collapsed')) return;
   const next = Math.min(520, Math.max(280, Number(width || 380)));
   body.style.gridTemplateColumns = `${next}px minmax(0, 1fr)`;
-  body.style.setProperty('--coden-sidebar-width', `${next}px`);
+  body.style.setProperty('--app-sidebar-width', `${next}px`);
   const handle = document.getElementById('coden-sidebar-resizer') as HTMLElement | null;
   if (handle) handle.style.left = `${next - 4}px`;
 }
@@ -1874,7 +1936,7 @@ function applyWorkspaceState(state?: WorkspaceState | null) {
     applySidebarWidthPreference(state.sidebar_width);
   }
   const handoff = getInitialBuilderHandoff();
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
   if (input && !handoff.prompt && !input.value.trim() && state.draft_prompt) {
     input.value = repairTextEncoding(state.draft_prompt);
@@ -1963,7 +2025,7 @@ function bindConversationFeedbackBridge() {
     const detail = (event as CustomEvent).detail || {};
     const content = String(detail.content || '').trim();
     if (!content) return;
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     if (!input) return;
     input.value = content;
     input.focus();
@@ -2761,7 +2823,7 @@ function renderPlanResponse(
     });
     addInlineAction(card, speaksFrench ? 'Ajuster le plan' : 'Adjust plan', () => {
       setChatMode('plan');
-      const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+      const input = chatComposer();
       if (!input) return;
       input.value = speaksFrench ? 'Ajuste ce plan : ' : 'Adjust this plan: ';
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -3541,7 +3603,7 @@ function renderFiles(files: GeneratedFile[]) {
       if (document.querySelector('.workspace-body')?.classList.contains('sidebar-collapsed')) {
         (document.querySelector('.collapse-sidebar-arrow') as HTMLButtonElement | null)?.click();
       }
-      (document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null)?.focus();
+      (chatComposer())?.focus();
     });
   }
 }
@@ -3573,7 +3635,7 @@ function ensureToolbar() {
   const nav = document.querySelector('.sub-nav-right');
   if (!nav || document.getElementById('btn-live-cancel')) return;
 
-  const style = 'height:28px;border:1px solid var(--border);background:var(--bg-input);color:var(--text);border-radius:7px;padding:0 10px;font-size:11px;cursor:pointer;';
+  const style = 'height:28px;border:1px solid var(--border);background:var(--input);color:var(--foreground);border-radius:7px;padding:0 10px;font-size:11px;cursor:pointer;';
   nav.insertAdjacentHTML('afterbegin', `
     <button id="btn-live-cancel" type="button" style="${style}display:none;">Cancel</button>
   `);
@@ -3882,11 +3944,11 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           : 'Terminez les contrôles bloquants avant de publier.';
 
   const securityRows = checks.map(check => {
-    const tone = check.status === 'pass' ? '#2fbf71' : check.status === 'warn' ? '#d97706' : '#dc2626';
+    const tone = check.status === 'pass' ? 'var(--success)' : check.status === 'warn' ? 'var(--syntax-orange)' : 'var(--danger)';
     const iconName = check.status === 'pass' ? 'check' : check.status === 'warn' ? 'warning' : 'fail';
     return `
       <div class="cdn-pub__check">
-        <span class="cdn-pub__check-icon" style="color:${tone};background:color-mix(in srgb, ${tone} 10%, var(--bg-surface));">${publishIcon(iconName as 'check' | 'warning' | 'fail')}</span>
+        <span class="cdn-pub__check-icon" style="color:${tone};background:color-mix(in srgb, ${tone} 10%, var(--surface));">${publishIcon(iconName as 'check' | 'warning' | 'fail')}</span>
         <span>
           <strong>${escapeHtml(check.label)}</strong>
           <small>${escapeHtml(check.detail)}</small>
@@ -3939,7 +4001,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           </div>
         ` : `
           <!-- A placeholder has to be visible to mean anything. This one used
-               to be a bare div tinted var(--bg-input) — on a dark surface that
+               to be a bare div tinted var(--input) — on a dark surface that
                is the same colour as the panel, so it read as an empty void and
                the panel looked broken rather than busy. -->
           <div class="cdn-pub__url cdn-pub__url--pending" aria-hidden="true">
@@ -4262,30 +4324,13 @@ const stopIconSvg = `
 `;
 
 function syncSubmitButtonState() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
-  if (!submit) return;
-  const hasPrompt = Boolean(input?.value.trim());
-  const shouldStop = isGenerating;
-  const shouldSendInstruction = isGenerating && hasPrompt;
-  submit.innerHTML = shouldStop && !shouldSendInstruction ? stopIconSvg : sendIconSvg;
-  submit.classList.toggle('active', shouldStop || hasPrompt);
-  submit.classList.toggle('is-generating', shouldStop);
-  const submitLabel = shouldSendInstruction ? 'Send instruction' : shouldStop ? 'Stop generation' : 'Send message';
-  submit.setAttribute('aria-label', submitLabel);
-  submit.setAttribute('title', submitLabel);
-  submit.setAttribute('aria-disabled', shouldStop || hasPrompt ? 'false' : 'true');
-  submit.style.pointerEvents = 'auto';
-  submit.style.cursor = shouldStop || hasPrompt ? 'pointer' : 'not-allowed';
-}
-
-function autoResizeChatInput() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  if (!input) return;
-  input.style.height = 'auto';
-  const nextHeight = Math.min(Math.max(input.scrollHeight, 52), 240);
-  input.style.height = `${nextHeight}px`;
-  input.style.overflowY = input.scrollHeight > 240 ? 'auto' : 'hidden';
+  /*
+   * The island owns the action button, and it already renders the right state
+   * from `isBusy` and whether the field has a value. Seven callers still mean
+   * "the composer's action needs refreshing", so the name stays and the work
+   * becomes a re-render.
+   */
+  renderComposer();
 }
 
 function setBusy(busy: boolean) {
@@ -4296,10 +4341,10 @@ function setBusy(busy: boolean) {
 }
 
 function renderTierColor(tier = 'Standard') {
-  if (/premium/i.test(tier)) return '#c084fc';
-  if (/pro/i.test(tier)) return '#60a5fa';
-  if (/economy/i.test(tier)) return '#34d399';
-  return '#52525b';
+  if (/premium/i.test(tier)) return 'var(--syntax-purple)';
+  if (/pro/i.test(tier)) return 'var(--accent)';
+  if (/economy/i.test(tier)) return 'var(--success)';
+  return 'var(--text-muted)';
 }
 
 function buildLocalProviderGroups(): AiModelProviderGroup[] {
@@ -4347,7 +4392,7 @@ function ensureBuilderModelSelectorStyle() {
       align-items: center !important;
       border: 1px solid var(--border) !important;
       background: transparent !important;
-      color: var(--text-sub) !important;
+      color: var(--text-secondary) !important;
       box-shadow: none !important;
     }
     .coden-builder-model-trigger {
@@ -4370,9 +4415,9 @@ function ensureBuilderModelSelectorStyle() {
     }
     .coden-builder-model-trigger:hover,
     .coden-builder-model-trigger[aria-expanded="true"] {
-      border-color: var(--border-focus, var(--border));
-      background: var(--accent-hover, var(--bg-panel));
-      color: var(--text);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--foreground);
       transform: translateY(-1px);
     }
     .coden-builder-model-trigger .model-label-prefix {
@@ -4405,7 +4450,7 @@ function ensureBuilderModelSelectorStyle() {
       text-overflow: ellipsis;
       font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
       font-weight: 650;
-      color: var(--text);
+      color: var(--foreground);
     }
     .coden-builder-model-trigger #chevron-icon {
       flex: 0 0 auto;
@@ -4421,11 +4466,11 @@ function ensureBuilderModelSelectorStyle() {
       max-height: min(320px, calc(100vh - 36px));
       overflow: visible;
       border: 1px solid var(--border);
-      background: var(--bg-surface);
-      color: var(--text);
+      background: var(--surface);
+      color: var(--foreground);
       border-radius: 12px;
       padding: 6px;
-      box-shadow: 0 14px 36px rgba(0,0,0,.16), 0 3px 10px rgba(0,0,0,.08);
+      box-shadow: 0 14px 36px color-mix(in srgb, var(--foreground) 16%, transparent), 0 3px 10px color-mix(in srgb, var(--foreground) 8%, transparent);
       display: none;
       z-index: 3000;
       backdrop-filter: blur(18px);
@@ -4442,8 +4487,8 @@ function ensureBuilderModelSelectorStyle() {
       width: 100%;
       min-height: 30px;
       border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text);
+      background: var(--input);
+      color: var(--foreground);
       border-radius: 8px;
       padding: 5px 6px;
       display: flex;
@@ -4458,8 +4503,8 @@ function ensureBuilderModelSelectorStyle() {
     .coden-builder-provider-card:hover,
     .coden-builder-provider-card.active,
     .coden-builder-provider-card.open {
-      background: var(--accent-hover, rgba(9,9,11,.08));
-      border-color: var(--border-focus, var(--border));
+      background: var(--accent-soft);
+      border-color: var(--accent);
     }
     .coden-builder-provider-card.open {
       transform: translateX(2px);
@@ -4468,7 +4513,7 @@ function ensureBuilderModelSelectorStyle() {
       width: 18px;
       height: 18px;
       border-radius: 5px;
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--provider-color);
       border: 1px solid var(--border);
       display: inline-flex;
@@ -4478,7 +4523,7 @@ function ensureBuilderModelSelectorStyle() {
       font-weight: 850;
       line-height: 1;
       flex: 0 0 auto;
-      --provider-icon-bg: var(--bg-input);
+      --provider-icon-bg: var(--input);
     }
     .coden-provider-card-main {
       min-width: 0;
@@ -4487,7 +4532,7 @@ function ensureBuilderModelSelectorStyle() {
       flex: 1 1 auto;
     }
     .coden-provider-name {
-      color: var(--text);
+      color: var(--foreground);
       font-size: 11px;
       font-weight: 720;
       line-height: 1.2;
@@ -4515,8 +4560,8 @@ function ensureBuilderModelSelectorStyle() {
     }
     .coden-provider-expand-btn:hover,
     .coden-provider-expand-btn.open {
-      background: var(--bg-panel, var(--bg-input));
-      color: var(--text);
+      background: var(--surface-soft);
+      color: var(--foreground);
     }
     .coden-provider-expand-btn.open {
       transform: rotate(90deg);
@@ -4528,10 +4573,10 @@ function ensureBuilderModelSelectorStyle() {
       width: 236px;
       max-height: min(320px, 66vh);
       border: 1px solid var(--border);
-      background: var(--bg-surface);
-      color: var(--text);
+      background: var(--surface);
+      color: var(--foreground);
       border-radius: 12px;
-      box-shadow: 0 14px 36px rgba(0,0,0,.16), 0 3px 10px rgba(0,0,0,.08);
+      box-shadow: 0 14px 36px color-mix(in srgb, var(--foreground) 16%, transparent), 0 3px 10px color-mix(in srgb, var(--foreground) 8%, transparent);
       opacity: 0;
       transform: translateX(-8px) scale(.97);
       pointer-events: none;
@@ -4578,7 +4623,7 @@ function ensureBuilderModelSelectorStyle() {
       width: 100%;
       border: 0;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       border-radius: 8px;
       padding: 6px 8px;
       display: grid;
@@ -4590,11 +4635,11 @@ function ensureBuilderModelSelectorStyle() {
       transition: background 120ms cubic-bezier(0.22,1,0.36,1), transform 120ms cubic-bezier(0.22,1,0.36,1);
     }
     .coden-builder-model-item:hover {
-      background: var(--accent-hover, rgba(9,9,11,.08));
+      background: var(--accent-soft);
       transform: translateX(2px);
     }
     .coden-builder-model-item.selected {
-      background: var(--accent-hover, rgba(9,9,11,.10));
+      background: var(--accent-soft);
     }
     .coden-builder-model-item.selected::before {
       content: "";
@@ -4609,7 +4654,7 @@ function ensureBuilderModelSelectorStyle() {
     .coden-model-item-name {
       font-size: 11px;
       font-weight: 720;
-      color: var(--text);
+      color: var(--foreground);
       line-height: 1.25;
     }
     .coden-model-item-meta {
@@ -4622,9 +4667,9 @@ function ensureBuilderModelSelectorStyle() {
       flex-wrap: wrap;
       gap: 3px;
     }
-    .coden-model-badge.new { color: #166534; background: #dcfce7; border-color: #bbf7d0; }
-    .coden-model-badge.fast { color: #854d0e; background: #fef9c3; border-color: #fde68a; }
-    .coden-model-badge.premium { color: #6b21a8; background: #f3e8ff; border-color: #e9d5ff; }
+    .coden-model-badge.new { color: var(--success); background: var(--success-background); border-color: color-mix(in srgb, var(--success) 36%, var(--border)); }
+    .coden-model-badge.fast { color: var(--syntax-orange); background: color-mix(in srgb, var(--syntax-orange) 12%, var(--surface)); border-color: color-mix(in srgb, var(--syntax-orange) 36%, var(--border)); }
+    .coden-model-badge.premium { color: var(--syntax-purple); background: color-mix(in srgb, var(--syntax-purple) 12%, var(--surface)); border-color: color-mix(in srgb, var(--syntax-purple) 36%, var(--border)); }
     @keyframes coden-builder-model-enter {
       from { opacity: 0; transform: translateX(-8px); }
       to { opacity: 1; transform: translateX(0); }
@@ -4648,7 +4693,7 @@ function ensureBuilderModelSelectorStyle() {
       padding: 0 10px;
       border-radius: 10px;
       border: 1px solid var(--border);
-      background: var(--bg-input);
+      background: var(--input);
       color: var(--text-muted);
     }
     .coden-model-dropdown .dropdown-search-input {
@@ -4657,13 +4702,13 @@ function ensureBuilderModelSelectorStyle() {
       border: 0;
       outline: 0;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       font: inherit;
       font-size: 12px;
     }
     .coden-model-dropdown .dropdown-group-title {
       padding: 8px 10px 5px;
-      color: var(--text-sub);
+      color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-size: 9px;
@@ -4673,7 +4718,7 @@ function ensureBuilderModelSelectorStyle() {
       width: 100%;
       border: 0;
       background: transparent;
-      color: var(--text);
+      color: var(--foreground);
       display: flex;
       align-items: center;
       gap: 12px;
@@ -4685,7 +4730,7 @@ function ensureBuilderModelSelectorStyle() {
     }
     .coden-model-dropdown .model-option:hover,
     .coden-model-dropdown .model-option.active {
-      background: var(--accent-hover, rgba(9,9,11,.08));
+      background: var(--accent-soft);
       transform: translateX(3px);
     }
     .coden-model-dropdown .model-option[aria-disabled="true"] {
@@ -4710,7 +4755,7 @@ function ensureBuilderModelSelectorStyle() {
       white-space: nowrap;
       font-size: 12px;
       font-weight: 700;
-      color: var(--text);
+      color: var(--foreground);
     }
     .coden-model-dropdown .opt-desc {
       overflow: hidden;
@@ -4718,7 +4763,7 @@ function ensureBuilderModelSelectorStyle() {
       white-space: nowrap;
       font-size: 10px;
       color: var(--text-muted);
-      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-family: var(--font-mono);
     }
     .coden-model-badge {
       border: 1px solid currentColor;
@@ -4729,7 +4774,7 @@ function ensureBuilderModelSelectorStyle() {
       flex: 0 0 auto;
     }
     .coden-model-upgrade {
-      color: #b45309;
+      color: var(--syntax-orange);
       font-size: 10px;
       font-weight: 800;
       flex: 0 0 auto;
@@ -4884,7 +4929,7 @@ async function ensureModelSelector() {
   const renderDropdownContent = () => `
     <div class="dropdown-header">Models</div>
     <button type="button" class="coden-auto-model-option active" data-model-id="auto" data-model-name="Auto">
-      <span class="coden-provider-icon" style="--provider-color:var(--accent);--provider-text:var(--bg);">${providerIconSvg('auto')}</span>
+      <span class="coden-provider-icon" style="--provider-color:var(--accent);--provider-text:var(--background);">${providerIconSvg('auto')}</span>
       <span class="coden-provider-card-main">
         <span class="coden-provider-name">Auto</span>
         <span class="coden-provider-sub">Best fit</span>
@@ -4947,7 +4992,7 @@ async function ensureModelSelector() {
             if (!acc[provider]) {
               acc[provider] = {
                 provider,
-                meta: { label: provider, color: renderTierColor(model.tier), textColor: '#fff', icon: provider },
+                meta: { label: provider, color: renderTierColor(model.tier), textColor: 'var(--text-on-accent)', icon: provider },
                 models: [],
               };
             }
@@ -5050,14 +5095,14 @@ function setChatMode(mode: ChatMode) {
   const menu = document.getElementById('chat-mode-menu');
   if (label) label.textContent = modeLabel(selectedChatMode, (document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
   if (button) {
-    button.style.background = selectedChatMode === 'auto' ? 'transparent' : 'var(--accent-hover)';
-    button.style.color = selectedChatMode === 'plan' ? 'var(--blue, var(--accent))' : 'var(--text)';
+    button.style.background = selectedChatMode === 'auto' ? 'transparent' : 'var(--surface-hover)';
+    button.style.color = selectedChatMode === 'plan' ? 'var(--accent)' : 'var(--foreground)';
     button.setAttribute('aria-expanded', 'false');
   }
   document.querySelectorAll<HTMLElement>('[data-chat-mode]').forEach(option => {
     const active = option.dataset.chatMode === selectedChatMode;
-    option.style.background = active ? 'var(--accent-hover, rgba(9,9,11,.08))' : 'transparent';
-    option.style.color = active ? 'var(--text)' : 'var(--text-muted)';
+    option.style.background = active ? 'var(--accent-soft)' : 'transparent';
+    option.style.color = active ? 'var(--foreground)' : 'var(--text-muted)';
   });
   if (menu) menu.style.display = 'none';
   scheduleWorkspaceSave({ selected_mode: selectedChatMode });
@@ -5852,7 +5897,7 @@ function setBuilderLayout(state: BuilderLayout) {
 }
 
 function focusComposer() {
-  (document.getElementById('chat-textarea-box') as HTMLElement | null)?.focus?.();
+  (chatComposer())?.focus?.();
 }
 
 async function revealWorkspaceLayout(): Promise<void> {
@@ -5950,8 +5995,17 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   setBusy(true);
   activeAbort = new AbortController();
 
-  const status = appendMessage('assistant', '');
+  const status = appendMessage('assistant', '', { working: true });
   if (status) status.dataset.workingStartedAt = String(Date.now());
+  /*
+   * Say something from the click, not from the first server event.
+   *
+   * The conversation branch above has always done this; the build branch — the
+   * one people actually use — created a silent card and left it empty through
+   * the whole preflight: the credit gate, the project creation and the intent
+   * round all happen before `startLiveRun` is reached.
+   */
+  setMessageShimmer(status, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
   let generationTouchesPreview = false;
   activeGenerationTouchesPreview = false;
   let streamedText = '';
@@ -6274,7 +6328,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       activeGenerationTouchesPreview = true;
       activateBuilderView('preview');
       setAssistantWorking('Generating media');
-      markAgentStep('media_brief', say('Brief media préparé.', 'Media brief prepared.'), say('Atelier media', 'Media workshop'), say('Je comprends le format, le modèle et le type de contenu.', 'I am reading the format, model and content type.'));
+      markAgentStep('media_brief', say('Brief média préparé.', 'Media brief prepared.'), say('Brief média', 'Media brief'), say('Je comprends le format, le modèle et le type de contenu.', 'I am reading the format, model and content type.'));
       setMediaPreviewHtml(mediaPreviewShellHtml('working', 'Generating media'), 'media.coden.local / rendering');
       const mediaPayload = await apiFetch<MediaGeneratePayload>(`/api/projects/${encodeURIComponent(currentProjectId)}/media/generate`, {
         method: 'POST',
@@ -6302,7 +6356,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       addInlineAction(target, speaksFrench ? 'Variation' : 'Variation', () => void generateFromPrompt(`${safePrompt}\n\nMake a fresh variation with the same goal.`, 'auto', false, { studioContext: studioPromptContextPayload() }, safeDisplayText));
       addInlineAction(target, speaksFrench ? 'Utiliser dans l app' : 'Use in app', () => {
         setActiveWorkshop('chat', { focusInput: true });
-        const promptInput = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+        const promptInput = chatComposer();
         if (promptInput) {
           promptInput.value = speaksFrench
             ? 'Utilise le dernier asset Coden Media dans la landing de cette app, sans casser le design actuel.'
@@ -6319,6 +6373,16 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       requestedMode,
       useLastPlan,
       modelId: selectedModel(),
+      /*
+       * The level the composer is showing.
+       *
+       * `/generate` has read `req.body.effort` since the control shipped — it
+       * scales the route budget and prices the run accordingly — but nothing
+       * ever put it in the body, so every request arrived without one and
+       * `normalizeAgentEffort` handed back Medium. Low was never cheaper and
+       * Max Effort never bought a longer run.
+       */
+      effort: composerEffort,
       clientMessageId: messageHandleId(status) || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),
       ...effectiveExtra,
@@ -6757,39 +6821,39 @@ function ensureDatabasePanelStyle() {
   style.textContent = `
     .db-section { grid-column: 1 / -1; display: grid; gap: 12px; min-width: 0; }
     .db-section-head { display: flex; align-items: flex-start; gap: 10px; }
-    .db-section-icon { color: var(--accent, #7c83ff); display: inline-flex; width: 22px; padding-top: 2px; }
+    .db-section-icon { color: var(--accent); display: inline-flex; width: 22px; padding-top: 2px; }
     .db-section-icon svg { width: 18px; height: 18px; }
     .db-section-head-text { min-width: 0; }
-    .db-section-title { margin: 0; font-size: 14px; font-weight: 820; color: var(--text, #f4f4f5); }
-    .db-section-desc { margin: 3px 0 0; color: var(--text-muted, #8b8b95); font-size: 11px; line-height: 1.45; }
+    .db-section-title { margin: 0; font-size: 14px; font-weight: 820; color: var(--foreground); }
+    .db-section-desc { margin: 3px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
     .db-section-body { display: grid; gap: 10px; min-width: 0; }
     .db-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; min-width: 0; }
-    .db-card { min-width: 0; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--bg-panel, #17171b) 88%, transparent); }
-    .db-card-label { color: var(--text-muted, #9b9ba5); font-size: 10px; font-weight: 760; text-transform: uppercase; letter-spacing: .06em; }
-    .db-card-value { margin-top: 8px; color: var(--text, #f4f4f5); font-size: 13px; font-weight: 780; }
-    .db-row-meta { color: var(--text-muted, #9696a1); font-size: 11px; }
+    .db-card { min-width: 0; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); }
+    .db-card-label { color: var(--text-muted); font-size: 10px; font-weight: 760; text-transform: uppercase; letter-spacing: .06em; }
+    .db-card-value { margin-top: 8px; color: var(--foreground); font-size: 13px; font-weight: 780; }
+    .db-row-meta { color: var(--text-muted); font-size: 11px; }
     .db-card-list, .db-file-list { display: grid; gap: 6px; margin-top: 10px; }
-    .db-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--border, rgba(255,255,255,.08)); }
-    .db-row-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text, #ededf0); font-size: 12px; }
+    .db-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--border); }
+    .db-row-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 12px; }
     .db-browser, .db-endusers, .db-storage { min-width: 0; }
     .db-browser-top, .db-storage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .db-table-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-    .db-table-chip, .db-action, .db-file-btn, .db-eu-btn { border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 8px; background: transparent; color: var(--text, #ededf0); padding: 6px 9px; font-size: 11px; cursor: pointer; }
-    .db-table-chip:hover, .db-action:hover, .db-file-btn:hover, .db-eu-btn:hover { border-color: var(--border-focus, #777dff); background: var(--accent-dim, rgba(124,131,255,.12)); }
-    .db-table-chip.active { border-color: var(--border-focus, #777dff); background: var(--accent-dim, rgba(124,131,255,.12)); }
-    .db-action-primary { background: var(--accent, #6870ff); border-color: transparent; color: white; font-weight: 760; }
-    .db-input, .db-select { min-height: 30px; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 8px; background: var(--bg-input, #111116); color: var(--text, #ededf0); padding: 5px 8px; font-size: 11px; }
-    .db-file-input { max-width: 100%; color: var(--text-muted, #9b9ba5); font-size: 11px; }
+    .db-table-chip, .db-action, .db-file-btn, .db-eu-btn { border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground); padding: 6px 9px; font-size: 11px; cursor: pointer; }
+    .db-table-chip:hover, .db-action:hover, .db-file-btn:hover, .db-eu-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .db-table-chip.active { border-color: var(--accent); background: var(--accent-soft); }
+    .db-action-primary { background: var(--accent); border-color: transparent; color: var(--text-on-accent); font-weight: 760; }
+    .db-input, .db-select { min-height: 30px; border: 1px solid var(--border); border-radius: 8px; background: var(--input); color: var(--foreground); padding: 5px 8px; font-size: 11px; }
+    .db-file-input { max-width: 100%; color: var(--text-muted); font-size: 11px; }
     .db-file-actions { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
-    .db-file-actions a { color: var(--accent, #8b91ff); font-size: 11px; text-decoration: none; }
+    .db-file-actions a { color: var(--accent); font-size: 11px; text-decoration: none; }
     .db-file-actions a:hover { text-decoration: underline; }
-    .db-empty, .db-note, .db-state { padding: 11px 0; color: var(--text-muted, #9696a1); font-size: 11px; line-height: 1.5; }
-    .db-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border, rgba(255,255,255,.1)); border-radius: 9px; background: color-mix(in srgb, var(--accent-dim, rgba(124,131,255,.1)) 70%, transparent); }
-    .db-state-error { color: #ff9caa; }
-    .db-table-scroll { overflow: auto; border: 1px solid var(--border, rgba(255,255,255,.08)); border-radius: 9px; margin-top: 10px; }
+    .db-empty, .db-note, .db-state { padding: 11px 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+    .db-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+    .db-state-error { color: var(--danger); }
+    .db-table-scroll { overflow: auto; border: 1px solid var(--border); border-radius: 9px; margin-top: 10px; }
     .db-data-table { width: 100%; border-collapse: collapse; min-width: 440px; font-size: 11px; }
-    .db-data-table th, .db-data-table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border, rgba(255,255,255,.08)); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
-    .db-data-table th { color: var(--text-muted, #9b9ba5); font-weight: 760; }
+    .db-data-table th, .db-data-table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+    .db-data-table th { color: var(--text-muted); font-weight: 760; }
     .db-pager { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
     .db-pager-btns { display: inline-flex; gap: 5px; }
     .db-enduser-create { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
@@ -7090,7 +7154,7 @@ function renderCloudConsole(db: any) {
 }
 
 function focusBuilderComposerWithPrompt(prompt: string) {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   if (!input) return;
   input.value = prompt;
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7197,7 +7261,17 @@ async function loadCloudConsoleUsage() {
       item.project_id ? item.project_id === currentProjectId : item.project_name === currentProjectName
     ));
     const used = projectHistory.reduce((sum, item) => sum + Math.max(0, Number(item.credits_charged || 0)), 0);
-    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Solde disponible</span><strong>${Number(payload.wallet?.balance || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>crédits unifiés</small></article><article class="cloud-summary-card"><span>Usage affiché</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article><article class="cloud-summary-card"><span>Top up</span><strong>${Number(payload.wallet?.topup_credits || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>crédits achetés</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements issus du ledger unifié.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
+    /*
+     * "Solde disponible" used to show the total across every grant, which is
+     * the number that promised 30 credits while a chat had nothing to spend:
+     * a debit only draws from grants restricted to its own category or to
+     * `general`, and the free plan's AI allowance is separate from its build
+     * allowance. The two figures shown here are now the ones the next Build
+     * and the next message will actually be charged against.
+     */
+    const spendable = payload.wallet?.spendable || {};
+    const credits = (amount: unknown) => Number(amount || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
+    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Usage affiché</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements issus du ledger unifié.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Usage indisponible.')}</div>`; }
 }
 
@@ -7750,7 +7824,7 @@ function renderAnalysis(payload: AnalysisPayload) {
     void loadAnalysis();
   });
   document.getElementById('btn-fix-seo')?.addEventListener('click', () => {
-    const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+    const input = chatComposer();
     if (!input) return;
     input.value = 'Optimize this app for Google and AI search. Add strong title and meta descriptions, Open Graph tags, one clear H1, image alt text, structured data, sitemap.xml and robots.txt without changing the core product.';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7762,7 +7836,7 @@ async function loadAnalysis(silent = false) {
   const target = document.getElementById('analysis-content');
   if (!target) return;
   if (!currentProjectId) {
-    target.innerHTML = '<div class="analysis-empty"><strong style="display:block;color:var(--text);font-size:14px;margin-bottom:6px;">No project selected</strong><span style="font-size:12px;">Open or create a project before viewing analysis.</span></div>';
+    target.innerHTML = '<div class="analysis-empty"><strong style="display:block;color:var(--foreground);font-size:14px;margin-bottom:6px;">No project selected</strong><span style="font-size:12px;">Open or create a project before viewing analysis.</span></div>';
     return;
   }
   if (!silent) {
@@ -7776,7 +7850,7 @@ async function loadAnalysis(silent = false) {
     const payload = await apiFetch<AnalysisPayload & { success: boolean }>(`/api/projects/${encodeURIComponent(currentProjectId)}/analysis?range=${encodeURIComponent(analysisRange)}`);
     renderAnalysis(payload);
   } catch (error) {
-    target.innerHTML = `<div class="analysis-error"><strong style="display:block;color:var(--text);font-size:14px;margin-bottom:6px;">Analysis unavailable</strong><span style="font-size:12px;">${escapeHtml(error instanceof Error ? error.message : 'Unable to load project analysis.')}</span></div>`;
+    target.innerHTML = `<div class="analysis-error"><strong style="display:block;color:var(--foreground);font-size:14px;margin-bottom:6px;">Analysis unavailable</strong><span style="font-size:12px;">${escapeHtml(error instanceof Error ? error.message : 'Unable to load project analysis.')}</span></div>`;
   }
 }
 
@@ -7926,7 +8000,7 @@ function showFixBugBox(errors: any[]) {
   `, async (action) => {
     if (action === 'copy') await navigator.clipboard?.writeText(first.message || 'Preview failed.');
     if (action === 'send') {
-      const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+      const input = chatComposer();
       if (input) input.value = `Fix this preview error: ${first.message}`;
     }
     if (action === 'fix') await generateFromPrompt(`Fix this preview error: ${first.message}`, 'build');
@@ -7971,95 +8045,77 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
 }
 
 function bindChat() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
-  const oldSubmit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
-  if (!input || !oldSubmit) return;
+  const row = document.querySelector('.chat-input-row');
+  if (!row) return;
 
-  const submit = oldSubmit.cloneNode(true) as HTMLButtonElement;
-  oldSubmit.replaceWith(submit);
-  submit.style.pointerEvents = 'auto';
-  submit.style.cursor = 'pointer';
-  syncSubmitButtonState();
-
-  input.addEventListener('input', () => {
-    const repaired = repairTextEncoding(input.value);
-    if (repaired !== input.value) {
-      const start = input.selectionStart;
-      const end = input.selectionEnd;
-      input.value = repaired;
-      input.setSelectionRange(Math.min(start, repaired.length), Math.min(end, repaired.length));
-    }
-  });
-
-  const send = (mode: ChatMode) => {
-    const value = repairTextEncoding(input.value).trim();
+  /*
+   * The island replaces the row's contents, including the old submit button.
+   * The component's own action button covers every state that button had:
+   * an arrow to send, a stop while a run is in flight, a microphone when the
+   * field is empty. `syncSubmitButtonState` therefore has nothing left to
+   * drive and simply re-renders.
+   */
+  const send = () => {
+    const value = repairTextEncoding(composerValue).trim();
     if (!value) return;
-    input.value = '';
-    input.style.height = '52px';
-    input.style.overflowY = 'hidden';
-    submit.classList.remove('active');
-    syncSubmitButtonState();
-    scheduleWorkspaceSave({ draft_prompt: '', selected_mode: mode }, true);
+    composerValue = '';
+    renderComposer();
+    scheduleWorkspaceSave({ draft_prompt: '', selected_mode: selectedChatMode }, true);
     if (isGenerating) {
       void sendActiveHarnessInstruction(value);
       return;
     }
-    void generateFromPrompt(value, mode, false, { studioContext: studioPromptContextPayload() });
+    void generateFromPrompt(value, selectedChatMode, false, { studioContext: studioPromptContextPayload() });
   };
 
-  input.addEventListener('input', () => {
-    autoResizeChatInput();
-    syncSubmitButtonState();
-    scheduleWorkspaceSave();
-  });
+  /*
+   * The session owns the model and the effort; the composer only displays
+   * them.
+   *
+   * They were the component's own state, and this function re-renders on
+   * every keystroke — so the choice survived exactly until the next character
+   * was typed. Passing them down as controlled props makes the Builder the
+   * single place either value lives, which is also the only place that can
+   * put the effort into the request body.
+   */
+  const handoff = getInitialBuilderHandoff();
+  if (handoff.model) applySelectedModel(handoff.model);
+  composerEffort = normalizeAgentEffort(handoff.effort || readPreferredEffort());
 
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      send(selectedChatMode);
-    }
-  }, true);
-
-  submit.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (isGenerating) {
-      const value = repairTextEncoding(input.value).trim();
-      if (value) send(selectedChatMode);
-      else void cancelBuild();
-      return;
-    }
-    send(selectedChatMode);
-  }, true);
-
-  const sharedModeMounted = document.getElementById('chat-mode-wrapper')?.dataset.codenAgentModeMounted === 'true';
-  if (!sharedModeMounted) {
-    document.getElementById('btn-chat-mode')?.addEventListener('click', (event) => {
-      event.preventDefault();
-      const menu = document.getElementById('chat-mode-menu');
-      const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
-      const nextOpen = menu?.style.display !== 'block';
-      if (menu) menu.style.display = nextOpen ? 'block' : 'none';
-      button?.setAttribute('aria-expanded', String(nextOpen));
+  void import('./mount-prompt-input').then(({ mountPromptInput }) => {
+    renderComposer = () => mountPromptInput(row, {
+      placeholder: currentWorkshopConfig().placeholder || 'Demandez à Coden…',
+      value: composerValue,
+      model: selectedModel(),
+      effort: composerEffort,
+      // What this workspace may actually run. Without it the menu offered the
+      // whole catalogue and nine of its fourteen entries failed on a free
+      // plan, after the request had already reached the router.
+      plan: currentPlanKey,
+      onChange: next => {
+        // Encoding repair stays: the Builder receives pasted prose from
+        // everywhere, and mojibake reaching a prompt is a real failure mode.
+        composerValue = repairTextEncoding(next);
+        renderComposer();
+        scheduleWorkspaceSave();
+      },
+      // The workspace remembers the model between sessions; the island is
+      // just where the choice is made. Recorded when it is made rather than
+      // on submit, so a model picked and never sent is still remembered.
+      onModelChange: next => applySelectedModel(next, { persist: true, saveWorkspace: true }),
+      onEffortChange: next => applySelectedEffort(next),
+      onSubmit: (_value, meta) => {
+        applySelectedModel(meta.model, { persist: true, saveWorkspace: true });
+        applySelectedEffort(meta.effort);
+        send();
+      },
+      isBusy: isGenerating,
+      onStop: () => { void cancelBuild(); },
+      defaultExpanded: true,
+      collapsedWidth: 720,
+      expandedWidth: 720,
     });
-
-    document.querySelectorAll('[data-chat-mode]').forEach(option => {
-      option.addEventListener('click', (event) => {
-        event.preventDefault();
-        setChatMode(normalizeAgentMode((option as HTMLElement).dataset.chatMode));
-      });
-    });
-  }
-
-  document.addEventListener('click', (event) => {
-    const wrapper = document.getElementById('chat-mode-wrapper');
-    if (wrapper && !wrapper.contains(event.target as Node)) {
-      const menu = document.getElementById('chat-mode-menu');
-      const button = document.getElementById('btn-chat-mode') as HTMLButtonElement | null;
-      if (menu) menu.style.display = 'none';
-      button?.setAttribute('aria-expanded', 'false');
-    }
+    renderComposer();
   });
 
   setChatMode(selectedChatMode);
@@ -8097,7 +8153,7 @@ function initStudioWorkshops() {
 }
 
 function hydrateDashboardPrompt() {
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   const submit = document.getElementById('chat-submit-btn') as HTMLButtonElement | null;
   const mode = getInitialDashboardMode();
   const prompt = getInitialDashboardPrompt();
@@ -8119,7 +8175,7 @@ function maybeStartInitialGeneration() {
   if (!prompt) return;
   initialGenerationStarted = true;
 
-  const input = document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null;
+  const input = chatComposer();
   if (input && input.value.trim() === prompt) {
     input.value = '';
     input.style.height = '48px';
@@ -8144,7 +8200,7 @@ function ensureResizableSidebar() {
   const applyWidth = (width: number) => {
     if (window.matchMedia('(max-width: 760px)').matches) {
       body.style.gridTemplateColumns = '';
-      body.style.removeProperty('--coden-sidebar-width');
+      body.style.removeProperty('--app-sidebar-width');
       syncCompactClass(0);
       return;
     }
@@ -8163,7 +8219,7 @@ function ensureResizableSidebar() {
   // Keep the hit area available without painting a permanent seam over the
   // workspace. CSS reveals a thin indicator only while hovering or dragging,
   // and removes the handle entirely when the conversation is collapsed.
-  handle.style.cssText = 'position:absolute;top:0;bottom:0;left:calc(var(--coden-sidebar-width, 380px) - 4px);width:8px;cursor:col-resize;z-index:20;background:transparent;opacity:1;touch-action:none;';
+  handle.style.cssText = 'position:absolute;top:0;bottom:0;left:calc(var(--app-sidebar-width, 380px) - 4px);width:8px;cursor:col-resize;z-index:20;background:transparent;opacity:1;touch-action:none;';
   body.style.position = 'relative';
   body.appendChild(handle);
   window.addEventListener('resize', () => {
@@ -8182,7 +8238,7 @@ function ensureResizableSidebar() {
     const move = (moveEvent: PointerEvent) => {
       const next = Math.min(520, Math.max(280, startWidth + moveEvent.clientX - startX));
       body.style.gridTemplateColumns = `${next}px minmax(0, 1fr)`;
-      body.style.setProperty('--coden-sidebar-width', `${next}px`);
+      body.style.setProperty('--app-sidebar-width', `${next}px`);
       handle.style.left = `${next - 4}px`;
       localStorage.setItem('coden-sidebar-width', String(Math.round(next)));
       syncCompactClass(next);
@@ -8261,7 +8317,7 @@ function bindGlobalKeyboardShortcuts() {
     const meta = event.metaKey || event.ctrlKey;
     if (meta && (event.key === 'k' || event.key === 'K')) {
       event.preventDefault();
-      (document.getElementById('chat-textarea-box') as HTMLTextAreaElement | null)?.focus();
+      (chatComposer())?.focus();
       return;
     }
     if (meta && (event.key === 'b' || event.key === 'B')) {

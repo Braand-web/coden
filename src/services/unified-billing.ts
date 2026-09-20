@@ -4,6 +4,26 @@ import {
   type UsageRestriction,
 } from '../config/billing-v2.ts';
 
+/**
+ * What OpenRouter takes on top of the tokens.
+ *
+ * Charged when credits are bought, not per request, so it never appears in a
+ * response's `usage.cost` — which is exactly why it was invisible: every
+ * measured cost in the ledger was 5.5% lower than the money that actually
+ * left the account. `openRouterTokenCost` has accepted a `providerFeeRate`
+ * since it was written and no caller ever passed one.
+ *
+ * Mirrors `provider_cost_catalog.openrouter_purchase_fee` (0.055, min $0.80).
+ */
+export const OPENROUTER_PURCHASE_FEE_RATE = 0.055;
+
+/** A provider cost grossed up by the fee actually paid to obtain the credits. */
+export function withProviderPurchaseFee(providerCostUsd: number, feeRate = OPENROUTER_PURCHASE_FEE_RATE): number {
+  const cost = Number(providerCostUsd);
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+  return Number((cost * (1 + feeRate)).toFixed(8));
+}
+
 export type CompleteCost = {
   providerCostUsd: number;
   providerPurchaseFeesUsd?: number;

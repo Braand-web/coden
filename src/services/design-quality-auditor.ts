@@ -37,7 +37,7 @@ type SourceBundle = {
   filePaths: string[];
 };
 
-const AI_GRADIENT_RE = /#667eea|#764ba2|#8b5cf6|#3b82f6|linear-gradient\(\s*135deg\s*,\s*#667eea/i;
+const AI_GRADIENT_RE = /(?:linear|radial|conic)-gradient\s*\(|var\(--syntax-(?:cyan|purple)\)/i;
 const GENERIC_COPY_RE = /\b(feature\s*1|feature\s*2|feature\s*3|lorem ipsum|card title|untitled app|welcome to your app|welcome to your dashboard|powerful features|modern teams|seamless experience|all[- ]in[- ]one platform|transform your workflow|get started today|learn more)\b/i;
 const INTERACTION_RE = /\b(onClick|onSubmit|onChange|addEventListener|useState|useReducer|href=|button[^>]+type=["']submit|form|aria-expanded)\b/i;
 const FORM_VALIDATION_RE = /\b(required|minLength|maxLength|pattern|aria-invalid|setError|error|invalid|validation|validate)\b/i;

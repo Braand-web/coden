@@ -87,7 +87,7 @@ function getCategoryRequirements(category: AppCategory): string[] {
       ];
     case 'fintech_billing':
       return [
-        'Use conservative, trust-building visual design: white/neutral surfaces, crisp typography, clear numbers.',
+        'Use conservative, trust-building visual design: var(--surface)/neutral surfaces, crisp typography, clear numbers.',
         'Show all amounts formatted as currency with locale-appropriate formatting.',
         'Include a transaction table with date, description, amount, status badge, and downloadable receipt link.',
         'Implement confirmation dialogs for all destructive or financial actions.',

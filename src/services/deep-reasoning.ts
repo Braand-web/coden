@@ -155,7 +155,7 @@ function inferRecentBlockers(input: DeepReasoningInput) {
   if (/forced runtime failure marker|crash force|marker|__coden_force_error__/i.test(text)) {
     blockers.push('forced_runtime_failure_marker');
   }
-  if (/preview blanche|white screen|blank preview|preview ne s affiche pas|screen blanc/i.test(text)) {
+  if (/preview blanche|var(--surface) screen|blank preview|preview ne s affiche pas|screen blanc/i.test(text)) {
     blockers.push('blank_preview');
   }
   if (/index\.html|main\.tsx|app\.tsx|entrypoint|root div/i.test(corpus)) {

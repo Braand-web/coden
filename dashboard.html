@@ -13,7 +13,7 @@
   <link rel="icon" href="/favicon-16x16.png" sizes="16x16" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0e1116" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
   <meta property="og:title" content="Coden — Mes projets" />
@@ -40,7 +40,12 @@
   <script>
     (function () {
       try {
-        document.documentElement.dataset.theme = localStorage.getItem('coden-theme') || 'light';
+        const stored = localStorage.getItem('coden-theme');
+        const theme = stored === 'dark' || stored === 'light'
+          ? stored
+          : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
       } catch (_) {
         document.documentElement.dataset.theme = 'light';
       }

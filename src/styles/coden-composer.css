@@ -1,261 +1,175 @@
-/* One composer language for every Coden surface. */
-:root {
-  --coden-composer-radius: 24px;
-  --coden-composer-control: 30px;
-  --coden-composer-send: 36px;
-  --coden-composer-ease: cubic-bezier(.32, .72, 0, 1);
+/* ---------------------------------------------------------------------------
+ * The composer's own stylesheet
+ *
+ * This file used to be a patch sheet: ~250 lines of `!important` overrides
+ * aimed at `.input-wrapper`, `.submit-btn`, `.icon-btn`, `.chat-input-textarea`,
+ * `.coden-agent-mode-trigger`, `.coden-dashboard-composer-submit` and
+ * `[data-build]` — the class names of the composer that `PromptInput`
+ * replaced. Checked before deleting them: not one of those names appears in
+ * `components/ui/ai-chat-input.tsx`. They were styling elements that no longer
+ * exist, which is why the deployed composer looked untouched by CSS.
+ *
+ * What is left is the three things the component actually needs from outside
+ * itself: the resets it was written against, a host that stops pretending to
+ * be the card, and its scrollbars.
+ * ------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+ * Preflight, scoped
+ *
+ * `PromptInput` is shadcn-shaped code: it assumes a button has no chrome, that
+ * a textarea inherits the page font, that an `svg` is a block. Tailwind's
+ * preflight normally guarantees that, but preflight is a global
+ * `* { margin: 0; padding: 0; border: 0 }` and the Builder is thousands of
+ * lines of hand-written CSS that never had one — turning it on there would be
+ * a redesign. So the same guarantees are made for this subtree only.
+ *
+ * In `@layer base` on purpose. An unlayered `border: 0 solid` here would BEAT
+ * every Tailwind `border` utility, which lives in `@layer utilities`, and the
+ * component's borders would vanish — the same class of bug, one layer over.
+ * ------------------------------------------------------------------------- */
+@layer base {
+  .coden-prompt-input,
+  .coden-prompt-input *,
+  .coden-prompt-input *::before,
+  .coden-prompt-input *::after {
+    box-sizing: border-box;
+    border: 0 solid;
+  }
+
+  .coden-prompt-input :where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd) {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+
+  .coden-prompt-input :where(ul, ol) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .coden-prompt-input :where(button, input, textarea, select) {
+    margin: 0;
+    padding: 0;
+    font: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    text-align: inherit;
+    background-color: transparent;
+    border-radius: 0;
+  }
+
+  .coden-prompt-input :where(button, [role="button"]) { cursor: pointer; }
+  .coden-prompt-input :where(button):disabled { cursor: default; }
+  .coden-prompt-input :where(textarea) { resize: vertical; }
+
+  .coden-prompt-input :where(input)::placeholder,
+  .coden-prompt-input :where(textarea)::placeholder {
+    color: currentColor;
+    opacity: .55;
+  }
+
+  .coden-prompt-input :where(svg) {
+    display: block;
+    vertical-align: middle;
+  }
+
+  .coden-prompt-input :where(img, video, canvas) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .coden-prompt-input :where([hidden]) { display: none; }
 }
 
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-) {
-  width: 100%;
-  border: 1px solid var(--horizon-border, var(--border)) !important;
-  border-radius: var(--coden-composer-radius) !important;
-  background: var(--horizon-surface, var(--bg-input)) !important;
-  /* Keep one clean outer surface. The inset shadow and legacy pseudo layers
-     read as a second border inside the composer, especially on light mode. */
-  box-shadow: var(--horizon-shadow-float) !important;
+/* ---------------------------------------------------------------------------
+ * The host is a rail, never a second card
+ *
+ * The host can arrive with inline chrome from a surface-specific shell.
+ * `mountPromptInput` empties its children, so the old controls go — but the
+ * host would otherwise keep its own chrome and paint a second card.
+ *
+ * `!important` is what it takes: a declaration in a stylesheet loses to an
+ * inline style otherwise. The marker class is added by `mountPromptInput`, so
+ * the Builder's `.chat-input-row` keeps the class its own JavaScript queries.
+ * ------------------------------------------------------------------------- */
+body[data-coden-surface="builder"] .chat-input-row.coden-composer-host,
+body[data-coden-surface="builder"] .coden-composer-host {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   overflow: visible !important;
-  transition:
-    border-color 280ms var(--coden-composer-ease),
-    box-shadow 280ms var(--coden-composer-ease),
-    min-height 280ms var(--coden-composer-ease) !important;
+  min-height: 0 !important;
 }
 
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-):focus-within {
-  border-color: var(--horizon-blue, var(--accent-blue)) !important;
-  box-shadow: 0 0 0 4px var(--horizon-blue-soft, rgba(59, 130, 246, .12)), var(--horizon-shadow-float) !important;
-}
-
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-)::before,
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-)::after {
+/* The decorative pseudo-layers of the surfaces the host used to belong to. */
+body[data-coden-surface="builder"] .coden-composer-host::before,
+body[data-coden-surface="builder"] .coden-composer-host::after {
   content: none !important;
   display: none !important;
 }
 
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-) textarea,
-body[data-coden-surface="dashboard"] .coden-dashboard-composer textarea {
-  min-height: 52px !important;
-  max-height: 240px !important;
-  overflow-y: auto;
-  resize: none !important;
-  transition: height 220ms var(--coden-composer-ease);
-}
-
-/* Focus belongs to the composer surface. Generic shell focus rules must not
-   draw a second border, ring, or rounded rectangle inside the textarea. */
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-) textarea:focus,
-:where(
-  body[data-coden-surface="landing-v3"] .input-wrapper,
-  body[data-coden-surface="dashboard"] .coden-dashboard-composer,
-  body[data-coden-surface="builder"] .chat-input-row .input-wrapper
-) textarea:focus-visible {
-  border: 0 !important;
-  outline: 0 !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-}
-
-:where(
-  body[data-coden-surface="landing-v3"],
-  body[data-coden-surface="dashboard"],
-  body[data-coden-surface="builder"]
-) .coden-agent-mode-trigger {
-  min-width: 0 !important;
-  min-height: var(--coden-composer-control) !important;
-  height: var(--coden-composer-control) !important;
-  padding: 0 12px !important;
-  gap: 8px !important;
-  border: 1px solid var(--horizon-border, var(--border)) !important;
-  border-radius: 9999px !important;
-  background: transparent !important;
-  color: var(--horizon-muted, var(--text-muted)) !important;
-  box-shadow: none !important;
-  font-size: 14px !important;
-  line-height: 20px !important;
-  font-weight: 500 !important;
-}
-
-:where(
-  body[data-coden-surface="landing-v3"],
-  body[data-coden-surface="dashboard"],
-  body[data-coden-surface="builder"]
-) .coden-agent-mode-trigger:hover {
-  border-color: var(--horizon-border-strong, var(--border-focus)) !important;
-  background: var(--horizon-raised, var(--accent-blue-soft)) !important;
-  color: var(--horizon-text, var(--text)) !important;
-}
-
-:where(
-  body[data-coden-surface="landing-v3"],
-  body[data-coden-surface="dashboard"],
-  body[data-coden-surface="builder"]
-) .coden-agent-mode-trigger[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--horizon-blue, #3b82f6) 48%, var(--horizon-border, var(--border))) !important;
-  background: var(--horizon-blue-soft, rgba(59, 130, 246, .12)) !important;
-  color: var(--horizon-blue, var(--accent-blue)) !important;
-}
-
-body[data-coden-surface="landing-v3"] [data-build],
-body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit,
-body[data-coden-surface="builder"] .chat-input-row .submit-btn {
-  width: var(--coden-composer-send) !important;
-  min-width: var(--coden-composer-send) !important;
-  height: var(--coden-composer-send) !important;
-  min-height: var(--coden-composer-send) !important;
-  padding: 0 !important;
-  border: 1px solid var(--horizon-blue, var(--accent-blue)) !important;
-  border-radius: 9999px !important;
-  background: var(--horizon-blue, var(--accent-blue)) !important;
-  color: #fff !important;
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--horizon-blue, #3b82f6) 22%, transparent) !important;
-  transition: transform 220ms var(--coden-composer-ease), background-color 220ms var(--coden-composer-ease), opacity 220ms var(--coden-composer-ease) !important;
-}
-
-body[data-coden-surface="landing-v3"] [data-build]:hover,
-body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit:hover:not(:disabled),
-body[data-coden-surface="builder"] .chat-input-row .submit-btn:hover {
-  transform: translateY(-1px) !important;
-  background: var(--horizon-blue-hover, #2563eb) !important;
-}
-
-body[data-coden-surface="landing-v3"] [data-build]:active,
-body[data-coden-surface="dashboard"] .coden-dashboard-composer-submit:active:not(:disabled),
-body[data-coden-surface="builder"] .chat-input-row .submit-btn:active {
-  transform: scale(.98) !important;
-}
-
-/* The Builder footer is only a positioning rail, never a second card. */
-body[data-coden-surface="builder"] .chat-input-row {
+/* The Builder footer is a positioning rail, and the rail keeps its breathing
+   room — it is the only spacing between the composer and the panel edge. */
+body[data-coden-surface="builder"] .chat-input-row.coden-composer-host {
   padding: 12px !important;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
 }
 
-body[data-coden-surface="builder"] .chat-input-row .input-wrapper {
-  min-height: 96px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: flex-start !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .chat-input-textarea {
-  min-height: 44px !important;
-  max-height: 180px !important;
-  padding: 12px 16px 2px !important;
-  font-size: 14px !important;
-  line-height: 20px !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .input-actions {
-  flex: 0 0 auto !important;
-  min-height: 40px !important;
-  height: 40px !important;
-  margin-top: auto !important;
-  padding: 0 10px 4px !important;
-  gap: 4px !important;
-  box-sizing: border-box !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .actions-left,
-body[data-coden-surface="builder"] .chat-input-row .actions-right {
-  align-items: center !important;
-  gap: 4px !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .actions-right {
-  min-width: 0 !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row #btn-chat-mode,
-body[data-coden-surface="builder"] .chat-input-row #model-select-btn,
-body[data-coden-surface="builder"] .chat-input-row .coden-builder-model-trigger {
-  height: 30px !important;
-  min-height: 30px !important;
-  padding: 0 10px !important;
-  gap: 6px !important;
-  font-size: 13px !important;
-  line-height: 18px !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .icon-btn {
-  width: 30px !important;
-  min-width: 30px !important;
-  height: 30px !important;
-  min-height: 30px !important;
-  flex: 0 0 30px !important;
-  line-height: 0 !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .icon-btn svg {
-  width: 15px !important;
-  height: 15px !important;
-  flex: 0 0 15px !important;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .submit-btn {
-  width: var(--coden-composer-send) !important;
-  min-width: var(--coden-composer-send) !important;
-  height: var(--coden-composer-send) !important;
-  min-height: var(--coden-composer-send) !important;
-}
-
-body[data-coden-surface="dashboard"] .coden-dashboard-composer-footer {
-  justify-content: space-between !important;
-  gap: 8px;
-}
-
-body[data-coden-surface="builder"] .chat-input-row .icon-btn {
-  width: var(--coden-composer-control) !important;
-  min-width: var(--coden-composer-control) !important;
-  height: var(--coden-composer-control) !important;
-  min-height: var(--coden-composer-control) !important;
-  border-color: transparent !important;
-  border-radius: 9999px !important;
-  background: transparent !important;
-}
-
-body[data-coden-surface="builder"] :where(.coden-decision-card, .coden-stream-notice) {
-  border-radius: var(--coden-composer-radius) !important;
-  background: var(--horizon-surface) !important;
-  box-shadow: var(--horizon-shadow-inset) !important;
+/* The dashboard renders the component directly, with no vanilla host to
+   neutralise. It only needs to sit in the middle of the hero. */
+body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
+  align-self: center;
+  margin-inline: auto;
 }
 
 @media (max-width: 560px) {
-  :root {
-    --coden-composer-radius: 20px;
-    --coden-composer-control: 30px;
-    --coden-composer-send: 34px;
+  body[data-coden-surface="builder"] .chat-input-row.coden-composer-host {
+    padding: 8px !important;
   }
-
-  body[data-coden-surface="builder"] .chat-input-row { padding: 8px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :where(.input-wrapper, .coden-dashboard-composer, .coden-agent-mode-trigger, [data-build], .submit-btn) {
+  .coden-prompt-input,
+  .coden-prompt-input * {
     transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * The composer's own scrollbars
+ *
+ * The component shipped this as an inline `<style dangerouslySetInnerHTML>`
+ * block using `var(--foreground) / 0.3)`. That form needs shadcn's
+ * bare HSL triplets; Coden's tokens are whole colours, so the expression
+ * resolved to `var(--foreground)` — invalid, dropped, and the thumb painted
+ * with the browser default instead of the intended one.
+ *
+ * `color-mix` does the same job against a real colour, and living in a
+ * stylesheet means it is parsed once rather than re-inserted into the DOM on
+ * every render of the card.
+ * ------------------------------------------------------------------------- */
+.prompt-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; background: transparent; }
+.prompt-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.prompt-scrollbar::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+.prompt-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+}
+.prompt-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;
+}
+
+/* The prompt keeps its scroll affordance as a flat token-backed veil. A
+ * background gradient here would violate the product-wide surface contract
+ * and would make the shared composer diverge between landing and Builder. */
+.coden-prompt-fade {
+  background: var(--input);
+  opacity: .92;
 }
