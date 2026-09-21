@@ -173,3 +173,39 @@ body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
   background: var(--input);
   opacity: .92;
 }
+
+/*
+ * No focus ring around the text you are typing in.
+ *
+ * Five stylesheets declare the same global
+ * `:where(button, a, input, textarea, select, summary):focus-visible` rule —
+ * one of them with `!important` — so every composer drew a hard 2px accent
+ * rectangle around its field the moment anyone typed. Square corners on a
+ * 24px-rounded card, which is why it read as a browser default rather than as
+ * a design.
+ *
+ * Tailwind's `outline-none` on the textarea did not stop it: in v3 that
+ * utility sets a *transparent* 2px outline rather than removing one, so the
+ * global rule only had to repaint its colour.
+ *
+ * This is the one control where the ring adds nothing. A focused text field
+ * already shows a blinking caret, and the card around it lights its border
+ * through `focus-within` — two indications the ring makes a third. Everything
+ * else in the composer keeps its ring: a keyboard user tabbing to the model
+ * picker or the send button still has to see where they are.
+ *
+ * The collapsed composer is included because it is the same field: a button
+ * only in markup, carrying the placeholder, `cursor-text`, and expanding into
+ * the textarea on click. Ringing it while leaving the expanded field bare
+ * would put the rectangle back for anyone starting from a folded composer —
+ * which is every composer that does not open expanded.
+ */
+.coden-prompt-card > textarea:focus,
+.coden-prompt-card > textarea:focus-visible,
+.coden-prompt-placeholder:focus,
+.coden-prompt-placeholder:focus-visible,
+.coden-clarification-answer:focus,
+.coden-clarification-answer:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

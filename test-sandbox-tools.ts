@@ -29,11 +29,29 @@ try {
   assert.deepEqual(names, [
     'list_files', 'read_file', 'search_files', 'write_file', 'edit_file',
     'delete_file', 'install_package', 'run_command', 'get_logs', 'restart_server',
+    // The only tool that ends the run instead of returning to the model.
+    'request_decision',
   ]);
   for (const schema of SANDBOX_TOOL_SCHEMAS) {
     assert.ok(schema.description.length > 30, `${schema.name} must tell the model when to use it`);
     assert.equal(schema.parameters.type, 'object');
   }
+
+  /*
+   * A request the card cannot draw is not a decision.
+   *
+   * Tool arguments are model output, so this arrives unvalidated. Stopping the
+   * run to show an empty box would be worse than carrying on, so a malformed
+   * request comes back as an ordinary tool failure telling the model to choose
+   * — and only a usable one throws.
+   */
+  const emptyDecision = await tools.call('request_decision', { reason: 'bloqué', questions: [] });
+  assert.equal((emptyDecision as any).ok, false, 'a decision with no answerable question must not stop the run');
+  await assert.rejects(
+    () => tools.call('request_decision', { reason: 'bloqué', questions: [{ q: 'Laquelle ?', type: 'radio', options: ['A', 'B'] }] }),
+    (error: any) => error?.name === 'DecisionRequiredError',
+    'a usable decision must leave the loop rather than answer the model',
+  );
 
   // -- writing and reading ---------------------------------------------
   assert.deepEqual(await tools.call('list_files'), { ok: true, files: [], count: 0 });

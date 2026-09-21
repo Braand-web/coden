@@ -1,0 +1,69 @@
+/*
+ * The site footer, in one place.
+ *
+ * The landing had a minimal footer in its own markup while every other public
+ * page was given a four-column sitemap by a React component — two footers for
+ * one site, so following any link out of the home page changed the furniture.
+ * This is the landing's, extracted so both can use it instead of each carrying
+ * a copy.
+ *
+ * Scoped to `.coden-site-footer` rather than to the landing's class names so
+ * the markup can say what it is, and the landing keeps its own class for the
+ * page-specific spacing around it.
+ */
+.coden-site-footer {
+  border-top: 1px solid var(--border);
+  padding: 0 0 24px;
+}
+.coden-site-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.coden-site-footer-bottom > span:last-child {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.coden-site-footer-bottom a { color: var(--text-muted); text-decoration: none; }
+.coden-site-footer-bottom a:hover { color: var(--accent); }
+.coden-site-footer-bottom a:focus-visible,
+.coden-site-footer-bottom button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 760px) {
+  .coden-site-footer-bottom { align-items: flex-start; flex-direction: column; }
+}
+
+/*
+ * The theme control lives in the footer, where the landing puts it.
+ *
+ * It used to be in the header on every page but the landing, which is why the
+ * two never looked like the same site. Matching the landing's geometry exactly
+ * rather than approximately: same size, same radius, same hover.
+ */
+.coden-site-theme-toggle {
+  display: inline-grid;
+  width: 34px;
+  min-height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, transform 120ms ease;
+}
+.coden-site-theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.coden-site-theme-toggle:active { transform: scale(.96); }
+.coden-site-theme-toggle svg { width: 16px; height: 16px; }
+:root[data-theme="dark"] .coden-site-theme-toggle [data-theme-icon="dark"],
+:root:not([data-theme="dark"]) .coden-site-theme-toggle [data-theme-icon="light"] { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .coden-site-theme-toggle { transition: none; } }

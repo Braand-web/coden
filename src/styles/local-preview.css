@@ -40,7 +40,7 @@ html[data-local-preview="true"] .coden-local-preview-dot {
     right: 12px;
     gap: 6px;
     padding-inline: 10px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     font-size: 10px;
   }
 

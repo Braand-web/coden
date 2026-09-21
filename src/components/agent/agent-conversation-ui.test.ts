@@ -68,7 +68,20 @@ describe('agent conversation UI', () => {
   it('gives each activity label its own mount, so the shimmer crossfades', () => {
     const source = readFileSync(new URL('./agent-message.tsx', import.meta.url), 'utf8');
     expect(source).toMatch(/<AnimatePresence mode="wait">/);
-    expect(source).toMatch(/key=\{state\.activity \|\| 'thinking'\}/);
+    /*
+     * The key has to vary with the label and with nothing else.
+     *
+     * This used to assert the exact expression that was in the file, which
+     * made the test a copy of the line rather than a statement about it — a
+     * key that still changed per label failed it simply for being written
+     * differently. What matters is that whatever goes into `key` is the label,
+     * so a new phrase is a new element.
+     */
+    const key = source.match(/<AgentThinkingLine key=\{([^}]+)\}/)?.[1] ?? '';
+    expect(key).toBeTruthy();
+    expect(key).not.toMatch(/^['"`]/);
+    const [, label] = source.match(/<AgentThinkingLine key=\{[^}]+\} label=\{([^}]+)\}/) ?? [];
+    expect(label).toBe(key);
     expect(source).not.toMatch(/key="activity"/);
   });
 

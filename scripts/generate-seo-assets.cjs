@@ -353,101 +353,41 @@ ${faviconHead()}
 ${schema.map(jsonLd).join('\n')}`;
 }
 
-function sharedPublicFooter(className = 'footer') {
-  if (className === 'footer') {
-    return `    <footer class="footer">
-        <div class="footer-grid">
-            <div class="footer-brand">
-                <a href="/" class="logo">
-                    <div class="logo-mark">
-                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
-                        </svg>
-                    </div>
-                    <span class="logo-text">Coden</span>
-                </a>
-                <p>The next generation of <span class="neon-highlight neon-static">AI-native</span> software development.</p>
-            </div>
-            <div class="footer-col">
-                <h5>Product</h5>
-                <ul class="footer-links">
-                    <li><a href="/features.html">Features</a></li>
-                    <li><a href="/pricing.html">Pricing</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5>Resources</h5>
-                <ul class="footer-links">
-                    <li><a href="/documentation.html">Documentation</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5>Company</h5>
-                <ul class="footer-links">
-                    <li><a href="/privacy.html">Privacy</a></li>
-                    <li><a href="/security.html">Security</a></li>
-                    <li><a href="/terms.html">Terms</a></li>
-                </ul>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            <span>© 2026 Coden Inc.</span>
-            <div style="display:flex;gap:20px;" aria-label="Social links">
-                <span style="color:inherit;opacity:.7;">Social profiles coming soon</span>
-            </div>
-        </div>
-    </footer>`;
-  }
-  const cardClass = className === 'seo-footer' ? 'seo-footer-card' : 'footer-grid';
-  const brandClass = className === 'seo-footer' ? 'seo-footer-brand' : 'footer-brand';
-  const kickerClass = className === 'seo-footer' ? 'seo-footer-kicker' : 'footer-kicker';
-  const contactClass = className === 'seo-footer' ? 'seo-footer-contact' : 'footer-contact';
-  const wordmarkClass = className === 'seo-footer' ? 'seo-footer-wordmark' : 'footer-wordmark';
-  const colClass = className === 'seo-footer' ? 'seo-footer-col' : 'footer-col';
-  const linksClass = className === 'seo-footer' ? 'seo-footer-links' : 'footer-links';
-  const bottomClass = className === 'seo-footer' ? 'seo-footer-bottom' : 'footer-bottom';
-  const legalClass = className === 'seo-footer' ? 'seo-footer-legal' : 'footer-legal';
+/*
+ * The footer this writes into every page, and what it must not be.
+ *
+ * It used to emit four columns — Product, Resources, Company — listing
+ * /features.html, /pricing.html and /documentation.html by hand. `prebuild`
+ * runs this on every single build, and `updateExistingFooter` rewrites the
+ * `<footer>` of each existing page with the result, so any correction made in
+ * the HTML was undone the next time anyone built. That is why the old
+ * navigation kept coming back.
+ *
+ * It now emits what the application renders: the year, and the legal links,
+ * both read from the route policy rather than typed here. The served HTML and
+ * what a visitor sees are the same thing again — which matters, because the
+ * React mount deletes this element and a crawler without JavaScript does not.
+ */
+const LOGO_MARK = '<span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span>';
 
-  return `    <footer class="${className}" aria-labelledby="footer-title">
-        <div class="${cardClass}">
-            <div class="${brandClass}">
-                <div class="${kickerClass}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"></path>
-                        <path d="M19 15l.8 2.7L22 18.5l-2.2.8L19 22l-.8-2.7-2.2-.8 2.2-.8L19 15Z"></path>
-                    </svg>
-                    Parlons produit
-                </div>
-                <p id="footer-title">Passez d'une idée floue à une app claire, <span>testable, améliorable et publiable avec Coden.</span></p>
-                <div class="${contactClass}">
-                    <span>Besoin d'aide, d'un partenariat ou d'un accès équipe ?</span>
-                    <a href="mailto:contact@coden.fun">contact@coden.fun</a>
-                </div>
-                <a class="${wordmarkClass}" href="/" aria-label="Coden home">coden</a>
-            </div>
-            <div class="${colClass}">
-                <h5>Navigation</h5>
-                <ul class="${linksClass}">
-                    <li><a href="/pricing.html">Tarifs</a></li>
-                    <li><a href="/documentation.html">Documentation</a></li>
-                    <li><a href="/security.html">Sécurité</a></li>
-                    <li><a href="/privacy.html">Confidentialité</a></li>
-                    <li><a href="/terms.html">Conditions</a></li>
-                    <li><a href="mailto:contact@coden.fun">Contact</a></li>
-                </ul>
-            </div>
-            <div class="${bottomClass}">
-                <span>© 2026 Coden. Tous droits réservés.</span>
-                <div class="${legalClass}">
-                    <a href="/privacy.html">Confidentialité</a>
-                    <a href="/security.html">Sécurité</a>
-                    <a href="/terms.html">CGU</a>
-                    <a href="https://www.coden.fun/">coden.fun</a>
-                </div>
-            </div>
+function sharedPublicFooter(className = 'footer') {
+  const legal = (routePolicy.nav?.legal || [])
+    .map(link => `                <a href="${link.href}">${esc(link.label.en || link.label.fr)}</a>`)
+    .join('\n');
+  /*
+   * The brand mark stays in the served HTML.
+   *
+   * The React header draws it, but it draws it in the browser: a crawler, or
+   * anyone without JavaScript, saw a page with no logo and no link home once
+   * the legacy static navs were removed. `seo-check` asserts exactly that, and
+   * caught it. One link, no menu — the menu is the header's job.
+   */
+  return `    <footer class="${className} coden-site-footer">
+        <div class="coden-site-footer-bottom">
+            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden">${LOGO_MARK}</a> @coden${new Date().getFullYear()}</span>
+            <span>
+${legal}
+            </span>
         </div>
     </footer>`;
 }
@@ -621,8 +561,17 @@ function updateExistingFooter(page) {
   const full = path.join(root, page.file);
   if (!fs.existsSync(full)) return;
   let html = fs.readFileSync(full, 'utf8');
-  if (!html.includes('<footer class="footer"')) return;
-  html = html.replace(/    <footer class="footer"[\s\S]*?    <\/footer>/, sharedPublicFooter('footer'));
+  /*
+   * Matches what this writes, not only what it replaced.
+   *
+   * The guard used to test for `class="footer"` with its closing quote, so the
+   * moment the emitted footer carried a second class the generator stopped
+   * recognising its own output and returned early — it could rewrite a page
+   * exactly once, and every correction after that silently did nothing.
+   */
+  const footer = /[ \t]*<footer class="footer[^"]*"[\s\S]*?<\/footer>/;
+  if (!footer.test(html)) return;
+  html = html.replace(footer, sharedPublicFooter('footer'));
   fs.writeFileSync(full, html, 'utf8');
 }
 

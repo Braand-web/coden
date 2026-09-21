@@ -10,6 +10,7 @@ import { initThemeController } from './theme-controller';
 import './conversion-events';
 import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
+import { composeDecisionInstruction, normalizeDecisionQuestions } from './lib/decision-questions';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
 import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
@@ -43,6 +44,7 @@ import { parsePlanPresentation, type PlanSectionId } from './lib/plan-presentati
 import {
   getRuntimeRecoveryPresentation,
   normalizeRuntimeDiagnosticCode,
+  publicRuntimeErrorMessage,
 } from './lib/runtime-error-presentation';
 
 initThemeController();
@@ -1999,6 +2001,17 @@ function ensureConversationApi() {
     onDecisionSelect: (_decisionId, option) => {
       void sendActiveHarnessInstruction(option.label);
     },
+    /*
+     * A questionnaire answers in one instruction, not one per question.
+     *
+     * The point of asking several things at once is that the run stops once;
+     * sending each answer separately would give back every round trip the
+     * card was built to save.
+     */
+    onDecisionAnswers: (_decisionId, questions, answers) => {
+      const instruction = composeDecisionInstruction(questions, answers);
+      if (instruction) void sendActiveHarnessInstruction(instruction);
+    },
     onApprovalDecision: (itemId, approved) => resolveHarnessApproval(itemId, approved),
   });
   bindConversationFeedbackBridge();
@@ -2274,9 +2287,65 @@ async function restoreHarnessApprovalState() {
     activeHarnessThreadId = String(thread.id);
     activeHarnessTurnId = String(thread.activeTurnId);
     startHarnessApprovalPolling();
+    await restorePendingDecision();
   } catch {
     // Older projects may not have a harness thread yet; normal chat history
     // remains fully usable in that case.
+  }
+}
+
+/**
+ * The question that was on screen before the page went away.
+ *
+ * A decision outlives the stream that announced it — the tab is refreshed, the
+ * connection drops, the container is replaced mid-answer. The events that drew
+ * the card are gone in all three cases, and without this the person comes back
+ * to a conversation that simply stops, with no sign anything is waiting on
+ * them. The server holds the decision on the thread, so it can be asked again.
+ */
+async function restorePendingDecision() {
+  if (!currentProjectId || !activeHarnessThreadId || !conversationApi) return;
+  try {
+    const payload = await apiFetch<{ decision?: { id: string; turn_id?: string; questions?: unknown } | null }>(
+      `/api/projects/${encodeURIComponent(currentProjectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/decision`,
+    );
+    const decision = payload?.decision;
+    const questions = normalizeDecisionQuestions(decision?.questions);
+    if (!decision?.id || !questions.length) return;
+    if (decision.turn_id) activeHarnessTurnId = String(decision.turn_id);
+
+    const card = appendMessage('assistant', '', { working: false });
+    const id = messageHandleId(card);
+    if (!id) return;
+    /*
+     * Replayed through the reducer rather than pushed as a block, so the card
+     * that comes back is the same component drawn by the same path as the one
+     * the live stream draws. Two ways to render one decision is how the two
+     * drift apart.
+     */
+    conversationApi.startLiveRun(id);
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 1, timestamp: Date.now(), type: 'decision_required', channel: 'chat',
+      payload: {
+        type: 'decision_required',
+        decisionId: decision.id,
+        question: questions[0]?.q || '',
+        options: (questions[0]?.options || []).map((label, index) => ({ id: String(index), label })),
+        allowFreeText: true,
+        questions,
+      },
+    });
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 2, timestamp: Date.now(), type: 'run_paused', channel: 'chat',
+      payload: { type: 'run_paused', reason: 'decision' },
+    });
+    conversationApi.applyChatEvent(id, {
+      runId: decision.id, messageId: id, seq: 3, timestamp: Date.now(), type: 'run_finished', channel: 'chat',
+      payload: { type: 'run_finished', reason: 'completed' },
+    });
+  } catch {
+    // No decision endpoint on an older deployment, or none waiting. Either way
+    // the conversation stays exactly as it was.
   }
 }
 
@@ -2715,18 +2784,16 @@ function runtimeDiagnosticCodeFromError(error: unknown) {
   return '';
 }
 
-function safeBuilderFailureText(error: unknown, speaksFrench: boolean) {
+function safeBuilderFailureText(error: unknown, _speaksFrench: boolean) {
   const diagnostic = runtimeDiagnosticCodeFromError(error);
-  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE);
   if (recovery) return `${recovery.title}. ${recovery.body}`;
   const raw = String(error instanceof Error ? error.message : error || '').trim()
     .replace(/\s*(?:diagnostic(?:_code)?|code)\s*[:=]\s*[A-Z][A-Z0-9_]{2,}\.?/gi, '')
     .replace(/\s*request\s*id\s*[:=]\s*[^.\s]+\.?/gi, '')
     .trim();
   if (!raw || /openrouter|anthropic|provider|api[_ ]?key|billing|quota|request id/i.test(raw)) {
-    return speaksFrench
-      ? 'La demande ne peut pas être terminée pour le moment. Elle est conservée et peut être relancée.'
-      : 'The request cannot be completed right now. It is kept and can be retried.';
+    return 'La demande ne peut pas être terminée pour le moment. Elle est conservée et peut être relancée.';
   }
   return raw;
 }
@@ -2742,15 +2809,45 @@ function prepareMessageForRun(card: HTMLElement | null, label: string) {
   setMessageShimmer(card, label);
 }
 
+/*
+ * A failure is chrome, not content.
+ *
+ * The reply itself follows the language the user wrote in, which is why
+ * `speaksFrench` is threaded through the generation path. The recovery panel
+ * is not the reply: it sits next to "La génération est interrompue" and
+ * "Exécution annulée", which are French wherever the interface is drawn. A
+ * prompt that reads as English — a short one, a stack trace, an app name —
+ * therefore used to put an English sentence inside a French panel.
+ */
+const UI_LOCALE = 'fr' as const;
+
 function showRuntimeRecovery(
   card: HTMLElement | null,
   error: unknown,
-  speaksFrench: boolean,
+  _speaksFrench: boolean,
   actions: { retry?: () => void; useAuto?: () => void } = {},
 ) {
   const diagnostic = runtimeDiagnosticCodeFromError(error);
-  const recovery = getRuntimeRecoveryPresentation(diagnostic, speaksFrench ? 'fr' : 'en');
-  if (!recovery) return false;
+  /*
+   * Every failure gets a way out, not only the ones that were foreseen.
+   *
+   * `getRuntimeRecoveryPresentation` only answers for diagnostics it knows, so
+   * anything unexpected — including a run that died with no code at all, which
+   * is what a container replaced mid-stream produces — returned null here and
+   * the panel was drawn with no actions. It told the user their work was kept
+   * and that they could retry, and gave them nothing to retry with. The
+   * unforeseen failure is precisely the one a person cannot reason about
+   * alone.
+   *
+   * Auto is not offered here: switching model answers a model-shaped failure,
+   * and an unrecognised one is not known to be one.
+   */
+  const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE) ?? {
+    title: 'La génération est interrompue',
+    body: publicRuntimeErrorMessage(diagnostic, UI_LOCALE),
+    canRetry: true,
+    shouldOfferAuto: false,
+  };
 
   const fallbackText = `${recovery.title}. ${recovery.body}`;
   clearMessageShimmer(card);
@@ -2762,12 +2859,12 @@ function showRuntimeRecovery(
   });
   clearMessageActions(card);
   if (recovery.canRetry && actions.retry) {
-    addInlineAction(card, speaksFrench ? 'Réessayer' : 'Retry', actions.retry);
+    addInlineAction(card, 'Réessayer', actions.retry);
   }
   // Switching from a pinned model to Auto is never silent. This button is the
   // user's explicit agreement to let the router select another compatible one.
   if (recovery.shouldOfferAuto && selectedModel() !== 'auto' && actions.useAuto) {
-    addInlineAction(card, speaksFrench ? 'Utiliser Auto' : 'Use Auto', actions.useAuto);
+    addInlineAction(card, 'Utiliser Auto', actions.useAuto);
   }
   return true;
 }
@@ -6626,10 +6723,25 @@ async function sendActiveHarnessInstruction(text: string) {
         ? `/api/projects/${encodeURIComponent(currentProjectId)}/agent/runs/${encodeURIComponent(lastAgentRunId)}/instructions`
         : '';
     if (!endpoint) throw new Error('The active agent turn is not ready to receive instructions yet.');
-    const response = await apiFetch<{ message?: string }>(endpoint, {
+    const response = await apiFetch<{ message?: string; resumed?: boolean; prompt?: string }>(endpoint, {
       method: 'POST',
       body: JSON.stringify({ instruction }),
     });
+    /*
+     * Answering a waiting question restarts the run; steering does not.
+     *
+     * A run paused on a decision has already ended, so queueing the answer for
+     * "the next safe checkpoint" would queue it for a checkpoint that never
+     * comes — the agent would sit there answered and stopped. The server says
+     * which of the two happened, and only it can: it is the one that knows
+     * whether the decision was still open, and whether this answer was the
+     * first. A second click gets `resumed: false` and starts nothing.
+     */
+    if (response.resumed && response.prompt) {
+      appendMessage('assistant', response.message || 'Décision enregistrée. Coden reprend le travail.');
+      await generateFromPrompt(response.prompt, 'auto', false, { __codenResumedFromDecision: true }, instruction);
+      return;
+    }
     appendMessage('assistant', response.message || 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.');
   } catch (error) {
     appendMessage('assistant', error instanceof Error ? error.message : 'The instruction could not be queued.');

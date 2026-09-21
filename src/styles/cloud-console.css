@@ -50,7 +50,7 @@
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft, var(--surface-soft));
   color: var(--accent);
 }
@@ -108,7 +108,7 @@
   min-height: 36px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -211,7 +211,7 @@
   min-height: 36px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--input);
   color: var(--foreground);
   font: inherit;
@@ -254,7 +254,7 @@
 .cloud-summary-card {
   min-width: 0;
   padding: 16px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .cloud-summary-card span,
@@ -288,7 +288,7 @@
 .cloud-panel {
   min-width: 0;
   padding: 20px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .cloud-panel-head {
@@ -327,7 +327,7 @@
   gap: 12px;
   min-width: 0;
   padding: 16px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -348,7 +348,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--accent-soft, var(--surface-soft));
   color: var(--accent);
 }
@@ -476,7 +476,7 @@
 .db-file-btn,
 .db-table-chip {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--input);
   color: var(--foreground);
   font: inherit;
@@ -518,7 +518,7 @@
   min-height: 36px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--input);
   color: var(--foreground);
   font: inherit;
@@ -534,7 +534,7 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-note,
 .cloud-inline-note {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--input);
 }
 
@@ -550,7 +550,7 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-storage { min-width: 0; }
 .db-table-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .db-table-chip.active { border-color: var(--accent); background: var(--accent-soft, var(--surface-soft)); color: var(--accent); }
-.db-table-scroll { overflow: auto; max-height: 440px; margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.db-table-scroll { overflow: auto; max-height: 440px; margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); }
 .db-data-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; line-height: 16px; }
 .db-data-table th,
 .db-data-table td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
@@ -581,7 +581,7 @@ input.cloud-filter { flex: 1 1 240px; }
   justify-items: start;
   gap: 12px;
   padding: 24px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
 }
 
 .cloud-empty h2 { margin: 0; color: var(--foreground); font-size: 18px; line-height: 28px; font-weight: 700; }
@@ -599,7 +599,7 @@ input.cloud-filter { flex: 1 1 240px; }
 .cloud-console-loading span {
   display: block;
   min-height: 72px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   animation: cloud-console-pulse 1.4s cubic-bezier(.32,.72,0,1) infinite alternate;
 }

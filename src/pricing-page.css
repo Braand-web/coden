@@ -7,7 +7,7 @@ body.coden-pricing-page {
 body.coden-pricing-page::before { display: none; }
 body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-sans); }
 
-.pricing-skip-link { position: fixed; top: 8px; left: 8px; z-index: 3000; padding: 12px 16px; border-radius: 8px; background: var(--surface); color: var(--foreground); transform: translateY(-160%); transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.pricing-skip-link { position: fixed; top: 8px; left: 8px; z-index: 3000; padding: 12px 16px; border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); transform: translateY(-160%); transition: transform var(--transition-control); }
 .pricing-skip-link:focus { transform: translateY(0); }
 .pricing-page-main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 144px 0 0; }
 
@@ -19,8 +19,8 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-page-lede { max-width: 640px; margin: 24px auto 0; color: var(--text-muted); font-size: 18px; line-height: 28px; text-wrap: pretty; }
 .pricing-hero-proof { display: inline-flex; align-items: center; gap: 12px; margin-top: 24px; color: var(--text-muted); font-size: 14px; }
 .pricing-hero-proof i { width: 4px; height: 4px; border-radius: 999px; background: var(--border-strong); }
-.pricing-interval { display: inline-flex; gap: 4px; margin-top: 40px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.pricing-interval button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); font: 600 14px/20px var(--font-sans); cursor: pointer; transition: color 180ms cubic-bezier(0.32, 0.72, 0, 1), background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), transform 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.pricing-interval { display: inline-flex; gap: 4px; margin-top: 40px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.pricing-interval button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: 600 14px/20px var(--font-sans); cursor: pointer; transition: color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .pricing-interval button:hover { color: var(--foreground); }
 .pricing-interval button:active { transform: scale(.98); }
 .pricing-interval button.is-selected { background: var(--border-strong); color: var(--foreground); }
@@ -28,7 +28,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-data-status { min-height: 20px; margin: 16px 0 0; color: var(--text-muted); font-size: 12px; line-height: 16px; }
 
 .pricing-plans { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 64px; align-items: stretch; }
-.pricing-plan-card { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 32px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1), border-color 220ms cubic-bezier(0.32, 0.72, 0, 1), background-color 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+.pricing-plan-card { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 32px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1), border-color 220ms cubic-bezier(0.32, 0.72, 0, 1), background-color 220ms cubic-bezier(0.32, 0.72, 0, 1); }
 .pricing-plan-card:hover { transform: translateY(-4px); border-color: var(--border-strong); background: var(--surface-hover); }
 .pricing-plan-card:focus-within { border-color: var(--accent); }
 .pricing-plan-featured { border-color: color-mix(in srgb, var(--syntax-cyan) 72%, transparent); background: var(--surface-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--syntax-cyan) 24%, transparent); }
@@ -37,7 +37,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-plan-heading h2 { margin: 12px 0 0; color: var(--foreground); font: 700 24px/32px var(--font-sans); letter-spacing: -.04em; text-wrap: balance; }
 .pricing-plan-copy { min-height: 72px; margin: 12px 0 0; color: var(--text-muted); font-size: 14px; line-height: 24px; text-wrap: pretty; }
 .pricing-tier-field { display: grid; gap: 8px; margin-top: 24px; color: var(--text-muted); font-size: 12px; line-height: 16px; }
-.pricing-tier-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); font: 600 14px/20px var(--font-sans); }
+.pricing-tier-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); font: 600 14px/20px var(--font-sans); }
 .pricing-tier-field select:focus-visible, .pricing-interval button:focus-visible, .pricing-plan-action:focus-visible, details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .pricing-price { display: grid; gap: 4px; margin-top: 24px; }
 .pricing-price strong { color: var(--foreground); font: 700 36px/40px var(--font-sans); letter-spacing: -.055em; }
@@ -46,7 +46,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-feature-list { display: grid; gap: 12px; margin: 24px 0 0; padding: 24px 0 0; border-top: 1px solid var(--border); list-style: none; }
 .pricing-feature-list li { position: relative; padding-left: 24px; color: var(--text-muted); font-size: 14px; line-height: 20px; text-wrap: pretty; }
 .pricing-feature-list li::before { content: ""; position: absolute; top: 6px; left: 0; width: 10px; height: 10px; border: 1px solid var(--accent); border-radius: 999px; background: color-mix(in srgb, var(--syntax-cyan) 16%, transparent); }
-.pricing-plan-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 32px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--foreground); font: 700 16px/24px var(--font-sans); text-align: center; text-decoration: none; transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1), background-color 180ms cubic-bezier(0.32, 0.72, 0, 1), border-color 180ms cubic-bezier(0.32, 0.72, 0, 1); }
+.pricing-plan-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 32px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); font: 700 16px/24px var(--font-sans); text-align: center; text-decoration: none; transition: transform var(--transition-control), background-color var(--transition-control), border-color var(--transition-control); }
 .pricing-plan-action:hover { transform: translateY(-2px); border-color: var(--border-strong); }
 .pricing-plan-action:active { transform: scale(.98); }
 .pricing-plan-action-primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
@@ -60,12 +60,12 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-credit-costs { margin-top: 96px; }
 .pricing-credit-costs .pricing-section-heading > p:last-child { max-width: 680px; margin: 20px 0 0; color: var(--text-muted); font-size: 15px; line-height: 24px; text-wrap: pretty; }
 .pricing-credit-cost-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 40px; }
-.pricing-credit-cost-grid article { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.pricing-credit-cost-grid article { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .pricing-credit-cost-grid strong { display: block; color: var(--foreground); font: 700 32px/36px var(--font-sans); letter-spacing: -.05em; }
 .pricing-credit-cost-grid span { color: var(--accent); font: 500 11px/16px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
 .pricing-credit-cost-grid p { margin: 20px 0 0; color: var(--text-muted); font-size: 14px; line-height: 20px; text-wrap: pretty; }
 .pricing-usage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 80px; }
-.pricing-usage-grid article { padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.pricing-usage-grid article { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .pricing-usage-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; min-height: 28px; border: 1px solid var(--border); border-radius: 999px; color: var(--accent); font: 500 12px/16px var(--font-mono); }
 .pricing-usage-grid h2 { margin: 24px 0 0; color: var(--foreground); font: 700 20px/28px var(--font-sans); letter-spacing: -.035em; }
 .pricing-usage-grid p { margin: 12px 0 0; color: var(--text-muted); font-size: 14px; line-height: 24px; text-wrap: pretty; }
@@ -73,7 +73,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-comparison, .pricing-faq { margin-top: 96px; }
 .pricing-section-heading { max-width: 680px; }
 .pricing-section-heading h2 { margin: 24px 0 0; color: var(--foreground); font: 700 36px/40px var(--font-sans); letter-spacing: -.055em; text-wrap: balance; }
-.pricing-comparison-scroll { margin-top: 40px; overflow-x: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.pricing-comparison-scroll { margin-top: 40px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .pricing-comparison table { width: 100%; min-width: 760px; border-collapse: collapse; }
 .pricing-comparison th, .pricing-comparison td { padding: 16px 24px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; font-size: 14px; line-height: 20px; }
 .pricing-comparison thead th { color: var(--text-muted); font: 600 12px/16px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
@@ -87,7 +87,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-faq-list summary::after { content: "+"; color: var(--accent); font: 400 24px/24px var(--font-mono); }
 .pricing-faq-list details[open] summary::after { content: "−"; }
 .pricing-faq-list p { max-width: 780px; margin: 0; padding: 0 0 24px; color: var(--text-muted); font-size: 14px; line-height: 24px; text-wrap: pretty; }
-.pricing-final-cta { margin-top: 96px; padding: 80px 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); text-align: center; }
+.pricing-final-cta { margin-top: 96px; padding: 80px 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); text-align: center; }
 .pricing-final-cta h2 { max-width: 680px; margin: 24px auto 0; color: var(--foreground); font: 700 36px/40px var(--font-sans); letter-spacing: -.055em; text-wrap: balance; }
 .pricing-final-cta .pricing-plan-action { min-width: min(100%, 272px); margin-top: 32px; }
 .pricing-footer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 24px; width: min(1180px, calc(100% - 32px)); margin: 96px auto 0; padding: 24px 0 40px; border-top: 1px solid var(--border); color: var(--text-muted); }
@@ -120,3 +120,28 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
   .pricing-skip-link, .pricing-interval button, .pricing-plan-card, .pricing-plan-action { transition: none; }
   .pricing-plan-card:hover, .pricing-plan-action:hover { transform: none; }
 }
+
+/*
+ * The plan someone already has.
+ *
+ * Quieter than the recommended card, not louder: this is a statement of fact,
+ * not an offer. The label is written by the page from the wallet, so it only
+ * ever appears for a signed-in reader on the plan that is actually theirs.
+ */
+.pricing-plan-card.is-current-plan {
+  border-color: var(--foreground);
+}
+.pricing-plan-card.is-current-plan::after {
+  content: attr(data-current-plan-label);
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.pricing-plan-card.is-current-plan { position: relative; }

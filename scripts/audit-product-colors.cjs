@@ -59,6 +59,43 @@ function lineNumber(source, offset) {
   return source.slice(0, offset).split(/\r?\n/).length;
 }
 
+// Everything between a function's opening parenthesis and its match, so a
+// gradient's stops can be inspected without tripping over nested calls such as
+// color-mix(...) or calc(...).
+function balancedArguments(source, openParenOffset) {
+  let depth = 0;
+  for (let index = openParenOffset; index < source.length; index += 1) {
+    const character = source[index];
+    if (character === '(') depth += 1;
+    else if (character === ')') {
+      depth -= 1;
+      if (depth === 0) return source.slice(openParenOffset + 1, index);
+    }
+  }
+  return null;
+}
+
+// CSS named colours are not hex and not a function call, so neither of the
+// other passes would see them; they are the remaining way a raw colour could
+// reach a gradient stop.
+const namedColors = new Set([
+  'aqua', 'black', 'blue', 'brown', 'cyan', 'fuchsia', 'gold', 'gray', 'green',
+  'grey', 'indigo', 'lime', 'magenta', 'maroon', 'navy', 'olive', 'orange',
+  'pink', 'purple', 'red', 'salmon', 'silver', 'teal', 'tomato', 'violet',
+  'white', 'yellow',
+]);
+
+function findRawColor(text) {
+  const hex = /(?<!&)#[0-9a-fA-F]{3,8}\b/.exec(text);
+  if (hex) return hex[0];
+  const colorFunction = /\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\s*\(/i.exec(text);
+  if (colorFunction) return colorFunction[0];
+  for (const word of text.toLowerCase().match(/[a-z]+/g) || []) {
+    if (namedColors.has(word)) return word;
+  }
+  return null;
+}
+
 function addFailure(failures, file, source, offset, message) {
   const relativePath = path.relative(root, file).replace(/\\/g, '/');
   failures.push(relativePath + ':' + lineNumber(source, offset) + ' ' + message);
@@ -71,6 +108,24 @@ const failures = [];
 for (const requiredValue of requiredTokenValues) {
   if (!tokenSource.includes(requiredValue)) {
     failures.push('src/styles/coden-tokens.css missing required token value ' + requiredValue);
+  }
+}
+
+const definedProperties = new Set();
+const bareUses = [];
+
+for (const file of listFiles(root)) {
+  const relativePath = path.relative(root, file).replace(/\\/g, '/');
+  if (!isProductSource(relativePath) && !relativePath.includes('src/')) continue;
+
+  const propertySource = fs.readFileSync(file, 'utf8');
+  for (const definition of propertySource.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) {
+    definedProperties.add(definition[1]);
+  }
+  // var(--x) with no comma has no fallback: if --x is never defined, the whole
+  // declaration is invalid at computed-value time and silently disappears.
+  for (const use of propertySource.matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*\)/g)) {
+    bareUses.push({ file, source: propertySource, offset: use.index, name: use[1] });
   }
 }
 
@@ -90,9 +145,32 @@ for (const file of listFiles(root)) {
     }
   }
 
-  const forbiddenFunction = /\b(?:rgb|rgba|hsl|hsla|oklch|oklab|linear-gradient|radial-gradient|conic-gradient)\s*\(/gi;
+  const forbiddenFunction = /\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\s*\(/gi;
   while ((match = forbiddenFunction.exec(source))) {
-    addFailure(failures, file, source, match.index, 'forbidden color or gradient function ' + match[0]);
+    addFailure(failures, file, source, match.index, 'forbidden color function ' + match[0]);
+  }
+
+  /*
+   * Gradients are judged by what they are made of, not by their name.
+   *
+   * The rule here is that no colour enters the product outside
+   * coden-tokens.css. A gradient whose every stop is a var(--token) does not
+   * break that rule, and banning the function outright left the shimmer — a
+   * two-token fade — with no way to pass an audit it actually satisfies. Any
+   * gradient carrying a raw colour still fails, and a hex literal inside one
+   * is reported by the literal pass above as well.
+   */
+  const gradientFunction = /\b(?:linear|radial|conic)-gradient\s*\(/gi;
+  while ((match = gradientFunction.exec(source))) {
+    const args = balancedArguments(source, match.index + match[0].length - 1);
+    if (args === null) {
+      addFailure(failures, file, source, match.index, 'unterminated gradient ' + match[0]);
+      continue;
+    }
+    const rawColor = findRawColor(args);
+    if (rawColor) {
+      addFailure(failures, file, source, match.index, 'gradient stop ' + rawColor + ' must come from coden-tokens.css');
+    }
   }
 
   for (const obsoleteVariable of obsoleteVariables) {
@@ -100,6 +178,27 @@ for (const file of listFiles(root)) {
     if (variableMatch) {
       addFailure(failures, file, source, variableMatch.index, 'obsolete palette variable ' + variableMatch[0]);
     }
+  }
+}
+
+/*
+ * A custom property used without a fallback must exist somewhere.
+ *
+ * --shell-max was used in four declarations and defined in none, so the
+ * public header and footer lost their horizontal padding entirely and sat
+ * flush against the viewport edge; --font-display did the same to a heading
+ * rule. Neither fails a build or logs anything — the declaration simply is
+ * not there. This is the check that would have caught both.
+ */
+for (const use of bareUses) {
+  if (!definedProperties.has(use.name)) {
+    addFailure(
+      failures,
+      use.file,
+      use.source,
+      use.offset,
+      'var(' + use.name + ') has no definition and no fallback, so the declaration is dropped',
+    );
   }
 }
 

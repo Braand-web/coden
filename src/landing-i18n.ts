@@ -179,9 +179,23 @@ function normalizeLang(value: string | null | undefined): Lang | null {
   return null;
 }
 
+/**
+ * Which language a page opens in.
+ *
+ * A saved choice wins, then the page's own declaration, then the browser.
+ *
+ * The declaration used to be missing from that order, so a visitor on an
+ * English browser opening a page that says `lang="fr"` had it overwritten to
+ * `en` — and every label the shared header draws flipped to English over page
+ * copy that is French and has no translation behind it. Only a handful of
+ * nodes carry `data-i18n`; the rest of those pages is written in one language,
+ * and that is the one the page states.
+ */
 function resolveInitialLang(): Lang {
   const saved = normalizeLang(localStorage.getItem(STORAGE_KEY));
   if (saved) return saved;
+  const declared = normalizeLang(document.documentElement.getAttribute('lang'));
+  if (declared) return declared;
   const nav = (navigator.language || '').toLowerCase();
   return nav.startsWith('fr') ? 'fr' : 'en';
 }

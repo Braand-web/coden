@@ -71,6 +71,13 @@ export function isResumableCheckpoint(value: unknown): value is ResumeCheckpoint
  * request, not by repeating it.
  */
 const RESUMABLE_FAILURES = new Set([
+  /*
+   * A run that stopped to ask is the clearest case of all: it did not fail,
+   * it reached a point it could not pass alone, and the answer is exactly what
+   * lets it continue. Without this the brief would be discarded and the
+   * resumed run would rebuild what the paused one had already written.
+   */
+  'DECISION_REQUIRED',
   'RUN_INTERRUPTED',
   'PROVIDER_TIMEOUT',
   'PROVIDER_REQUEST_FAILED',

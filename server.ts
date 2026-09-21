@@ -7,6 +7,11 @@ import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
 import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
 import {
+  answerDecisionWithText, cancelDecision, createPendingDecision, isDecisionOpen,
+  isDecisionRecord, isDecisionRequiredError, settleDecision, type DecisionRecord,
+} from './src/services/agent-decision.ts';
+import type { DecisionQuestion } from './src/lib/agent-chat-protocol.ts';
+import {
   UNIFIED_USAGE_CATEGORIES,
   spendableByCategory,
   sharedCredits,
@@ -8327,6 +8332,88 @@ async function saveResumeCheckpointForTurn(input: {
   }
 }
 
+
+/**
+ * Stopping to ask, in a way that survives everything that can happen next.
+ *
+ * The run is over the moment this is called — the sandbox is released, the
+ * stream closes, the container may be replaced. So nothing about the wait is
+ * held in memory: the decision and the resume point both go on the thread,
+ * which is where the next turn looks, and the card is rebuilt from there after
+ * a refresh, a reconnect or a deploy.
+ *
+ * Deliberately not a blocked request. Holding the connection open would make
+ * the wait as fragile as the process, and a person who closes their laptop
+ * mid-question would come back to a run that died rather than to a question.
+ */
+async function pauseRunForDecision(input: {
+  harnessContext: { harness: CodenAgentHarness; thread: { id: string }; turn: { id: string } } | null | undefined;
+  prompt: string;
+  projectId: string;
+  error: { questions: DecisionQuestion[]; reason: string };
+  eventStream: { chat: (event: any) => void } | null | undefined;
+}): Promise<DecisionRecord | null> {
+  const context = input.harnessContext;
+  if (!context) return null;
+  const decision = createPendingDecision({
+    id: randomUUID(),
+    turnId: context.turn.id,
+    questions: input.error.questions,
+    reason: input.error.reason,
+    now: Date.now(),
+  });
+
+  // The brief first: a decision whose work was not saved resumes into a run
+  // that rebuilds what the paused one already wrote.
+  await saveResumeCheckpointForTurn({
+    harnessContext: context,
+    prompt: input.prompt,
+    projectId: input.projectId,
+    failure: { code: 'DECISION_REQUIRED', message: input.error.reason || 'the run needs a decision' },
+  });
+
+  try {
+    const thread = await context.harness.store.getThread(context.thread.id).catch(() => null);
+    await context.harness.store.updateThread(context.thread.id, {
+      metadata: { ...(thread?.metadata || {}), decision },
+    });
+  } catch (error) {
+    // A decision that could not be stored is a question nobody could answer
+    // after a refresh. Better to let the run fail visibly than to show a card
+    // that answers into nothing.
+    console.warn('[coden:decision_persist_failed]', {
+      project_id: input.projectId,
+      message: redactSecrets(String(error), '[redacted]'),
+    });
+    return null;
+  }
+
+  /*
+   * Both events, in this order.
+   *
+   * `decision_required` draws the card; `run_paused` is what tells the
+   * interface the run is waiting rather than finished, which is the difference
+   * between "answer me" and "something broke".
+   */
+  input.eventStream?.chat({
+    type: 'decision_required',
+    decisionId: decision.id,
+    question: decision.questions[0]?.q || 'Une décision est nécessaire.',
+    options: (decision.questions[0]?.options || []).map((label, index) => ({ id: String(index), label })),
+    allowFreeText: true,
+    questions: decision.questions,
+  });
+  input.eventStream?.chat({ type: 'run_paused', reason: 'decision' });
+
+  console.info('[coden:decision_required]', {
+    project_id: input.projectId,
+    decision_id: decision.id,
+    turn_id: decision.turnId,
+    questions: decision.questions.length,
+  });
+  return decision;
+}
+
 /**
  * The resume point left by this project's last run, if it is worth using.
  *
@@ -13093,6 +13180,36 @@ ${agentPrompt}` : agentPrompt;
        * Best-effort by construction — a failed run must not be made worse by
        * the bookkeeping for its own recovery.
        */
+      /*
+       * A decision is not a failure, and must not be reported as one.
+       *
+       * The run reached a point it could not pass alone and said so. Its files
+       * are saved, its brief is written, and it ends successfully — waiting,
+       * not broken. Everything below this line is for runs that actually went
+       * wrong, and sending a paused run through it would show the user a red
+       * panel for the one case where the product is working exactly as
+       * intended.
+       */
+      if (isDecisionRequiredError(error)) {
+        const decision = await pauseRunForDecision({
+          harnessContext,
+          prompt: agentPrompt,
+          projectId: project.id,
+          error: { questions: error.questions, reason: error.reason },
+          eventStream,
+        });
+        if (decision) {
+          return respondJson(200, {
+            success: true,
+            status: 'awaiting_decision',
+            decision: { id: decision.id, questions: decision.questions, expires_at: decision.expiresAt },
+            message: frenchActivity
+              ? 'Coden a besoin de votre décision pour continuer. Votre travail est enregistré.'
+              : 'Coden needs your decision before continuing. Your work is saved.',
+          });
+        }
+        // Storing it failed, so there would be nothing to answer into.
+      }
       const interrupted = generationAbortController.signal.aborted;
       const failureCode = interrupted ? 'RUN_INTERRUPTED' : String(error?.diagnosticCode || 'AGENT_EXECUTION_FAILED');
       await saveResumeCheckpointForTurn({
@@ -14646,6 +14763,49 @@ app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions',
   }
   const text = redactSecrets(String(req.body?.instruction || req.body?.text || '')).trim().slice(0, 4000);
   if (!text) return res.status(400).json({ success: false, error: 'Instruction is required.' });
+
+  /*
+   * An answer to a waiting question is not steering; it is what restarts the
+   * run.
+   *
+   * Steering queues text for a run that is still going. A run paused on a
+   * decision has already ended, so the same text has to do something else
+   * entirely: settle the decision and hand back the prompt the next run starts
+   * from.
+   *
+   * `changed` is the whole guard against doing it twice. A person
+   * double-clicks, a reconnecting tab replays its last send, a second device
+   * answers the same card — each of those arrives here as another POST, and
+   * only the first may resume. The later ones are told the decision is already
+   * answered and start nothing.
+   */
+  const decisionThread = await resolved.harness.store.getThread(req.params.threadId).catch(() => null);
+  const storedDecision = (decisionThread?.metadata || {}).decision;
+  if (isDecisionRecord(storedDecision) && storedDecision.turnId === req.params.turnId) {
+    const now = Date.now();
+    const { record, changed } = answerDecisionWithText(settleDecision(storedDecision, now), text, now);
+    if (record !== storedDecision) {
+      await resolved.harness.store.updateThread(req.params.threadId, {
+        metadata: { ...(decisionThread?.metadata || {}), decision: record },
+      }).catch(() => null);
+    }
+    console.info('[coden:decision_answered]', {
+      project_id: project.id, decision_id: record.id, status: record.status, resumed: changed,
+    });
+    return res.status(200).json({
+      success: true,
+      harness_version: 'coden-harness/v3',
+      decision: { id: record.id, status: record.status },
+      resumed: changed,
+      prompt: changed ? record.answer : undefined,
+      message: changed
+        ? 'Décision enregistrée. Coden reprend le travail là où il s’était arrêté.'
+        : record.status === 'expired'
+          ? 'Cette décision a expiré. Relancez la demande pour repartir.'
+          : 'Cette décision a déjà été enregistrée.',
+    });
+  }
+
   const instruction = await resolved.harness.steer({ turnId: req.params.turnId, userId, text });
   const activeRunId = activeHarnessAgentRunIds.get(req.params.turnId);
   if (activeRunId) {
@@ -14663,6 +14823,39 @@ app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions',
   return res.status(202).json({ success: true, harness_version: 'coden-harness/v3', instruction, message: 'Instruction reçue. Coden l’appliquera au prochain checkpoint sûr.' });
 });
 
+/**
+ * The question still waiting on this conversation, if there is one.
+ *
+ * A decision outlives the stream that announced it: the page is refreshed, the
+ * connection drops, the container is replaced. None of those should lose the
+ * question, so the card is rebuilt from here rather than from the events that
+ * first drew it.
+ */
+app.get('/api/projects/:id/agent/threads/:threadId/decision', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const resolved = await resolveAgentHarnessThread(req.params.threadId);
+  if (!resolved || resolved.thread.projectId !== project.id || resolved.thread.userId !== userId) {
+    return res.status(404).json({ success: false, error: 'Agent thread not found.' });
+  }
+  const stored = (resolved.thread.metadata || {}).decision;
+  if (!isDecisionRecord(stored)) return res.json({ success: true, decision: null });
+  const now = Date.now();
+  const settled = settleDecision(stored, now);
+  if (settled !== stored) {
+    await resolved.harness.store.updateThread(req.params.threadId, {
+      metadata: { ...(resolved.thread.metadata || {}), decision: settled },
+    }).catch(() => null);
+  }
+  return res.json({
+    success: true,
+    decision: isDecisionOpen(settled, now)
+      ? { id: settled.id, turn_id: settled.turnId, questions: settled.questions, status: settled.status, expires_at: settled.expiresAt }
+      : null,
+  });
+});
+
 app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/cancel', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -14673,6 +14866,20 @@ app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/cancel', async
   }
   const turn = await resolved.harness.cancelTurn(req.params.turnId, userId);
   activeHarnessTurnControllers.get(req.params.turnId)?.abort();
+  /*
+   * Cancelling the turn cancels the question it was waiting on.
+   *
+   * Left pending, the decision would outlive the run it belonged to and the
+   * card would come back on the next refresh, asking about work the user has
+   * already abandoned.
+   */
+  const cancelledThread = await resolved.harness.store.getThread(req.params.threadId).catch(() => null);
+  const openDecision = (cancelledThread?.metadata || {}).decision;
+  if (isDecisionRecord(openDecision) && openDecision.turnId === req.params.turnId) {
+    await resolved.harness.store.updateThread(req.params.threadId, {
+      metadata: { ...(cancelledThread?.metadata || {}), decision: cancelDecision(openDecision, Date.now()) },
+    }).catch(() => null);
+  }
   return res.json({ success: true, harness_version: 'coden-harness/v3', turn });
 });
 

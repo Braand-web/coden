@@ -27,7 +27,7 @@ body.auth-premium-ready::before {
   pointer-events: none;
   background: var(--surface);
   opacity: 1;
-  transition: opacity 180ms var(--ease-standard);
+  transition: opacity var(--transition-control);
 }
 
 #curtain.rising {
@@ -89,7 +89,7 @@ body.auth-premium-ready::before {
   color: var(--text-muted);
   font-size: 13px;
   text-decoration: none;
-  transition: color 180ms var(--ease-standard), background-color 180ms var(--ease-standard);
+  transition: color var(--transition-control), background-color var(--transition-control);
 }
 
 .auth-back-link:hover {
@@ -108,7 +108,7 @@ body.auth-premium-ready::before {
   color: var(--text-muted);
   background: var(--surface);
   cursor: pointer;
-  transition: color 180ms var(--ease-standard), background-color 180ms var(--ease-standard), border-color 180ms var(--ease-standard), transform 180ms var(--ease-standard);
+  transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control), transform var(--transition-control);
 }
 
 .theme-toggle:hover {
@@ -129,7 +129,7 @@ body.auth-premium-ready::before {
   border-radius: var(--radius-xl, 18px) !important;
   background: var(--surface) !important;
   box-shadow: var(--shadow-lg) !important;
-  transition: border-color 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+  transition: border-color var(--transition-control), box-shadow var(--transition-control);
 }
 
 .auth-header {
@@ -186,7 +186,7 @@ body.auth-premium-ready::before {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: color 180ms var(--ease-standard), background-color 180ms var(--ease-standard), border-color 180ms var(--ease-standard);
+  transition: color var(--transition-control), background-color var(--transition-control), border-color var(--transition-control);
 }
 
 .tab-btn:hover:not(.active) {
@@ -224,7 +224,7 @@ body.auth-premium-ready::before {
   background: var(--surface-soft);
   font: inherit;
   font-size: 14px;
-  transition: border-color 180ms var(--ease-standard), background-color 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+  transition: border-color var(--transition-control), background-color var(--transition-control), box-shadow var(--transition-control);
 }
 
 .input::placeholder {
@@ -296,7 +296,7 @@ body.auth-premium-ready::before {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 160ms var(--ease-standard), background-color 180ms var(--ease-standard), border-color 180ms var(--ease-standard), box-shadow 180ms var(--ease-standard);
+  transition: transform 160ms var(--ease-standard), background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control);
 }
 
 .btn-submit {

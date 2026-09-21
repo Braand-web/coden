@@ -16,9 +16,10 @@ import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
-import { AgentMessage } from './components/agent/agent-message';
+import { AgentMessage, type DecisionAnswersHandler } from './components/agent/agent-message';
 import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState, type DecisionNotice } from './components/agent/agent-parts';
-import type { AgentEnvelope } from './lib/agent-chat-protocol';
+import { createTypingPacer, type TypingPacer } from './lib/typing-pacer';
+import type { AgentEnvelope, ChatEvent } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
 import "./styles/agent-conversation.css";
 import "./styles/agent-surface.css";
@@ -145,6 +146,7 @@ export type CodenConversationApi = {
 
 type ConversationCallbacks = {
   onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void;
+  onDecisionAnswers?: DecisionAnswersHandler;
   onArtifactOpen?: (artifactId: string) => void;
   onApprovalDecision?: (itemId: string, approved: boolean) => void | Promise<void>;
 };
@@ -440,6 +442,75 @@ export function createStore(storageKey = conversationStorageKey()) {
 
   const find = (id: string) => messages.find((message) => message.id === id);
 
+  /*
+   * One paced queue per message, drained on a single shared tick.
+   *
+   * The provider does not send one character at a time, so applying deltas as
+   * they land draws the reply in blocks. The pacer releases them steadily —
+   * and, more importantly, keeps every other event behind the text it arrived
+   * after, so a tool line never lands above the sentence introducing it.
+   */
+  const pacers = new Map<string, TypingPacer>();
+  let pacingTimer: ReturnType<typeof setInterval> | null = null;
+
+  const applyPaced = (id: string, events: ChatEvent[]) => {
+    if (!events.length) return;
+    const message = find(id);
+    if (!message) return;
+    const run = ensureLiveRun(message);
+    for (const payload of events) {
+      /*
+       * No sequence, deliberately.
+       *
+       * The reducer drops anything whose sequence it has already seen, and a
+       * split delta carries the sequence of the event it came from — so every
+       * fragment after the first would be discarded as a duplicate. The
+       * de-duplication that matters already happened on arrival, both in
+       * `consumeAgentStream` and at the push below.
+       */
+      run.chat = reduceAgentMessage(run.chat || { ...EMPTY_MESSAGE, parts: [] }, payload);
+    }
+    const chat = run.chat;
+    if (!chat) return;
+    const streamedText = chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n');
+    if (streamedText) message.content = streamedText;
+    message.working = chat.status === 'streaming';
+  };
+
+  const stopPacing = () => {
+    if (!pacingTimer) return;
+    clearInterval(pacingTimer);
+    pacingTimer = null;
+  };
+
+  const tick = () => {
+    let stillPending = false;
+    mutate(() => {
+      for (const [id, pacer] of [...pacers]) {
+        if (!find(id)) { pacers.delete(id); continue; }
+        applyPaced(id, pacer.drain(Date.now()));
+        if (pacer.pending) stillPending = true;
+        else pacers.delete(id);
+      }
+    });
+    if (!stillPending) stopPacing();
+  };
+
+  /*
+   * Pacing needs something to drain it.
+   *
+   * Without a scheduler — server rendering, a test runner, any environment
+   * with no `window` — the queue would be filled and never emptied, and the
+   * reply would simply never appear. So where nothing can tick, nothing is
+   * held back: the events apply exactly as they did before pacing existed.
+   */
+  const canPace = typeof window !== 'undefined' && typeof window.setInterval === 'function';
+
+  const startPacing = () => {
+    if (pacingTimer || !canPace) return;
+    pacingTimer = window.setInterval(tick, 50) as unknown as ReturnType<typeof setInterval>;
+  };
+
   const ensureLiveRun = (message: CodenConversationMessage, meta: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string } = {}): LiveRunState => {
     if (!message.liveRun) {
       message.liveRun = {
@@ -611,12 +682,24 @@ export function createStore(storageKey = conversationStorageKey()) {
         const message = find(id);
         if (!message) return;
         const run = ensureLiveRun(message);
-        run.chat = reduceAgentMessage(run.chat || { ...EMPTY_MESSAGE, parts: [], runId: event.runId }, event.payload, event.seq);
-        if (run.chat.lastSequence !== undefined) run.lastSequence = run.chat.lastSequence;
-        const streamedText = run.chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n');
-        if (streamedText) message.content = streamedText;
-        message.working = run.chat.status === 'streaming';
+        if (!run.chat) run.chat = { ...EMPTY_MESSAGE, parts: [], runId: event.runId };
+        /*
+         * Recorded on arrival, not on display.
+         *
+         * This is what `Last-Event-ID` replays from after a dropped
+         * connection. Advancing it only as the pacer releases events would
+         * make a reconnect re-request everything still queued, and the
+         * duplicates would be applied as new text.
+         */
+        if (event.seq > (run.lastSequence ?? -1)) run.lastSequence = event.seq;
+        else return;
+        const pacer = pacers.get(id) ?? createTypingPacer();
+        pacers.set(id, pacer);
+        pacer.push(event.payload);
+        applyPaced(id, canPace ? pacer.drain(Date.now()) : pacer.flush());
+        if (!pacer.pending) pacers.delete(id);
       });
+      if (pacers.has(id)) startPacing();
     },
     finishLiveRun(id, summary = "") {
       mutate(() => {
@@ -650,6 +733,8 @@ export function createStore(storageKey = conversationStorageKey()) {
       });
     },
     removeMessage(id) {
+      pacers.delete(id);
+      if (!pacers.size) stopPacing();
       mutate(() => {
         messages = messages.filter((message) => message.id !== id);
       });
@@ -670,6 +755,8 @@ export function createStore(storageKey = conversationStorageKey()) {
       });
     },
     clear() {
+      pacers.clear();
+      stopPacing();
       mutate(() => {
         messages = [];
         if (typeof window !== 'undefined') window.sessionStorage.removeItem(storageKey);
@@ -1611,7 +1698,7 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
           {message.block
             ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
             : message.liveRun?.chat
-              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onArtifactOpen={callbacks.onArtifactOpen} />
+              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onDecisionAnswers={callbacks.onDecisionAnswers} onArtifactOpen={callbacks.onArtifactOpen} />
               : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
           {!message.block && message.actions?.length ? (
             <div className="coden-chat-actions">

@@ -2,8 +2,6 @@ import { initThemeController } from './theme-controller';
 
 type PublicEnhancementOptions = {
   faq?: boolean;
-  back?: boolean;
-  backFallback?: string;
 };
 
 const SHARED_FAQ_ITEMS = [
@@ -235,65 +233,6 @@ function isHomePath(pathname: string) {
   return pathname === '/' || pathname === '/index.html';
 }
 
-function shouldInstallBackButton() {
-  const path = window.location.pathname;
-  if (isHomePath(path)) return false;
-  if (/\/(builder|dashboard)\.html$/.test(path)) return false;
-  return true;
-}
-
-function getSafeBackTarget(fallback: string) {
-  try {
-    if (!document.referrer) return { mode: 'navigate' as const, href: fallback };
-    const referrer = new URL(document.referrer);
-    const current = new URL(window.location.href);
-    const sameOrigin = referrer.origin === current.origin;
-    const samePage = referrer.pathname === current.pathname;
-    const unsafeAuthBounce = referrer.pathname === '/auth.html' && current.pathname !== '/auth.html';
-    if (sameOrigin && !samePage && !unsafeAuthBounce && window.history.length > 1) {
-      return { mode: 'history' as const, href: referrer.href };
-    }
-  } catch {
-    // Fall through to safe fallback.
-  }
-  return { mode: 'navigate' as const, href: fallback };
-}
-
-export function installSmartBackNavigation(options: PublicEnhancementOptions = {}) {
-  if (options.back === false || !shouldInstallBackButton() || document.querySelector('.back-home-link')) return;
-  injectSharedPublicStyles();
-
-  const fallback = options.backFallback || '/';
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'back-home-link coden-smart-back';
-  button.dataset.smartBackFallback = fallback;
-  button.setAttribute('aria-label', 'Go back');
-  button.innerHTML = `
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M19 12H5"></path>
-      <path d="M12 19l-7-7 7-7"></path>
-    </svg>
-    <span>Back</span>
-  `;
-
-  button.addEventListener('click', () => {
-    const target = getSafeBackTarget(button.dataset.smartBackFallback || fallback);
-    if (target.mode === 'history') {
-      window.history.back();
-      return;
-    }
-    window.location.href = target.href;
-  });
-
-  const navbar = document.querySelector('.navbar, .seo-nav');
-  if (navbar) {
-    navbar.insertAdjacentElement('afterend', button);
-    return;
-  }
-  document.body.prepend(button);
-}
-
 function bindEnhancedFaqRow(row: Element) {
   const trigger = row.querySelector<HTMLElement>('.faq-q, .faq-question, summary');
   if (!trigger || trigger.dataset.codenFaqBound === 'true') return;
@@ -424,5 +363,4 @@ export function installPublicPageEnhancements(options: PublicEnhancementOptions 
     }
   }
   initThemeController();
-  installSmartBackNavigation(options);
 }

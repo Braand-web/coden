@@ -79,25 +79,25 @@ body.coden-modern-shell .modal-overlay:not(.open) {
 #coden-marketing-header-root, #coden-react-marketing-root { position: fixed; inset: 0 0 auto; z-index: 1000; height: 0; pointer-events: none; }
 
 .coden-ui-container { width: min(var(--shell-max), calc(100% - 32px)); margin-inline: auto; }
-.coden-ui-tabs { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 12px; background: var(--sidebar); }
+.coden-ui-tabs { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--sidebar); }
 .coden-ui-tab { position: relative; min-height: 36px; padding: 0 12px; border: 0; border-radius: 9px; color: var(--text-muted); background: transparent; cursor: pointer; }
 .coden-ui-tab:hover, .coden-ui-tab.is-active { color: var(--foreground); }
 .coden-ui-tab-indicator { position: absolute; inset: 0; z-index: 0; border-radius: 9px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
 .coden-ui-tab > span:last-child { position: relative; z-index: 1; }
 .coden-ui-dropdown { position: relative; display: inline-flex; }
 .coden-ui-dropdown-trigger { min-height: 40px; border: 1px solid var(--border); border-radius: 10px; padding: 0 12px; background: var(--surface); color: var(--foreground); }
-.coden-ui-dropdown-panel { position: absolute; top: calc(100% + 8px); right: 0; min-width: 180px; z-index: 50; padding: 6px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-soft); box-shadow: var(--shadow-lg); }
+.coden-ui-dropdown-panel { position: absolute; top: calc(100% + 8px); right: 0; min-width: 180px; z-index: 50; padding: 6px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-soft); box-shadow: var(--shadow-lg); }
 .coden-ui-accordion { border-top: 1px solid var(--border); }
 .coden-ui-accordion-trigger { width: 100%; min-height: 52px; display: flex; align-items: center; justify-content: space-between; color: var(--foreground); text-align: left; }
 .coden-ui-accordion-content { overflow: hidden; color: var(--text-muted); padding: 0 0 16px; }
 .coden-ui-overlay { position: fixed; inset: 0; z-index: 12000; display: grid; place-items: center; padding: 20px; background: var(--overlay); backdrop-filter: blur(4px); }
-.coden-ui-overlay-panel { width: min(640px, 100%); max-height: min(760px, calc(100dvh - 40px)); overflow: auto; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-overlay); }
+.coden-ui-overlay-panel { width: min(640px, 100%); max-height: min(760px, calc(100dvh - 40px)); overflow: auto; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-overlay); }
 .coden-ui-overlay-panel.is-sheet { width: min(720px, 100%); align-self: end; border-radius: 16px 16px 0 0; }
 .coden-ui-overlay-header { min-height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--border); }
 .coden-ui-overlay-header h2 { font-size: 16px; }
 .coden-icon-button { min-width: 40px; padding: 0 10px; }
 .coden-ui-toast-stack { position: fixed; right: 20px; bottom: 20px; z-index: 13000; display: grid; gap: 10px; width: min(380px, calc(100vw - 32px)); }
-.coden-ui-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-soft); color: var(--foreground); box-shadow: var(--shadow-md); }
+.coden-ui-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-soft); color: var(--foreground); box-shadow: var(--shadow-md); }
 .coden-ui-toast p { margin-top: 4px; color: var(--text-muted); font-size: 13px; line-height: 1.45; }
 .coden-ui-toast.is-success { border-color: color-mix(in srgb, var(--success) 42%, var(--border)); }
 .coden-ui-toast.is-warning { border-color: color-mix(in srgb, var(--syntax-orange) 42%, var(--border)); }
@@ -117,20 +117,31 @@ body.coden-modern-shell .modal-overlay:not(.open) {
 #coden-marketing-header-root { position: fixed; inset: 0 0 auto; z-index: 1200; height: 76px; pointer-events: none; isolation: isolate; }
 body.coden-react-surface-home { padding-top: 76px; }
 .coden-react-marketing-header { position: absolute; top: 0; left: 50%; z-index: 1; width: 100%; max-width: 100%; min-height: 60px; display: flex; align-items: center; gap: 24px; padding: 8px max(16px, calc((100vw - var(--shell-max)) / 2)); pointer-events: auto; border: 1px solid transparent; border-radius: 0; background: transparent; transform: translateX(-50%); transform-origin: top center; transition: max-width var(--transition-control), min-height var(--transition-control), top var(--transition-control), padding var(--transition-control), background-color var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control), backdrop-filter var(--transition-control), border-radius var(--transition-control); }
-.coden-react-marketing-header[data-header-state="scrolled"] { top: 8px; max-width: min(var(--shell-max), calc(100% - 32px)); min-height: 58px; padding: 8px 10px 8px 14px; border-color: var(--border); border-radius: 16px; background: color-mix(in srgb, var(--sidebar) 92%, transparent); box-shadow: 0 14px 40px color-mix(in srgb, var(--foreground) 18%, transparent); backdrop-filter: blur(16px) saturate(125%); -webkit-backdrop-filter: blur(16px) saturate(125%); }
+.coden-react-marketing-header[data-header-state="scrolled"] { top: 8px; max-width: min(var(--shell-max), calc(100% - 32px)); min-height: 58px; padding: 8px 10px 8px 14px; border-color: var(--border); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--sidebar) 92%, transparent); box-shadow: 0 14px 40px color-mix(in srgb, var(--foreground) 18%, transparent); backdrop-filter: blur(16px) saturate(125%); -webkit-backdrop-filter: blur(16px) saturate(125%); }
 .coden-react-brand { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; color: var(--foreground); font-weight: 700; letter-spacing: -.02em; }
 .coden-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--foreground); font-weight: 700; letter-spacing: -.02em; text-decoration: none; }
 .coden-logo-mark { --logo-bg: var(--accent); --logo-fg: var(--text-on-accent); display: block; flex: 0 0 auto; width: 32px; height: 32px; }
 .coden-react-brand .coden-logo-mark { width: 30px; height: 30px; }
 .coden-react-brand-mark { display: none; }
 .coden-react-nav { display: flex; align-items: center; gap: 4px; margin-inline: auto; }
-.coden-react-nav a, .coden-react-mobile-nav a { min-height: 40px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 9px; color: var(--text-muted); font-size: 13px; transition: color var(--transition-control), background-color var(--transition-control); }
+.coden-react-nav a, .coden-react-mobile-nav a { min-height: 44px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 13px; transition: color var(--transition-control), background-color var(--transition-control); }
 .coden-react-nav a:hover, .coden-react-nav a[aria-current="page"], .coden-react-mobile-nav a:hover, .coden-react-mobile-nav a[aria-current="page"] { color: var(--foreground); background: var(--accent-soft); }
-.coden-react-header-actions { display: flex; align-items: center; gap: 8px; }
+.coden-react-header-actions { display: flex; align-items: center; gap: 0; }
+/* This link had no rule of its own, so it inherited --foreground and read
+   near-black here while the landing showed the same link in
+   --text-secondary, and it carried no hit area at all. */
+.coden-react-signin { display: inline-flex; min-height: 44px; align-items: center; padding-inline: 10px; color: var(--text-secondary); transition: color var(--transition-control); }
+.coden-react-signin:hover { color: var(--accent); }
 .coden-react-theme-toggle, .coden-react-menu { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 10px; color: var(--text-muted); background: color-mix(in srgb, var(--surface) 72%, transparent); transition: color var(--transition-control), border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .coden-react-theme-toggle:hover, .coden-react-menu:hover { color: var(--foreground); border-color: var(--border-strong, var(--border)); background: var(--surface); }
 .coden-react-theme-toggle:active, .coden-react-menu:active { transform: scale(.97); }
-.coden-react-cta { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 10px; background: var(--surface); color: var(--foreground) !important; font-size: 14px; line-height: 20px; font-weight: 600; }
+/* The primary call to action, one spec. It was a white 36px button on a
+   10px radius here, an accent 32px button on 8px in the landing header and
+   an accent 44px button on 8px on the pricing page — three buttons for one
+   job, one of them on a radius the token scale does not have. This follows
+   the pricing page, which already matched coherence.css. */
+.coden-react-cta { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--text-on-accent) !important; font-size: 14px; line-height: 20px; font-weight: 600; transition: background-color var(--transition-control); }
+.coden-react-cta:hover { background: color-mix(in srgb, var(--accent) 84%, var(--foreground)); }
 .coden-react-menu { display: none; }
 .coden-react-mobile-backdrop { position: fixed; inset: 0; z-index: -1; background: var(--overlay, color-mix(in srgb, var(--background) 62%, transparent)); }
 .coden-react-mobile-nav { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 2; display: grid; gap: 4px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-soft); box-shadow: var(--shadow-lg); }

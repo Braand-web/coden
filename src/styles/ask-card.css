@@ -1,0 +1,212 @@
+/*
+ * The agent's questionnaire, in Coden's vocabulary.
+ *
+ * The card was written against another design system — `bg-surface`,
+ * `text-ink`, `rounded-control` — none of which exists here. Every colour,
+ * radius and shadow below is a Coden token, so the card follows the theme
+ * switch without a second definition for dark mode.
+ */
+
+.coden-ask-card {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 14px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--foreground);
+}
+
+.coden-ask-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.coden-ask-dismiss:hover { background: var(--surface-hover); color: var(--foreground); }
+.coden-ask-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The window the stack of questions slides behind. */
+.coden-ask-viewport { position: relative; overflow: hidden; }
+.coden-ask-track { display: grid; gap: 14px; will-change: transform; }
+
+.coden-ask-question {
+  margin: 0 0 8px;
+  padding-right: 22px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.coden-ask-options { display: grid; gap: 2px; }
+.coden-ask-option-list { display: grid; gap: 2px; }
+
+/* The highlight is the hover state; a row carries none of its own. */
+.coden-ask-highlight { border-radius: var(--radius-md); background: var(--surface-hover); }
+
+.coden-ask-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.coden-ask-option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.coden-ask-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  color: transparent;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+.coden-ask-mark.is-radio { border-radius: var(--radius-full); }
+.coden-ask-mark.is-check { border-radius: 5px; }
+.coden-ask-mark.is-on { border-color: var(--accent); }
+.coden-ask-mark.is-check.is-on { background: var(--accent); color: var(--surface); }
+
+.coden-ask-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.coden-ask-option-label { min-width: 0; line-height: 1.45; text-wrap: pretty; }
+.coden-ask-option-label.is-on { color: var(--foreground); font-weight: 550; }
+
+.coden-ask-custom { display: block; padding: 2px 0 0; }
+.coden-ask-custom-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13.5px;
+}
+.coden-ask-custom-input::placeholder { color: var(--text-muted); }
+.coden-ask-custom-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--input);
+}
+
+.coden-ask-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.coden-ask-steps { display: flex; align-items: center; gap: 2px; color: var(--text-muted); }
+.coden-ask-step {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.coden-ask-step:hover:not(:disabled) { background: var(--surface-hover); color: var(--foreground); }
+.coden-ask-step:disabled { opacity: 0.35; cursor: default; }
+.coden-ask-step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/*
+ * The counter reserves its own width.
+ *
+ * `tabular-nums` keeps "1 / 9" and "1 / 10" from shuffling the arrows either
+ * side of them as the digits roll, and the rolling glyphs are absolutely
+ * measured against a line box that must not change height mid-animation.
+ */
+.coden-ask-counter {
+  display: inline-flex;
+  min-width: 42px;
+  justify-content: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: pre;
+}
+.coden-ask-roll { display: inline-block; overflow: hidden; height: 1.5em; vertical-align: bottom; }
+.coden-ask-roll-track { display: flex; flex-direction: column; transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.coden-ask-roll-track > span { display: block; height: 1.5em; line-height: 1.5; }
+
+.coden-ask-actions { display: flex; align-items: center; gap: 6px; }
+
+.coden-ask-skip,
+.coden-ask-continue {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+.coden-ask-skip { border: 0; background: transparent; color: var(--text-muted); }
+.coden-ask-skip:hover { background: var(--surface-hover); color: var(--foreground); }
+.coden-ask-continue { border: 0; background: var(--foreground); color: var(--surface); }
+.coden-ask-continue:hover:not(:disabled) { opacity: 0.88; }
+.coden-ask-continue:disabled { background: var(--surface-hover); color: var(--text-muted); cursor: default; }
+.coden-ask-skip:focus-visible,
+.coden-ask-continue:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.coden-ask-sent { display: flex; padding: 2px 0; }
+.coden-ask-sent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: var(--success-background);
+  color: var(--foreground);
+  font-size: 13px;
+}
+.coden-ask-sent-check {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+  color: var(--background);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-ask-card *,
+  .coden-ask-sent * { transition: none !important; }
+}

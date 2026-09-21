@@ -540,7 +540,7 @@ h1 {
     width: 206px;
     border: 1px solid var(--border);
     background: var(--surface-soft);
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     padding: 6px;
     box-shadow: 0 18px 50px color-mix(in srgb, var(--foreground) 12%, transparent);
     display: none;
@@ -558,7 +558,7 @@ h1 {
     border: 0;
     background: transparent;
     color: var(--text-muted);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     padding: 9px;
     cursor: pointer;
     font: inherit;
@@ -590,7 +590,7 @@ h1 {
     right: -4px;
     background: var(--surface-soft);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     padding: 6px;
     min-width: 250px;
     max-height: 420px;
@@ -782,7 +782,7 @@ h1 {
     position: relative;
     display: flex;
     align-items: center;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     overflow: visible; /* Allow any tooltips/effects if needed */
     padding: 1px;
     transition: transform 100ms;
@@ -815,7 +815,7 @@ h1 {
     justify-content: center;
     width: 34px;
     height: 34px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     background: var(--input);
     border: 1px solid var(--border);
     color: var(--text-secondary);
@@ -1078,53 +1078,6 @@ h1 {
 }
 
 /* Public page conversion polish */
-.back-home-link {
-    position: fixed;
-    left: 22px;
-    top: 84px;
-    z-index: 80;
-    height: 38px;
-    padding: 0 14px;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    color: var(--text-muted);
-    background: color-mix(in srgb, var(--surface) 86%, transparent);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-    box-shadow: 0 12px 40px color-mix(in srgb, var(--foreground) 8%, transparent);
-    transition:
-        transform var(--transition-control),
-        color var(--transition-control),
-        border-color var(--transition-control),
-        background var(--transition-control);
-}
-
-.back-home-link:hover {
-    color: var(--foreground);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--surface) 96%, transparent);
-    transform: translateX(-2px);
-}
-
-@media (max-width: 920px) {
-    .back-home-link {
-        left: 16px;
-        top: 76px;
-    }
-}
-
-@media (max-width: 640px) {
-    .back-home-link span {
-        display: none;
-    }
-}
-
 @media (min-width: 1024px) {
     .hero-content { max-width: 820px; }
 }
@@ -1190,7 +1143,7 @@ h1 {
 .feature-icon {
     width: 40px;
     height: 40px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--accent-soft);
     color: var(--accent);
     display: flex;
@@ -1229,7 +1182,7 @@ h1 {
 
 .pricing-card {
     padding: 40px;
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
     border: 1px solid var(--border);
     background: var(--surface);
     display: flex;
@@ -1381,7 +1334,7 @@ h1 {
 .pricing-btn, .card-cta {
     width: 100%;
     padding: 14px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     font-weight: 600;
     font-size: 14px;
     text-align: center;
@@ -1790,7 +1743,7 @@ h1 {
     flex-shrink: 0;
     width: 44px;
     height: 44px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: var(--accent-soft);
     color: var(--accent);
     display: flex;
@@ -1814,7 +1767,7 @@ h1 {
     .enterprise-features { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .trust-flow {
         width: 100%;
-        border-radius: 24px;
+        border-radius: var(--radius-xl);
         flex-wrap: wrap;
     }
     .trust-flow i {
@@ -2023,7 +1976,7 @@ h1 {
 .demo-preview {
     min-height: 310px;
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: var(--surface);
 }
 
@@ -2039,7 +1992,7 @@ h1 {
     align-self: flex-end;
     max-width: 88%;
     padding: 12px 14px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: var(--foreground);
     color: var(--background);
     font-size: 13px;
@@ -2099,7 +2052,7 @@ h1 {
 .preview-card {
     flex: 1;
     padding: 24px;
-    border-radius: 16px;background: var(--surface);
+    border-radius: var(--radius-lg);background: var(--surface);
     border: 1px solid var(--border);
 }
 
@@ -2227,7 +2180,7 @@ h1 {
 
 .build-type-preview span {
     display: block;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--type-accent) 12%, var(--surface-soft));
     border: 1px solid color-mix(in srgb, var(--type-accent) 16%, var(--border));
     transition: transform 260ms ease, background 260ms ease, opacity 260ms ease;
@@ -2243,7 +2196,7 @@ h1 {
     width: 100%;
     height: 38px;
     border: 1px solid color-mix(in srgb, var(--type-accent) 22%, var(--border));
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--background) 74%, var(--type-accent));
     color: var(--foreground);
     font-weight: 720;
@@ -2936,7 +2889,7 @@ h1 {
 .build-type {
     min-height: 178px;
     padding: 18px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
 }
 
 .build-type-top {
@@ -3141,7 +3094,7 @@ h1 {
 .proof-preview i {
     display: block;
     min-height: 52px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--proof-accent, var(--accent)) 13%, var(--surface));
     border: 1px solid color-mix(in srgb, var(--proof-accent, var(--accent)) 16%, var(--border));
 }
@@ -3493,7 +3446,7 @@ h1 {
 .workflow-visual {
     position: relative;
     height: 120px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border);
     background: var(--surface);
     overflow: hidden;
@@ -3562,7 +3515,7 @@ h1 {
 .discover-card {
     text-align: left;
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: var(--surface);
     padding: 14px;
     cursor: pointer;
@@ -3641,7 +3594,7 @@ h1 {
 .pricing-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 28px 0 20px; }
 .pricing-mini {
     position: relative;
-    border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface);
     padding: 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 6px;
     transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
 }
@@ -3944,7 +3897,7 @@ body::before {
     width: 44px;
     height: 44px;
     margin-top: 12px;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     font-family: var(--font-sans);
     font-size: 20px;
     font-weight: 800;
@@ -3971,7 +3924,7 @@ body::before {
     padding: 0 14px 0 18px;
     transform: translateX(-50%);
     border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--surface) 82%, transparent);
     box-shadow: 0 16px 42px color-mix(in srgb, var(--foreground) 18%, transparent);
     transition:
@@ -4079,7 +4032,7 @@ body::before {
 .input-wrapper {
     max-width: 760px;
     margin-bottom: 16px;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--surface) 94%, transparent);
 	    box-shadow: 0 1px 0 color-mix(in srgb, currentColor 5%, transparent) inset, 0 20px 54px color-mix(in srgb, var(--foreground) 18%, transparent);
 }
@@ -4087,7 +4040,7 @@ body::before {
 .input-wrapper:focus-within { border-color: color-mix(in srgb, var(--accent) 56%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), 0 20px 54px color-mix(in srgb, var(--foreground) 18%, transparent); }
 #ai-textarea { min-height: 104px; padding: 20px 20px 0; font-size: 16px; line-height: 1.55; }
 .input-actions { padding: 10px 14px 14px; }
-.icon-btn { width: 32px; height: 32px; border-radius: 8px; }
+.icon-btn { width: 32px; height: 32px; border-radius: var(--radius-sm); }
 .submit-btn { min-height: 44px; min-width: 156px; padding-inline: 16px; border-radius: 10px; background: var(--surface); color: var(--foreground); box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 24%, transparent); }
 .submit-btn:hover { background: var(--surface); transform: translateY(-1px); }
 .model-select, .prompt-mode-btn { min-height: 36px; border-radius: 9px; }
@@ -4142,7 +4095,7 @@ body::before {
 .footer-bottom { width: min(1120px, 100%); max-width: none; padding-top: 20px; }
 .footer-bottom-actions { display: flex; align-items: center; gap: 8px; }
 .footer-bottom-actions label { color: var(--text-secondary); font-size: 12px; }
-.footer-bottom-actions select { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text-muted); padding: 0 8px; font: inherit; font-size: 12px; }
+.footer-bottom-actions select { min-height: 34px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-muted); padding: 0 8px; font: inherit; font-size: 12px; }
 
 @media (max-width: 1024px) {
     .footer-grid,
@@ -4168,7 +4121,7 @@ body::before {
     .input-actions { align-items: flex-end; gap: 8px; }
     .actions-right { flex-wrap: wrap; justify-content: flex-end; }
     .submit-btn { min-width: 132px; }
-    .footer-cta { width: min(100% - 28px, 560px); margin-bottom: 56px; padding: 22px; align-items: center; border-radius: 16px; }
+    .footer-cta { width: min(100% - 28px, 560px); margin-bottom: 56px; padding: 22px; align-items: center; border-radius: var(--radius-lg); }
     .footer-cta-button { width: 100%; }
     .footer { padding-inline: 16px; }
     .footer-grid,

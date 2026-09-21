@@ -33,34 +33,62 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 }
 
 .landing-page-shell { width: min(1180px, calc(100% - 56px)); margin: 0 auto; }
-.landing-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 0; background: var(--background); }
-.landing-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
+/* The header keeps its 68px. The links inside it grew to a 44px hit area,
+   so the vertical padding gives that height back instead of adding it. */
+.landing-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 0; background: var(--background); }
+.landing-brand { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; color: var(--foreground); font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
 .landing-logo-mark { width: 22px; height: 22px; }
-.landing-nav { display: flex; align-items: center; gap: 26px; margin-left: auto; margin-right: auto; color: var(--text-secondary); font-size: 12px; }
-.landing-nav a, .landing-signin { transition: color var(--transition-control); }
+.landing-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; margin-right: auto; color: var(--text-secondary); font-size: 12px; }
+.landing-nav a, .landing-signin { display: inline-flex; min-height: 44px; align-items: center; padding-inline: 10px; transition: color var(--transition-control); }
 .landing-nav a:hover, .landing-signin:hover { color: var(--accent); }
-.landing-header-actions { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 12px; }
-.landing-header-cta { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; padding: 0 12px; border-radius: var(--radius-sm); background: var(--accent); color: var(--background) !important; font-weight: 600; transition: opacity var(--transition-control), transform var(--transition-micro); }
-.landing-header-cta:hover { opacity: .84; }
+.landing-header-actions { display: flex; align-items: center; gap: 0; color: var(--text-secondary); font-size: 12px; }
+.landing-header-cta { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--text-on-accent) !important; font-weight: 600; transition: background-color var(--transition-control), transform var(--transition-micro); }
+.landing-header-cta:hover { background: color-mix(in srgb, var(--accent) 84%, var(--foreground)); }
 .landing-header-cta:active { transform: translateY(1px); }
 .landing-menu-button { display: none; min-width: 40px; min-height: 40px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); }
 .landing-menu-button span { width: 16px; height: 1px; background: currentColor; transition: transform var(--transition-control), opacity var(--transition-control); }
 
-.landing-hero { position: relative; display: grid; justify-items: center; gap: 20px; padding: 76px 0 52px; text-align: center; isolation: isolate; }
+/*
+ * One typeface across the product.
+ *
+ * Every heading here was Georgia — a serif, at weight 400 — while the Builder,
+ * the Dashboard and the pricing page are Geist at 600. Two typefaces is the
+ * fastest way to make one product look like two, and the landing is the first
+ * thing anybody sees.
+ *
+ * The weight and the tracking move with it: 400 reads editorial in a serif and
+ * thin in Geist, and -.045em is serif tracking that closes sans letterforms up
+ * at 60px.
+ */
+/*
+ * The column may not grow past the viewport.
+ *
+ * `justify-items: center` sizes the column on its widest child, and the
+ * composer below is a fixed 480px — so the whole hero became 480px wide and
+ * overflowed every phone by the difference, h1 included. `minmax(0, 1fr)` is
+ * what stops a grid column from being sized by its content.
+ */
+.landing-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 20px; padding: 76px 0 52px; text-align: center; isolation: isolate; }
 .landing-hero-atmosphere { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; opacity: .13; }
 .landing-hero-atmosphere span { position: absolute; width: 220px; height: 120px; border-radius: var(--radius-full); background: color-mix(in srgb, var(--accent) 70%, var(--surface)); filter: blur(44px); }
 .landing-hero-atmosphere span:first-child { top: 8%; left: 18%; }
 .landing-hero-atmosphere span:nth-child(2) { top: 22%; right: 15%; background: color-mix(in srgb, var(--accent-soft) 75%, var(--surface)); }
 .landing-hero-atmosphere span:last-child { bottom: 6%; left: 42%; background: color-mix(in srgb, var(--accent) 50%, var(--surface)); }
 .landing-beta { margin: 0; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-full); color: var(--accent); font: 10px/1.2 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
-.landing-hero h1, .landing-section-heading h2, .landing-final-cta h2 { margin: 0; color: var(--text-strong); font-family: Georgia, var(--font-sans); font-weight: 400; letter-spacing: -.045em; line-height: 1.04; text-wrap: balance; }
+.landing-hero h1, .landing-section-heading h2, .landing-final-cta h2 { margin: 0; color: var(--text-strong); font-family: var(--font-sans); font-weight: 600; letter-spacing: -.022em; line-height: 1.04; text-wrap: balance; }
 .landing-hero h1 { position: relative; max-width: 800px; font-size: clamp(38px, 5.1vw, 60px); }
 .landing-hero h1 .landing-hero-line { display: block; white-space: normal; }
 .landing-hero-subtitle { position: relative; max-width: 560px; margin: 0; color: var(--text-secondary); font-size: 15px; line-height: 1.55; }
 .landing-composer-shell { position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; padding: 2px 0; }
 .landing-composer-host { width: 100%; min-height: 116px; display: flex; align-items: flex-end; justify-content: center; overflow: visible; }
 .landing-hero .landing-composer-host { height: 116px; }
-.landing-composer-host .coden-prompt-input { width: 480px !important; max-width: 100% !important; }
+/*
+ * 480px where there is room for it, the viewport where there is not.
+ *
+ * `max-width: 100%` could not cap this: it resolved against a grid column the
+ * fixed width had itself created.
+ */
+.landing-composer-host .coden-prompt-input { width: min(480px, 100%) !important; }
 .landing-composer-host .coden-prompt-input > div:last-of-type { border-radius: var(--radius-xl) !important; border-color: var(--border) !important; background: var(--input) !important; box-shadow: var(--shadow-md) !important; }
 .landing-composer-host .coden-prompt-input textarea { color: var(--foreground) !important; text-align: left !important; }
 .landing-composer-host .coden-prompt-input textarea::placeholder { color: var(--text-muted) !important; opacity: .82; }
@@ -80,7 +108,7 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-video-head { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 0 16px; border-bottom: 1px solid var(--border-subtle); color: var(--text-muted); font: 10px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
 .landing-video-stage { display: grid; min-height: 360px; place-items: center; gap: 18px; padding: 48px 24px; background: var(--surface-soft); color: var(--text-secondary); text-align: center; }
 .landing-video-stage > div { display: grid; gap: 8px; }
-.landing-video-stage h2 { margin: 0; color: var(--text-strong); font-family: Georgia, var(--font-sans); font-size: clamp(28px, 4vw, 44px); font-weight: 400; letter-spacing: -.04em; line-height: 1.05; text-wrap: balance; }
+.landing-video-stage h2 { margin: 0; color: var(--text-strong); font-family: var(--font-sans); font-weight: 600; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.022em; line-height: 1.05; text-wrap: balance; }
 .landing-video-stage p { margin: 0; color: var(--text-muted); font-size: 13px; }
 .landing-video-play { display: grid; width: 56px; height: 56px; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
 .landing-video-play svg { width: 22px; height: 22px; margin-left: 2px; }
@@ -129,7 +157,7 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-gallery-dialog::backdrop { background: color-mix(in srgb, var(--foreground) 54%, transparent); backdrop-filter: blur(6px); }
 .landing-gallery-dialog-inner { display: grid; gap: 20px; padding: 28px; }
 .landing-gallery-dialog-head { display: flex; align-items: start; justify-content: space-between; gap: 24px; }
-.landing-gallery-dialog-head h2 { margin: 4px 0 0; color: var(--text-strong); font-family: Georgia, var(--font-sans); font-size: clamp(28px, 4vw, 44px); font-weight: 400; letter-spacing: -.04em; line-height: 1.05; }
+.landing-gallery-dialog-head h2 { margin: 4px 0 0; color: var(--text-strong); font-family: var(--font-sans); font-weight: 600; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.022em; line-height: 1.05; }
 .landing-gallery-dialog-head button { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface); color: var(--text-secondary); cursor: pointer; font-size: 22px; line-height: 1; transition: color var(--transition-control), border-color var(--transition-control), transform var(--transition-micro); }
 .landing-gallery-dialog-head button:hover { border-color: var(--accent); color: var(--accent); }
 .landing-gallery-dialog-head button:active { transform: scale(.96); }
@@ -172,17 +200,17 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-case-study { display: grid; gap: 28px; min-height: 420px; padding: clamp(24px, 4vw, 48px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-soft); transition: border-color var(--transition-panel), box-shadow var(--transition-panel), transform var(--transition-panel); }
 .landing-case-study.is-active { border-color: var(--accent-soft); box-shadow: 0 20px 54px color-mix(in srgb, var(--accent) 12%, transparent); }
 .landing-case-study-brand { display: inline-flex; align-items: center; gap: 11px; color: var(--text-strong); font-size: 16px; }
-.landing-case-study-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: var(--foreground); color: var(--background); font-size: 20px; }
+.landing-case-study-mark { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--radius-md); background: var(--foreground); color: var(--background); font-size: 20px; }
 .landing-case-study-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(220px, .75fr); gap: 48px; align-items: center; }
 .landing-case-study-context { max-width: 560px; margin: 0 0 26px; color: var(--text-secondary); font-size: 15px; line-height: 1.55; }
-.landing-case-study blockquote { max-width: 620px; margin: 0; padding-left: 24px; border-left: 2px solid var(--accent); color: var(--text-strong); font-size: clamp(24px, 3.5vw, 42px); font-weight: 650; letter-spacing: -.045em; line-height: 1.08; text-wrap: balance; }
+.landing-case-study blockquote { max-width: 620px; margin: 0; padding-left: 24px; border-left: 2px solid var(--accent); color: var(--text-strong); font-size: clamp(24px, 3.5vw, 42px); font-weight: 650; letter-spacing: -.022em; line-height: 1.08; text-wrap: balance; }
 .landing-case-study dl { display: grid; gap: 24px; margin: 0; }
 .landing-case-study dl div { display: grid; gap: 3px; }
-.landing-case-study dt { color: var(--text-strong); font-family: Georgia, var(--font-sans); font-size: clamp(28px, 3.7vw, 46px); letter-spacing: -.04em; line-height: 1; }
+.landing-case-study dt { color: var(--text-strong); font-family: var(--font-sans); font-weight: 600; font-size: clamp(28px, 3.7vw, 46px); letter-spacing: -.022em; line-height: 1; }
 .landing-case-study dd { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.45; }
 .landing-case-study-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 22px; border-top: 1px solid var(--border); }
 .landing-case-study-person { display: inline-flex; align-items: center; gap: 11px; }
-.landing-case-study-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 12px; background: var(--accent-soft); color: var(--foreground); font: 700 11px var(--font-mono); }
+.landing-case-study-avatar { display: grid; width: 40px; height: 40px; place-items: center; border-radius: var(--radius-md); background: var(--accent-soft); color: var(--foreground); font: 700 11px var(--font-mono); }
 .landing-case-study-person span:last-child { display: grid; gap: 3px; }
 .landing-case-study-person strong { color: var(--text-strong); font-size: 13px; }
 .landing-case-study-person small { color: var(--text-muted); font-size: 11px; }
@@ -206,7 +234,7 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-pricing-tier select:hover { border-color: var(--accent); }
 .landing-pricing-tier select:focus-visible, .landing-cycle button:focus-visible, .landing-theme-toggle:focus-visible, .landing-menu-button:focus-visible, .landing-gallery-trigger:focus-visible, .landing-gallery-dialog-head button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .landing-price { display: flex; align-items: baseline; gap: 4px; min-height: 52px; }
-.landing-price strong { color: var(--text-strong); font-family: Georgia, var(--font-sans); font-size: 36px; font-weight: 400; letter-spacing: -.04em; }
+.landing-price strong { color: var(--text-strong); font-family: var(--font-sans); font-weight: 600; font-size: 36px; letter-spacing: -.022em; }
 .landing-price small, .landing-pricing-grid article > small { color: var(--text-muted); font-size: 10px; }
 .landing-pricing-grid hr { width: 100%; margin: 14px 0; border: 0; border-top: 1px solid var(--border); }
 .landing-pricing-grid ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: var(--text-secondary); font-size: 12px; }
@@ -228,8 +256,6 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
 .landing-final-cta { display: grid; justify-items: center; gap: 18px; margin-bottom: 0; padding: clamp(32px, 5vw, 64px); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--sidebar); text-align: center; }
 .landing-final-cta h2 { max-width: none; font-size: clamp(28px, 4vw, 48px); white-space: nowrap; }
 .landing-final-cta p { margin: 0; color: var(--text-secondary); font-size: 14px; }
-.landing-final-cta a { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; padding: 0 16px; border-radius: var(--radius-sm); background: var(--accent); color: var(--background); font-size: 12px; font-weight: 600; transition: opacity var(--transition-control); }
-.landing-final-cta a:hover { opacity: .84; }
 .landing-footer { border-top: 1px solid var(--border); padding: 44px 0 40px; }
 .landing-footer-grid { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 32px; }
 .landing-footer-brand { display: grid; align-content: start; gap: 12px; max-width: 260px; }
@@ -291,3 +317,32 @@ html[data-coden-reveal="on"] body[data-coden-surface="landing-new"] [data-coden-
   .landing-proof-logos-track, .landing-feature-panel:not([hidden]) { animation: none; }
   .landing-feature-row small, .landing-pricing-grid article > a, .landing-header-cta, .landing-faq-list summary span, .landing-example-card small::after, .landing-case-study { transition: none; }
 }
+
+/*
+ * The landing points at the pricing page instead of restating it.
+ *
+ * The section this replaces carried its own plan cards with prices written
+ * into the markup — a second source of truth that could drift from the
+ * catalogue, and did not know whether the reader already had a plan. One
+ * sentence and a link is the whole job here; everything that needs the
+ * catalogue, the interval, the credit tier and the signed-in state lives on
+ * the page built for it.
+ */
+.landing-pricing-invite .landing-section-heading { gap: 18px; }
+.landing-pricing-invite-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  padding: 11px 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 550;
+  text-decoration: none;
+  transition: border-color 180ms ease, background-color 180ms ease, gap 180ms ease;
+}
+.landing-pricing-invite-cta:hover { border-color: var(--foreground); background: var(--surface-hover); gap: 12px; }
+.landing-pricing-invite-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .landing-pricing-invite-cta { transition: none; } }

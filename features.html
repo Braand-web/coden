@@ -50,44 +50,6 @@
     <div class="navbar-line"></div>
     <div id="coden-marketing-header-root" aria-live="off"></div>
 
-    <nav class="navbar" hidden aria-hidden="true">
-        <a href="/" class="logo">
-            <div class="logo-mark">
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                    <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
-                    <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
-                    <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
-                    <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
-                </svg>
-            </div>
-            <span class="logo-text">Coden</span>
-        </a>
-        <div class="nav-links">
-            <a href="/pricing.html" class="nav-link-item">Pricing</a>
-            <a href="/dashboard.html" class="nav-link-item">Dashboard</a>
-            <a href="/builder.html" class="nav-link-item">Builder</a>
-        </div>
-        <div class="nav-actions">
-            <button class="theme-toggle" id="theme-btn">
-                <svg id="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                </svg>
-                <svg id="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
-                    <circle cx="12" cy="12" r="5"></circle>
-                    <line x1="12" y1="1" x2="12" y2="3"></line>
-                    <line x1="12" y1="21" x2="12" y2="23"></line>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                    <line x1="1" y1="12" x2="3" y2="12"></line>
-                    <line x1="21" y1="12" x2="23" y2="12"></line>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                </svg>
-            </button>
-            <button class="sign-in-btn">Sign In</button>
-        </div>
-    </nav>
-
     <header class="page-hero">
         <h1>Features Built Around Real Product Work</h1>
         <p class="hero-subtitle">Plan, generate, verify, iterate and publish web apps from one workspace without losing the thread.</p>
@@ -104,49 +66,14 @@
         <p>Generated apps are checked for safe paths, usable preview output, basic SEO structure, responsive behavior and obvious runtime issues. Coden then supports publish status, Coden-domain URLs, custom-domain planning and free-plan attribution.</p>
     </div>
 
-    <footer class="footer">
-        <div class="footer-grid">
-            <div class="footer-brand">
-                <a href="/" class="logo">
-                    <div class="logo-mark">
-                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                            <rect width="32" height="32" rx="8" fill="var(--foreground)"/>
-                            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/>
-                            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/>
-                            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/>
-                        </svg>
-                    </div>
-                    <span class="logo-text">Coden</span>
-                </a>
-                <p>The next generation of <span class="neon-highlight neon-static">AI-native</span> software development.</p>
-            </div>
-            <div class="footer-col">
-                <h5>Product</h5>
-                <ul class="footer-links">
-                    <li><a href="/features.html">Features</a></li>
-                    <li><a href="/pricing.html">Pricing</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5>Resources</h5>
-                <ul class="footer-links">
-                    <li><a href="/documentation.html">Documentation</a></li>
-                </ul>
-            </div>
-            <div class="footer-col">
-                <h5>Company</h5>
-                <ul class="footer-links">
-                    <li><a href="/privacy.html">Privacy</a></li>
-                    <li><a href="/security.html">Security</a></li>
-                    <li><a href="/terms.html">Terms</a></li>
-                </ul>
-            </div>
-        </div>
-        <div class="footer-bottom">
-            <span>© 2026 Coden Inc.</span>
-            <div style="display:flex;gap:20px;" aria-label="Social links">
-                <span style="color:inherit;opacity:.7;">Social profiles coming soon</span>
-            </div>
+    <footer class="footer coden-site-footer">
+        <div class="coden-site-footer-bottom">
+            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span></a> @coden2026</span>
+            <span>
+                <a href="/privacy.html">Privacy</a>
+                <a href="/terms.html">Terms</a>
+                <a href="mailto:contact@coden.fun">Contact</a>
+            </span>
         </div>
     </footer>
 

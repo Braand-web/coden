@@ -54,7 +54,7 @@
   margin: 10px 0 14px;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--input, var(--surface)) 92%, var(--background) 8%);
 }
 .coden-response-code-header {
@@ -104,7 +104,7 @@
   margin: 10px 0 14px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 .coden-response table { width: 100%; min-width: 360px; border-collapse: collapse; font-size: 14px; }
 .coden-response th,
