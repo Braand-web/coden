@@ -1,4 +1,4 @@
-import './main';
+import './public-page';
 import './pricing-page.css';
 import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
 

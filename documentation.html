@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!doctype html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Coden Documentation — Build Production Apps With AI</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Documentation Coden — Bien construire avec l’agent</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps." />
+  <meta name="description" content="Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/documentation.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,67 +16,48 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden Documentation — Build Production Apps With AI" />
-  <meta property="og:description" content="Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps." />
+  <meta property="og:title" content="Documentation Coden — Bien construire avec l’agent" />
+  <meta property="og:description" content="Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden." />
   <meta property="og:url" content="https://coden.fun/documentation.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden Documentation — Build Production Apps With AI" />
-  <meta name="twitter:description" content="Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:title" content="Documentation Coden — Bien construire avec l’agent" />
+  <meta name="twitter:description" content="Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden Documentation — Build Production Apps With AI",
-  "description": "Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps.",
+  "name": "Documentation Coden — Bien construire avec l’agent",
+  "description": "Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden.",
   "url": "https://coden.fun/documentation.html"
 }</script>
   <!-- CODEN_SEO_END -->
   <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-    <link rel="stylesheet" href="/src/index.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
 </head>
 <body data-coden-surface="public">
-    <div id="curtain"></div>
-    <div class="navbar-line"></div>
-    <div id="coden-marketing-header-root" aria-live="off"></div>
-
-    <header class="page-hero">
-        <h1>Coden Documentation</h1>
-        <p class="hero-subtitle">A practical guide to getting clear results from Coden: when to chat, when to plan, when to build and when to publish.</p>
+  <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+  <main id="main-content">
+    <header class="public-page-hero" data-public-reveal>
+      <p class="public-page-kicker">Documentation</p>
+      <h1>Donnez à Coden le contexte dont votre produit a besoin.</h1>
+      <p>Un bon résultat commence par une intention claire, continue avec un aperçu vérifiable et se termine par une publication volontaire.</p>
     </header>
-
-    <div class="page-content">
-        <h2>Start with the right intent</h2>
-        <p>Use Auto when you want Coden to decide whether to answer, plan or build. Use Plan when scope is unclear. Use Build when the app, page, API or UI change is specific enough to safely modify project files.</p>
-        
-        <h2>Write better prompts</h2>
-        <p>Describe the target user, the primary workflow, required screens, data objects, integrations, visual mood and what must not be changed. Coden can ask follow-up questions when the prompt is too vague.</p>
-        
-        <h2>Iterate safely</h2>
-        <p>After generation, ask for focused edits like button color, layout density, mobile behavior or form validation. Preview can change freely, but the published app changes only after you click Publish.</p>
-    </div>
-
-    <footer class="footer coden-site-footer">
-        <div class="coden-site-footer-bottom">
-            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span></a> @coden2026</span>
-            <span>
-                <a href="/privacy.html">Privacy</a>
-                <a href="/terms.html">Terms</a>
-                <a href="mailto:contact@coden.fun">Contact</a>
-            </span>
-        </div>
-    </footer>
-
-    <script type="module" src="/src/main.ts"></script>
+    <section class="public-page-content" aria-label="Principes de démarrage">
+      <article data-public-reveal><span>01</span><h2>Choisissez le bon mode</h2><p>Utilisez Auto pour laisser Coden décider, Plan lorsque le périmètre reste flou et Build lorsque la modification est prête à être exécutée.</p></article>
+      <article data-public-reveal><span>02</span><h2>Décrivez le produit, pas seulement l’écran</h2><p>Précisez l’utilisateur, le parcours, les données, les contraintes visuelles et les éléments qui ne doivent pas changer.</p></article>
+      <article data-public-reveal><span>03</span><h2>Itérez par demandes ciblées</h2><p>Demandez une correction de composant, de responsive ou de comportement, vérifiez l’aperçu, puis publiez seulement la version validée.</p></article>
+    </section>
+    <section class="public-page-cta" data-public-reveal aria-labelledby="docs-cta-title"><h2 id="docs-cta-title">Passez de votre brief au premier écran.</h2><p>Votre demande reste attachée au projet pendant le passage par la connexion et l’ouverture du Builder.</p><a href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" data-conversion-event="start_building_click" data-conversion-place="documentation">Créer mon application</a></section>
+  </main>
+  <div id="coden-marketing-footer-root"></div>
+  <script type="module" src="/src/public-page.ts"></script>
 </body>
 </html>

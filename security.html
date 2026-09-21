@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!doctype html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Coden Security — Safer AI App Generation</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sécurité Coden — Projets, secrets et publication</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Security practices for Coden projects, generated apps, secrets, billing and deployment workflows." />
+  <meta name="description" content="Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/security.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,67 +16,48 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden Security — Safer AI App Generation" />
-  <meta property="og:description" content="Security practices for Coden projects, generated apps, secrets, billing and deployment workflows." />
+  <meta property="og:title" content="Sécurité Coden — Projets, secrets et publication" />
+  <meta property="og:description" content="Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden." />
   <meta property="og:url" content="https://coden.fun/security.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden Security — Safer AI App Generation" />
-  <meta name="twitter:description" content="Security practices for Coden projects, generated apps, secrets, billing and deployment workflows." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:title" content="Sécurité Coden — Projets, secrets et publication" />
+  <meta name="twitter:description" content="Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden Security — Safer AI App Generation",
-  "description": "Security practices for Coden projects, generated apps, secrets, billing and deployment workflows.",
+  "name": "Sécurité Coden — Projets, secrets et publication",
+  "description": "Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden.",
   "url": "https://coden.fun/security.html"
 }</script>
   <!-- CODEN_SEO_END -->
   <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-    <link rel="stylesheet" href="/src/index.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
 </head>
 <body data-coden-surface="public">
-    <div id="curtain"></div>
-    <div class="navbar-line"></div>
-    <div id="coden-marketing-header-root" aria-live="off"></div>
-
-    <header class="page-hero">
-        <h1>Security and Trust</h1>
-        <p class="hero-subtitle">Coden keeps the public product experience useful while protecting secrets, internal costs and provider details from user-facing surfaces.</p>
+  <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+  <main id="main-content">
+    <header class="public-page-hero" data-public-reveal>
+      <p class="public-page-kicker">Sécurité</p>
+      <h1>Des limites claires entre création, secrets et publication.</h1>
+      <p>Coden protège les surfaces privées, sépare l’aperçu de la version publique et garde les informations sensibles hors du frontend généré.</p>
     </header>
-
-    <div class="page-content">
-        <h2>Sensitive data boundaries</h2>
-        <p>User endpoints must never expose provider cost, platform margin, Stripe fees, raw provider payloads, supplier invoice IDs or secrets. Admin-only data stays behind protected roles.</p>
-        
-        <h2>Safer generated output</h2>
-        <p>The builder checks generated paths, blocks dangerous filenames, avoids committing environment files and treats external keys as explicit user-controlled configuration.</p>
-        
-        <h2>Auth, publish and ownership</h2>
-        <p>Published apps remain separate from builder preview, free apps can show Coden attribution, and owner-aware links route owners back to the builder while public visitors reach the Coden entry point.</p>
-    </div>
-
-    <footer class="footer coden-site-footer">
-        <div class="coden-site-footer-bottom">
-            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span></a> @coden2026</span>
-            <span>
-                <a href="/privacy.html">Privacy</a>
-                <a href="/terms.html">Terms</a>
-                <a href="mailto:contact@coden.fun">Contact</a>
-            </span>
-        </div>
-    </footer>
-
-    <script type="module" src="/src/main.ts"></script>
+    <section class="public-page-content" aria-label="Principes de sécurité">
+      <article data-public-reveal><span>01</span><h2>Secrets hors du navigateur</h2><p>Les clés privées et les jetons ne doivent jamais être injectés dans le code client. Les valeurs sensibles restent dans les environnements prévus côté serveur.</p></article>
+      <article data-public-reveal><span>02</span><h2>Sorties générées vérifiées</h2><p>Les chemins dangereux, les fichiers d’environnement et les erreurs évidentes sont contrôlés avant qu’une génération soit présentée comme terminée.</p></article>
+      <article data-public-reveal><span>03</span><h2>Publication explicite</h2><p>L’aperçu peut évoluer sans modifier le site en ligne. La publication et les domaines sont contrôlés côté serveur et réservés aux abonnements actifs.</p></article>
+    </section>
+    <section class="public-page-cta" data-public-reveal aria-labelledby="security-cta-title"><h2 id="security-cta-title">Gardez le contrôle jusqu’à la mise en ligne.</h2><p>Construisez en privé, vérifiez le résultat et publiez uniquement la version que vous avez choisie.</p><a href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" data-conversion-event="start_building_click" data-conversion-place="security">Créer mon application</a></section>
+  </main>
+  <div id="coden-marketing-footer-root"></div>
+  <script type="module" src="/src/public-page.ts"></script>
 </body>
 </html>

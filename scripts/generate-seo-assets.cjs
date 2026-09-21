@@ -8,12 +8,12 @@ const routePolicy = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public
 
 const existingPages = [
   { file: 'index.html', path: '/', title: 'Coden — Transformez une idée en application web avec l’IA', description: 'Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.' },
-  { file: 'pricing.html', path: '/pricing.html', title: 'Coden Pricing — Build, preview and publish web apps', description: 'Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications.' },
-  { file: 'features.html', path: '/features.html', title: 'Coden Features — Plan, Build, Database, Preview and Deploy', description: 'Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment.' },
-  { file: 'documentation.html', path: '/documentation.html', title: 'Coden Documentation — Build Production Apps With AI', description: 'Learn how to use Coden to plan, generate, preview, fix, export and deploy AI-built web apps.' },
-  { file: 'security.html', path: '/security.html', title: 'Coden Security — Safer AI App Generation', description: 'Security practices for Coden projects, generated apps, secrets, billing and deployment workflows.' },
-  { file: 'privacy.html', path: '/privacy.html', title: 'Coden Privacy — Data and Project Privacy', description: 'How Coden handles prompts, project files, assets, analytics and workspace data.' },
-  { file: 'terms.html', path: '/terms.html', title: 'Coden Terms - Product Terms and Usage Rules', description: 'Terms for using Coden to generate, preview, iterate and publish web apps.' },
+  { file: 'pricing.html', path: '/pricing.html', title: 'Tarifs Coden — Crédits, publication et domaines', description: 'Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés.' },
+  { file: 'features.html', path: '/features.html', title: 'Fonctionnalités Coden — Construire, vérifier et publier', description: 'Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web.' },
+  { file: 'documentation.html', path: '/documentation.html', title: 'Documentation Coden — Bien construire avec l’agent', description: 'Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden.' },
+  { file: 'security.html', path: '/security.html', title: 'Sécurité Coden — Projets, secrets et publication', description: 'Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden.' },
+  { file: 'privacy.html', path: '/privacy.html', title: 'Confidentialité Coden — Comptes, prompts et projets', description: 'Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication.' },
+  { file: 'terms.html', path: '/terms.html', title: 'Conditions Coden — Règles d’utilisation du service', description: 'Consultez les règles principales concernant les comptes, contenus générés, crédits, aperçus et publications Coden.' },
 ];
 
 const noindexPages = [
@@ -340,16 +340,16 @@ ${faviconHead()}
   <meta property="og:title" content="${esc(page.title)}" />
   <meta property="og:description" content="${esc(page.description)}" />
   <meta property="og:url" content="${url}" />
-  <meta property="og:image" content="${siteUrl}/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="${siteUrl}/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(page.title)}" />
   <meta name="twitter:description" content="${esc(page.description)}" />
-  <meta name="twitter:image" content="${siteUrl}/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:image" content="${siteUrl}/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
 ${schema.map(jsonLd).join('\n')}`;
 }
 
@@ -484,7 +484,16 @@ function injectHeadMeta(page) {
   const url = `${siteUrl}${page.path}`;
   const markerStart = '<!-- CODEN_SEO_START -->';
   const markerEnd = '<!-- CODEN_SEO_END -->';
-  const robots = noindexPages.some(item => item.file === page.file) ? '<meta name="robots" content="noindex, nofollow" />' : '<meta name="robots" content="index, follow" />';
+  const isPrivatePage = noindexPages.some(item => item.file === page.file);
+  const robots = isPrivatePage ? '<meta name="robots" content="noindex, nofollow" />' : '<meta name="robots" content="index, follow" />';
+  // Private product surfaces stay byte-for-byte outside the public redesign.
+  // Their social metadata is irrelevant because they are noindex, so preserve
+  // the asset contract they already had instead of rewriting Builder/Dashboard.
+  const socialImage = isPrivatePage ? `${siteUrl}/og-coden.svg` : `${siteUrl}/og-coden.png`;
+  const socialImageAlt = isPrivatePage
+    ? 'Coden — AI app builder for building and publishing web apps'
+    : 'Coden — Transformez une idée en application web';
+  const socialImageType = isPrivatePage ? 'image/svg+xml' : 'image/png';
   const schema = page.path === '/'
     ? [
       {
@@ -536,16 +545,16 @@ ${faviconHead()}
   <meta property="og:title" content="${esc(page.title)}" />
   <meta property="og:description" content="${esc(page.description)}" />
   <meta property="og:url" content="${url}" />
-  <meta property="og:image" content="${siteUrl}/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="${socialImage}" />
+  <meta property="og:image:alt" content="${socialImageAlt}" />
+  <meta property="og:image:type" content="${socialImageType}" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(page.title)}" />
   <meta name="twitter:description" content="${esc(page.description)}" />
-  <meta name="twitter:image" content="${siteUrl}/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:image" content="${socialImage}" />
+  <meta name="twitter:image:alt" content="${socialImageAlt}" />
   ${schema.map(jsonLd).join('\n  ')}
   ${markerEnd}`;
   html = html.replace(/<title>[^<]*<\/title>/, `<title>${esc(page.title)}</title>`);

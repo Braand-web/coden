@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Coden Pricing — Build, preview and publish web apps</title>
+  <title>Tarifs Coden — Crédits, publication et domaines</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
+  <meta name="description" content="Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/pricing.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,24 +16,24 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden Pricing — Build, preview and publish web apps" />
-  <meta property="og:description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
+  <meta property="og:title" content="Tarifs Coden — Crédits, publication et domaines" />
+  <meta property="og:description" content="Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés." />
   <meta property="og:url" content="https://coden.fun/pricing.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden Pricing — Build, preview and publish web apps" />
-  <meta name="twitter:description" content="Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:title" content="Tarifs Coden — Crédits, publication et domaines" />
+  <meta name="twitter:description" content="Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden Pricing — Build, preview and publish web apps",
-  "description": "Choose a Coden plan to turn ideas into web apps, preview changes, improve projects and publish verified applications.",
+  "name": "Tarifs Coden — Crédits, publication et domaines",
+  "description": "Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés.",
   "url": "https://coden.fun/pricing.html"
 }</script>
   <!-- CODEN_SEO_END -->
@@ -45,14 +45,14 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
   <link rel="stylesheet" href="/src/index.css" />
 </head>
-<body class="coden-pricing-page">
-  <a class="pricing-skip-link" href="#pricing-main">Passer au contenu</a>
+<body class="coden-pricing-page" data-coden-surface="pricing">
+  <a class="pricing-skip-link" href="#main-content">Passer au contenu</a>
   <div id="curtain" aria-hidden="true"></div>
-  <div id="coden-marketing-header-root" aria-live="off"></div>
+  <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
 
   <!-- Fallback SEO chrome. The React shell replaces it once JavaScript is ready. -->
 
-  <main id="pricing-main" class="pricing-page-main">
+  <main id="main-content" class="pricing-page-main">
     <section class="pricing-page-hero" aria-labelledby="pricing-title">
       <p class="pricing-eyebrow"><span aria-hidden="true"></span>Tarifs Coden</p>
       <h1 id="pricing-title">Transformez votre idée en application web.<br /><span>Payez pour ce que vous utilisez.</span></h1>
@@ -198,11 +198,7 @@
     </section>
   </main>
 
-  <footer class="pricing-footer">
-    <a href="/" class="pricing-footer-brand"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span>Coden</a>
-    <p>De l’idée au produit web vérifié.</p>
-    <nav aria-label="Liens de pied de page"><a href="/privacy.html">Confidentialité</a><a href="/terms.html">Conditions</a><a href="mailto:contact@coden.fun">Contact</a></nav>
-  </footer>
+  <div id="coden-marketing-footer-root"></div>
   <script type="module" src="/src/pricing-page.ts"></script>
 </body>
 </html>

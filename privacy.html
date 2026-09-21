@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!doctype html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Coden Privacy — Data and Project Privacy</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confidentialité Coden — Comptes, prompts et projets</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="How Coden handles prompts, project files, assets, analytics and workspace data." />
+  <meta name="description" content="Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/privacy.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,67 +16,49 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden Privacy — Data and Project Privacy" />
-  <meta property="og:description" content="How Coden handles prompts, project files, assets, analytics and workspace data." />
+  <meta property="og:title" content="Confidentialité Coden — Comptes, prompts et projets" />
+  <meta property="og:description" content="Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication." />
   <meta property="og:url" content="https://coden.fun/privacy.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden Privacy — Data and Project Privacy" />
-  <meta name="twitter:description" content="How Coden handles prompts, project files, assets, analytics and workspace data." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:title" content="Confidentialité Coden — Comptes, prompts et projets" />
+  <meta name="twitter:description" content="Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden Privacy — Data and Project Privacy",
-  "description": "How Coden handles prompts, project files, assets, analytics and workspace data.",
+  "name": "Confidentialité Coden — Comptes, prompts et projets",
+  "description": "Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication.",
   "url": "https://coden.fun/privacy.html"
 }</script>
   <!-- CODEN_SEO_END -->
   <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-    <link rel="stylesheet" href="/src/index.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
 </head>
 <body data-coden-surface="public">
-    <div id="curtain"></div>
-    <div class="navbar-line"></div>
-    <div id="coden-marketing-header-root" aria-live="off"></div>
-
-    <header class="page-hero">
-        <h1>Privacy Policy</h1>
-        <p class="hero-subtitle">We value your trust and are committed to protecting your personal data and intellectual property.</p>
+  <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+  <main id="main-content">
+    <header class="public-page-hero" data-public-reveal>
+      <p class="public-page-kicker">Confidentialité</p>
+      <h1>Vos projets restent vos projets.</h1>
+      <p>Cette page explique quelles données sont nécessaires au fonctionnement de Coden et dans quels cas elles sont transmises aux prestataires qui exécutent le service.</p>
     </header>
-
-    <div class="page-content">
-        <h2>Data Collection</h2>
-        <p>We collect only the minimum amount of data necessary to provide our services. This includes account information, usage data, and the prompts you provide to our AI agents.</p>
-        
-        <h2>Intellectual Property</h2>
-        <p>You own all rights to the code and applications generated using Coden. We do not use your proprietary code to train our base models unless you explicitly opt-in to custom model training.</p>
-        
-        <h2>Information Sharing</h2>
-        <p>We never sell your personal data to third parties. We only share information with service providers (like hosting platforms or AI model providers) to the extent necessary to deliver Coden's features.</p>
+    <div class="public-legal-content">
+      <section data-public-reveal><h2>Données collectées</h2><p>Coden traite les informations de compte, les données d’usage, les prompts, les fichiers et les paramètres nécessaires pour authentifier les utilisateurs, construire les projets, fournir les aperçus et gérer la facturation.</p></section>
+      <section data-public-reveal><h2>Propriété des projets</h2><p>Vous conservez vos droits sur les contenus, le code et les applications produits dans votre espace. Vous restez responsable des éléments que vous importez et des droits associés.</p></section>
+      <section data-public-reveal><h2>Prestataires techniques</h2><p>Les informations strictement nécessaires peuvent être transmises aux fournisseurs d’hébergement, de modèles, de paiement ou de déploiement utilisés pour exécuter la fonctionnalité demandée. Coden ne vend pas vos données personnelles.</p></section>
+      <section data-public-reveal><h2>Secrets et surfaces publiques</h2><p>Les clés privées ne doivent pas être placées dans le frontend généré. Les aperçus privés, le Dashboard et le Builder ne sont pas destinés à l’indexation publique.</p></section>
+      <section data-public-reveal><h2>Vos demandes</h2><p>Pour une question, une demande d’accès ou une demande de suppression liée à votre compte, contactez <a href="mailto:contact@coden.fun">contact@coden.fun</a>.</p></section>
     </div>
-
-    <footer class="footer coden-site-footer">
-        <div class="coden-site-footer-bottom">
-            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span></a> @coden2026</span>
-            <span>
-                <a href="/privacy.html">Privacy</a>
-                <a href="/terms.html">Terms</a>
-                <a href="mailto:contact@coden.fun">Contact</a>
-            </span>
-        </div>
-    </footer>
-
-    <script type="module" src="/src/main.ts"></script>
+  </main>
+  <div id="coden-marketing-footer-root"></div>
+  <script type="module" src="/src/public-page.ts"></script>
 </body>
 </html>

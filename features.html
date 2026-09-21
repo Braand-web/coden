@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<!doctype html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Coden Features — Plan, Build, Database, Preview and Deploy</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fonctionnalités Coden — Construire, vérifier et publier</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment." />
+  <meta name="description" content="Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/features.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,67 +16,48 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden Features — Plan, Build, Database, Preview and Deploy" />
-  <meta property="og:description" content="Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment." />
+  <meta property="og:title" content="Fonctionnalités Coden — Construire, vérifier et publier" />
+  <meta property="og:description" content="Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web." />
   <meta property="og:url" content="https://coden.fun/features.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden Features — Plan, Build, Database, Preview and Deploy" />
-  <meta name="twitter:description" content="Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:title" content="Fonctionnalités Coden — Construire, vérifier et publier" />
+  <meta name="twitter:description" content="Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web." />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden Features — Plan, Build, Database, Preview and Deploy",
-  "description": "Explore Coden features for AI-native app building: Plan/Build chat, Supabase-ready database, responsive preview, analytics and deployment.",
+  "name": "Fonctionnalités Coden — Construire, vérifier et publier",
+  "description": "Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web.",
   "url": "https://coden.fun/features.html"
 }</script>
   <!-- CODEN_SEO_END -->
   <script>try{const saved=localStorage.getItem('coden-theme');const theme=saved==='dark'||saved==='light'?saved:window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch{document.documentElement.dataset.theme='light'}</script>
-    <link rel="preconnect" href="https://fonts.googleapis.com"/>
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-    <link rel="stylesheet" href="/src/index.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
 </head>
 <body data-coden-surface="public">
-    <div id="curtain"></div>
-    <div class="navbar-line"></div>
-    <div id="coden-marketing-header-root" aria-live="off"></div>
-
-    <header class="page-hero">
-        <h1>Features Built Around Real Product Work</h1>
-        <p class="hero-subtitle">Plan, generate, verify, iterate and publish web apps from one workspace without losing the thread.</p>
+  <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+  <main id="main-content">
+    <header class="public-page-hero" data-public-reveal>
+      <p class="public-page-kicker">Fonctionnalités</p>
+      <h1>Un seul espace pour construire, vérifier et publier.</h1>
+      <p>Coden garde la conversation, les fichiers, l’aperçu, les données et la publication dans le même flux de travail.</p>
     </header>
-
-    <div class="page-content">
-        <h2>Agent that understands intent</h2>
-        <p>Coden separates conversation, strategy, planning, editing, debugging, generation and publishing. Simple questions stay fast. Real build requests trigger the deeper workflow. Ambiguous requests get one useful clarification before files change.</p>
-        
-        <h2>Builder workspace</h2>
-        <p>The workspace keeps chat, streaming steps, preview, code, database notes, analysis and publish status together. Users can see what changed, stop a generation, continue iterating and keep the live app stable until they publish.</p>
-        
-        <h2>Quality and launch flow</h2>
-        <p>Generated apps are checked for safe paths, usable preview output, basic SEO structure, responsive behavior and obvious runtime issues. Coden then supports publish status, Coden-domain URLs, custom-domain planning and free-plan attribution.</p>
-    </div>
-
-    <footer class="footer coden-site-footer">
-        <div class="coden-site-footer-bottom">
-            <span><a href="/" class="coden-site-footer-brand" aria-label="Accueil Coden"><span class="coden-logo-mark" data-coden-logo aria-hidden="true"><svg width="20" height="20" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--foreground)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)"/></svg></span></a> @coden2026</span>
-            <span>
-                <a href="/privacy.html">Privacy</a>
-                <a href="/terms.html">Terms</a>
-                <a href="mailto:contact@coden.fun">Contact</a>
-            </span>
-        </div>
-    </footer>
-
-    <script type="module" src="/src/main.ts"></script>
+    <section class="public-page-content" aria-label="Fonctionnalités principales">
+      <article data-public-reveal><span>01</span><h2>Un agent qui comprend l’intention</h2><p>Auto choisit le bon type d’action. Plan clarifie le périmètre. Build modifie les fichiers lorsque la demande est assez précise.</p></article>
+      <article data-public-reveal><span>02</span><h2>Un aperçu qui montre le vrai produit</h2><p>Inspectez les écrans, les interactions, les états et le responsive pendant la création, puis demandez des corrections ciblées dans la conversation.</p></article>
+      <article data-public-reveal><span>03</span><h2>Une publication sous votre contrôle</h2><p>Les versions, le rollback, l’export, les domaines et la publication restent séparés du travail en cours jusqu’à votre décision.</p></article>
+    </section>
+    <section class="public-page-cta" data-public-reveal aria-labelledby="features-cta-title"><h2 id="features-cta-title">Décrivez ce que vous voulez construire.</h2><p>Commencez avec 5 crédits offerts une seule fois. Aucun paiement n’est demandé pour créer votre espace.</p><a href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" data-conversion-event="start_building_click" data-conversion-place="features">Créer mon application</a></section>
+  </main>
+  <div id="coden-marketing-footer-root"></div>
+  <script type="module" src="/src/public-page.ts"></script>
 </body>
 </html>
