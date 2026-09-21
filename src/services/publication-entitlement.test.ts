@@ -61,7 +61,7 @@ describe('publication entitlement', () => {
   it('takes existing sites offline after the seven-day grace period', async () => {
     const entitlement = await resolvePublicationEntitlement(fakeSupabase({
       plan_id: 'coden_business_v2',
-      credit_tier: 250,
+      credit_tier: 100,
       status: 'past_due',
       current_period_end: '2026-09-10T12:00:00.000Z',
     }), 'account', now);

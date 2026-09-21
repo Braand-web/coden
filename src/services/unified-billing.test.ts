@@ -9,8 +9,9 @@ describe('Coden V4 unified billing', () => {
     expect(Object.keys(getPublicPlans())).toEqual(['free', 'pro', 'business']);
     expect(BILLING_PLANS.free.grants).toEqual({ signupCredits: 5, monthlyEmailCount: 0 });
     expect(BILLING_PLANS.free.technicalAllowances).toEqual({ cloudBudgetUsd: 0, aiAppBudgetUsd: 0 });
-    expect(CREDIT_TIERS).toEqual([25, 60, 100, 250]);
-    expect(PUBLIC_PRICES).toHaveLength(CREDIT_TIERS.length * 2);
+    expect(CREDIT_TIERS).toEqual([25, 60, 100, 200, 400, 800, 1_200, 2_000, 3_000, 4_000, 5_000, 7_500, 10_000]);
+    expect(BILLING_PLANS.business.tiers).toEqual([100, 200, 400, 800, 1_200, 2_000, 3_000, 4_000, 5_000, 7_500, 10_000]);
+    expect(PUBLIC_PRICES).toHaveLength((BILLING_PLANS.pro.tiers.length + BILLING_PLANS.business.tiers.length) * 2);
     expect(TOPUP_PRODUCTS_V2.length).toBeGreaterThan(CREDIT_TIERS.length);
     expect(CLOUD_TOPUP_PRODUCTS).toEqual([]);
   });
@@ -27,7 +28,7 @@ describe('Coden V4 unified billing', () => {
     expect(publicationLimitsFor('pro', 25)).toEqual({ publishedSites: 1, customDomains: 1 });
     expect(publicationLimitsFor('pro', 60)).toEqual({ publishedSites: 3, customDomains: 3 });
     expect(publicationLimitsFor('pro', 100)).toEqual({ publishedSites: null, customDomains: 10 });
-    expect(publicationLimitsFor('business', 250)).toEqual({ publishedSites: null, customDomains: null });
+    expect(publicationLimitsFor('business', 100)).toEqual({ publishedSites: null, customDomains: null });
   });
 
   it('maps legacy Scale reads to Business without publishing Scale', () => {

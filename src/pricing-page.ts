@@ -1,6 +1,6 @@
 import './main';
 import './pricing-page.css';
-import { ANNUAL_DISCOUNT, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
+import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
 
 type PricingPlan = {
   key: 'free' | 'pro' | 'business';
@@ -109,7 +109,7 @@ function markCurrentPlan() {
 
 function updateCard(plan: 'pro' | 'business') {
   const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);
-  const credits = Number(select?.value || (plan === 'pro' ? 25 : 250));
+  const credits = Number(select?.value || 100);
   const price = priceFor(plan, credits);
   const priceNode = document.querySelector<HTMLElement>(`[data-pricing-price="${plan}"]`);
   const unitNode = document.querySelector<HTMLElement>(`[data-pricing-price-unit="${plan}"]`);
@@ -160,7 +160,7 @@ function renderCapabilities(plan: PricingPlan, selectedCredits = Number(plan.bas
     ];
   } else if (plan.key === 'business') {
     values = [
-      `${selectedCredits || 250} crédits chaque mois`,
+      `${selectedCredits || 100} crédits chaque mois`,
       'Sites publiés illimités',
       'Domaines personnalisés illimités',
       'Rôles et projets internes',
@@ -180,7 +180,7 @@ function syncTierOptions(plan: 'pro' | 'business', definition?: PricingPlan) {
   if (!select) return;
   const fromCatalog = (definition?.tiers || []).map(Number).filter(value => Number.isFinite(value) && value > 0);
   const fromPrices = prices.filter(price => price.plan === plan && price.interval === 'monthly').map(price => Number(price.credits));
-  const fallback = plan === 'pro' ? [25, 60, 100] : [250];
+  const fallback = plan === 'pro' ? [...PRO_CREDIT_TIERS] : [...BUSINESS_CREDIT_TIERS];
   const values = [...new Set((fromCatalog.length ? fromCatalog : fromPrices.length ? fromPrices : fallback))].sort((a, b) => a - b);
   const previous = Number(select.value);
   select.replaceChildren(...values.map(value => {

@@ -2,7 +2,7 @@ export type BillingPlanKey = 'free' | 'pro' | 'business' | 'enterprise';
 export type BillingInterval = 'monthly' | 'annual';
 export type UsageRestriction = 'build' | 'cloud' | 'ai_gateway' | 'general' | 'email';
 
-export const BILLING_V2_VERSION = '2026-09-19.canonical-v1';
+export const BILLING_V2_VERSION = '2026-09-21.canonical-v2';
 export const TARGET_GROSS_MARGIN = 0.80;
 export const MINIMUM_PAID_GROSS_MARGIN = 0.55;
 export const FREE_ACTIVE_USER_COGS_CAP_USD = 1;
@@ -10,9 +10,10 @@ export const ANNUAL_DISCOUNT = 0.20;
 export const TOPUP_PREMIUM = 0.25;
 export const BILLING_SETTLEMENT_CURRENCY = 'XAF' as const;
 export const BILLING_XAF_PER_USD = 600;
-export const PRO_CREDIT_TIERS = [25, 60, 100] as const;
-export const BUSINESS_CREDIT_TIERS = [250] as const;
-export const CREDIT_TIERS = [...PRO_CREDIT_TIERS, ...BUSINESS_CREDIT_TIERS] as const;
+export const LEGACY_CREDIT_TIERS = [100, 200, 400, 800, 1_200, 2_000, 3_000, 4_000, 5_000, 7_500, 10_000] as const;
+export const PRO_CREDIT_TIERS = [25, 60, ...LEGACY_CREDIT_TIERS] as const;
+export const BUSINESS_CREDIT_TIERS = [...LEGACY_CREDIT_TIERS] as const;
+export const CREDIT_TIERS = PRO_CREDIT_TIERS;
 export const TOPUP_TIERS = [50, 100, 150, 200, 250, 300, 400, 500, 1_000, 2_000, 3_000, 5_000, 10_000] as const;
 
 export type BillableAction = 'targeted_style' | 'component' | 'plan' | 'feature' | 'full_page';
@@ -68,19 +69,19 @@ export const BILLING_PLANS: Readonly<Record<BillingPlanKey, BillingPlan>> = {
   },
   pro: {
     id: 'coden_pro_v2', key: 'pro', name: 'Pro', public: true,
-    baseCredits: 25, baseMonthlyUsd: Number((5_000 / BILLING_XAF_PER_USD).toFixed(8)), tiers: PRO_CREDIT_TIERS,
+    baseCredits: 100, baseMonthlyUsd: Number((15_000 / BILLING_XAF_PER_USD).toFixed(8)), tiers: PRO_CREDIT_TIERS,
     grants: { signupCredits: 0, monthlyEmailCount: 1_000 },
     technicalAllowances: { cloudBudgetUsd: 0, aiAppBudgetUsd: 0 },
-    publication: publicationLimitsFor('pro', 25),
+    publication: publicationLimitsFor('pro', 100),
     capabilities: ['Édition et export du code', 'Versions et rollback', 'Publication publique', 'Domaines personnalisés', 'Recharges de crédits'],
   },
   business: {
     id: 'coden_business_v2', key: 'business', name: 'Business', public: true,
-    baseCredits: 250, baseMonthlyUsd: Number((30_000 / BILLING_XAF_PER_USD).toFixed(8)), tiers: BUSINESS_CREDIT_TIERS,
+    baseCredits: 100, baseMonthlyUsd: Number((30_000 / BILLING_XAF_PER_USD).toFixed(8)), tiers: BUSINESS_CREDIT_TIERS,
     grants: { signupCredits: 0, monthlyEmailCount: 5_000 },
     technicalAllowances: { cloudBudgetUsd: 0, aiAppBudgetUsd: 0 },
-    publication: publicationLimitsFor('business', 250),
-    capabilities: ['250 crédits par mois', 'Sites et domaines illimités', 'Rôles et projets internes', 'Modèles premium', 'Support prioritaire'],
+    publication: publicationLimitsFor('business', 100),
+    capabilities: ['100 à 10 000 crédits par mois', 'Sites et domaines illimités', 'Rôles et projets internes', 'Modèles premium', 'Support prioritaire'],
   },
   enterprise: {
     id: 'coden_enterprise_v2', key: 'enterprise', name: 'Enterprise', public: false,
@@ -107,12 +108,12 @@ export type PublicPrice = {
 export function priceFor(plan: 'pro' | 'business', credits: number, interval: BillingInterval): PublicPrice {
   if (!BILLING_PLANS[plan].tiers.includes(credits)) throw new Error(`Unsupported ${plan} credit tier: ${credits}`);
   const monthlyXaf = plan === 'business'
-    ? 30_000
+    ? credits * 300
     : credits === 25
       ? 5_000
       : credits === 60
         ? 10_000
-        : 15_000;
+        : credits * 150;
   const amount = interval === 'annual' ? Math.round(monthlyXaf * 12 * (1 - ANNUAL_DISCOUNT)) : monthlyXaf;
   const monthlyEquivalent = interval === 'annual' ? Math.round(amount / 12) : amount;
   const amountUsd = amount / BILLING_XAF_PER_USD;
