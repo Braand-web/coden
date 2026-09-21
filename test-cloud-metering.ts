@@ -12,6 +12,7 @@ import {
   unmeteredCategories,
   type CloudMeter,
 } from './src/services/cloud-metering.ts';
+import { BILLING_PLANS } from './src/config/billing-v2.ts';
 
 /*
  * Hosting is measured, and what it costs is derived rather than invented.
@@ -127,24 +128,27 @@ import {
 }
 
 /*
- * FIVE — the advertised allowance is no longer zero.
+ * FIVE — infrastructure allowance is not a second customer-credit wallet.
  *
- * `compatibilityCloud()` returned 0 for balance, storage and bandwidth on
- * every plan, while the same plans granted 20 cloud credits. The figures are
- * now derived from that grant rather than invented.
+ * Customer credits come from the canonical ledger. Cloud and runtime-AI
+ * budgets stay in their native USD units and must never be added to the
+ * balance shown in the Builder.
  */
 {
   const source = readFileSync(new URL('./src/services/billing-service.ts', import.meta.url), 'utf8');
   const fn = source.slice(source.indexOf('const compatibilityCloud ='), source.indexOf('function planConfig('));
 
-  assert.match(fn, /grants\.monthlyCloudCredits \* USD_PER_CLOUD_CREDIT/, 'the balance follows the declared grant');
+  assert.match(fn, /technicalAllowances/, 'compatibility reads the separate technical allowance');
+  assert.match(fn, /allowances\.cloudBudgetUsd/, 'Cloud budget remains denominated in USD');
+  assert.match(fn, /allowances\.aiAppBudgetUsd/, 'runtime AI budget remains denominated in USD');
   assert.match(fn, /rawCloudCostUsd\(meter, 1\) \* CLOUD_MARKUP/, 'the GB figures are what that grant buys at the metered price');
-  assert.doesNotMatch(fn, /balanceUsd: 0,/, 'the zeros are gone');
-  assert.doesNotMatch(fn, /bandwidthGb: 0,/, 'including the bandwidth one');
+  assert.doesNotMatch(fn, /monthlyCloudCredits|monthlyAiCredits/, 'legacy technical quotas are not customer credits');
+  assert.equal(BILLING_PLANS.free.grants.signupCredits, 5, 'Free exposes one customer grant only');
+  assert.equal(BILLING_PLANS.free.technicalAllowances.cloudBudgetUsd, 0);
 }
 
 /*
- * SIX — a real application fits inside the included allowance.
+ * SIX — metering remains economically sane independently of plan credits.
  *
  * This is the economic sanity check, and the one that would catch a pricing
  * table that is technically consistent and commercially absurd. An app with
@@ -162,12 +166,12 @@ import {
   ];
   const total = monthly.reduce((sum, [meter, quantity]) => sum + creditsForCloudUsage(meter, quantity), 0);
 
-  assert.ok(total < 20, `a real app fits in the 20-credit allowance, costs ${total.toFixed(2)}`);
+  assert.ok(total < 20, `a real app remains inexpensive to meter, costs ${total.toFixed(2)} equivalent credits`);
   assert.ok(total > 1, `and is not so cheap the meter is pointless, costs ${total.toFixed(2)}`);
 
-  // A genuinely heavy app must exceed it, or the allowance would never bill.
+  // A genuinely heavy app must remain materially more expensive.
   const heavy = creditsForCloudUsage('database_egress_gb', 200) + creditsForCloudUsage('worker_requests', 5_000_000);
-  assert.ok(heavy > 20, `a heavy app exceeds the allowance, costs ${heavy.toFixed(2)}`);
+  assert.ok(heavy > 20, `a heavy app crosses the economic guardrail, costs ${heavy.toFixed(2)}`);
 }
 
 console.log('cloud metering tests passed');

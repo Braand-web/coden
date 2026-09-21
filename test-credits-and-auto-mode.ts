@@ -54,15 +54,12 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
 }
 
 /*
- * THREE — the work is billed.
+ * THREE — work is reserved before provider spend and settled after delivery.
  *
- * The multi-agent branch has run every build, edit and repair since its flag
- * went on, and carried no charge at all — no reservation, no ledger write.
- * The conversation branch charges, so the cheap turns were billed and the
- * expensive ones were free. Production settles it: on 2026-09-12 the ledger
- * holds three usage rows against nine turns, and all three line up to the
- * second with "bonjour", "merci" and a question about a competitor. The six
- * turns that generated and edited an application were not billed.
+ * A post-hoc charge lets a costly run finish before discovering that its
+ * credits cannot be debited. The canonical ledger reserves the published
+ * action price first, then records measured provider cost and settles the
+ * same reservation only after files reached the project.
  */
 {
   const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
@@ -71,17 +68,23 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
     server.indexOf('const publicGoal = String(decision.modelObjective?.goal'),
   );
 
-  assert.match(branch, /await chargeCompletedAgentAction\(/, 'the pipeline charges for its work');
-  assert.match(branch, /pipelineCost\.finalCredits,/, 'the same estimate the other branch uses');
+  assert.match(branch, /pipelineReservation = await reserveUnifiedUsage\(/, 'the pipeline reserves before its provider work');
+  assert.match(branch, /credits: pipelineCost\.finalCredits,/, 'the exact published action price is reserved');
   assert.match(branch, /providerCostUsd: pipelineProviderCostUsd,/, 'against the measured provider spend');
+  assert.match(branch, /await settleUnifiedUsage\(/, 'the reservation is settled idempotently after delivery');
+  assert.match(branch, /creditsCharged: pipelineCost\.finalCredits,/, 'settlement cannot invent a different customer price');
+  assert.match(branch, /await releaseUnifiedUsage\(pipelineReservation\)/, 'failed work releases its reservation');
 
-  // Billed after the files are saved: a user pays for work that reached them.
+  // The reservation precedes the model; settlement follows the durable save.
   assert.ok(
-    branch.indexOf('await saveProject(updatedProject, pipelineFiles);') < branch.indexOf('chargeCompletedAgentAction'),
-    'the charge follows the save, never precedes it',
+    branch.indexOf('pipelineReservation = await reserveUnifiedUsage') < branch.indexOf('const outcome = await runMultiAgentPipeline'),
+    'no provider work starts before the reservation',
   );
-  // And a billing failure must not destroy work already on disk.
-  assert.match(branch, /\[coden:pipeline_charge_failed\]/, 'a failed charge is logged, not thrown');
+  assert.ok(
+    branch.indexOf('await saveProject(updatedProject, pipelineFiles);') < branch.indexOf('await settleUnifiedUsage'),
+    'a successful debit is finalized only after files are saved',
+  );
+  assert.match(branch, /\[coden:pipeline_settlement_pending\]/, 'an idempotent settlement failure is left for reconciliation');
 
   // The measured cost has to reach the caller at all: it was accumulated per
   // round and reported only to the harness, so there was nothing to bill on.
@@ -89,6 +92,19 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
   assert.match(pipeline, /costUsd: spent\.costUsd,/, 'the run reports what it spent');
   assert.match(pipeline, /\/\*\* Measured provider spend for the whole run, in USD\. What the caller bills on\. \*\//,
     'and the type says so');
+
+  const standard = server.slice(
+    server.indexOf('const refId = `gen_${randomUUID()}`;'),
+    server.indexOf('// Whatever step the run died on stops spinning'),
+  );
+  assert.match(standard, /credits: cost\.finalCredits,/, 'the standard generator also reserves the exact public price');
+  assert.doesNotMatch(standard, /cost\.finalCredits \* 1\.5/, 'the standard generator does not reserve a hidden 50 percent surcharge');
+  assert.match(standard, /measuredProviderCostUsd \+= Number\(planResponse\.cost_usd/, 'planner spend is measured');
+  assert.match(standard, /measuredProviderCostUsd \+= Number\(repairGeneration\.cost_usd/, 'model-backed repair spend is measured');
+  assert.match(standard, /measuredProviderCostUsd \+= Number\(repairTurn\?\.spend\.costUsd/, 'tool-repair spend is measured');
+  assert.match(standard, /measuredProviderCostUsd \+= Number\(finalizer\.cost_usd/, 'finalizer spend is measured');
+  assert.match(standard, /creditsCharged: cost\.finalCredits,/, 'successful settlement uses the same exact public price');
+  assert.match(standard, /releaseFailedGenerationUsage/, 'failed or needs-fix work records COGS and releases customer credits');
 }
 
 /*

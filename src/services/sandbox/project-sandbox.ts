@@ -131,23 +131,34 @@ const NETWORK_ENV_KEYS = [
  * reading any of them. Only what a package manager and a dev server need to
  * function is passed through, plus the project's own variables.
  */
-function sandboxEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+function sandboxEnv(extra: Record<string, string> = {}, npmCache?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const key of [...BASE_ENV_KEYS, ...NETWORK_ENV_KEYS]) {
     if (process.env[key]) env[key] = process.env[key];
   }
-  env.NODE_ENV = 'development';
-  env.CI = '1';
-  env.NO_COLOR = '1';
-  // A shared cache turns the second install of React or Vite into a copy
-  // instead of a download. Installing the same dependency tree from the
-  // network for every generated project is the single slowest thing a
-  // sandbox can do.
-  env.npm_config_cache = process.env.CODEN_SANDBOX_NPM_CACHE || path.join(os.tmpdir(), 'coden-npm-cache');
-  env.npm_config_audit = 'false';
-  env.npm_config_fund = 'false';
-  env.npm_config_update_notifier = 'false';
-  return { ...env, ...extra };
+  const projectEnv: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (/^(?:PATH|PATHEXT|COMSPEC|SHELL|NODE_OPTIONS|NODE_PATH|NPM_CONFIG_.+)$/i.test(key)) continue;
+    projectEnv[key] = String(value);
+  }
+  return {
+    ...env,
+    ...projectEnv,
+    NODE_ENV: 'development',
+    CI: '1',
+    NO_COLOR: '1',
+    // The cache stores integrity-addressed registry blobs, not project files.
+    // Keeping one cache per runner avoids repeated downloads; retry logic
+    // below verifies it before retrying a damaged or interrupted entry.
+    npm_config_cache: npmCache || process.env.CODEN_SANDBOX_NPM_CACHE || path.join(os.tmpdir(), 'coden-npm-cache'),
+    npm_config_audit: 'false',
+    npm_config_fund: 'false',
+    npm_config_update_notifier: 'false',
+    npm_config_prefer_offline: 'true',
+    npm_config_fetch_retries: '3',
+    npm_config_fetch_retry_factor: '2',
+  };
 }
 
 export class ProjectSandbox {
@@ -262,13 +273,18 @@ export class ProjectSandbox {
 
   async deleteProjectFile(relativePath: string): Promise<void> {
     this.lastUsedAt = Date.now();
-    await rm(resolveInSandbox(this.projectId, relativePath), { recursive: true, force: true });
+    await rm(resolveInSandbox(this.projectId, relativePath), {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 5 : 0,
+      retryDelay: 100,
+    });
   }
 
   /** Every project file, excluding what a package manager owns. */
   async listFiles(): Promise<string[]> {
     this.lastUsedAt = Date.now();
-    const skip = new Set(['node_modules', '.git', 'dist', '.vite', '.next', 'coverage']);
+    const skip = new Set(['node_modules', '.npm-cache', '.git', 'dist', '.vite', '.next', 'coverage']);
     const found: string[] = [];
     const walk = async (dir: string, prefix: string): Promise<void> => {
       let entries;
@@ -301,6 +317,35 @@ export class ProjectSandbox {
    * policy can be unlocked by it.
    */
   runCommand(
+    binary: string,
+    args: readonly string[],
+    options: { timeoutMs?: number; allowReview?: boolean; signal?: AbortSignal } = {},
+  ): Promise<{ code: number | null; output: string; timedOut: boolean }> {
+    const installCommand = binary === 'npm' && ['install', 'i', 'ci', 'add'].includes(String(args[0] || ''));
+    const effectiveArgs = installCommand
+      ? [...args, ...['--ignore-scripts', '--no-audit', '--no-fund'].filter(flag => !args.includes(flag))]
+      : [...args];
+    return this.runCommandOnce(binary, effectiveArgs, options).then(async first => {
+      const retryable = installCommand
+        && !first.timedOut
+        && first.code !== 0
+        && (first.code === null
+          || !first.output.trim()
+          || /\b(?:EAI_AGAIN|ECONNRESET|ETIMEDOUT|ENETUNREACH|network|ENOENT|EINTEGRITY|cache)\b/i.test(first.output));
+      if (!retryable || options.signal?.aborted) return first;
+
+      this.log('system', 'Dependency installation hit a transient registry/cache error; verifying the cache and retrying once.');
+      if (/\b(?:ENOENT|EINTEGRITY|cache)\b/i.test(first.output)) {
+        await this.runCommandOnce('npm', ['cache', 'verify'], {
+          timeoutMs: Math.min(options.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS, 60_000),
+          signal: options.signal,
+        }).catch(() => null);
+      }
+      return this.runCommandOnce(binary, effectiveArgs, options);
+    });
+  }
+
+  private runCommandOnce(
     binary: string,
     args: readonly string[],
     options: { timeoutMs?: number; allowReview?: boolean; signal?: AbortSignal } = {},
@@ -376,11 +421,17 @@ export class ProjectSandbox {
         const ok = result.code === 0;
         if (!ok) {
           this.state = 'crashed';
-          this.lastError = result.timedOut ? 'Dependency installation timed out.' : `npm ${args[0]} exited with code ${result.code}.`;
+          this.lastError = result.timedOut
+            ? 'Dependency installation timed out.'
+            : `npm ${args[0]} exited with code ${result.code ?? 'unknown'}.`;
         } else {
           this.state = 'idle';
         }
-        return { ok, output: result.output, durationMs: Date.now() - startedAt };
+        return {
+          ok,
+          output: result.output.trim() || (ok ? '' : this.lastError || 'Dependency installation failed without output.'),
+          durationMs: Date.now() - startedAt,
+        };
       } catch (error: any) {
         this.state = 'crashed';
         this.lastError = error?.message || 'Dependency installation failed.';
@@ -544,7 +595,12 @@ export class ProjectSandbox {
   /** Stop the server and delete everything this project owns. */
   async destroy(): Promise<void> {
     await this.stop();
-    await rm(this.dir, { recursive: true, force: true });
+    await rm(this.dir, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 8 : 0,
+      retryDelay: 125,
+    });
     this.state = 'idle';
     this.logs = [];
   }

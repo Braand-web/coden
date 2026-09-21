@@ -22,7 +22,7 @@
 import type { ProviderGateway } from './provider-gateway.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
-import { runPlannerAgent, type BuildPlan } from './planner-agent.ts';
+import { runPlannerAgent, type BuildPlan, type PlannerAgentResult } from './planner-agent.ts';
 import { resolvePipelineRoute, taskKindForRoute, buildEditInstruction, type PipelineRoute } from './edit-intent.ts';
 import { selectModel } from './model-selection.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
@@ -623,7 +623,7 @@ export async function runMultiAgentPipeline(input: {
     }
   }
 
-  let plan: BuildPlan | undefined;
+  let plan: PlannerAgentResult | undefined;
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
     activity('Coden prépare le plan…', 'Coden is preparing the plan…');
@@ -646,9 +646,11 @@ export async function runMultiAgentPipeline(input: {
       plan: input.userPlan,
       credits: input.credits,
       selectedModel: input.selectedModel,
+      effort: input.effort,
       allowFallback: input.selectedModel === undefined,
       signal: input.signal,
     });
+    spent.costUsd += plan.costUsd;
     input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
     input.onChatEvent?.({ type:'text_end' });
 

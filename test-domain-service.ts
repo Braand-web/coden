@@ -3,6 +3,7 @@ import {
   DOMAIN_STATE_LABELS,
   DomainService,
   RESERVED_SUBDOMAINS,
+  canAddCustomDomain,
   domainPlanLimits,
   domainStateLabel,
   resolveDomainState,
@@ -49,7 +50,10 @@ function fakeSupabase(rows: Record<string, any[]> = {}) {
         return { select: () => ({ single: async () => ({ data: row, error: null }) }) };
       },
       update: (patch: any) => { writes.push({ table, op: 'update', patch }); return q; },
-      maybeSingle: async () => ({ data: null, error: null }),
+      maybeSingle: async () => {
+        const match = store[table].find(row => filters.every(([f, v]) => row[f] === v));
+        return { data: match || null, error: null };
+      },
       single: async () => {
         const match = store[table].find(row => filters.every(([f, v]) => row[f] === v));
         return { data: match || null, error: match ? null : new Error('not found') };
@@ -59,6 +63,34 @@ function fakeSupabase(rows: Record<string, any[]> = {}) {
     return q;
   };
   return { client: { from: api }, writes, store };
+}
+
+// Replaying the same domain registration is idempotent: it neither consumes a
+// second plan slot nor calls the hosting provider twice.
+{
+  const { host, calls } = fakeHost();
+  const { client } = fakeSupabase({
+    domains: [{
+      id: 'd1',
+      organization_id: 'org-1',
+      project_id: 'proj-1',
+      domain: 'app.example.com',
+      type: 'custom',
+      status: 'pending',
+    }],
+    dns_verifications: [{
+      domain_id: 'd1',
+      record_type: 'CNAME',
+      record_name: 'app.example.com',
+      record_value: 'cname.vercel-dns.com',
+      status: 'pending',
+    }],
+  });
+  const existing = await new DomainService(client, host)
+    .registerDomain('org-1', 'proj-1', 'APP.EXAMPLE.COM', 'custom', 'pro');
+  assert.equal(existing.id, 'd1');
+  assert.equal(existing.dns_records.length, 1);
+  assert.deepEqual(calls, [], 'an idempotent replay must not attach the same host twice');
 }
 
 // A domain is registered at the host and recorded, and the DNS instructions the
@@ -167,6 +199,10 @@ assert.equal(sanitizeDomainInput(null as any), '');
 
 assert.equal(domainPlanLimits.getCustomDomainLimit('free'), 0);
 assert.equal(domainPlanLimits.getCustomDomainLimit('pro'), 1);
+assert.equal(canAddCustomDomain(1, 0), true);
+assert.equal(canAddCustomDomain(1, 1), false);
+assert.equal(canAddCustomDomain(1, 1, true), true);
+assert.equal(canAddCustomDomain(null, 10_000), true);
 assert.ok(RESERVED_SUBDOMAINS.has('admin') && RESERVED_SUBDOMAINS.has('api'));
 
 // Nothing may reintroduce Cloudflare into the custom-domain path. Only

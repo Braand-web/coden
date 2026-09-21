@@ -4,6 +4,8 @@ import './pricing-page.css';
 type BillingInterval = 'monthly' | 'annual';
 type PricingPlan = {
   key: 'free' | 'pro' | 'business';
+  baseCredits?: number;
+  tiers?: number[];
   capabilities?: string[];
 };
 type PublicPrice = {
@@ -24,6 +26,7 @@ const tiers = Array.from(document.querySelectorAll<HTMLSelectElement>('[data-pri
 const status = document.getElementById('pricing-data-status');
 let selectedInterval: BillingInterval = 'monthly';
 let prices: PublicPrice[] = [];
+const plans = new Map<PricingPlan['key'], PricingPlan>();
 
 function money(value: number, currency = 'XAF') {
   return new Intl.NumberFormat('fr-FR', {
@@ -34,7 +37,13 @@ function money(value: number, currency = 'XAF') {
 }
 
 function fallbackPrice(plan: 'pro' | 'business', credits: number, interval: BillingInterval): PublicPrice {
-  const monthly = (plan === 'pro' ? 150 : 300) * credits;
+  const monthly = plan === 'business'
+    ? 30_000
+    : credits === 60
+      ? 10_000
+      : credits === 100
+        ? 15_000
+        : 5_000;
   const amount = interval === 'annual' ? monthly * 12 * 0.8 : monthly;
   return {
     plan,
@@ -59,7 +68,7 @@ function planRedirect(plan: 'free' | 'pro' | 'business', credits?: number) {
 
 function updateCard(plan: 'pro' | 'business') {
   const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);
-  const credits = Number(select?.value || 100);
+  const credits = Number(select?.value || (plan === 'pro' ? 25 : 250));
   const price = priceFor(plan, credits);
   const priceNode = document.querySelector<HTMLElement>(`[data-pricing-price="${plan}"]`);
   const unitNode = document.querySelector<HTMLElement>(`[data-pricing-price-unit="${plan}"]`);
@@ -73,6 +82,7 @@ function updateCard(plan: 'pro' | 'business') {
       : 'Facturé mensuellement';
   }
   if (cta) cta.href = planRedirect(plan, credits);
+  renderCapabilities(plans.get(plan) || { key: plan }, credits);
 }
 
 function updateAllCards() {
@@ -92,16 +102,53 @@ function setInterval(next: BillingInterval) {
   updateAllCards();
 }
 
-function renderCapabilities(plan: PricingPlan) {
+function renderCapabilities(plan: PricingPlan, selectedCredits = Number(plan.baseCredits || 0)) {
   const list = document.querySelector<HTMLUListElement>(`[data-pricing-capabilities="${plan.key}"]`);
-  if (!list || !plan.capabilities?.length) return;
-  const existingGrantItems = Array.from(list.querySelectorAll('li')).slice(0, 2).map(item => item.textContent || '');
-  const values = [...existingGrantItems, ...plan.capabilities.slice(0, 3)];
+  if (!list) return;
+  let values = [...(plan.capabilities || [])];
+  if (plan.key === 'pro') {
+    const sites = selectedCredits >= 100 ? 'Sites publiés illimités' : `${selectedCredits >= 60 ? 3 : 1} site${selectedCredits >= 60 ? 's' : ''} publié${selectedCredits >= 60 ? 's' : ''}`;
+    const domains = selectedCredits >= 100 ? 10 : selectedCredits >= 60 ? 3 : 1;
+    values = [
+      `${selectedCredits} crédits chaque mois`,
+      sites,
+      `${domains} domaine${domains > 1 ? 's' : ''} personnalisé${domains > 1 ? 's' : ''}`,
+      'Édition et export du code',
+      'Historique des versions et rollback',
+    ];
+  } else if (plan.key === 'business') {
+    values = [
+      `${selectedCredits || 250} crédits chaque mois`,
+      'Sites publiés illimités',
+      'Domaines personnalisés illimités',
+      'Rôles et projets internes',
+      'Modèles premium et support prioritaire',
+    ];
+  }
+  if (!values.length) return;
   list.replaceChildren(...values.map(value => {
     const item = document.createElement('li');
     item.textContent = value;
     return item;
   }));
+}
+
+function syncTierOptions(plan: 'pro' | 'business', definition?: PricingPlan) {
+  const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);
+  if (!select) return;
+  const fromCatalog = (definition?.tiers || []).map(Number).filter(value => Number.isFinite(value) && value > 0);
+  const fromPrices = prices.filter(price => price.plan === plan && price.interval === 'monthly').map(price => Number(price.credits));
+  const fallback = plan === 'pro' ? [25, 60, 100] : [250];
+  const values = [...new Set((fromCatalog.length ? fromCatalog : fromPrices.length ? fromPrices : fallback))].sort((a, b) => a - b);
+  const previous = Number(select.value);
+  select.replaceChildren(...values.map(value => {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = `${new Intl.NumberFormat('fr-FR').format(value)} crédits`;
+    return option;
+  }));
+  const preferred = values.includes(previous) ? previous : Number(definition?.baseCredits || values[0]);
+  select.value = String(values.includes(preferred) ? preferred : values[0]);
 }
 
 intervals.forEach(button => button.addEventListener('click', () => {
@@ -121,7 +168,11 @@ void fetch('/api/billing/plans', { headers: { Accept: 'application/json' } })
   .then(data => {
     if (!data.catalog) throw new Error('missing catalog');
     prices = Array.isArray(data.catalog.prices) ? data.catalog.prices : [];
-    (data.catalog.plans || []).forEach(renderCapabilities);
+    (data.catalog.plans || []).forEach(plan => plans.set(plan.key, plan));
+    syncTierOptions('pro', plans.get('pro'));
+    syncTierOptions('business', plans.get('business'));
+    const freePlan = plans.get('free');
+    if (freePlan) renderCapabilities(freePlan, Number(freePlan.baseCredits || 5));
     const discount = Number(data.catalog.annualDiscountPercent || 20);
     const annualButton = document.querySelector<HTMLButtonElement>('[data-pricing-interval="annual"] strong');
     if (annualButton && Number.isFinite(discount)) annualButton.textContent = `−${discount} %`;

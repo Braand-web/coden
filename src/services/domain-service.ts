@@ -89,10 +89,14 @@ export function createVercelDomainProvider(projectName: string): DomainHostProvi
 }
 
 export class domainPlanLimits {
-  static getCustomDomainLimit(plan: string | any): number {
+  static getCustomDomainLimit(plan: string | { customDomains?: number | null } | any): number | null {
+    if (plan && typeof plan === 'object' && 'customDomains' in plan) {
+      return plan.customDomains == null ? null : Math.max(0, Number(plan.customDomains));
+    }
     switch (String(plan).toLowerCase()) {
       case 'enterprise':
-        return 9999;
+      case 'business':
+        return null;
       case 'scale':
         return 10;
       case 'pro':
@@ -102,6 +106,10 @@ export class domainPlanLimits {
         return 0;
     }
   }
+}
+
+export function canAddCustomDomain(limit: number | null, currentCount: number, alreadyRegistered = false): boolean {
+  return alreadyRegistered || limit === null || currentCount < Math.max(0, limit);
 }
 
 export function sanitizeDomainInput(domain: string): string {
@@ -165,7 +173,7 @@ export class DomainService {
     projectId: string,
     domain: string,
     type: 'subdomain' | 'custom',
-    userPlan: UserPlan | 'pro' | 'scale' | 'enterprise',
+    userPlan: UserPlan | 'pro' | 'scale' | 'business' | 'enterprise' | { customDomains?: number | null },
   ) {
     if (!this.supabase) throw new Error('Supabase integration missing');
 
@@ -181,6 +189,36 @@ export class DomainService {
       }
     }
 
+    const { data: existing, error: existingError } = await this.supabase
+      .from('domains')
+      .select('*')
+      .eq('domain', sanitized)
+      .neq('status', 'removed')
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (existing) {
+      if (String(existing.organization_id) !== organizationId || String(existing.project_id) !== projectId) {
+        throw new Error(`The domain/subdomain ${sanitized} has already been registered in another tenant or project.`);
+      }
+      const { data: records, error: recordsError } = await this.supabase
+        .from('dns_verifications')
+        .select('record_type,record_name,record_value,status')
+        .eq('domain_id', existing.id);
+      if (recordsError) throw recordsError;
+      const dnsRecords: DNSRecordInstruction[] = (records || []).map((record: any) => ({
+        type: record.record_type,
+        name: record.record_name,
+        value: record.record_value,
+        status: record.status,
+      }));
+      return {
+        ...existing,
+        dns_records: dnsRecords,
+        state: resolveDomainState({ status: existing.status, hasInstructions: dnsRecords.length > 0 }),
+      };
+    }
+
     if (type === 'custom') {
       const limit = domainPlanLimits.getCustomDomainLimit(userPlan as any);
       const { count } = await this.supabase
@@ -190,20 +228,9 @@ export class DomainService {
         .eq('type', 'custom')
         .neq('status', 'removed');
 
-      if ((count || 0) >= limit) {
+      if (!canAddCustomDomain(limit, count || 0)) {
         throw new Error(`Your plan (${userPlan}) allows up to ${limit} custom domains. Please upgrade to add more domains.`);
       }
-    }
-
-    const { data: existing } = await this.supabase
-      .from('domains')
-      .select('id')
-      .eq('domain', sanitized)
-      .neq('status', 'removed')
-      .maybeSingle();
-
-    if (existing) {
-      throw new Error(`The domain/subdomain ${sanitized} has already been registered in another tenant.`);
     }
 
     const attached = await (await this.host()).attach(sanitized);

@@ -98,9 +98,6 @@ import {
   MODEL_REGISTRY,
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_CREDIT_RATES,
-  AUTO_MODEL_IDS,
-  AI_MODEL_PLAN_ACCESS,
-  isPlanAtLeast,
   PROVIDER_META,
   UserPlan,
   getModelsByProvider,
@@ -111,7 +108,7 @@ import {
   type ModelProvider,
 } from './src/config/ai-models.ts';
 import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
-import { DomainService, createVercelDomainProvider, domainStateLabel, resolveDomainState } from './src/services/domain-service.ts';
+import { DomainService, createVercelDomainProvider, domainStateLabel, resolveDomainState, sanitizeDomainInput } from './src/services/domain-service.ts';
 import {
   SaspayService,
   SAAS_PLANS,
@@ -122,8 +119,16 @@ import {
   getPublicPlans,
   isPaidPlanKey,
   normalizePlanKey,
+  resolvePublicationEntitlement,
+  type PublicationEntitlement,
 } from './src/services/billing-service.ts';
-import { BILLING_V2_VERSION, FREE_ACTIVE_USER_COGS_CAP_USD, publicBillingCatalog } from './src/config/billing-v2.ts';
+import {
+  ACTION_CREDIT_PRICES,
+  BILLING_V2_VERSION,
+  FREE_ACTIVE_USER_COGS_CAP_USD,
+  publicBillingCatalog,
+} from './src/config/billing-v2.ts';
+import { classifyBillableAction } from './src/services/billable-action.ts';
 import { AuditLogService, BillingAlertService, UsageMeteringService, MemberLimitService } from './src/services/platform-support.ts';
 import { buildWorldClassUiPolicy } from './src/services/design-generation-policy.ts';
 import {
@@ -1331,6 +1336,7 @@ type PublishContext = {
   files: GeneratedFile[];
   latestDeployment: any | null;
   plan: string;
+  entitlement: PublicationEntitlement;
   customDomain: string | null;
   currentVisitors?: number;
 };
@@ -1710,7 +1716,15 @@ type AgentNextAction = 'answer' | 'ask_clarification' | 'plan_only' | 'plan_then
 type AgentRequestedMode = 'auto' | 'plan' | 'build' | 'ask' | 'fix' | 'review' | 'research';
 type StudioContextKind = 'chat' | 'design' | 'decks' | 'media';
 type RecentHistoryMessage = { role: 'user' | 'assistant'; content: string };
-type AgentDecisionInput = { prompt: string; requestedMode?: string; hasFiles: boolean; lastPlan?: string; recentHistory?: RecentHistoryMessage[] };
+type AgentDecisionInput = {
+  prompt: string;
+  requestedMode?: string;
+  hasFiles: boolean;
+  lastPlan?: string;
+  recentHistory?: RecentHistoryMessage[];
+  /** Keep pre-charge classification deterministic and free of provider spend. */
+  localOnly?: boolean;
+};
 
 type IntentDecision = {
   intent: AgentIntent;
@@ -3184,7 +3198,7 @@ async function getPublishCurrentVisitors(projectId: string): Promise<number> {
 }
 
 function buildPublishStatus(context: PublishContext): PublishStatus {
-  const { project, files, latestDeployment, plan, customDomain, currentVisitors = 0 } = context;
+  const { project, files, latestDeployment, plan, entitlement, customDomain, currentVisitors = 0 } = context;
   const publishedDeployment = isPublishedDeploymentReady(latestDeployment) ? latestDeployment : null;
   const latestPublishedAt = publishedDeployment?.created_at || null;
   const projectUpdatedAt = getProjectUpdatedAt(project, files);
@@ -3221,10 +3235,18 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
     current_visitors: Math.max(0, Number(currentVisitors || 0)),
     latest_published_at: latestPublishedAt,
     project_updated_at: projectUpdatedAt,
-    badge_required: isFreePlanKey(plan),
-    can_publish: previewReady && hasFiles && !securityBlocking.length,
+    badge_required: false,
+    can_publish: entitlement.canPublish && previewReady && hasFiles && !securityBlocking.length,
     has_unpublished_changes: hasUnpublishedChanges,
     checks: [
+      {
+        key: 'billing',
+        label: 'Abonnement',
+        status: entitlement.canPublish ? 'pass' : 'fail',
+        detail: entitlement.canPublish
+          ? `Abonnement ${entitlement.plan} actif (${entitlement.creditTier} crédits par mois).`
+          : 'Un abonnement payant actif est requis pour publier ou republier ce site.',
+      },
       {
         key: 'files',
         label: 'Fichiers du projet',
@@ -3260,10 +3282,8 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
       {
         key: 'badge',
         label: 'Signature Coden',
-        status: isFreePlanKey(plan) ? 'warn' : 'pass',
-        detail: isFreePlanKey(plan)
-          ? 'Le plan gratuit ajoute une petite signature « Créé avec Coden ».'
-          : 'Aucune signature Coden requise avec ce plan.',
+        status: 'pass',
+        detail: 'Aucune signature Coden requise avec un abonnement de publication actif.',
       },
     ],
   };
@@ -4848,6 +4868,9 @@ async function resolveAgentDecision(input: AgentDecisionInput) {
   if (!agentIntentNeedsAiRouter(fallback)) {
     return safeFallback('explicit mode does not require model classification');
   }
+  if (input.localOnly) {
+    return safeFallback('billing-safe local classification before provider spend');
+  }
   if (!hasLiveAiProvider()) {
     return safeFallback('live intent classifier unavailable');
   }
@@ -5470,65 +5493,13 @@ function isExplicitProviderModelSelection(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' && value !== 'auto';
 }
 
-/**
- * The worst a routed Auto turn can cost on this plan.
- *
- * Auto was priced at the floor of `DEFAULT_PROVIDER_MODEL_ID` — Luna Pro, two
- * credits — while being free to route to Opus 5 at fifteen. Charging the
- * cheapest model's floor for whatever the router picks is a straight loss
- * whenever it picks anything else, and the router picks by task, not by price
- * alone.
- *
- * Bounded by the plan rather than by the catalogue, because a plan that cannot
- * reach a model cannot be charged for the risk of reaching it: on `free` the
- * routable set is Luna and Gemini, so the ceiling stays at two and no free
- * turn is gated harder than it is today. It rises only where Auto can genuinely
- * route somewhere expensive.
- */
-function autoWorstCaseCreditFloor(plan?: unknown): number {
-  // Unknown plan keeps the old number rather than guessing the ceiling. The
-  // alternative — assuming the whole Auto pool — would gate every free turn at
-  // Opus 5's floor and lock out the plan that can never reach it.
-  if (!plan) return MODEL_ACTION_CREDIT_FLOORS[DEFAULT_PROVIDER_MODEL_ID];
-  const routable = (AUTO_MODEL_IDS as readonly AllowedModelId[])
-    .filter(modelId => isPlanAtLeast(plan, AI_MODEL_PLAN_ACCESS[modelId]));
-  const pool = routable.length ? routable : [DEFAULT_PROVIDER_MODEL_ID];
-  return Math.max(...pool.map(modelId => MODEL_ACTION_CREDIT_FLOORS[modelId] || 0));
-}
-
-function estimateActionCost(prompt: string, intent: IntentDecision, modelId?: unknown, plan?: unknown) {
-  if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0 };
-  if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0 };
-  const selectedModelFloor = modelId === 'auto' && intent.intent !== 'plan'
-    ? autoWorstCaseCreditFloor(plan)
-    : modelCreditFloor(modelId);
-  if (intent.intent === 'conversation') return costEstimator.calculateRequiredCredits({
-    openrouter_cost_usd: 0.0002,
-    infra_cost_usd: 0.00005,
-    storage_cost_usd: 0,
-    build_cost_usd: 0,
-    domain_operation_cost_usd: 0,
-    minimum_action_credits: 1,
-    complexity_surcharge: prompt.length > 800 ? 0.5 : 0,
-  });
-  if (intent.intent === 'plan') return costEstimator.calculateRequiredCredits({
-    openrouter_cost_usd: 0.0005,
-    infra_cost_usd: 0.0001,
-    storage_cost_usd: 0,
-    build_cost_usd: 0,
-    domain_operation_cost_usd: 0,
-    minimum_action_credits: Math.max(1, selectedModelFloor),
-    complexity_surcharge: prompt.length > 600 ? 0.5 : 0,
-  });
-  return costEstimator.calculateRequiredCredits({
-    openrouter_cost_usd: 0.002,
-    infra_cost_usd: 0.0005,
-    storage_cost_usd: 0.0001,
-    build_cost_usd: 0.001,
-    domain_operation_cost_usd: 0,
-    minimum_action_credits: Math.max(2, selectedModelFloor),
-    complexity_surcharge: prompt.length > 400 ? 2 : 0,
-  });
+/** The public action table is the customer price; model and effort never silently rewrite it. */
+function estimateActionCost(prompt: string, intent: IntentDecision, _modelId?: unknown, _plan?: unknown) {
+  if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0, action: null };
+  if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0, action: null };
+  const action = classifyBillableAction(prompt, intent);
+  const finalCredits = action === 'conversation' ? 0.5 : ACTION_CREDIT_PRICES[action];
+  return { finalCredits, minimum_action_credits: finalCredits, action };
 }
 
 async function chargeCompletedAgentAction(
@@ -9642,7 +9613,7 @@ async function writeCreditWalletBalance(client: any, orgId: string, next: number
   return preferredColumn || columns[0] || 'balance';
 }
 
-async function ensureCreditWalletRow(client: any, orgId: string, initialCredits = 30) {
+async function ensureCreditWalletRow(client: any, orgId: string, initialCredits = 5) {
   const existing = await readCreditWalletRow(client, orgId);
   if (existing) return existing;
   const column = await writeCreditWalletBalance(client, orgId, initialCredits);
@@ -9900,49 +9871,24 @@ async function ensureUnifiedIncludedGrants(accountId: string) {
   const client = await ensureUnifiedBillingAccount(accountId);
   const planKey = normalizePlanKey(await getOrganizationPlan(accountId).catch(() => 'free')) || 'free';
   const plan = publicBillingCatalog().plans.find(candidate => candidate.key === planKey) || publicBillingCatalog().plans[0];
-  const now = new Date();
-  const dayKey = now.toISOString().slice(0, 10);
-  const monthKey = dayKey.slice(0, 7);
-  const nextDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
-  const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
-  const { data: existing, error: existingError } = await client
-    .from('credit_grants')
-    .select('kind,source_reference,credits_issued')
-    .eq('account_id', accountId)
-    .gte('issued_at', `${monthKey}-01T00:00:00.000Z`);
-  if (existingError) throw new Error(`Unified grant lookup failed: ${existingError.message}`);
-  const rows = Array.isArray(existing) ? existing : [];
-  const hasSource = (source: string) => rows.some(row => String(row.source_reference || '') === source);
-  const dailyIssued = rows
-    .filter(row => String(row.kind) === 'daily_build')
-    .reduce((sum, row) => sum + Number(row.credits_issued || 0), 0);
-  const monthlyCap = plan.grants.dailyBuildMonthlyCap == null ? plan.grants.dailyBuildCredits || 0 : plan.grants.dailyBuildMonthlyCap;
-  const entitlementTotal = Math.max(1, Number(monthlyCap || 0) + Number(plan.grants.monthlyCloudCredits || 0) + Number(plan.grants.monthlyAiCredits || 0));
-  const cogsFor = (credits: number) => Number((FREE_ACTIVE_USER_COGS_CAP_USD * credits / entitlementTotal).toFixed(8));
-  const grant = async (kind: string, restriction: string, credits: number, expiresAt: string, source: string) => {
-    if (credits <= 0 || hasSource(source)) return;
+  // Free has one customer grant for the lifetime of the account. The stable
+  // source/idempotency key makes logins, retries and project creation safe to
+  // replay without ever turning five credits into twenty or thirty.
+  if (planKey === 'free' && Number(plan.grants.signupCredits || 0) > 0) {
+    const source = `signup_free:${accountId}:v1`;
     const { error } = await client.rpc('coden_billing_grant', {
       p_account_id: accountId,
-      p_kind: kind,
-      p_restriction: restriction,
-      p_credits: credits,
+      p_kind: 'signup_free',
+      p_restriction: 'general',
+      p_credits: Number(plan.grants.signupCredits),
       p_net_revenue_usd: 0,
-      p_max_cogs_usd: cogsFor(credits),
-      p_expires_at: expiresAt,
+      p_max_cogs_usd: FREE_ACTIVE_USER_COGS_CAP_USD,
+      p_expires_at: '2099-12-31T23:59:59.999Z',
       p_source_reference: source,
       p_idempotency_key: source,
-      p_metadata: { provider: 'coden', plan: planKey, version: BILLING_V2_VERSION },
+      p_metadata: { provider: 'coden', plan: planKey, policy: 'one_time_free_5', version: BILLING_V2_VERSION },
     });
-    if (error) throw new Error(`Unified grant failed: ${error.message}`);
-  };
-
-  // Paid monthly grants come from the Saspay webhook. The free entitlement is
-  // safe to issue on demand so a first build never races the hourly scheduler.
-  if (planKey === 'free') {
-    const dailyCredits = Math.min(Number(plan.grants.dailyBuildCredits || 0), Math.max(0, Number(monthlyCap || 0) - dailyIssued));
-    await grant('daily_build', 'build', dailyCredits, nextDay, `included:${accountId}:daily_build:${dayKey}`);
-    await grant('monthly_cloud', 'cloud', Number(plan.grants.monthlyCloudCredits || 0), nextMonth, `included:${accountId}:monthly_cloud:${monthKey}`);
-    await grant('monthly_ai', 'ai_gateway', Number(plan.grants.monthlyAiCredits || 0), nextMonth, `included:${accountId}:monthly_ai:${monthKey}`);
+    if (error) throw new Error(`Unified signup grant failed: ${error.message}`);
   }
   return client;
 }
@@ -9985,17 +9931,14 @@ async function unifiedCategoryCredits(
     if (error) throw error;
     return (data || []).reduce((total: number, row: any) => total + Number(row.credits_remaining || 0), 0);
   } catch (error: any) {
-    /*
-     * Fail open. A read outage on the balance must not lock every customer out
-     * of the product — the reservation still guards the actual debit, so the
-     * worst case here is the behaviour we had before this check existed.
-     */
+    // Fail closed before provider spend. A billing outage must not let Coden
+    // pay for work the authoritative ledger cannot reserve.
     console.error('[coden:unified_balance_unavailable]', {
       account_id: accountId,
       category,
       message: redactSecrets(error?.message || String(error), '[redacted]'),
     });
-    return Number.POSITIVE_INFINITY;
+    return 0;
   }
 }
 
@@ -10468,7 +10411,7 @@ app.post('/api/assistant/decision', async (req: any, res: any) => {
     : [];
 
   try {
-    const decision = await resolveAgentDecision({ prompt, requestedMode, hasFiles, lastPlan, recentHistory });
+    const decision = await resolveAgentDecision({ prompt, requestedMode, hasFiles, lastPlan, recentHistory, localOnly: true });
     const resolvedAction = decision.intent === 'clarification_required'
       ? 'clarify'
       : decision.intent === 'debug_fix'
@@ -10602,6 +10545,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       recentHistory: Array.isArray(req.body?.messages)
         ? req.body.messages.filter((message: any) => message?.role === 'user' || message?.role === 'assistant').slice(-10)
         : [],
+      localOnly: true,
     });
   } catch (error: any) {
     return res.status(503).json({ success: false, error: 'The selected AI model could not resolve this request.', message: diagnoseProviderError(error).message, diagnostic_code: 'AGENT_DECISION_UNAVAILABLE', request_id: requestId });
@@ -11927,6 +11871,7 @@ app.post('/api/projects/:id/estimate', async (req: any, res: any) => {
     hasFiles: files.length > 0,
     lastPlan,
     recentHistory,
+    localOnly: true,
   });
   void decision;
   res.json({
@@ -12656,6 +12601,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         await updateAgentRunStatus(pipelineRunId, terminal, {
           verification_status: payload.verification?.status || null,
           effective_model: payload.model || null,
+          real_cost_usd: Number(payload.real_cost_usd || 0) || null,
           diagnostic_code: payload.diagnostic_code || null,
         });
       } catch (error) {
@@ -12760,6 +12706,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       hasFiles: existingFiles.length > 0,
       lastPlan,
       recentHistory,
+      localOnly: true,
     });
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
@@ -12811,6 +12758,31 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
   if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute) {
     if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
+    const billingAccountId = project.organization_id || userId;
+    const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
+    let pipelineReservation: UnifiedUsageReservation | null = null;
+    if (CODEN_MONETIZATION_ENABLED && pipelineCost.finalCredits > 0) {
+      const spendable = await unifiedCategoryCredits(billingAccountId, 'build');
+      if (spendable < pipelineCost.finalCredits) {
+        return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
+      }
+      try {
+        pipelineReservation = await reserveUnifiedUsage({
+          accountId: billingAccountId,
+          category: 'build',
+          credits: pipelineCost.finalCredits,
+          estimatedCogsUsd: Math.max(0.000001, pipelineCost.finalCredits * 0.02),
+          idempotencyKey: `pipeline:${requestId}:reserve`,
+        });
+      } catch (error: any) {
+        console.warn('[coden:pipeline_reservation_refused]', {
+          requestId,
+          project_id: project.id,
+          message: redactSecrets(error?.message || String(error), '[redacted]'),
+        });
+        return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
+      }
+    }
     try {
       await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
       /*
@@ -12961,55 +12933,66 @@ ${agentPrompt}` : agentPrompt;
          * work that reached their project, and a run that failed earlier
          * already returned above without passing through here.
          */
-        /*
-         * Priced for the effort that was actually granted.
-         *
-         * Max Effort buys twice the wall clock and twice the tool calls per
-         * round, so it really does cost more provider time; charging it the
-         * Medium price is the same mistake as the September one, just earlier
-         * in the pipeline. Low is genuinely cheaper and is billed that way —
-         * a level that costs the same as Medium while doing less is a level
-         * nobody should pick.
-         *
-         * Floored at one credit rather than at the Medium price: the estimator
-         * enforces `minimum_action_credits` internally but does not report it,
-         * and no action is free.
-         */
-        const baseCost = estimateActionCost(prompt, decision, requestedModelSelection, routingPlan);
-        const pipelineCost = {
-          ...baseCost,
-          finalCredits: Math.max(
-            1,
-            Math.ceil(baseCost.finalCredits * effortCostMultiplier(requestedEffort) * 10000) / 10000,
-          ),
-        };
-        const pipelineProviderCostUsd = Number(outcome.costUsd || 0);
-        await chargeCompletedAgentAction(
-          helpers,
-          userId,
-          pipelineCost.finalCredits,
-          `AI ${pipelineRoute} with ${outcome.modelId}`,
-          `pipeline_${randomUUID()}`,
-          {
-            projectId: project.id,
-            runId: pipelineRunId || null,
-            category: 'ai_gateway',
-            resource: pipelineRoute,
-            provider: 'openrouter',
-            model: outcome.modelId,
-            providerCostUsd: pipelineProviderCostUsd,
-            completeCostUsd: pipelineProviderCostUsd + 0.0001,
-          },
-        ).catch(error => {
-          // Billing must not destroy work that is already on disk. The run is
-          // recoverable from the ledger gap; the project is not recoverable
-          // from a thrown response.
-          console.error('[coden:pipeline_charge_failed]', {
+        const pipelineProviderCostUsd = withProviderPurchaseFee(Number(outcome.costUsd || 0));
+        const pipelineCompleteCostUsd = pipelineProviderCostUsd + 0.0001;
+        try {
+          if (outcome.ok && pipelineReservation) {
+            const usageEventId = await recordUnifiedUsageEvent({
+              accountId: billingAccountId,
+              projectId: project.id,
+              runId: pipelineRunId || null,
+              category: 'build',
+              resource: pipelineCost.action || pipelineRoute,
+              provider: 'openrouter',
+              model: outcome.modelId,
+              providerCostUsd: pipelineProviderCostUsd,
+              allocatedPlatformCostUsd: 0.0001,
+              completeCostUsd: pipelineCompleteCostUsd,
+              idempotencyKey: `pipeline:${requestId}:usage`,
+              providerPayload: {
+                route: pipelineRoute,
+                action: pipelineCost.action,
+                charged_credits: pipelineCost.finalCredits,
+                real_cost_usd: pipelineCompleteCostUsd,
+              },
+            });
+            await settleUnifiedUsage({
+              reservation: pipelineReservation,
+              usageEventId,
+              creditsCharged: pipelineCost.finalCredits,
+              completeCostUsd: pipelineCompleteCostUsd,
+            });
+            pipelineReservation = null;
+          } else {
+            if (pipelineProviderCostUsd > 0) {
+              await recordUnifiedUsageEvent({
+                accountId: billingAccountId,
+                projectId: project.id,
+                runId: pipelineRunId || null,
+                category: 'build',
+                resource: `${pipelineRoute}_failed`,
+                provider: 'openrouter',
+                model: outcome.modelId,
+                providerCostUsd: pipelineProviderCostUsd,
+                allocatedPlatformCostUsd: 0.0001,
+                completeCostUsd: pipelineCompleteCostUsd,
+                idempotencyKey: `pipeline:${requestId}:failed-usage`,
+                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false },
+              });
+            }
+            await releaseUnifiedUsage(pipelineReservation);
+            pipelineReservation = null;
+          }
+        } catch (error) {
+          // Work already persisted remains available. The deterministic keys
+          // leave settlement safe to retry during reconciliation.
+          console.error('[coden:pipeline_settlement_pending]', {
             requestId,
             project_id: project.id,
+            reservation_id: pipelineReservation?.id || null,
             message: redactSecrets(String(error), '[redacted]'),
           });
-        });
+        }
 
         const diff = diffFiles(existingFiles, pipelineFiles);
         await createProjectVersion(updatedProject, pipelineFiles, prompt, {
@@ -13061,6 +13044,7 @@ ${agentPrompt}` : agentPrompt;
             prompt,
           }),
           model: outcome.modelId,
+          real_cost_usd: pipelineCompleteCostUsd,
           verification: outcome.repairOutcome.finalReport,
           plan: outcome.plan,
           preview: {
@@ -13075,6 +13059,11 @@ ${agentPrompt}` : agentPrompt;
       }
 
       // Keep the failed runtime explicit; never disguise it as a file-only success.
+      await releaseUnifiedUsage(pipelineReservation).catch(error => console.error('[coden:pipeline_release_failed]', {
+        requestId,
+        message: redactSecrets(String(error), '[redacted]'),
+      }));
+      pipelineReservation = null;
       // The reason is an npm/runtime string written for this log. It says
       // nothing useful to the person who asked for an application.
       console.warn('[coden:multi_agent_sandbox_failed]', { project: project.id, reason: outcome.startError });
@@ -13088,6 +13077,11 @@ ${agentPrompt}` : agentPrompt;
         recoverable: true,
       });
     } catch (error: any) {
+      await releaseUnifiedUsage(pipelineReservation).catch(releaseError => console.error('[coden:pipeline_release_failed]', {
+        requestId,
+        message: redactSecrets(String(releaseError), '[redacted]'),
+      }));
+      pipelineReservation = null;
       /*
        * Leave a resume point on the way out.
        *
@@ -13318,6 +13312,28 @@ ${agentPrompt}` : agentPrompt;
       await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
       return respondJson(402, creditGate);
     }
+    const billingAccountId = project.organization_id || userId;
+    let textReservation: UnifiedUsageReservation | null = null;
+    if (CODEN_MONETIZATION_ENABLED && cost.finalCredits > 0) {
+      const spendable = await unifiedCategoryCredits(billingAccountId, 'ai_gateway');
+      if (spendable < cost.finalCredits) {
+        const creditGate = publicCreditGateResponse(frenchActivity, false);
+        await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
+        return respondJson(402, creditGate);
+      }
+      try {
+        textReservation = await reserveUnifiedUsage({
+          accountId: billingAccountId,
+          category: 'ai_gateway',
+          credits: cost.finalCredits,
+          estimatedCogsUsd: Math.max(0.000001, cost.finalCredits * 0.02),
+          idempotencyKey: `text:${requestId}:reserve`,
+        });
+      } catch (error: any) {
+        console.warn('[coden:text_reservation_refused]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+        return respondJson(402, publicCreditGateResponse(frenchActivity, false));
+      }
+    }
     let agentText: any;
     let content = '';
     try {
@@ -13351,6 +13367,11 @@ ${agentPrompt}` : agentPrompt;
       content = agentText.text;
       if (streamedAny) eventStream?.chat({ type: 'text_end' });
     } catch (error: any) {
+      await releaseUnifiedUsage(textReservation).catch(releaseError => console.error('[coden:text_release_failed]', {
+        requestId,
+        message: redactSecrets(String(releaseError), '[redacted]'),
+      }));
+      textReservation = null;
       /*
        * A failure that says nothing is the worst kind.
        *
@@ -13376,27 +13397,55 @@ ${agentPrompt}` : agentPrompt;
         recoverable: true,
       });
     }
-    await saveProjectMessage({
-      organization_id: project.organization_id,
-      project_id: project.id,
-      user_id: userId,
-      role: 'assistant',
-      content,
-      intent: decision.intent,
-      requested_mode: decision.requestedMode,
-    });
+    try {
+      await saveProjectMessage({
+        organization_id: project.organization_id,
+        project_id: project.id,
+        user_id: userId,
+        role: 'assistant',
+        content,
+        intent: decision.intent,
+        requested_mode: decision.requestedMode,
+      });
+    } catch (error) {
+      await releaseUnifiedUsage(textReservation).catch(() => null);
+      textReservation = null;
+      throw error;
+    }
     const costRealCostUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'router' || (agentText.model === 'auto' && agentText.cost_usd === 0) ? 0 : cost.finalCredits;
-    await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI ${decision.intent} with ${agentText.model}`, `agent_${randomUUID()}`, {
-      projectId: project.id,
-      runId: agentRunId || null,
-      category: 'ai_gateway',
-      resource: decision.intent,
-      provider: 'openrouter',
-      model: agentText.model,
-      providerCostUsd: Number(agentText.cost_usd || costRealCostUsd || 0),
-      completeCostUsd: Number(agentText.cost_usd || costRealCostUsd || 0) + 0.0001,
-    });
+    const textProviderCostUsd = withProviderPurchaseFee(Number(agentText.cost_usd || costRealCostUsd || 0));
+    const textCompleteCostUsd = textProviderCostUsd + 0.0001;
+    try {
+      if (chargedCredits > 0 && textReservation) {
+        const usageEventId = await recordUnifiedUsageEvent({
+          accountId: billingAccountId,
+          projectId: project.id,
+          runId: agentRunId || null,
+          category: 'ai_gateway',
+          resource: cost.action || decision.intent,
+          provider: 'openrouter',
+          model: agentText.model,
+          providerCostUsd: textProviderCostUsd,
+          allocatedPlatformCostUsd: 0.0001,
+          completeCostUsd: textCompleteCostUsd,
+          idempotencyKey: `text:${requestId}:usage`,
+          providerPayload: { action: cost.action, charged_credits: chargedCredits },
+        });
+        await settleUnifiedUsage({ reservation: textReservation, usageEventId, creditsCharged: chargedCredits, completeCostUsd: textCompleteCostUsd });
+        textReservation = null;
+      } else {
+        await releaseUnifiedUsage(textReservation);
+        textReservation = null;
+      }
+    } catch (chargeError) {
+      console.error('[coden:chat_settlement_pending]', {
+        requestId,
+        reservation_id: textReservation?.id || null,
+        provider_cost_usd: textProviderCostUsd,
+        message: redactSecrets(String(chargeError), '[redacted]'),
+      });
+    }
     await recordAgentImprovementSignal(project, userId, {
       prompt,
       decision,
@@ -13438,8 +13487,12 @@ ${agentPrompt}` : agentPrompt;
 
   const wallet = walletForRouting;
   const cost = estimateActionCost(prompt, decision, effectiveModelSelection);
+  const billingAccountId = project.organization_id || userId;
+  const buildSpendable = CODEN_MONETIZATION_ENABLED
+    ? await unifiedCategoryCredits(billingAccountId, 'build')
+    : Number.POSITIVE_INFINITY;
 
-  if (wallet < cost.finalCredits) {
+  if (wallet < cost.finalCredits || buildSpendable < cost.finalCredits) {
     // This branch's floor does depend on the chosen model, so Auto is real advice
     // here — but only for someone who actually picked something other than Auto.
     // `requestedModelSelection`, not `effectiveModelSelection`: the latter is the
@@ -13452,18 +13505,57 @@ ${agentPrompt}` : agentPrompt;
 
   const refId = `gen_${randomUUID()}`;
   let unifiedGenerationReservation: UnifiedUsageReservation | null = null;
-  const generationEstimatedCogsUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
+  let measuredProviderCostUsd = 0;
+  let generationUsageFinalized = false;
   if (CODEN_MONETIZATION_ENABLED) {
     unifiedGenerationReservation = await reserveUnifiedUsage({
-      accountId: userId,
+      accountId: billingAccountId,
       category: 'build',
-      // Keep bounded headroom while the provider call is running. Settlement
-      // returns the unused reservation atomically.
-      credits: Math.ceil(cost.finalCredits * 1.5 * 100) / 100,
-      estimatedCogsUsd: Math.max(generationEstimatedCogsUsd * 1.5, 0.000001),
+      // The public action table is the contract. Model choice and effort may
+      // affect Coden's COGS, never the credits silently charged to the user.
+      credits: cost.finalCredits,
+      estimatedCogsUsd: Math.max(cost.finalCredits * 0.02, 0.000001),
       idempotencyKey: `${refId}:reserve`,
     });
   }
+
+  const releaseFailedGenerationUsage = async (resource: string) => {
+    if (generationUsageFinalized) return;
+    generationUsageFinalized = true;
+    const providerCostUsd = withProviderPurchaseFee(measuredProviderCostUsd);
+    try {
+      if (CODEN_MONETIZATION_ENABLED && providerCostUsd > 0) {
+        await recordUnifiedUsageEvent({
+          accountId: billingAccountId,
+          projectId: project.id,
+          runId: agentRunId || null,
+          category: 'build',
+          resource,
+          provider: 'openrouter',
+          model: effectiveModelSelection,
+          providerCostUsd,
+          allocatedPlatformCostUsd: 0,
+          completeCostUsd: providerCostUsd,
+          idempotencyKey: `${refId}:failed_usage`,
+          providerPayload: { customer_credits_charged: 0, outcome: 'failed_or_needs_fix' },
+        });
+      }
+    } catch (usageError: any) {
+      console.error('[coden:generation_failed_usage_recording_failed]', {
+        request_id: requestId,
+        message: redactSecrets(usageError?.message || String(usageError), '[redacted]'),
+      });
+    } finally {
+      await releaseUnifiedUsage(unifiedGenerationReservation).catch((releaseError: any) => {
+        console.error('[coden:generation_reservation_release_failed]', {
+          request_id: requestId,
+          reservation_id: unifiedGenerationReservation?.id || null,
+          message: redactSecrets(releaseError?.message || String(releaseError), '[redacted]'),
+        });
+      });
+      unifiedGenerationReservation = null;
+    }
+  };
 
   try {
     let executionPlan = '';
@@ -13476,7 +13568,9 @@ ${agentPrompt}` : agentPrompt;
           requiresPreviewRebuild: false,
           nextAction: 'plan_only',
         };
-        executionPlan = (await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' })).text;
+        const planResponse = await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
+        executionPlan = planResponse.text;
+        measuredProviderCostUsd += Number(planResponse.cost_usd || 0);
       } catch (error) {
         throw error;
       }
@@ -13505,6 +13599,7 @@ ${agentPrompt}` : agentPrompt;
       // ✅ Pass recent history for conflict detection
       recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
     });
+    measuredProviderCostUsd += Number(generation.cost_usd || 0);
     if (!generation.summary || !generation.summary.trim()) {
       throw new Error('The selected model returned no final summary for this run.');
     }
@@ -13679,6 +13774,7 @@ ${agentPrompt}` : agentPrompt;
           recentHistory: recentHistory.map(item => `${item.role}: ${item.content}`),
         });
         generation.cost_usd += repairGeneration.cost_usd;
+        measuredProviderCostUsd += Number(repairGeneration.cost_usd || 0);
         const repairedByPath = new Map<string, GeneratedFile>();
         finalFiles.forEach(file => repairedByPath.set(file.path, file));
         repairGeneration.files.forEach(file => repairedByPath.set(file.path, file));
@@ -13890,7 +13986,7 @@ ${agentPrompt}` : agentPrompt;
                     tool.name,
                     async (args: Record<string, unknown>) => { toolCalls += 1; return call(tool.name, args); },
                   ]));
-                  await runLlmToolLoop({
+                  const repairTurn = await runLlmToolLoop({
                     gateway: providerGateway,
                     modelId: generation.model,
                     messages: [
@@ -13908,7 +14004,9 @@ ${agentPrompt}` : agentPrompt;
                     maxSteps: Math.min(6, maxToolCalls),
                   }).catch((error: any) => {
                     console.warn('[coden:sandbox_repair_turn_failed]', { project: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
+                    return null;
                   });
+                  measuredProviderCostUsd += Number(repairTurn?.spend.costUsd || 0);
                   return { toolCalls };
                 },
               }).catch((error: any) => {
@@ -13972,6 +14070,7 @@ ${agentPrompt}` : agentPrompt;
         signal: generationAbortController.signal,
         finalizer: true,
       });
+      measuredProviderCostUsd += Number(finalizer.cost_usd || 0);
       const summary = finalizer.text.trim();
       if (!summary) throw new Error('The selected AI model returned no fact-grounded recovery response.');
       const recoveryContradictions = responseContradictions(summary, factLedger);
@@ -14064,10 +14163,7 @@ ${agentPrompt}` : agentPrompt;
           : null,
         fact_ledger: factLedger,
       };
-      if (CODEN_MONETIZATION_ENABLED) {
-        await releaseUnifiedUsage(unifiedGenerationReservation);
-        unifiedGenerationReservation = null;
-      }
+      if (CODEN_MONETIZATION_ENABLED) await releaseFailedGenerationUsage(`${decision.intent || 'build'}_needs_fix`);
       return respondJson(200, finalPayload);
     }
     const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
@@ -14114,6 +14210,7 @@ ${agentPrompt}` : agentPrompt;
       finalizer: true,
       signal: generationAbortController.signal,
     });
+    measuredProviderCostUsd += Number(finalizer.cost_usd || 0);
     const finalSummary = finalizer.text.trim();
     if (!finalSummary) throw new Error('The selected AI model returned no fact-grounded final response.');
     const finalContradictions = responseContradictions(finalSummary, factLedger);
@@ -14160,40 +14257,48 @@ ${agentPrompt}` : agentPrompt;
       issueCount: Number(qualitySummary.failed?.length || 0) + Number(qualitySummary.warnings?.length || 0),
     });
 
-    const finalCost = costEstimator.calculateRequiredCredits({
-      openrouter_cost_usd: generation.cost_usd,
-      infra_cost_usd: 0.0005,
-      storage_cost_usd: 0.0001,
-      build_cost_usd: 0.001,
-      domain_operation_cost_usd: 0,
-      minimum_action_credits: Math.max(2, modelCreditFloor(generation.model)),
-      complexity_surcharge: prompt.length > 400 ? 2 : 0,
-    });
+    const grossedUpProviderCostUsd = withProviderPurchaseFee(measuredProviderCostUsd);
+    const allocatedPlatformCostUsd = 0.0016;
+    const completeCostUsd = Math.max(0.000001, grossedUpProviderCostUsd + allocatedPlatformCostUsd);
     if (CODEN_MONETIZATION_ENABLED && unifiedGenerationReservation) {
-      const usageEventId = await recordUnifiedUsageEvent({
-        accountId: userId,
-        projectId: project.id,
-        runId: agentRunId || null,
-        category: 'build',
-        resource: decision.intent || 'build',
-        provider: 'openrouter',
-        model: generation.model,
-        providerCostUsd: Number(generation.cost_usd || 0),
-        allocatedPlatformCostUsd: Math.max(0, finalCost.realCostUsd - Number(generation.cost_usd || 0)),
-        completeCostUsd: finalCost.realCostUsd,
-        idempotencyKey: `${refId}:usage`,
-        providerPayload: {
-          files_changed: Number(diff.created?.length || 0) + Number(diff.modified?.length || 0) + Number(diff.deleted?.length || 0),
-          verification: verificationSummary,
-        },
-      });
-      await settleUnifiedUsage({
-        reservation: unifiedGenerationReservation,
-        usageEventId,
-        creditsCharged: finalCost.finalCredits,
-        completeCostUsd: finalCost.realCostUsd,
-      });
-      unifiedGenerationReservation = null;
+      try {
+        const usageEventId = await recordUnifiedUsageEvent({
+          accountId: billingAccountId,
+          projectId: project.id,
+          runId: agentRunId || null,
+          category: 'build',
+          resource: cost.action || decision.intent || 'build',
+          provider: 'openrouter',
+          model: generation.model,
+          providerCostUsd: grossedUpProviderCostUsd,
+          allocatedPlatformCostUsd,
+          completeCostUsd,
+          idempotencyKey: `${refId}:usage`,
+          providerPayload: {
+            files_changed: Number(diff.created?.length || 0) + Number(diff.modified?.length || 0) + Number(diff.deleted?.length || 0),
+            verification: verificationSummary,
+            customer_credits_charged: cost.finalCredits,
+          },
+        });
+        await settleUnifiedUsage({
+          reservation: unifiedGenerationReservation,
+          usageEventId,
+          creditsCharged: cost.finalCredits,
+          completeCostUsd,
+        });
+        generationUsageFinalized = true;
+        unifiedGenerationReservation = null;
+      } catch (settlementError: any) {
+        // Keep the reservation for idempotent reconciliation. Releasing it
+        // after the verified project was delivered would grant free usage.
+        console.error('[coden:generation_settlement_pending]', {
+          request_id: requestId,
+          reservation_id: unifiedGenerationReservation?.id || null,
+          provider_cost_usd: grossedUpProviderCostUsd,
+          credits: cost.finalCredits,
+          message: redactSecrets(settlementError?.message || String(settlementError), '[redacted]'),
+        });
+      }
     }
     await updateAgentRunStatus(agentRunId, 'completed', {
       public_payload: {
@@ -14264,7 +14369,7 @@ ${agentPrompt}` : agentPrompt;
   } catch (error: any) {
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
-    if (CODEN_MONETIZATION_ENABLED) await releaseUnifiedUsage(unifiedGenerationReservation);
+    if (CODEN_MONETIZATION_ENABLED) await releaseFailedGenerationUsage(`${decision.intent || 'build'}_failed`);
     await helpers.addAudit({
       user_id: userId,
       organization_id: userId,
@@ -15422,6 +15527,190 @@ async function createProjectDomainProvider(project: GeneratedProject) {
   return createVercelDomainProvider(vercelProjectNameForSlug(String(project.slug || project.id)));
 }
 
+type PublicationUsage = {
+  publishedProjectIds: Set<string>;
+  customDomains: Set<string>;
+  customDomainCount: number;
+};
+
+async function loadPublicationUsage(organizationId: string): Promise<PublicationUsage> {
+  const client = requireSupabase('Publication entitlement usage');
+  const [deploymentResult, domainResult, deploymentDomainResult] = await Promise.all([
+    client.from('deployments').select('project_id').eq('organization_id', organizationId).eq('status', 'ready'),
+    client.from('domains').select('project_id,domain,type,status').eq('organization_id', organizationId).neq('status', 'removed'),
+    client.from('deployment_domains').select('project_id,hostname,domain_type,status').eq('organization_id', organizationId).neq('status', 'removed'),
+  ]);
+  if (deploymentResult.error) throw new Error(`Published-site usage lookup failed: ${deploymentResult.error.message}`);
+  if (domainResult.error) throw new Error(`Custom-domain usage lookup failed: ${domainResult.error.message}`);
+  if (deploymentDomainResult.error && !isSchemaShapeError(deploymentDomainResult.error)) {
+    throw new Error(`Deployment-domain usage lookup failed: ${deploymentDomainResult.error.message}`);
+  }
+  const customDomains = new Set<string>();
+  for (const row of (domainResult.data || []) as any[]) {
+    if (String(row.type || 'custom') !== 'custom') continue;
+    const domain = sanitizeDomainInput(String(row.domain || ''));
+    if (domain) customDomains.add(domain);
+  }
+  for (const row of (deploymentDomainResult.data || []) as any[]) {
+    if (String(row.domain_type || 'custom') !== 'custom') continue;
+    const domain = sanitizeDomainInput(String(row.hostname || ''));
+    if (domain) customDomains.add(domain);
+  }
+  return {
+    publishedProjectIds: new Set(((deploymentResult.data || []) as any[]).map(row => String(row.project_id || '')).filter(Boolean)),
+    customDomains,
+    customDomainCount: customDomains.size,
+  };
+}
+
+async function requirePublicationEntitlement(
+  project: GeneratedProject,
+  operation: 'publish' | 'domain',
+  requestedDomain = '',
+  requestedType = 'custom',
+): Promise<PublicationEntitlement> {
+  const entitlement = await resolvePublicationEntitlement(
+    requireSupabase('Publication entitlement'),
+    project.organization_id,
+  );
+  const allowed = operation === 'publish' ? entitlement.canPublish : entitlement.canAddDomain;
+  if (!allowed) {
+    throw createPublicError(
+      operation === 'publish'
+        ? 'Un abonnement payant actif est requis pour publier ce site.'
+        : 'Un abonnement payant actif est requis pour ajouter un domaine personnalisé.',
+      402,
+      'PAID_SUBSCRIPTION_REQUIRED',
+      'choose_paid_plan',
+    );
+  }
+
+  const usage = await loadPublicationUsage(project.organization_id);
+  if (
+    operation === 'publish'
+    && entitlement.publishedSites !== null
+    && !usage.publishedProjectIds.has(project.id)
+    && usage.publishedProjectIds.size >= entitlement.publishedSites
+  ) {
+    throw createPublicError(
+      `Votre offre autorise ${entitlement.publishedSites} site${entitlement.publishedSites > 1 ? 's' : ''} publié${entitlement.publishedSites > 1 ? 's' : ''}. Mettez votre abonnement à niveau pour en publier un autre.`,
+      409,
+      'PUBLISHED_SITE_LIMIT_REACHED',
+      'upgrade_plan',
+    );
+  }
+  const normalizedDomain = sanitizeDomainInput(requestedDomain);
+  const isExistingCustomDomain = normalizedDomain ? usage.customDomains.has(normalizedDomain) : false;
+  if (
+    operation === 'domain'
+    && requestedType === 'custom'
+    && entitlement.customDomains !== null
+    && !isExistingCustomDomain
+    && usage.customDomainCount >= entitlement.customDomains
+  ) {
+    throw createPublicError(
+      `Votre offre autorise ${entitlement.customDomains} domaine${entitlement.customDomains > 1 ? 's' : ''} personnalisé${entitlement.customDomains > 1 ? 's' : ''}. Mettez votre abonnement à niveau pour en ajouter un autre.`,
+      409,
+      'CUSTOM_DOMAIN_LIMIT_REACHED',
+      'upgrade_plan',
+    );
+  }
+  return entitlement;
+}
+
+async function canServePublishedProject(project: GeneratedProject): Promise<boolean> {
+  const entitlement = await resolvePublicationEntitlement(
+    requireSupabase('Published site entitlement'),
+    project.organization_id,
+  );
+  return entitlement.canServeExisting;
+}
+
+/**
+ * Enforce the same entitlement on Vercel's direct URL as on Coden's proxy.
+ * Projects stay intact: expiry pauses hosting after seven days, and a renewed
+ * subscription resumes the existing provider project without deleting data.
+ */
+async function reconcilePublishedSiteEntitlements(): Promise<void> {
+  const client = getSupabase();
+  if (!client || !String(process.env.VERCEL_TOKEN || '').trim()) return;
+
+  const deploymentResult = await client
+    .from('deployments')
+    .select('project_id,organization_id')
+    .eq('status', 'ready')
+    .limit(2_000);
+  if (deploymentResult.error) throw new Error(`Publication reconciliation lookup failed: ${deploymentResult.error.message}`);
+  const projectIds = Array.from(new Set(((deploymentResult.data || []) as any[])
+    .map(row => String(row.project_id || ''))
+    .filter(Boolean)));
+  if (!projectIds.length) return;
+
+  const [projectResult, suspensionResult] = await Promise.all([
+    client.from('projects').select('id,organization_id,slug').in('id', projectIds),
+    client.from('publication_entitlement_suspensions').select('*').in('project_id', projectIds),
+  ]);
+  if (projectResult.error) throw new Error(`Published project reconciliation failed: ${projectResult.error.message}`);
+  if (suspensionResult.error) throw new Error(`Publication suspension reconciliation failed: ${suspensionResult.error.message}`);
+
+  const suspensions = new Map(((suspensionResult.data || []) as any[]).map(row => [String(row.project_id), row]));
+  const entitlementByOrganization = new Map<string, PublicationEntitlement>();
+  for (const projectRow of (projectResult.data || []) as any[]) {
+    const organizationId = String(projectRow.organization_id || '');
+    const projectId = String(projectRow.id || '');
+    if (!organizationId || !projectId) continue;
+    let entitlement = entitlementByOrganization.get(organizationId);
+    if (!entitlement) {
+      entitlement = await resolvePublicationEntitlement(client, organizationId);
+      entitlementByOrganization.set(organizationId, entitlement);
+    }
+    const vercelProject = vercelProjectNameForSlug(String(projectRow.slug || projectId));
+    const previous = suspensions.get(projectId);
+    try {
+      if (entitlement.canServeExisting) {
+        if (previous && previous.status !== 'active') {
+          const result = await unpauseVercelProject(vercelProject);
+          await client.from('publication_entitlement_suspensions').update({
+            status: result === 'missing' ? 'missing' : 'active',
+            resumed_at: result === 'missing' ? null : new Date().toISOString(),
+            last_error: null,
+            updated_at: new Date().toISOString(),
+          }).eq('project_id', projectId);
+        }
+        continue;
+      }
+
+      const result = await pauseVercelProject(vercelProject);
+      const { error: persistError } = await client.from('publication_entitlement_suspensions').upsert({
+        account_id: organizationId,
+        organization_id: organizationId,
+        project_id: projectId,
+        vercel_project: vercelProject,
+        status: result === 'missing' ? 'missing' : 'paused',
+        reason: 'subscription_inactive_after_grace',
+        paused_at: result === 'missing' ? null : new Date().toISOString(),
+        resumed_at: null,
+        last_error: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'project_id' });
+      if (persistError) throw persistError;
+    } catch (error: any) {
+      const message = redactSecrets(error?.message || String(error), '[redacted]').slice(0, 1_000);
+      console.warn('[coden:publication_entitlement_project_failed]', { project_id: projectId, message });
+      await Promise.resolve(client.from('publication_entitlement_suspensions').upsert({
+        account_id: organizationId,
+        organization_id: organizationId,
+        project_id: projectId,
+        vercel_project: vercelProject,
+        status: 'error',
+        reason: 'subscription_inactive_after_grace',
+        last_error: message,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'project_id' })).catch(() => null);
+    }
+  }
+}
+
 // POST /projects/:id/domains
 app.post('/api/projects/:id/domains', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
@@ -15432,12 +15721,18 @@ app.post('/api/projects/:id/domains', async (req: any, res: any) => {
     const project = await loadProject(projectId, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    const plan = await getOrganizationPlan(project.organization_id);
+    const entitlement = await requirePublicationEntitlement(project, 'domain', domain, type || 'custom');
     const domainService = new DomainService(requireSupabase('Domain creation'), () => createProjectDomainProvider(project));
-    const records = await domainService.registerDomain(project.organization_id, projectId, domain, type || 'custom', plan as any);
+    const records = await domainService.registerDomain(project.organization_id, projectId, domain, type || 'custom', entitlement);
     return res.json({ success: true, domain: records });
   } catch (err: any) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(Number(err?.statusCode || 400)).json({
+      success: false,
+      error: err.message,
+      message: err.message,
+      diagnostic_code: err?.diagnostic_code || 'DOMAIN_REGISTRATION_FAILED',
+      suggested_action: err?.suggested_action || 'check_domain',
+    });
   }
 });
 
@@ -15504,14 +15799,15 @@ app.patch('/api/projects/:id/domains/:domainId/primary', async (req: any, res) =
 // ──────────────────────────────────────────────────────────────────────
 
 async function createPublishContext(project: GeneratedProject): Promise<PublishContext> {
-  const [files, latestDeployment, plan, customDomain, currentVisitors] = await Promise.all([
+  const [files, latestDeployment, plan, entitlement, customDomain, currentVisitors] = await Promise.all([
     loadProjectFiles(project.id),
     getLatestPublishedDeployment(project.id),
     getOrganizationPlan(project.organization_id),
+    resolvePublicationEntitlement(requireSupabase('Publication status entitlement'), project.organization_id),
     getPrimaryCustomDomain(project.id),
     getPublishCurrentVisitors(project.id),
   ]);
-  return { project, files, latestDeployment, plan, customDomain, currentVisitors };
+  return { project, files, latestDeployment, plan, entitlement, customDomain, currentVisitors };
 }
 
 function getPublishPublicUrl(project: GeneratedProject, customDomain: string | null): string {
@@ -15755,6 +16051,9 @@ app.use('/p/:slug', async (req: any, res: any, next: any) => {
   try {
     const project = await loadPublicProjectBySlug(req.params.slug);
     if (!project) return res.status(404).send('Published app not found.');
+    if (!(await canServePublishedProject(project))) {
+      return res.status(402).send('This app is temporarily offline.');
+    }
     const deployment = await getLatestPublishedDeployment(project.id);
     if (!deployment || !isPublishedDeploymentReady(deployment)) return res.status(404).send('Published app not found.');
     return proxyPublishedDeployment(project, deployment, req, res, `/p/${encodeURIComponent(req.params.slug)}`);
@@ -15902,6 +16201,9 @@ app.use(async (req, res, next) => {
   try {
     const project = await loadPublicProjectByCustomDomain(host);
     if (!project) return next();
+    if (!(await canServePublishedProject(project))) {
+      return res.status(402).send('This app is temporarily offline.');
+    }
     const deployment = await getLatestPublishedDeployment(project.id);
     if (!deployment || !isPublishedDeploymentReady(deployment)) return next();
     return proxyPublishedDeployment(project, deployment, req, res);
@@ -16132,6 +16434,8 @@ import {
   vercelCodenHostForSlug,
   verifyVercelDeployment,
   promoteVercelDeployment,
+  pauseVercelProject,
+  unpauseVercelProject,
 } from './src/services/publish-vercel.ts';
 import { buildStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
@@ -16482,6 +16786,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     const project = await loadProjectForPublish(projectId, auth.userId, req);
     publishProjectRecord = project;
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
+    await requirePublicationEntitlement(project, 'publish');
     const context = await createPublishContext(project);
     const publishStatus = buildPublishStatus(context);
     if (!publishStatus.can_publish) {
@@ -16524,6 +16829,9 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
     activePublishOperations.set(publishLockKey, publishLockToken);
     const slug = String(project.slug || project.id).toLowerCase();
+    // Resubscription restores the existing provider project before a new
+    // deployment is created. The operation is idempotent for active projects.
+    await unpauseVercelProject(vercelProjectNameForSlug(slug));
     const files = extractStaticFiles(project, context.files);
     if (!Object.keys(files).length) {
       return res.status(400).json({ success: false, error: 'No generated files to publish.', request_id: requestId });
@@ -16741,6 +17049,7 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   const auth = getRequiredAuth(req);
   const project = await loadProjectForPublish(req.params.id, auth.userId, req);
   if (!requireProjectCapability(req, res, 'deploy', project)) return;
+  await requirePublicationEntitlement(project, 'publish');
   if (req.body?.confirmed !== true && req.body?.approvalGranted !== true) {
     return res.status(409).json({ success: false, requires_confirmation: true, error: 'Explicit confirmation is required before rollback.' });
   }
@@ -16836,6 +17145,7 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
     const auth = getRequiredAuth(req);
     const project = await loadProjectForPublish(req.params.id, auth.userId, req);
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
+    await requirePublicationEntitlement(project, 'domain', domain, 'custom');
     const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
     const result = await attachVercelCustomDomain(projectName, domain);
     const client = getSupabase();
@@ -16858,7 +17168,12 @@ app.post('/api/projects/:id/publish-cf/domain', requireAuth, async (req: any, re
     }
     res.json({ ok: true, ...result });
   } catch (e: any) {
-    res.status(500).json({ error: e?.message || 'Domain attach failed' });
+    res.status(Number(e?.statusCode || 500)).json({
+      error: e?.message || 'Domain attach failed',
+      message: e?.message || 'Domain attach failed',
+      diagnostic_code: e?.diagnostic_code || 'DOMAIN_ATTACH_FAILED',
+      suggested_action: e?.suggested_action || 'check_domain',
+    });
   }
 });
 
@@ -17249,6 +17564,20 @@ const httpServer = app.listen(port, () => {
     initJobQueue(supabaseClient);
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');
+    if (String(process.env.VERCEL_TOKEN || '').trim()) {
+      const reconcilePublicationEntitlements = async () => {
+        try {
+          await reconcilePublishedSiteEntitlements();
+        } catch (error: any) {
+          console.warn('[coden:publication_entitlement_reconciliation_failed]', {
+            message: redactSecrets(error?.message || String(error), '[redacted]'),
+          });
+        }
+      };
+      void reconcilePublicationEntitlements();
+      const publicationEntitlementTimer = setInterval(reconcilePublicationEntitlements, 15 * 60_000);
+      publicationEntitlementTimer.unref?.();
+    }
     if (CODEN_MONETIZATION_ENABLED) {
       const saspayBilling = new SaspayService(supabaseClient);
       const issueIncludedGrants = async () => {

@@ -4301,21 +4301,24 @@
       /* Preview is the canvas itself. Remove the editor shell's outer gutter
          only while this view is active, so the generated app reaches the
          divider, viewport edge and bottom without a dark rail around it. */
-      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) {
-        margin: 0;
-        border: 1px solid var(--border) !important;
-        border-radius: var(--radius-lg);
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]),
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) {
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
         box-shadow: none;
         background: var(--background) !important;
         overflow: hidden;
       }
 
-      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .viewport-content-holder {
-        border-radius: 0;
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .viewport-content-holder,
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) .viewport-content-holder {
+        border-radius: 0 !important;
         background: transparent;
       }
 
-      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .preview-screen-panel {
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .preview-screen-panel,
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) .cloud-console-screen {
         border: 0 !important;
         border-radius: 0 !important;
       }

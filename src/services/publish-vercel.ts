@@ -555,6 +555,50 @@ export async function removeVercelCustomDomain(project: string, domain: string):
   await vercelRequest(`/v9/projects/${encodeURIComponent(project)}/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' });
 }
 
+async function resolveVercelProjectId(project: string): Promise<string | null> {
+  try {
+    const record = await vercelRequest<any>(`/v9/projects/${encodeURIComponent(project)}`);
+    return String(record?.id || '').trim() || null;
+  } catch (error: any) {
+    if (Number(error?.statusCode || 0) === 404) return null;
+    throw error;
+  }
+}
+
+/**
+ * Pause the provider project after Coden's subscription grace period.
+ * Pausing leaves deployments and source intact while making every Vercel
+ * alias return 503, including the direct `vercel.app` URL that cannot pass
+ * through Coden's entitlement middleware.
+ */
+export async function pauseVercelProject(project: string): Promise<'paused' | 'missing'> {
+  const projectId = await resolveVercelProjectId(project);
+  if (!projectId) return 'missing';
+  try {
+    await vercelRequest(`/v1/projects/${encodeURIComponent(projectId)}/pause`, { method: 'POST' });
+  } catch (error: any) {
+    // Some Vercel API versions answer conflict when the desired state was
+    // already reached. Treat only that idempotent condition as success.
+    if (Number(error?.statusCode) !== 409) throw error;
+  }
+  return 'paused';
+}
+
+/** Reactivate an intact provider project after a paid subscription resumes. */
+export async function unpauseVercelProject(project: string): Promise<'active' | 'missing'> {
+  const projectId = await resolveVercelProjectId(project);
+  if (!projectId) return 'missing';
+  try {
+    await vercelRequest(`/v1/projects/${encodeURIComponent(projectId)}/unpause`, { method: 'POST' });
+  } catch (error: any) {
+    // Vercel treats an already-active project as a conflict on some API
+    // versions. The desired state is already reached, so keep publication
+    // idempotent while still surfacing every other provider failure.
+    if (Number(error?.statusCode || 0) !== 409) throw error;
+  }
+  return 'active';
+}
+
 export async function promoteVercelDeployment(project: string, deploymentId: string): Promise<void> {
   await vercelRequest(`/v10/projects/${encodeURIComponent(project)}/promote/${encodeURIComponent(deploymentId)}`, { method: 'POST' });
 }

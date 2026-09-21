@@ -27,6 +27,7 @@ import type { UserPlan } from '../config/ai-models.ts';
 import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
 import { describeProjectSource } from './agent-mission-context.ts';
+import type { AgentEffort } from './agent-effort.ts';
 
 export type BuildPlanFile = {
   path: string;
@@ -176,16 +177,24 @@ export type PlannerAgentInput = {
   credits?: number;
   /** A manual selection pins planning to the same model as implementation. */
   selectedModel?: import('../config/ai-models.ts').AllowedModelId;
+  /** The same session effort selected in the composer. */
+  effort?: AgentEffort;
   /** Auto may recover through the configured compatible model chain. */
   allowFallback?: boolean;
   signal?: AbortSignal;
 };
 
-export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPlan & { risks: string[] }> {
+export type PlannerAgentResult = BuildPlan & {
+  risks: string[];
+  /** Includes the initial planning call and an eventual JSON repair call. */
+  costUsd: number;
+};
+
+export async function runPlannerAgent(input: PlannerAgentInput): Promise<PlannerAgentResult> {
   const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
   const systemPrompt = buildPlannerSystemPrompt(input.designPolicy);
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
-  const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true}));
+  const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true,effort:input.effort}));
   const runtimeConfig = runtimeFor(modelId);
 
   const result = await input.gateway.chat(modelId, [
@@ -193,6 +202,7 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPl
     { role: 'user', content: userMessage },
   ], { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
 
+  let repairCostUsd = 0;
   const parsed = await parseOrRepairStructuredObject(result.text, isBuildPlan, async invalidText => {
     // The repair reshapes text that already exists into valid JSON — it is not
     // planning again. Re-sending the full brief (the design system alone is
@@ -202,10 +212,15 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<BuildPl
       { role: 'system', content: `${PLAN_JSON_CONTRACT}\n\nRepair the invalid plan below. Return one valid JSON object only, matching the required contract.` },
       { role: 'user', content: String(invalidText || '').slice(0, 8_000) },
     ], { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
+    repairCostUsd += Math.max(0, Number(repaired.cost_usd || 0));
     return repaired.text;
   });
 
   // Normalized here so every downstream reader can rely on the array
   // existing rather than re-deriving the same `|| []` at each call site.
-  return { ...parsed, risks: parsed.risks || [] };
+  return {
+    ...parsed,
+    risks: parsed.risks || [],
+    costUsd: Math.max(0, Number(result.cost_usd || 0)) + repairCostUsd,
+  };
 }

@@ -27,15 +27,17 @@ assert.match(server, /function requireBillingAuth[\s\S]*?req\.method === 'GET' &
 assert.match(server, /app\.use\('\/api\/billing', requireBillingAuth\)/, 'All other billing routes must remain authenticated.');
 
 assert.equal(priceFor('pro', 100, 'monthly').amountUsd, 25, 'Pro 100 monthly must match the public V2 price.');
-assert.equal(priceFor('business', 100, 'monthly').amountUsd, 50, 'Business 100 monthly must match the public V2 price.');
+assert.equal(priceFor('business', 250, 'monthly').amountUsd, 50, 'Business 250 monthly must match the public canonical price.');
 assert.equal(priceFor('pro', 100, 'annual').amountUsd, 240, 'Annual pricing must apply the published discount.');
 
 const catalog = publicBillingCatalog();
 assert.equal(catalog.plans.length, 3, 'The public catalog must expose Free, Pro and Business.');
 assert.equal(catalog.provider, 'saspay', 'Saspay must be the public billing provider.');
 assert.equal(catalog.currency, 'xaf', 'The public catalog must settle in XAF.');
-assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 100 && price.interval === 'monthly' && price.amount === 15_000), 'The public Pro entry price must be 15 000 XAF.');
-assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 10_000), 'The public catalog must expose the highest Pro tier.');
-assert(catalog.prices.some(price => price.plan === 'business' && price.credits === 10_000), 'The public catalog must expose the highest Business tier.');
+assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 25 && price.interval === 'monthly' && price.amount === 5_000), 'The public Pro entry price must be 5 000 XAF.');
+assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 60 && price.interval === 'monthly' && price.amount === 10_000), 'The middle Pro tier must be 10 000 XAF.');
+assert(catalog.prices.some(price => price.plan === 'pro' && price.credits === 100 && price.interval === 'monthly' && price.amount === 15_000), 'The highest Pro tier must be 15 000 XAF.');
+assert(catalog.prices.some(price => price.plan === 'business' && price.credits === 250 && price.interval === 'monthly' && price.amount === 30_000), 'Business must expose 250 credits for 30 000 XAF.');
+assert(catalog.topups.some(price => price.plan === 'pro' && price.credits === 10_000), 'Large credit quantities remain top-ups, not subscription tiers.');
 
 console.log('pricing plan contract passed');

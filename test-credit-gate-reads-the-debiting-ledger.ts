@@ -38,12 +38,11 @@ const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   assert.match(fn, /\.gt\('credits_remaining', 0\)/, 'same exhaustion rule');
 
   /*
-   * Fail open. A read outage on a balance must not lock every customer out of
-   * the product; the reservation still guards the actual debit, so the worst
-   * case is the behaviour that existed before this check.
+   * Fail closed. A balance outage must stop before provider spend; otherwise
+   * Coden pays for a run whose authoritative ledger could never reserve it.
    */
-  assert.match(fn, /return Number\.POSITIVE_INFINITY;[\s\S]*\}\s*$/,
-    'a failed read does not become a refusal');
+  assert.match(fn, /return 0;[\s\S]*\}\s*$/,
+    'a failed canonical-ledger read blocks paid provider work');
   assert.match(fn, /\[coden:unified_balance_unavailable\]/, 'and it is visible to an operator');
 
   // Both books are consulted before the model is called, not one of them.
@@ -56,7 +55,7 @@ const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
 }
 
 /*
- * A refusal to bill never destroys work that is already done.
+ * Settlement never destroys work that is already done.
  *
  * The charge sat behind a bare `await`. When the ledger refused, the exception
  * unwound past the response into the error handler, and the customer was told
@@ -72,9 +71,9 @@ const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
     server.indexOf('return res.json({\n      success: true,\n      request_id: requestId,\n      text: content,'),
   );
   assert.ok(charge.length > 0, 'the chat charge block is where it was');
-  assert.match(charge, /try \{[\s\S]*chargeCompletedAgentAction\([\s\S]*\} catch \(chargeError/,
-    'the charge cannot unwind the response');
-  assert.match(charge, /\[coden:chat_charge_failed\]/, 'a shortfall is recorded instead');
+  assert.match(charge, /try \{[\s\S]*recordUnifiedUsageEvent\([\s\S]*settleUnifiedUsage\([\s\S]*\} catch \(chargeError/,
+    'measured usage and settlement cannot unwind the response');
+  assert.match(charge, /\[coden:chat_settlement_pending\]/, 'a pending idempotent settlement is recorded instead');
   assert.match(charge, /provider_cost_usd: Number\(agentText\.cost_usd/,
     'with what was actually spent, so the debt can be reconciled');
 

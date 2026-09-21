@@ -46,7 +46,8 @@ import { readFileSync } from 'node:fs';
 {
   const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   const branch = server.slice(server.indexOf("if (decision.intent === 'conversation' || decision.intent === 'clarification_required'"));
-  const conversation = branch.slice(0, branch.indexOf('} catch (error: any) {'));
+  const streamStart = branch.indexOf('let agentText: any;');
+  const conversation = branch.slice(streamStart, branch.indexOf('await recordAgentImprovementSignal', streamStart));
 
   assert.match(conversation, /eventStream\?\.chat\(\{ type: 'activity', label:/, 'the run must say what it is doing');
   assert.match(conversation, /'Coden réfléchit…' : 'Coden is thinking…'/, 'in the user language');

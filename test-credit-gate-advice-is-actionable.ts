@@ -25,18 +25,19 @@ const agentMode = readFileSync(new URL('./src/services/agent-mode.ts', import.me
     'so a chat request arrives on Auto unless a model was explicitly picked');
 
   /*
-   * Three, and the decisive one: a conversation's price never reads the model.
-   * `estimateActionCost` returns a flat floor of 1 credit for that intent, so
-   * even a customer who could follow the advice would see no change.
+   * Three, and the decisive one: the canonical action table never reads the
+   * model. A conversation has its own fixed 0.5-credit price, so changing the
+   * model cannot make this specific refusal disappear.
    */
-  const conversationBranch = server.slice(
-    server.indexOf("if (intent.intent === 'conversation') return costEstimator.calculateRequiredCredits({"),
-    server.indexOf("if (intent.intent === 'plan') return costEstimator.calculateRequiredCredits({"),
+  const costFunction = server.slice(
+    server.indexOf('function estimateActionCost('),
+    server.indexOf('async function chargeCompletedAgentAction('),
   );
-  assert.ok(conversationBranch.length > 0, 'the conversation cost branch is where it was');
-  assert.doesNotMatch(conversationBranch, /selectedModelFloor|modelId|modelCreditFloor/,
+  assert.ok(costFunction.length > 0, 'the canonical action cost function must exist');
+  assert.match(costFunction, /classifyBillableAction\(prompt, intent\)/, 'the public action classifier drives the price');
+  assert.doesNotMatch(costFunction, /selectedModelFloor|modelCreditFloor/,
     'a conversation is priced without reference to the model');
-  assert.match(conversationBranch, /minimum_action_credits: 1,/, 'at a flat floor');
+  assert.match(costFunction, /action === 'conversation' \? 0\.5 : ACTION_CREDIT_PRICES\[action\]/, 'at a fixed public price');
 }
 
 /*

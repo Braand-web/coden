@@ -25,6 +25,19 @@ import { readFileSync } from 'node:fs';
  */
 
 const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+const builder = readFileSync(new URL('./builder.html', import.meta.url), 'utf8');
+
+/* Desktop Preview and Cloud are the right workspace itself, not a rounded
+ * card nested inside it. Device simulation may add a frame later, but the
+ * desktop canvas must meet the divider and every viewport edge exactly. */
+{
+  const edgeToEdgeStart = builder.indexOf('.editor-pane:has(#screen-layout-preview[style*="display: flex"])');
+  const edgeToEdge = builder.slice(edgeToEdgeStart, builder.indexOf('.code-screen-layout.is-empty .editor-main-scroll', edgeToEdgeStart));
+  assert.match(edgeToEdge, /#screen-layout-database\[style\*="display: flex"\]/, 'Cloud shares the edge-to-edge workspace rule');
+  assert.match(edgeToEdge, /margin: 0 !important;/, 'no outer gutter remains');
+  assert.match(edgeToEdge, /border: 0 !important;/, 'no sub-pixel outer border remains');
+  assert.match(edgeToEdge, /border-radius: 0 !important;/, 'desktop corners cannot expose the shell underneath');
+}
 
 // The two questions are asked separately, because they are different questions.
 {

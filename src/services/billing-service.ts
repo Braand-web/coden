@@ -10,9 +10,11 @@ import {
   TARGET_GROSS_MARGIN,
   TOPUP_PRODUCTS_V2,
   normalizeBillingPlan,
+  publicationLimitsFor,
   priceFor,
   type BillingInterval,
   type BillingPlanKey,
+  type PublicationLimits,
 } from '../config/billing-v2.ts';
 
 export type { BillingInterval };
@@ -44,9 +46,9 @@ export interface CloudPlanLimits {
 export interface PlanConfig {
   id: string; key: PlanKey; name: string; amount: number; annualAmount?: number;
   annualMonthlyEquivalent?: number; currency: typeof BILLING_SETTLEMENT_CURRENCY; credits: number; creditTiers: readonly number[];
-  dailyCredits?: number; monthlyCreditCap?: number | null; maxProjects: number;
-  customDomains: number; rollover: 'none' | 'monthly' | 'annual_period'; public: boolean;
-  grants: { cloud: number; aiGateway: number; emailCount: number };
+  signupCredits: number; maxProjects: number; publishedSites: number | null;
+  customDomains: number | null; rollover: 'none' | 'monthly' | 'annual_period'; public: boolean;
+  technicalAllowances: { cloudBudgetUsd: number; aiAppBudgetUsd: number; emailCount: number };
   cloud: CloudPlanLimits; features: string[];
 }
 
@@ -110,24 +112,14 @@ export const PAID_PLAN_KEYS = ['pro', 'business', 'enterprise'] as const satisfi
 /*
  * What the plan's cloud allowance is actually worth.
  *
- * Every field here was hardcoded to zero, while the same plans granted
- * `monthlyCloudCredits: 20` and the interface showed customers a storage and
- * bandwidth allowance. So the product advertised an entitlement of literally
- * nothing, and the twenty credits it granted bought nothing that was measured.
- *
- * The numbers are now derived from the grant that was already declared, rather
- * than invented: the monthly cloud credits are converted to money at the Pro
- * plan's own rate, and the headline GB figures are what that money buys at the
- * metered price of each resource. Nothing here sets a price — it reports, in
- * the units a customer thinks in, the allowance the plan already gives.
- *
- * `aiAppBalanceUsd` follows `monthlyAiCredits`, which is the third counter:
- * models called from inside a published app at runtime, not the agent that
- * built it.
+ * Cloud and app-runtime AI are technical allowances denominated in USD. They
+ * are deliberately not customer credits and never contribute to the balance
+ * shown in the Builder. This keeps one canonical customer ledger while still
+ * leaving the infrastructure meter in the units it actually incurs.
  */
 const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => {
-  const grants = BILLING_PLANS[plan].grants;
-  const cloudUsd = grants.monthlyCloudCredits * USD_PER_CLOUD_CREDIT;
+  const allowances = BILLING_PLANS[plan].technicalAllowances;
+  const cloudUsd = allowances.cloudBudgetUsd;
   // What the allowance buys if it were spent entirely on one resource. These
   // are the "up to" figures a pricing page quotes, not separate budgets: one
   // wallet funds all of them.
@@ -137,7 +129,7 @@ const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => {
   };
   return {
     balanceUsd: Number(cloudUsd.toFixed(2)),
-    aiAppBalanceUsd: Number((grants.monthlyAiCredits * USD_PER_CLOUD_CREDIT).toFixed(2)),
+    aiAppBalanceUsd: Number(allowances.aiAppBudgetUsd.toFixed(2)),
     databaseStorageGb: buys('database_storage_gb_month'),
     fileStorageGb: buys('file_storage_gb_month'),
     bandwidthGb: buys('database_egress_gb'),
@@ -149,8 +141,9 @@ const compatibilityCloud = (plan: BillingPlanKey): CloudPlanLimits => {
 
 function planConfig(key: PlanKey): PlanConfig {
   const plan = BILLING_PLANS[key];
-  const monthly = key === 'pro' || key === 'business' ? priceFor(key, 100, 'monthly') : null;
-  const annual = key === 'pro' || key === 'business' ? priceFor(key, 100, 'annual') : null;
+  const monthly = key === 'pro' || key === 'business' ? priceFor(key, plan.baseCredits, 'monthly') : null;
+  const annual = key === 'pro' || key === 'business' ? priceFor(key, plan.baseCredits, 'annual') : null;
+  const publication = publicationLimitsFor(key, plan.baseCredits);
   return {
     id: plan.id,
     key,
@@ -161,13 +154,17 @@ function planConfig(key: PlanKey): PlanConfig {
     currency: BILLING_SETTLEMENT_CURRENCY,
     credits: plan.baseCredits,
     creditTiers: plan.tiers,
-    dailyCredits: plan.grants.dailyBuildCredits,
-    monthlyCreditCap: plan.grants.dailyBuildMonthlyCap,
+    signupCredits: plan.grants.signupCredits,
     maxProjects: key === 'free' ? 1 : key === 'pro' ? 50 : 9_999,
-    customDomains: key === 'free' ? 0 : key === 'pro' ? 1 : key === 'business' ? 10 : 9_999,
+    publishedSites: publication.publishedSites,
+    customDomains: publication.customDomains,
     rollover: key === 'free' ? 'none' : key === 'enterprise' ? 'annual_period' : 'monthly',
     public: plan.public,
-    grants: { cloud: plan.grants.monthlyCloudCredits, aiGateway: plan.grants.monthlyAiCredits, emailCount: plan.grants.monthlyEmailCount },
+    technicalAllowances: {
+      cloudBudgetUsd: plan.technicalAllowances.cloudBudgetUsd,
+      aiAppBudgetUsd: plan.technicalAllowances.aiAppBudgetUsd,
+      emailCount: plan.grants.monthlyEmailCount,
+    },
     cloud: compatibilityCloud(key),
     features: [...plan.capabilities],
   };
@@ -206,6 +203,61 @@ export function getPublicPlans() { return Object.fromEntries(PUBLIC_PRICING_PLAN
 export function getPlanEconomicsGuardrail(value: unknown) { const key = normalizePlanKey(value); return key ? PLAN_ECONOMICS_GUARDRAILS[key] : null; }
 export function getCloudUsageCategories() { return CLOUD_USAGE_CATEGORIES.map(id => ({ id, label: id.split('_').map(part => part[0].toUpperCase() + part.slice(1)).join(' ') })); }
 export function isPaidPlanKey(value: unknown) { const key = normalizePlanKey(value); return key === 'pro' || key === 'business' || key === 'enterprise'; }
+
+export type PublicationEntitlement = PublicationLimits & {
+  plan: PlanKey;
+  creditTier: number;
+  subscriptionStatus: string;
+  canPublish: boolean;
+  canAddDomain: boolean;
+  canServeExisting: boolean;
+  currentPeriodEnd: string | null;
+  graceEndsAt: string | null;
+};
+
+const PUBLICATION_GRACE_MS = 7 * 24 * 60 * 60 * 1_000;
+
+/** Resolve publish rights from the paid subscription, never from top-ups or a stale organization label. */
+export async function resolvePublicationEntitlement(
+  supabase: any,
+  accountId: string,
+  now = new Date(),
+): Promise<PublicationEntitlement> {
+  const { data, error } = await supabase
+    .from('billing_subscriptions_v2')
+    .select('plan_id,credit_tier,status,current_period_end,updated_at')
+    .eq('account_id', accountId)
+    // A cancelled historical row can be updated after a renewal. The most
+    // recent entitlement is the period that ends last, not the row touched
+    // last by a webhook.
+    .order('current_period_end', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Publication entitlement lookup failed: ${error.message}`);
+
+  const plan = getPlanConfig(data?.plan_id)?.key || 'free';
+  const creditTier = Math.max(0, Number(data?.credit_tier || 0));
+  const limits = publicationLimitsFor(plan, creditTier);
+  const periodEnd = data?.current_period_end ? new Date(String(data.current_period_end)) : null;
+  const validPeriod = Boolean(periodEnd && Number.isFinite(periodEnd.getTime()) && periodEnd > now);
+  const active = isPaidPlanKey(plan) && data?.status === 'active' && validPeriod;
+  const graceEnds = periodEnd && Number.isFinite(periodEnd.getTime())
+    ? new Date(periodEnd.getTime() + PUBLICATION_GRACE_MS)
+    : null;
+  const inGrace = isPaidPlanKey(plan) && Boolean(graceEnds && graceEnds > now);
+
+  return {
+    ...limits,
+    plan,
+    creditTier,
+    subscriptionStatus: String(data?.status || 'inactive'),
+    canPublish: active,
+    canAddDomain: active,
+    canServeExisting: active || inGrace,
+    currentPeriodEnd: periodEnd && Number.isFinite(periodEnd.getTime()) ? periodEnd.toISOString() : null,
+    graceEndsAt: graceEnds?.toISOString() || null,
+  };
+}
 export function resolveCheckoutAmount(plan: PlanConfig, billingInterval: BillingInterval, credits = plan.credits) {
   if (plan.key !== 'pro' && plan.key !== 'business') throw new Error('A public paid plan is required.');
   const price = priceFor(plan.key, credits, billingInterval);
@@ -443,13 +495,8 @@ export class SaspayService {
   }
 
   private async grantMonthlyPlanCredits(accountId: string, plan: PlanConfig, credits: number, monthlyNetRevenueUsd: number, reference: string, expiresAt: string) {
-    const dailyCreditsBudget = Number(plan.dailyCredits || 0) * 31;
-    const totalEntitledCredits = credits + plan.grants.cloud + plan.grants.aiGateway + dailyCreditsBudget;
     const totalCogsBudget = monthlyNetRevenueUsd * (1 - MINIMUM_PAID_GROSS_MARGIN);
-    const cogsFor = (value: number) => totalEntitledCredits > 0 ? totalCogsBudget * value / totalEntitledCredits : 0;
-    await this.grant({ accountId, kind: 'monthly_plan', restriction: 'general', credits, netRevenueUsd: monthlyNetRevenueUsd, maxCogsUsd: cogsFor(credits), sourceReference: reference, expiresAt });
-    if (plan.grants.cloud) await this.grant({ accountId, kind: 'monthly_cloud', restriction: 'cloud', credits: plan.grants.cloud, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.cloud), sourceReference: `${reference}:cloud`, expiresAt });
-    if (plan.grants.aiGateway) await this.grant({ accountId, kind: 'monthly_ai', restriction: 'ai_gateway', credits: plan.grants.aiGateway, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.aiGateway), sourceReference: `${reference}:ai`, expiresAt });
+    await this.grant({ accountId, kind: 'monthly_plan', restriction: 'general', credits, netRevenueUsd: monthlyNetRevenueUsd, maxCogsUsd: totalCogsBudget, sourceReference: reference, expiresAt });
   }
 
   private async grantPlan(intent: CheckoutIntent, transaction: SaspayTransaction) {
@@ -566,11 +613,6 @@ export class SaspayService {
   async processDueAutoTopups() { return [] as Array<{ accountId: string; status: 'paid' | 'skipped' | 'failed'; error?: string }>; }
 
   async issueDueIncludedGrants(limit = 500) {
-    const now = new Date();
-    const dayKey = now.toISOString().slice(0, 10);
-    const monthKey = dayKey.slice(0, 7);
-    const nextDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
-    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
     const { data: organizations, error } = await this.supabase.from('organizations').select('id,plan').limit(Math.max(1, Math.min(2_000, limit)));
     if (error) throw new Error(`Included credit account scan failed: ${error.message}`);
     let issued = 0;
@@ -578,42 +620,27 @@ export class SaspayService {
       const accountId = String(organization.id || '');
       const planKey = normalizePlanKey(organization.plan || 'free') || 'free';
       const plan = SAAS_PLANS[planKey];
-      if (!accountId || !plan.dailyCredits) continue;
-      await this.ensureAccount(accountId);
-      const monthStart = `${monthKey}-01T00:00:00.000Z`;
-      const { data: dailyRows, error: dailyError } = await this.supabase.from('credit_grants').select('credits_issued').eq('account_id', accountId).eq('kind', 'daily_build').gte('issued_at', monthStart);
-      if (dailyError) throw new Error(`Daily grant lookup failed: ${dailyError.message}`);
-      const issuedThisMonth = (dailyRows || []).reduce((sum: number, row: any) => sum + Number(row.credits_issued || 0), 0);
-      const remainingCap = plan.monthlyCreditCap == null ? plan.dailyCredits : Math.max(0, plan.monthlyCreditCap - issuedThisMonth);
-      const dailyCredits = Math.min(plan.dailyCredits, remainingCap);
-
-      let monthlyNetRevenue = 0;
-      let monthlyPlanCredits = plan.credits;
-      if (planKey === 'pro' || planKey === 'business') {
-        const { data: subscription } = await this.supabase.from('billing_subscriptions_v2').select('monthly_net_revenue_usd,credit_tier').eq('account_id', accountId).eq('status', 'active').gt('current_period_end', now.toISOString()).order('updated_at', { ascending: false }).limit(1).maybeSingle();
-        if (!subscription) continue;
-        monthlyNetRevenue = Number(subscription?.monthly_net_revenue_usd || 0);
-        monthlyPlanCredits = Number(subscription?.credit_tier || plan.credits);
-      }
-
-      const entitlementTotal = planKey === 'free' ? Number(plan.monthlyCreditCap || 0) + plan.grants.cloud + plan.grants.aiGateway : monthlyPlanCredits + (plan.dailyCredits * 31) + plan.grants.cloud + plan.grants.aiGateway;
-      const totalCogsBudget = planKey === 'free' ? FREE_ACTIVE_USER_COGS_CAP_USD : monthlyNetRevenue * (1 - MINIMUM_PAID_GROSS_MARGIN);
-      const cogsFor = (credits: number) => entitlementTotal > 0 ? totalCogsBudget * credits / entitlementTotal : 0;
-
-      if (dailyCredits > 0) {
-        await this.grant({ accountId, kind: 'daily_build', restriction: 'build', credits: dailyCredits, netRevenueUsd: 0, maxCogsUsd: cogsFor(dailyCredits), sourceReference: `included:${accountId}:daily_build:${dayKey}`, expiresAt: nextDay });
-        issued += 1;
-      }
-      if (planKey === 'free') {
-        if (plan.grants.cloud > 0) {
-          await this.grant({ accountId, kind: 'monthly_cloud', restriction: 'cloud', credits: plan.grants.cloud, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.cloud), sourceReference: `included:${accountId}:monthly_cloud:${monthKey}`, expiresAt: nextMonth });
-          issued += 1;
-        }
-        if (plan.grants.aiGateway > 0) {
-          await this.grant({ accountId, kind: 'monthly_ai', restriction: 'ai_gateway', credits: plan.grants.aiGateway, netRevenueUsd: 0, maxCogsUsd: cogsFor(plan.grants.aiGateway), sourceReference: `included:${accountId}:monthly_ai:${monthKey}`, expiresAt: nextMonth });
-          issued += 1;
-        }
-      }
+      if (!accountId || planKey !== 'free' || !plan.signupCredits) continue;
+      const sourceReference = `signup_free:${accountId}:v1`;
+      const { data: existingGrant, error: existingGrantError } = await this.supabase
+        .from('credit_grants')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('source_reference', sourceReference)
+        .maybeSingle();
+      if (existingGrantError) throw new Error(`Signup grant lookup failed: ${existingGrantError.message}`);
+      if (existingGrant) continue;
+      await this.grant({
+        accountId,
+        kind: 'signup_free',
+        restriction: 'general',
+        credits: plan.signupCredits,
+        netRevenueUsd: 0,
+        maxCogsUsd: FREE_ACTIVE_USER_COGS_CAP_USD,
+        sourceReference,
+        expiresAt: '2099-12-31T23:59:59.999Z',
+      });
+      issued += 1;
     }
     return issued;
   }

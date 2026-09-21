@@ -1,17 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { BILLING_PLANS, CREDIT_TIERS, PUBLIC_PRICES, TOPUP_PRODUCTS_V2, normalizeBillingPlan, priceFor, topupPriceFor } from '../config/billing-v2';
+import { ACTION_CREDIT_PRICES, BILLING_PLANS, CREDIT_TIERS, PUBLIC_PRICES, TOPUP_PRODUCTS_V2, normalizeBillingPlan, priceFor, publicationLimitsFor, topupPriceFor } from '../config/billing-v2';
 import { calculateCreditCharge, completeCostUsd, openRouterTokenCost } from './unified-billing';
 import { CLOUD_TOPUP_PRODUCTS, estimateSaspayNetRevenue, getPublicPlans, normalizePlanKey, verifySaspayWebhookSignature } from './billing-service';
 import { createHmac } from 'node:crypto';
 
 describe('Coden V4 unified billing', () => {
-  it('publishes Free, Pro and Business with Lovable-style credit tiers', () => {
+  it('publishes the canonical one-time Free grant and paid tiers', () => {
     expect(Object.keys(getPublicPlans())).toEqual(['free', 'pro', 'business']);
-    expect(BILLING_PLANS.free.grants).toMatchObject({ dailyBuildCredits: 5, dailyBuildMonthlyCap: 30, monthlyCloudCredits: 20, monthlyAiCredits: 4 });
-    expect(CREDIT_TIERS).toContain(10_000);
-    expect(PUBLIC_PRICES).toHaveLength(CREDIT_TIERS.length * 2 * 2);
+    expect(BILLING_PLANS.free.grants).toEqual({ signupCredits: 5, monthlyEmailCount: 0 });
+    expect(BILLING_PLANS.free.technicalAllowances).toEqual({ cloudBudgetUsd: 0, aiAppBudgetUsd: 0 });
+    expect(CREDIT_TIERS).toEqual([25, 60, 100, 250]);
+    expect(PUBLIC_PRICES).toHaveLength(CREDIT_TIERS.length * 2);
     expect(TOPUP_PRODUCTS_V2.length).toBeGreaterThan(CREDIT_TIERS.length);
     expect(CLOUD_TOPUP_PRODUCTS).toEqual([]);
+  });
+
+  it('uses the exact customer action prices and publication entitlements', () => {
+    expect(ACTION_CREDIT_PRICES).toEqual({
+      targeted_style: 0.5,
+      component: 0.9,
+      plan: 1,
+      feature: 1.2,
+      full_page: 1.7,
+    });
+    expect(publicationLimitsFor('free')).toEqual({ publishedSites: 0, customDomains: 0 });
+    expect(publicationLimitsFor('pro', 25)).toEqual({ publishedSites: 1, customDomains: 1 });
+    expect(publicationLimitsFor('pro', 60)).toEqual({ publishedSites: 3, customDomains: 3 });
+    expect(publicationLimitsFor('pro', 100)).toEqual({ publishedSites: null, customDomains: 10 });
+    expect(publicationLimitsFor('business', 250)).toEqual({ publishedSites: null, customDomains: null });
   });
 
   it('maps legacy Scale reads to Business without publishing Scale', () => {

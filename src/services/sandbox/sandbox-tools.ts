@@ -109,7 +109,7 @@ export const SANDBOX_TOOL_SCHEMAS = [
 export type SandboxToolName = (typeof SANDBOX_TOOL_SCHEMAS)[number]['name'];
 
 /** A package name npm will accept, and nothing that is really a flag or a URL. */
-const PACKAGE_NAME = /^(?:@[a-z0-9-*~][a-z0-9-*._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(?:@[\w.^~>=<|| -]+)?$/i;
+const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*(?:@[a-z0-9][a-z0-9.*+^~<>=_-]*)?$/i;
 
 const PERSISTENT_SCRIPTS = new Set(['dev', 'start', 'preview', 'serve']);
 
@@ -234,7 +234,7 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       if (!PACKAGE_NAME.test(packageName)) {
         return fail(`${packageName || '(empty)'} is not a package name.`, 'Give a package name, optionally with a version.');
       }
-      const args = ['install', packageName, ...(dev ? ['--save-dev'] : []), '--no-audit', '--no-fund'];
+      const args = ['install', packageName, ...(dev ? ['--save-dev'] : []), '--no-audit', '--no-fund', '--ignore-scripts'];
       const result = await sandbox.runCommand('npm', args, { timeoutMs: 120_000, allowReview: true, signal: options.signal });
       if (result.code !== 0) return fail(`npm install ${packageName} failed.`, result.output.slice(-1_500));
       // The dev server has to come back for a new dependency to be resolvable;

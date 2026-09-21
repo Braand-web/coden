@@ -201,6 +201,16 @@ body[data-coden-surface="builder"] :where(.preview-frame-wrapper, .viewport-cont
   border-color: var(--border) !important;
 }
 
+.workspace-body.sidebar-collapsed #coden-sidebar-resizer {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  #coden-sidebar-resizer {
+    display: none !important;
+  }
+}
+
 :where(.toast, .coden-notice, .publish-status, .notice-success) {
   color: var(--foreground);
   background: var(--surface);
