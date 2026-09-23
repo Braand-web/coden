@@ -1022,7 +1022,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                     }));
                   }}
                   className={cn(
-                    "absolute bottom-full left-0 mb-2.5 z-50 w-44 max-h-72 overflow-y-auto prompt-scrollbar rounded-2xl border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md flex flex-col gap-0.5 transition-all duration-400 cursor-default",
+                    "absolute bottom-full left-0 mb-2.5 z-50 w-[14.5rem] max-h-72 overflow-y-auto prompt-scrollbar rounded-2xl border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md flex flex-col gap-0.5 transition-all duration-400 cursor-default",
                     isModelSelectOpen
                       ? "opacity-100 scale-100 translate-y-0 pointer-events-auto ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                       : "opacity-0 scale-95 translate-y-3 pointer-events-none ease-[cubic-bezier(0.175,0.885,0.32,1.275)]"
@@ -1059,12 +1059,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                           locked ? "text-foreground/35 cursor-not-allowed" : "text-foreground/80 active:scale-[0.98]",
                         )}
                       >
-                        <span className="flex items-center gap-2">
-                          <ModelIcon model={model} className={cn("size-3.5 transition-opacity", locked ? "opacity-40" : "opacity-85 group-hover:opacity-100")} />
-                          {MODEL_LABELS.get(model) || model}
+                        {/* One line per model: a wrapped name overflowed the 32px row and ran into its plan badge. */}
+                        <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                          <ModelIcon model={model} className={cn("size-3.5 shrink-0 transition-opacity", locked ? "opacity-40" : "opacity-85 group-hover:opacity-100")} />
+                          <span className="truncate">{MODEL_LABELS.get(model) || model}</span>
                         </span>
                         {locked && requiredPlan ? (
-                          <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                          <span className="ml-2 shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
                             {PLAN_LABELS[requiredPlan]}
                           </span>
                         ) : null}
