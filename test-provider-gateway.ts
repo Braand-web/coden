@@ -499,12 +499,12 @@ console.log('test-provider-gateway passed');
  * file and a caller parsing JSON cannot use prose.
  */
 {
-  const { enforceModelCapabilities } = await import('./src/services/openrouter-capabilities.ts');
+  const { buildOpenRouterRequest } = await import('./src/services/openrouter-request.ts');
   const model = { id: 'm', context_length: 100_000, supported_parameters: ['tools'], top_provider: {} } as any;
-  const payload = enforceModelCapabilities(model, { tools: [{}], reasoning: { effort: 'high' }, max_tokens: 100 });
+  const payload: any = buildOpenRouterRequest(model, 'high', [{ role: 'user', content: 'x' }], { tools: [{}] });
   assert.equal(payload.reasoning, undefined, 'unadvertised reasoning is dropped, not fatal');
   assert.deepEqual(payload.tools, [{}], 'and what the request needs survives');
-  assert.throws(() => enforceModelCapabilities({ ...model, supported_parameters: [] }, { tools: [{}] }), /tools/);
+  assert.throws(() => buildOpenRouterRequest({ ...model, supported_parameters: [] }, 'high', [{ role: 'user', content: 'x' }], { tools: [{}] }), /tools/);
 }
 
 /*
@@ -520,16 +520,15 @@ console.log('test-provider-gateway passed');
  * having produced nothing.
  */
 {
-  const { enforceModelCapabilities } = await import('./src/services/openrouter-capabilities.ts');
+  const { buildOpenRouterRequest } = await import('./src/services/openrouter-request.ts');
   const model = { id: 'm', context_length: 100_000, supported_parameters: ['tools'], top_provider: {} } as any;
+  const messages = [{ role: 'user' as const, content: 'x' }];
 
   // A structured-output request survives a model that will not take the
   // parameter: every caller that asks for JSON already repairs prose.
-  const payload = enforceModelCapabilities(model, {
+  const payload: any = buildOpenRouterRequest(model, 'high', messages, {
     tools: [{}],
-    response_format: { type: 'json_schema', json_schema: { name: 'x', strict: true, schema: {} } },
-    reasoning: { effort: 'high' },
-    max_tokens: 100,
+    responseFormat: { type: 'json_schema', json_schema: { name: 'x', strict: true, schema: {} } },
   });
   assert.equal(payload.response_format, undefined, 'an unadvertised response_format is dropped, not fatal');
   assert.equal(payload.reasoning, undefined, 'and so is reasoning');
@@ -537,7 +536,7 @@ console.log('test-provider-gateway passed');
 
   // Tools remain a contract: a coder loop with no tools cannot write a file.
   assert.throws(
-    () => enforceModelCapabilities({ ...model, supported_parameters: ['response_format'] }, { tools: [{}] }),
+    () => buildOpenRouterRequest({ ...model, supported_parameters: ['response_format'] }, 'high', messages, { tools: [{}] }),
     /tools/,
     'tools stay fatal, so the gateway can hand over to a model that has them',
   );

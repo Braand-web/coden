@@ -97,3 +97,16 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* Reasoning: folded under the answer's voice, never competing with it. */
+.coden-agent-reasoning { min-width:0; color:var(--text-muted); font-size:13.5px; }
+.coden-agent-reasoning > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer; list-style:none; user-select:none; color:var(--text-muted); border-radius:4px; }
+.coden-agent-reasoning > summary::-webkit-details-marker { display:none; }
+.coden-agent-reasoning > summary:hover { color:var(--text-secondary); }
+.coden-agent-reasoning > summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.coden-agent-reasoning-chevron { transition:transform .16s ease; }
+.coden-agent-reasoning[open] .coden-agent-reasoning-chevron { transform:rotate(90deg); }
+.coden-agent-reasoning-body { margin:8px 0 2px; padding-left:12px; border-left:2px solid var(--border); white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:320px; overflow:auto; }
+.coden-agent-reasoning[data-live] > summary { color:var(--text-secondary); }
+.coden-agent-auto-choice { margin:0; color:var(--text-muted); font-size:12px; letter-spacing:.01em; }
+@media (prefers-reduced-motion: reduce) { .coden-agent-reasoning-chevron { transition:none; } }

@@ -195,6 +195,8 @@ export async function runLlmToolLoop(input: {
   onCompacted?: (info: { chars: number }) => void;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void;
+  /** The model's reasoning, as it streams. Shown in a collapsible block. */
+  onReasoningDelta?: (delta: string) => void;
   onTextEnd?: () => void;
   onToolsStarted?: () => void;
   onToolsCompleted?: () => void;
@@ -282,6 +284,7 @@ export async function runLlmToolLoop(input: {
         const delta = filter(accumulated.slice(seen)); seen = accumulated.length;
         if (delta) input.onTextDelta?.(delta);
       },
+      ...(input.onReasoningDelta ? { onReasoningChunk: input.onReasoningDelta } : {}),
     }) : await input.gateway.chat(input.modelId, messages, options);
     input.onTextEnd?.();
     promptTokens += result.usage?.prompt_tokens || 0;
@@ -294,6 +297,8 @@ export async function runLlmToolLoop(input: {
       role: 'assistant',
       content: result.text || '',
       tool_calls: result.tool_calls,
+      // Handed back so a reasoning model continues its chain after the tools.
+      ...(result.reasoning_details?.length ? { reasoning_details: result.reasoning_details } : {}),
     });
 
     input.onToolsStarted?.();

@@ -42,7 +42,10 @@ const BUILD = { task: 'code_generation' as const, needs: { tools: true } };
 // A paid plan still gets the model it pays for; degradation is a floor, never a cap.
 {
   assert.equal(selectModel({ ...BUILD, plan: 'business', credits: 27, complexity: 'complex' }).modelId, 'openai/gpt-5.6-sol');
-  assert.equal(selectModel({ ...BUILD, plan: 'enterprise', credits: 1000, complexity: 'extreme' }).modelId, 'openai/gpt-5.6-sol');
+  // Extreme work gets the strongest model Auto may spend, thinking at its maximum.
+  const extreme = selectModel({ ...BUILD, plan: 'enterprise', credits: 1000, complexity: 'extreme' });
+  assert.equal(extreme.modelId, 'openai/gpt-6-astra');
+  assert.equal(extreme.reasoningLevel, 'max');
 }
 
 /*

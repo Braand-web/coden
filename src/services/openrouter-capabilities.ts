@@ -1,10 +1,13 @@
 /** Live capability contract. Manufacturer labels never imply API support. */
 export type CatalogModel = {
   id: string;
+  name?: string;
   context_length: number;
   supported_parameters: string[];
   architecture?: { input_modalities?: string[]; output_modalities?: string[] };
-  top_provider?: { max_completion_tokens?: number | null };
+  top_provider?: { max_completion_tokens?: number | null; context_length?: number | null };
+  /** USD per token, as strings, exactly as OpenRouter publishes them. */
+  pricing?: { prompt?: string | number; completion?: string | number; internal_reasoning?: string | number };
 };
 export class CapabilityError extends Error {
   readonly diagnosticCode: string;
@@ -53,6 +56,29 @@ export class OpenRouterCapabilities {
     return model;
   }
 
+  /** What is already known about a model, without touching the network. */
+  peek(id: string): CatalogModel | undefined {
+    return this.models.get(id);
+  }
+
+  /** Whether a catalogue has ever been loaded. Before that, nothing is known. */
+  get loaded(): boolean {
+    return this.models.size > 0;
+  }
+
+  /** Refresh if due, keeping the last good catalogue on failure. */
+  async ensure(signal?: AbortSignal): Promise<void> {
+    const now = Date.now();
+    if (now < this.expires || now < this.retryAfter) return;
+    this.pending ??= this.refresh().finally(() => { this.pending = undefined; });
+    try {
+      await this.pending;
+    } catch (error) {
+      if (!this.models.size) throw error;
+    }
+    signal?.throwIfAborted();
+  }
+
   private async refresh() {
     try {
       const response = await this.request('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(10_000) });
@@ -73,64 +99,93 @@ export class OpenRouterCapabilities {
   }
 }
 
-export function enforceModelCapabilities(model: CatalogModel, payload: Record<string, any>) {
-  const supported = new Set(model.supported_parameters);
-  const body: Record<string, any> = { ...payload, provider: { require_parameters: true } };
-  /*
-   * This function is where two catalogues meet, and only one of them is true.
-   *
-   * `AI_MODEL_CAPABILITIES` in src/config/ai-models.ts is a hand-written
-   * fixture: `commonTextTools` asserts `supportsStructuredOutput`,
-   * `supportsToolCalling` and `supportsJsonMode` for every model in the
-   * registry, unconditionally. `supported_parameters` here is what OpenRouter
-   * actually advertises today. Nothing reconciles them, so the fixture decides
-   * what gets SENT and this function decides what gets REFUSED — and when the
-   * provider changes what it advertises, every request that asked for the
-   * affected parameter dies.
-   *
-   * That is not hypothetical. Between 2026-09-05 and 2026-09-08 every recorded
-   * failure — thirteen of thirteen, and 100% of the traffic on the last day —
-   * was `MODEL_CAPABILITY_UNAVAILABLE`, in eight to twelve seconds, having
-   * produced nothing.
-   *
-   * So the rule is: refuse only what the request genuinely cannot do without.
-   *
-   * `tools` is a contract. A coder loop with no tools cannot write a file, and
-   * pretending otherwise produces a confident answer with an empty project. It
-   * still throws — and `ProviderGateway` treats that as this model's failure
-   * rather than the request's, handing over to a candidate that can.
-   *
-   * `response_format` is NOT a contract, however much it looks like one. Every
-   * caller that asks for JSON already survives prose: `parseOrRepairStructuredObject`
-   * re-asks the model to repair a malformed answer, and the intent router adds
-   * `completeIntentRouterOutput` on top. Killing the run denies them the chance
-   * to do the job they exist for. Dropped and logged, like `reasoning` and
-   * `temperature` below.
-   */
-  if (body.tools !== undefined && !supported.has('tools')) {
-    throw new CapabilityError('MODEL_CAPABILITY_UNAVAILABLE', `${model.id} does not advertise tools support.`);
+/** The one catalogue the whole server reads: requests, Auto, the model list. */
+export const openRouterCatalog = new OpenRouterCapabilities();
+
+export type ModelAvailability = {
+  id: string;
+  /** False only when a loaded catalogue does not list the slug. */
+  available: boolean;
+  reason?: string;
+  contextLength: number;
+  maxCompletionTokens: number;
+  supportsReasoning: boolean;
+  supportsTools: boolean;
+  supportsStructuredOutputs: boolean;
+  supportsVision: boolean;
+  pricing: { inputUsdPerMillion: number; outputUsdPerMillion: number } | null;
+};
+
+const perMillion = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.round(number * 1_000_000 * 1e6) / 1e6 : NaN;
+};
+
+/**
+ * What a model can do, read from the live catalogue.
+ *
+ * `fallback` is the static registry entry, used only while no catalogue has
+ * been loaded (a cold start with OpenRouter unreachable). Once one has, a slug
+ * it does not list is unavailable — hidden from pickers and never chosen by
+ * Auto — rather than called and left to fail.
+ */
+export function modelAvailability(
+  id: string,
+  fallback: { contextWindow: number; maxOutputTokens: number; supportsVision?: boolean } | undefined,
+  catalog: OpenRouterCapabilities = openRouterCatalog,
+): ModelAvailability {
+  const live = catalog.peek(id);
+  if (live) {
+    const parameters = new Set(live.supported_parameters || []);
+    const input = perMillion(live.pricing?.prompt);
+    const output = perMillion(live.pricing?.completion);
+    const contextLength = Number(live.top_provider?.context_length || live.context_length) || live.context_length;
+    return {
+      id,
+      available: true,
+      contextLength,
+      maxCompletionTokens: Number(live.top_provider?.max_completion_tokens) || Math.min(contextLength, fallback?.maxOutputTokens || contextLength),
+      supportsReasoning: parameters.has('reasoning') || parameters.has('include_reasoning'),
+      supportsTools: parameters.has('tools'),
+      supportsStructuredOutputs: parameters.has('structured_outputs') || parameters.has('response_format'),
+      supportsVision: (live.architecture?.input_modalities || []).includes('image'),
+      pricing: Number.isFinite(input) && Number.isFinite(output) ? { inputUsdPerMillion: input, outputUsdPerMillion: output } : null,
+    };
   }
-  for (const parameter of ['response_format', 'reasoning']) {
-    if (body[parameter] !== undefined && !supported.has(parameter)) {
-      console.info('[coden:provider_parameter_omitted]', { model: model.id, parameter, reason: 'not advertised by OpenRouter' });
-      delete body[parameter];
-    }
+  return {
+    id,
+    available: !catalog.loaded,
+    ...(catalog.loaded ? { reason: 'absent from the OpenRouter catalogue' } : {}),
+    contextLength: fallback?.contextWindow || 0,
+    maxCompletionTokens: fallback?.maxOutputTokens || 0,
+    // Unknown until the catalogue answers: offered, never assumed wrongly off.
+    supportsReasoning: true,
+    supportsTools: true,
+    supportsStructuredOutputs: true,
+    supportsVision: Boolean(fallback?.supportsVision),
+    pricing: null,
+  };
+}
+
+/**
+ * Check every slug the product can call against the live catalogue.
+ *
+ * Called at boot. A missing slug is a configuration error worth a clear log
+ * line — the model is then hidden, and nothing that depends on it crashes.
+ */
+export async function validateCatalogModels(
+  ids: readonly string[],
+  catalog: OpenRouterCapabilities = openRouterCatalog,
+): Promise<{ available: string[]; missing: string[] }> {
+  try {
+    await catalog.ensure();
+  } catch (error) {
+    console.error('[coden:model_catalog_unavailable]', { message: error instanceof Error ? error.message : String(error), models: ids.length });
+    return { available: [...ids], missing: [] };
   }
-  // Automatic choice is implicit when this parameter is not advertised (Fable).
-  if (!supported.has('tool_choice') && body.tool_choice === 'auto') delete body.tool_choice;
-  if (!supported.has('temperature') && body.temperature !== undefined) {
-    console.info('[coden:provider_parameter_omitted]', { model: model.id, parameter: 'temperature', reason: 'not advertised by OpenRouter' });
-    delete body.temperature;
+  const missing = ids.filter(id => !catalog.peek(id));
+  for (const id of missing) {
+    console.error('[coden:model_slug_unavailable]', { model: id, action: 'hidden from pickers and Auto', hint: 'Check the slug on https://openrouter.ai/models' });
   }
-  const modalities = new Set(model.architecture?.input_modalities || ['text']);
-  for (const message of payload.messages || []) {
-    if (!Array.isArray(message.content)) continue;
-    for (const part of message.content) {
-      const modality = ({ image_url:'image', input_audio:'audio', video_url:'video', file:'file', text:'text' } as Record<string,string>)[part.type];
-      if (!modality || !modalities.has(modality)) throw new CapabilityError('MODEL_MODALITY_UNAVAILABLE', `${model.id} cannot accept ${part.type}.`);
-    }
-  }
-  const limit = model.top_provider?.max_completion_tokens;
-  if (limit && body.max_tokens > limit) throw new CapabilityError('MODEL_OUTPUT_LIMIT', `Requested output exceeds ${model.id}'s advertised output limit.`);
-  return body;
+  return { available: ids.filter(id => !missing.includes(id)), missing };
 }

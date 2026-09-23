@@ -283,7 +283,81 @@ export const MODEL_REGISTRY = [
       speed: 'deliberate', reliability: 'high', bestFor: ['critical_architecture', 'complex_debug', 'critical_synthesis', 'manual_premium'],
     },
   },
+  /*
+   * The GPT-6 pair and Opus 5.5.
+   *
+   * Context, output ceilings, parameters and prices written here are the
+   * offline fallback only: at boot `openRouterCatalog` reads the live values
+   * from GET /api/v1/models and they win everywhere a request is built. A slug
+   * the live catalogue does not know is logged and hidden, never called.
+   */
+  {
+    ...viaOpenRouter,
+    id: 'openai/gpt-6-luna', label: 'GPT-6 Luna', provider: 'openai',
+    contextWindow: 1_050_000, maxOutputTokens: 128_000,
+    tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 2,
+    inputUsdPerMillion: 0.3, outputUsdPerMillion: 1.8, isFast: true, isNew: true,
+    description: 'Rapide et économique, avec le raisonnement de la génération GPT-6.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
+      reasoningLevel: 'high', codeLevel: 'high', agenticLevel: 'high', designLevel: 'high', securityLevel: 'high',
+      speed: 'fast', reliability: 'high', bestFor: ['conversation', 'classification', 'summary', 'small_edits', 'code_edit'] },
+  },
+  {
+    ...viaOpenRouter,
+    id: 'openai/gpt-6-sol', label: 'GPT-6 Sol', provider: 'openai',
+    contextWindow: 1_050_000, maxOutputTokens: 128_000,
+    tier: AIModelTier.PREMIUM, minPlan: UserPlan.BUSINESS, creditFloor: 11,
+    inputUsdPerMillion: 3, outputUsdPerMillion: 15, isPremium: true, isNew: true,
+    description: 'Le plus puissant de la famille GPT-6 pour l’architecture, le debug profond et le raisonnement long.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
+      reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'frontier',
+      speed: 'balanced', reliability: 'high', bestFor: ['architecture', 'complex_debug', 'long_horizon_coding', 'complex_reasoning', 'full_stack_generation'] },
+  },
+  {
+    ...viaOpenRouter,
+    id: 'anthropic/claude-opus-5.5', label: 'Opus 5.5', provider: 'anthropic',
+    contextWindow: 1_000_000, maxOutputTokens: 128_000,
+    tier: AIModelTier.PREMIUM, minPlan: UserPlan.BUSINESS, creditFloor: 15,
+    inputUsdPerMillion: 5, outputUsdPerMillion: 25, isPremium: true, isNew: true,
+    description: 'Le modèle le plus capable d’Anthropic pour les applications complexes, les revues et les corrections difficiles.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
+      reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'frontier',
+      speed: 'deliberate', reliability: 'high', bestFor: ['architecture', 'deep_debug', 'review', 'full_stack_generation', 'complex_reasoning'] },
+  },
 ] as const satisfies readonly ModelDefinition[];
+
+/**
+ * The model an id names, without its OpenRouter variant suffix.
+ *
+ * `google/gemini-3.8-flash:batch` and `google/gemini-3.8-flash` are one model
+ * served two ways; listed side by side they read as the same entry twice —
+ * which is exactly what the composer's menu showed ("Gemini 3.8 Flash",
+ * "Fable 5.1", each twice).
+ */
+export function canonicalModelId(id: string): string {
+  return String(id || '').replace(/:[a-z0-9-]+$/i, '');
+}
+
+/**
+ * What a person can pick: one entry per OpenRouter model, no duplicates.
+ *
+ * Variant ids (`:batch`) stay resolvable for selections saved before this,
+ * but they are never offered in a picker and never chosen by Auto.
+ */
+export const PUBLIC_MODEL_CATALOG: readonly ModelDefinition[] = (() => {
+  const byCanonical = new Map<string, ModelDefinition>();
+  for (const model of MODEL_REGISTRY as readonly ModelDefinition[]) {
+    const key = canonicalModelId(model.id);
+    const current = byCanonical.get(key);
+    // The plain id wins over a variant of the same model.
+    if (!current || (current.id !== key && model.id === key)) byCanonical.set(key, model);
+  }
+  return [...byCanonical.values()];
+})();
+
+export function isPublicModelId(id: string): boolean {
+  return PUBLIC_MODEL_CATALOG.some(model => model.id === id);
+}
 
 export function getModelTokenPricing(model: ModelDefinition, inputTokens: number) {
   const tier = [...(model.pricingTiers || [])]
@@ -418,6 +492,9 @@ export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
   // Fable is the deferred tier; its recovery is the interactive model of the
   // same family, never another batch model that would defer a second time.
   'anthropic/claude-fable-5.1:batch': ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
+  'openai/gpt-6-luna': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+  'openai/gpt-6-sol': ['anthropic/claude-opus-5.5', 'openai/gpt-5.6-sol'],
+  'anthropic/claude-opus-5.5': ['openai/gpt-6-sol', 'anthropic/claude-opus-5'],
 };
 
 export type ModelCreditRate = {

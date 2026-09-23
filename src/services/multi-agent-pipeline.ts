@@ -24,7 +24,8 @@ import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
 import { runPlannerAgent, type BuildPlan, type PlannerAgentResult } from './planner-agent.ts';
 import { resolvePipelineRoute, taskKindForRoute, buildEditInstruction, type PipelineRoute } from './edit-intent.ts';
-import { selectModel } from './model-selection.ts';
+import { affordableReasoning, selectModel, type TaskComplexity } from './model-selection.ts';
+import { MODEL_REGISTRY } from '../config/ai-models.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
@@ -40,7 +41,7 @@ import type { HarnessAgentRole } from './agent-harness/contracts.ts';
 import { recordToolCall } from './agent-harness/sandbox-tool-map.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
-import { redactSecrets } from './secret-redaction.ts';
+import { createStreamingRedactor, redactSecrets } from './secret-redaction.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
 import { buildWorldClassUiPolicy, classifyGeneratedAppType } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
@@ -55,7 +56,8 @@ import {
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
-import { scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
+import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
+import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
 import { resolveQualityPolicy } from './quality-tier.ts';
 import { runDesignReview } from './design-review-agent.ts';
 import type { ValidationReport } from './sandbox/validate.ts';
@@ -327,7 +329,17 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
+function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity {
+  return complexity === 'simple' ? 'complex' : 'extreme';
+}
+
 function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
+  /**
+   * The model and reasoning level for the next round. Read at the start of
+   * every round, so Auto can escalate between rounds; absent, the model is
+   * `modelId` and the level follows `effort`.
+   */
+  current?: { modelId: AllowedModelId; reasoningLevel: ReasoningLevel };
   /**
    * The design system, from `designContextForRoute`.
    *
@@ -344,25 +356,25 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    */
   harness?: CodenAgentHarness;
   harnessTurn?: { turnId: string; role: HarnessAgentRole } }): RepairTurn {
+  const levelFor = () => input.current?.reasoningLevel ?? reasoningLevelForEffort(normalizeAgentEffort(input.effort));
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
     task: 'debug',
     preferStructuredOutput: false,
     allowTools: true,
-    // The level the user chose reaches the provider here. Without it the
-    // control moved the loop budget and nothing else.
-    effort: input.effort,
+    // The level the user chose — or Auto's — reaches the provider here.
+    reasoningLevel: levelFor(),
     // The coder turn streams in production, and its deadline is the model's
-    // own — a frontier model gets the frontier allowance, not a constant
-    // written for whichever model happened to be default the day this was
-    // added. Passing neither `timeoutMs` nor `maxTokens` is what lets the
-    // profile decide: 16k was below every model in the catalogue, and it is
-    // the coder that most needs the room.
+    // own. Nothing here sizes the output: the request uses the model's whole
+    // output window, read from the live catalogue.
     stream: true,
   }));
-  const runtimeConfig = runtimeFor(input.modelId);
 
   return async ({ instruction, tools, call, maxToolCalls }) => {
+    const modelId = input.current?.modelId ?? input.modelId;
+    const runtimeConfig = runtimeFor(modelId);
+    // Reasoning is redacted like any other text before it leaves the server.
+    const reasoning = input.onChatEvent ? createStreamingRedactor(delta => input.onChatEvent?.({ type: 'reasoning_delta', delta })) : null;
     let toolCalls = 0;
     const knownPaths = new Set(await input.sandbox.listFiles());
     const touched = new Map<import('../lib/agent-chat-protocol.ts').FileAction, Set<string>>();
@@ -402,7 +414,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     ]));
     const loop = await runLlmToolLoop({
       gateway: input.gateway,
-      modelId: input.modelId,
+      modelId,
       messages: [
         {
           role: 'system',
@@ -436,11 +448,12 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // compacted long before it needed to be, losing detail it could have
       // kept. A quarter of the window, with a ceiling so a single request
       // cannot become arbitrarily expensive.
-      budget: { compactAboveChars: compactionThresholdChars(input.modelId) },
+      budget: { compactAboveChars: compactionThresholdChars(modelId) },
       onCompacted: info => console.info('[coden:tool_loop_compacted]', { chars: info.chars }),
       signal: input.signal,
       onTextDelta: input.onChatEvent ? delta => input.onChatEvent?.({ type: 'text_delta', delta }) : undefined,
-      onTextEnd: () => input.onChatEvent?.({ type: 'text_end' }),
+      onReasoningDelta: reasoning ? delta => reasoning.push(delta) : undefined,
+      onTextEnd: () => { reasoning?.end(); input.onChatEvent?.({ type: 'text_end' }); },
       // The model has finished explaining and the tools now run: reading,
       // writing, installing. Without this the interface went still for the
       // longest part of each step, right after saying what it was about to do.
@@ -538,7 +551,56 @@ export async function runMultiAgentPipeline(input: {
   const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now()));
   input = { ...input, signal: input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal };
   // Reject an incompatible manual selection before planning or starting a process.
-  const modelId = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, requestedModel: input.selectedModel, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } }).modelId;
+  const selection = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, requestedModel: input.selectedModel, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } });
+  const modelId = selection.modelId;
+  const autoMode = input.selectedModel === undefined;
+  /*
+   * What the coder runs on, round by round.
+   *
+   * Pinned: the user's model and the user's level, exactly, for the whole run.
+   * Auto: its own choice, which it may strengthen when a round fails to make
+   * progress — more reasoning first, then a stronger model.
+   */
+  const current = {
+    modelId,
+    reasoningLevel: autoMode ? selection.reasoningLevel : reasoningLevelForEffort(normalizeAgentEffort(input.effort)),
+  };
+  const announceModel = (reason: 'initial' | 'escalation') => {
+    if (!autoMode) return;
+    input.onChatEvent?.({
+      type: 'model_selected',
+      modelId: current.modelId,
+      label: MODEL_REGISTRY.find(model => model.id === current.modelId)?.label || current.modelId,
+      reasoningLevel: current.reasoningLevel,
+      reason,
+    });
+  };
+  announceModel('initial');
+  let escalations = 0;
+  const escalate = () => {
+    if (!autoMode || escalations >= 2) return;
+    const rank = (level: ReasoningLevel) => REASONING_LEVELS.indexOf(level);
+    let stronger: AllowedModelId | null = null;
+    try {
+      stronger = selectModel({
+        task: taskKindForRoute(input.route),
+        plan: input.userPlan,
+        credits: input.credits,
+        complexity: nextComplexity(input.complexity),
+        needs: { tools: true, vision: Boolean(input.visionInputs?.length) },
+        allowDegradation: false,
+      }).modelId;
+    } catch {
+      // Nothing stronger within the plan and credits.
+    }
+    // Think harder first; then a stronger model; then the most reasoning.
+    if (rank(current.reasoningLevel) < rank('high')) current.reasoningLevel = 'high';
+    else if (stronger && stronger !== current.modelId) current.modelId = stronger;
+    else if (current.reasoningLevel !== 'max' && affordableReasoning('max', current.modelId, input.credits) === 'max') current.reasoningLevel = 'max';
+    else return;
+    escalations += 1;
+    announceModel('escalation');
+  };
   const activity = (frLabel: string, enLabel: string) =>
     input.onChatEvent?.({ type: 'activity', label: fr ? frLabel : enLabel });
 
@@ -673,7 +735,6 @@ export async function runMultiAgentPipeline(input: {
             modelId: candidate,
             task: 'planning',
             allowTools: false,
-            maxTokens: task.tokenBudget,
             preferStructuredOutput: false,
           }));
           const result = await input.gateway.chat(specialistModel, [
@@ -887,6 +948,7 @@ export async function runMultiAgentPipeline(input: {
       credits: input.credits,
       french: fr,
       allowFallback: input.selectedModel === undefined,
+      pinnedModel: input.selectedModel,
       signal: input.signal,
     });
     spent.costUsd += outcome.costUsd;
@@ -921,6 +983,7 @@ export async function runMultiAgentPipeline(input: {
       deadline: runDeadline,
       allowFallback: input.selectedModel === undefined,
       effort: input.effort,
+      current,
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
@@ -939,6 +1002,8 @@ export async function runMultiAgentPipeline(input: {
         if (event.round > 1) activity('Coden corrige les erreurs détectées…', 'Coden is fixing the detected errors…');
       } else if (event.type === 'repair_round_finished') {
         activity('Coden vérifie le résultat…', 'Coden is verifying the result…');
+        // A repair round that removed nothing: Auto strengthens the next one.
+        if (event.round > 1 && event.errorsBefore > 0 && event.errorsAfter >= event.errorsBefore) escalate();
       }
     },
     signal:input.signal,
@@ -1088,7 +1153,7 @@ export async function runMultiAgentPipeline(input: {
     files,
     liveUrl: status.state === 'running' ? (status.basePath || null) : null,
     liveState: status.state,
-    modelId,
+    modelId: current.modelId,
     repairOutcome,
     /*
      * What the run actually cost the provider.

@@ -1,4 +1,5 @@
 import { DEFAULT_AGENT_LOOP_BUDGET, type AgentLoopBudget } from './llm-tool-loop.ts';
+import type { ReasoningLevel } from './openrouter-request.ts';
 
 /*
  * Effort, and what it actually buys.
@@ -14,7 +15,7 @@ import { DEFAULT_AGENT_LOOP_BUDGET, type AgentLoopBudget } from './llm-tool-loop
  * keeps its exact shape and the other two move away from it in one direction
  * each.
  */
-export const AGENT_EFFORT_LEVELS = ['Low', 'Medium', 'High', 'Ultra'] as const;
+export const AGENT_EFFORT_LEVELS = ['None', 'Low', 'Medium', 'High', 'Ultra'] as const;
 
 export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number];
 
@@ -22,11 +23,29 @@ export const DEFAULT_AGENT_EFFORT: AgentEffort = 'Medium';
 
 /** What the composer shows. The values above are the wire format. */
 export const AGENT_EFFORT_LABELS: Record<AgentEffort, string> = {
-  Low: 'Faible',
+  None: 'Aucun',
+  Low: 'Bas',
   Medium: 'Moyen',
   High: 'Élevé',
-  Ultra: 'Ultra',
+  Ultra: 'Maximum',
 };
+
+/**
+ * The reasoning a level sends to the model, through OpenRouter's unified
+ * `reasoning` parameter: nothing, `effort` low/medium/high, or — at Maximum —
+ * an explicit `max_tokens` budget at the model's own ceiling.
+ */
+export const EFFORT_REASONING_LEVELS: Record<AgentEffort, ReasoningLevel> = {
+  None: 'none',
+  Low: 'low',
+  Medium: 'medium',
+  High: 'high',
+  Ultra: 'max',
+};
+
+export function reasoningLevelForEffort(effort: unknown): ReasoningLevel {
+  return EFFORT_REASONING_LEVELS[normalizeAgentEffort(effort)];
+}
 
 /*
  * `Max Effort` was the old top level and cost 2.5x Medium. `High` costs the
@@ -57,6 +76,13 @@ export function normalizeAgentEffort(value: unknown): AgentEffort {
  * scale with the time budget.
  */
 const EFFORT_BUDGETS: Record<AgentEffort, AgentLoopBudget> = {
+  // No reasoning is not less work: the loop gets the same room as Low.
+  None: {
+    maxSteps: 24,
+    maxToolCalls: 64,
+    maxDurationMs: 4 * 60_000,
+    compactAboveChars: 120_000,
+  },
   Low: {
     maxSteps: 24,
     maxToolCalls: 64,
@@ -103,6 +129,7 @@ export function budgetForEffort(effort: unknown): AgentLoopBudget {
  */
 export function effortCostMultiplier(effort: unknown): number {
   const level = normalizeAgentEffort(effort);
+  if (level === 'None') return 0.5;
   if (level === 'Low') return 0.6;
   if (level === 'High') return 2.5;
   /*
@@ -134,6 +161,7 @@ export function effortCostMultiplier(effort: unknown): number {
  * than a broken one.
  */
 const ROUTE_BUDGET_SCALE: Record<AgentEffort, { rounds: number; toolCalls: number; deadline: number }> = {
+  None: { rounds: 0.7, toolCalls: 0.5, deadline: 0.5 },
   Low: { rounds: 0.7, toolCalls: 0.5, deadline: 0.5 },
   Medium: { rounds: 1, toolCalls: 1, deadline: 1 },
   High: { rounds: 1.5, toolCalls: 2, deadline: 2 },

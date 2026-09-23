@@ -22,6 +22,10 @@ export type ChatEvent =
   | { type: 'activity'; label: string }
   | { type: 'text_delta'; delta: string }
   | { type: 'text_end' }
+  /** The model's reasoning as it streams; shown folded, never mixed into the answer. */
+  | { type: 'reasoning_delta'; delta: string }
+  /** What Auto chose — or switched to — shown discreetly beside the answer. */
+  | { type: 'model_selected'; modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' }
   | { type: 'files_touched'; action: FileAction; paths: string[] }
   | { type: 'decision_required'; decisionId: string; question: string; options: DecisionOption[]; allowFreeText: boolean; questions?: DecisionQuestion[] }
   | { type: 'artifact_ready'; artifactId: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number }

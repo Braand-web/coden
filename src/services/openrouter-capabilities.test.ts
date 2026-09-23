@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { OpenRouterCapabilities, enforceModelCapabilities, type CatalogModel } from './openrouter-capabilities';
+import { OpenRouterCapabilities, type CatalogModel } from './openrouter-capabilities';
+import { buildOpenRouterRequest } from './openrouter-request';
 import { readProviderSse } from './provider-sse';
 import { selectModel } from './model-selection';
 import { runLlmToolLoop } from './llm-tool-loop';
@@ -8,13 +9,13 @@ import { validateProject } from './sandbox/validate';
 const model:CatalogModel = { id:'test',context_length:10000,supported_parameters:['tools','reasoning','response_format'],architecture:{input_modalities:['text','image']},top_provider:{max_completion_tokens:1000} };
 describe('OpenRouter-only capability contract', () => {
   it('preserves required tools, reasoning and structured output without unsupported sampling', () => {
-    const payload = enforceModelCapabilities(model,{tools:[{}],tool_choice:'auto',temperature:.6,reasoning:{effort:'high'},response_format:{type:'json_object'},max_tokens:500});
+    const payload:any = buildOpenRouterRequest(model,'high',[{role:'user',content:'hi'}],{tools:[{}],toolChoice:'auto',responseFormat:{type:'json_object'}});
     expect(payload.tools).toEqual([{}]); expect(payload.reasoning.effort).toBe('high'); expect(payload.temperature).toBeUndefined(); expect(payload.tool_choice).toBeUndefined(); expect(payload.provider.require_parameters).toBe(true);
+    expect(payload.max_tokens).toBe(1000);
   });
-  it('refuses unsupported capabilities, modalities and output limits', () => {
-    expect(() => enforceModelCapabilities({...model,supported_parameters:[]},{tools:[{}]})).toThrow('tools');
-    expect(() => enforceModelCapabilities(model,{messages:[{content:[{type:'input_audio'}]}]})).toThrow('input_audio');
-    expect(() => enforceModelCapabilities(model,{max_tokens:1001})).toThrow('limit');
+  it('refuses unsupported capabilities and modalities', () => {
+    expect(() => buildOpenRouterRequest({...model,supported_parameters:[]},'medium',[{role:'user',content:'hi'}],{tools:[{}]})).toThrow('tools');
+    expect(() => buildOpenRouterRequest(model,'medium',[{role:'user',content:[{type:'input_audio'} as any]}])).toThrow('input_audio');
   });
   it('singleflights catalog requests and refuses unavailable models', async () => {
     const request=vi.fn(async () => new Response(JSON.stringify({data:[model]}))) as any;
@@ -60,6 +61,8 @@ describe('OpenRouter-only capability contract', () => {
   it('routes by role and refuses a task that cannot meet its capability constraints', () => {
     expect(selectModel({task:'conversation',plan:'enterprise'}).modelId).toBe('openai/gpt-5.6-luna');
     expect(selectModel({task:'architecture',plan:'enterprise'}).modelId).toBe('openai/gpt-5.6-sol');
+    expect(selectModel({task:'conversation',plan:'enterprise'}).reasoningLevel).toBe('medium');
+    expect(selectModel({task:'classification',plan:'enterprise'}).reasoningLevel).toBe('low');
     expect(selectModel({task:'classification',needs:{vision:true},plan:'enterprise'}).modelId).toBe('google/gemini-3.8-flash');
     expect(selectModel({task:'design',complexity:'complex',plan:'free'}).reason).toContain('best accessible model');
     expect(() => selectModel({task:'architecture',estimatedInputTokens:100000000,plan:'enterprise'})).toThrow('No eligible');

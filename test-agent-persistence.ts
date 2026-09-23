@@ -21,28 +21,17 @@ import { buildProviderRequestConfig } from './src/services/provider-adapters.ts'
  * logs on every luna call.
  */
 {
-  // Anthropic is deliberately excluded: its API rejects `temperature`
-  // alongside extended thinking, so 1.0 there is the provider's rule, not this
-  // layer's guess. Narrowing the override to that adapter is the whole change.
-  for (const modelId of ['x-ai/grok-4.6', 'openai/gpt-5.6-luna', 'openai/gpt-5.6-sol'] as const) {
+  // No layer chooses a temperature any more: every model runs at its
+  // provider's own defaults, and the request carries only the reasoning level.
+  for (const modelId of ['x-ai/grok-4.6', 'openai/gpt-5.6-luna', 'openai/gpt-5.6-sol', 'anthropic/claude-opus-5'] as const) {
     const runtime = buildAIModelRuntimeConfig({ modelId, task: 'debug', allowTools: true, stream: true });
-    const config = buildProviderRequestConfig(runtime);
-    assert.ok(runtime.thinking.enabled, `${modelId}: the case that used to be overridden`);
-    assert.equal(config.temperature, runtime.temperature, `${modelId}: the task's temperature must survive`);
-    assert.ok(config.temperature! < 0.5, `${modelId}: code generation must not run at ${config.temperature}`);
+    const config = buildProviderRequestConfig(runtime) as Record<string, unknown>;
+    assert.equal(config.temperature, undefined, `${modelId}: no forced temperature`);
+    assert.equal(config.maxTokens, undefined, `${modelId}: no fixed output cap`);
+    assert.equal(config.reasoningLevel, 'medium', `${modelId}: reasoning is on by default`);
   }
-
-  // Conversation still gets its higher, deliberate value — this is not a
-  // blanket lowering.
-  const chat = buildProviderRequestConfig(buildAIModelRuntimeConfig({ modelId: 'x-ai/grok-4.6', task: 'conversation' }));
-  assert.ok(chat.temperature! > 0.2, 'conversation keeps room to vary');
-
-  // The one provider that really does require it keeps it.
-  const anthropic = buildProviderRequestConfig(buildAIModelRuntimeConfig({ modelId: 'anthropic/claude-opus-5', task: 'debug', allowTools: true, stream: true }));
-  assert.equal(anthropic.temperature, 1.0, 'Anthropic rejects a temperature sent with extended thinking');
-
   const adapters = readFileSync(new URL('./src/services/provider-adapters.ts', import.meta.url), 'utf8');
-  assert.match(adapters, /adapter === 'anthropic' && runtime\.thinking\?\.enabled/, 'the override must be scoped to the adapter that needs it');
+  assert.doesNotMatch(adapters, /temperature\s*:/, 'the adapter layer sets no sampling');
 }
 
 /*
@@ -124,7 +113,7 @@ import { buildProviderRequestConfig } from './src/services/provider-adapters.ts'
 {
   const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
   assert.match(pipeline, /function compactionThresholdChars\(/, 'the threshold must come from the model');
-  assert.match(pipeline, /compactAboveChars: compactionThresholdChars\(input\.modelId\)/, 'and actually be used');
+  assert.match(pipeline, /compactAboveChars: compactionThresholdChars\(modelId\)/, 'and actually be used, for the model this round runs on');
 
   const { getAIModelCapabilityProfile } = await import('./src/services/ai-model-runtime.ts');
   const threshold = (id: string) => {

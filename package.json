@@ -10,6 +10,7 @@
     "prebuild": "node scripts/generate-seo-assets.cjs",
     "seo:generate": "node scripts/generate-seo-assets.cjs",
     "seo:check": "node scripts/seo-check.cjs",
+    "secret:encrypt": "node --experimental-strip-types scripts/encrypt-secret.ts",
     "test:coden": "node --experimental-strip-types test-coden-skills.ts && node --experimental-strip-types test-coden-workflows.ts",
     "test:runtime-contract": "node --experimental-strip-types test-generated-app-runtime.ts",
     "test:security": "node --experimental-strip-types test-security-boundaries.ts && npm audit --omit=dev --audit-level=high",
