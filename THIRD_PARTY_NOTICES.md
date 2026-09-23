@@ -21,3 +21,7 @@ Audited but not loaded into the user-run runtime:
 - shuyhere/repo-to-skill — MIT — commit `f4fe8c564b07dd6e50fa7ec089da8946ef1c29da`; retained as an administration concept only, never as an automatic runtime downloader.
 
 Database and migration policy is Coden-native and is not attributed to an upstream skill.
+
+Brand marks on the public landing:
+
+- simple-icons/simple-icons — CC0-1.0 — version `16.32.0`; the integration marks under "Fonctionne avec" are copied from its icon paths. Each mark remains the trademark of its owner and is shown only to name an integration Coden connects to.
