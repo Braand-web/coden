@@ -112,7 +112,7 @@ function fakeClient(seed: Record<string, any[]> = {}) {
   const branch = server.slice(memoryIndex);
 
   assert.match(branch, /loadProjectMemoryContext\(\{/, 'the pipeline run must load what the project decided');
-  assert.match(branch, /memoryContext: projectMemory/, 'and pass it in');
+  assert.match(branch, /memoryContext: \[projectMemory, sessionContext\]/, 'and pass it in, with the session memory');
   assert.match(branch, /saveArchitectureDecisions\(\{/, 'and record what this run decided');
 
   // Only from a run that verified: a decision read out of a build that did not

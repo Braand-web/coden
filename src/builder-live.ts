@@ -2697,14 +2697,15 @@ function recentConversationForAssistant(currentPrompt = '') {
   const normalizedPrompt = redactSecrets(currentPrompt).trim();
   const messages = (api?.messages() || [])
     .filter(message => (message.role === 'user' || message.role === 'assistant') && !message.working && String(message.content || '').trim())
-    .slice(-12);
+    // The conversation, not its last glimpse: the server keeps what fits.
+    .slice(-30);
   const latest = messages[messages.length - 1];
   if (latest?.role === 'user' && redactSecrets(String(latest.content || '')).trim() === normalizedPrompt) {
     messages.pop();
   }
   return messages.map(message => ({
       role: message.role,
-      content: redactSecrets(String(message.content || '')).slice(0, 2400),
+      content: redactSecrets(String(message.content || '')).slice(0, 8000),
     }));
 }
 
