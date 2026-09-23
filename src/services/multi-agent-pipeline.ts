@@ -28,7 +28,8 @@ import { affordableReasoning, selectModel, type TaskComplexity } from './model-s
 import { MODEL_REGISTRY } from '../config/ai-models.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
-import { runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
+import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
+import type { ChatMessage } from './openrouter-service.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter } from './sandbox/starters.ts';
 import { STARTER_KIT_FILES } from './sandbox/starter-kit.ts';
@@ -370,7 +371,30 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     stream: true,
   }));
 
+  /*
+   * The rounds of one run are one conversation.
+   *
+   * Each round used to start from nothing but the system message and its
+   * instruction: round two did not know what round one had written, why, or
+   * which approach had already failed — only the error list. It re-read,
+   * re-decided and sometimes undid its own work. The last rounds now travel
+   * with the next one, compacted (old tool output and old file bodies are
+   * already on disk), as Claude Code keeps a working session.
+   */
+  const rounds: ChatMessage[][] = [];
+  const CARRIED_ROUNDS = 3;
+
   return async ({ instruction, tools, call, maxToolCalls }) => {
+    const carried = compactTranscript(rounds.slice(-CARRIED_ROUNDS).flat(), 10)
+      .map(message => {
+        // Each round's instruction restates the whole mission, and the new
+        // instruction below restates it again: carrying the old copies would
+        // send it up to four times. What they asked stays one line.
+        if (message.role === 'user' && typeof message.content === 'string' && message.content.length > 2_000) {
+          return { role: 'user' as const, content: `[Earlier round instruction — the mission is restated in full in the latest message.]\n${message.content.slice(-600)}` };
+        }
+        return message.reasoning_details ? { ...message, reasoning_details: undefined } : message;
+      });
     const modelId = input.current?.modelId ?? input.modelId;
     const runtimeConfig = runtimeFor(modelId);
     // Reasoning is redacted like any other text before it leaves the server.
@@ -420,7 +444,13 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
           role: 'system',
           content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
         },
-        { role: 'user', content: input.visionInputs?.length ? buildVisionMessageContent(instruction, input.visionInputs) : instruction },
+        ...carried,
+        {
+          role: 'user',
+          content: input.visionInputs?.length && !rounds.length
+            ? buildVisionMessageContent(instruction, input.visionInputs)
+            : rounds.length ? `${instruction}\n\n(Your earlier rounds in this run are above. Build on what you already did; the files on disk are the source of truth.)` : instruction,
+        },
       ],
       handlers,
       runtimeConfig: {
@@ -467,6 +497,10 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // Provider failures propagate. The pipeline catch persists already-written
       // files before returning an error, rather than validating a swallowed error.
     });
+    if (loop) {
+      // This round's part only: the carried prefix is already recorded.
+      rounds.push(carryOverTranscript(loop.messages.slice(1 + carried.length), loop.result?.text));
+    }
     // The round's real cost, taken from the loop's own counters rather than
     // inferred: this is the number it actually stopped on.
     if (loop) await input.onSpend?.(loop.spend);

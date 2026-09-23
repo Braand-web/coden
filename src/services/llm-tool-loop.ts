@@ -97,7 +97,21 @@ export type LlmToolLoopResult = {
 export function compactTranscript(messages: ChatMessage[], keepRecent = 8, maxKeptChars = 600): ChatMessage[] {
   const cutoff = Math.max(0, messages.length - keepRecent);
   return messages.map((message, index) => {
-    if (index >= cutoff || message.role !== 'tool') return message;
+    if (index >= cutoff) return message;
+    /*
+     * The model's own old writes, not only the tools' old answers.
+     *
+     * Only `tool` messages were ever compacted, so every `write_file` the
+     * model had issued stayed in the transcript with the whole file as its
+     * argument — the largest thing in it, and exactly what the file on disk
+     * already holds. A long build grew until it no longer fit. What matters
+     * later is that the write happened and where; the content is one
+     * read_file away.
+     */
+    if (message.role === 'assistant' && message.tool_calls?.length) {
+      return { ...message, tool_calls: message.tool_calls.map(compactToolCallArguments) };
+    }
+    if (message.role !== 'tool') return message;
     const content = String(message.content ?? '');
     if (content.length <= maxKeptChars) return message;
     const head = content.slice(0, Math.floor(maxKeptChars * 0.7));
@@ -107,6 +121,70 @@ export function compactTranscript(messages: ChatMessage[], keepRecent = 8, maxKe
       content: `${head}\n…[${content.length - head.length - tail.length} characters of this earlier result were compacted]…\n${tail}`,
     };
   });
+}
+
+function compactToolCallArguments(call: NonNullable<ChatMessage['tool_calls']>[number]) {
+  const raw = call.function.arguments || '';
+  if (raw.length <= 1_200) return call;
+  let args: Record<string, unknown>;
+  try { args = JSON.parse(raw); } catch { return call; }
+  const compacted = Object.fromEntries(Object.entries(args).map(([key, value]) => [
+    key,
+    typeof value === 'string' && value.length > 400 ? `[${value.length} characters, already applied — read the file for its current content]` : value,
+  ]));
+  return { ...call, function: { ...call.function, arguments: JSON.stringify(compacted) } };
+}
+
+/**
+ * A finished round's transcript, made safe to continue from.
+ *
+ * The loop can stop between an assistant's tool calls and their results (a
+ * spent budget, the deadline), and a provider rejects a transcript in which a
+ * tool call has no result. Every unanswered call gets one that says it did
+ * not run; the system message is dropped, since the next round brings its
+ * own; and the round's final answer, which the loop returns separately, is
+ * put back where it was said.
+ */
+export function carryOverTranscript(messages: ChatMessage[], finalText?: string): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const body = messages.filter(message => message.role !== 'system');
+  for (let index = 0; index < body.length; index += 1) {
+    const message = body[index];
+    if (message.role === 'tool') {
+      const owner = [...out].reverse().find(item => item.role === 'assistant' && item.tool_calls?.length);
+      if (!owner?.tool_calls?.some(call => call.id === message.tool_call_id)) continue;
+      out.push(message);
+      continue;
+    }
+    // Close the previous assistant turn's unanswered calls before anything else is said.
+    closeOpenCalls(out);
+    out.push(message);
+  }
+  closeOpenCalls(out);
+  const text = String(finalText || '').trim();
+  const last = out.at(-1);
+  if (text && !(last?.role === 'assistant' && !last.tool_calls?.length && String(last.content || '').trim() === text)) {
+    out.push({ role: 'assistant', content: text });
+  }
+  // A transcript opens on the user, never on an answer.
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
+}
+
+function closeOpenCalls(out: ChatMessage[]) {
+  let ownerIndex = -1;
+  for (let index = out.length - 1; index >= 0; index -= 1) {
+    if (out[index].role === 'tool') continue;
+    if (out[index].role === 'assistant' && out[index].tool_calls?.length) ownerIndex = index;
+    break;
+  }
+  if (ownerIndex < 0) return;
+  const answered = new Set(out.slice(ownerIndex + 1).filter(item => item.role === 'tool').map(item => item.tool_call_id));
+  for (const call of out[ownerIndex].tool_calls || []) {
+    if (!answered.has(call.id)) {
+      out.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, error: 'Not executed: the previous round ended before this call ran.' }) });
+    }
+  }
 }
 
 function transcriptSize(messages: ChatMessage[]): number {

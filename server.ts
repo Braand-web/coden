@@ -2,6 +2,19 @@
 import express from 'express';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
+import {
+  EMPTY_SESSION,
+  appendRunRecord,
+  compactConversation,
+  conversationBudgetChars,
+  renderSessionContext,
+  selectConversationWindow,
+  sessionMemoryFromRow,
+  uncoveredTurns,
+  type RunRecord,
+  type SessionMemory,
+  type SessionTurn,
+} from './src/services/session-context.ts';
 import { modelAvailability, openRouterCatalog, validateCatalogModels } from './src/services/openrouter-capabilities.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
@@ -5263,6 +5276,8 @@ function buildAgentTextMessages(input: {
   finalizer?: boolean;
   /** The conversation so far, oldest first, as real turns. */
   history?: RecentHistoryMessage[];
+  /** Session memory: the summary of older turns and what previous runs did. */
+  sessionContext?: string;
 }): ChatMessage[] {
   const { project, prompt, files, decision, researchContext, executionContract, visionInputs } = input;
   const languageInstruction = isLikelyFrenchPrompt(prompt)
@@ -5293,8 +5308,9 @@ function buildAgentTextMessages(input: {
     ? [
         `Project: ${project.name}${project.status ? ` (status: ${project.status})` : ''}${project.preview_status ? `, preview: ${project.preview_status}` : ''}.`,
         files.length ? `Files (first ${Math.min(18, files.length)} of ${files.length}):\n${fileSummary}` : 'The project has no files yet.',
-      ].join('\n')
-    : undefined;
+        input.sessionContext || '',
+      ].filter(Boolean).join('\n\n')
+    : input.sessionContext || undefined;
 
   const systemPrompt = input.finalizer
     ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext })
@@ -5320,7 +5336,7 @@ function buildAgentTextMessages(input: {
     .filter(turn => turn.content.trim())
     .slice(-12);
   // The current message may already be stored as the last turn.
-  if (history.length && history[history.length - 1].role === 'user' && history[history.length - 1].content.trim() === prompt.trim().slice(0, 1200)) history.pop();
+  if (history.length && history[history.length - 1].role === 'user' && prompt.trim().startsWith(history[history.length - 1].content.trim().slice(0, 1200))) history.pop();
   while (history.length && history[0].role === 'assistant') history.shift();
 
   const request = researchContext ? `${prompt}\n\nResearch context:\n${researchContext}` : prompt;
@@ -5363,6 +5379,8 @@ async function createAgentTextResponse(input: {
   onModelSelected?: (choice: { modelId: AllowedModelId; reasoningLevel: ReasoningLevel }) => void;
   /** The conversation so far, oldest first. */
   history?: RecentHistoryMessage[];
+  /** Session memory for this project, rendered. */
+  sessionContext?: string;
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -5426,7 +5444,7 @@ async function createAgentTextResponse(input: {
   });
 
   try {
-    const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer, history: input.history });
+    const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer, history: input.history, sessionContext: input.sessionContext });
     /*
      * `streamingCompletion` consumes the provider stream and still returns one
      * atomic result, so the answer is validated and sanitized exactly as
@@ -8607,6 +8625,116 @@ async function upsertAgentTypedMemory(project: GeneratedProject, userId: string,
   return row;
 }
 
+const SESSION_MEMORY_TYPE = 'session';
+
+async function loadSessionMemory(projectId: string): Promise<SessionMemory> {
+  const client = getSupabase();
+  if (!client || !isUuid(projectId)) return { ...EMPTY_SESSION };
+  try {
+    const { data, error } = await client.from('agent_memories')
+      .select('summary,architecture,recent_decisions')
+      .eq('project_id', projectId)
+      .eq('memory_type', SESSION_MEMORY_TYPE)
+      .maybeSingle();
+    if (error) throw error;
+    return sessionMemoryFromRow(data);
+  } catch (error: any) {
+    if (!isMissingAgentV2TableError(error)) console.warn('[coden:session_memory_load_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+    return { ...EMPTY_SESSION };
+  }
+}
+
+/** Never throws: losing memory must not fail a turn that otherwise worked. */
+async function saveSessionMemory(project: GeneratedProject, userId: string, memory: SessionMemory) {
+  if (!getSupabase() || !isUuid(project.id)) return;
+  try {
+    const client = requireSupabase('Session memory persistence');
+    const { error } = await client.from('agent_memories').upsert([{
+      organization_id: project.organization_id,
+      project_id: project.id,
+      user_id: userId,
+      memory_type: SESSION_MEMORY_TYPE,
+      summary: redactSecrets(memory.summary),
+      architecture: { coveredUntil: memory.coveredUntil || null },
+      recent_decisions: redactAgentPayload(memory.runs),
+      updated_at: new Date().toISOString(),
+    }], { onConflict: 'project_id,memory_type' });
+    if (error && !isMissingAgentV2TableError(error)) console.warn('[coden:session_memory_save_failed]', { message: error.message });
+  } catch (error: any) {
+    console.warn('[coden:session_memory_save_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  }
+}
+
+/**
+ * The conversation a turn is given, the way Claude Code keeps one: the newest
+ * turns verbatim within a budget taken from the model's own window, and
+ * everything older folded into a persisted summary — written by a model, once,
+ * only when turns actually leave the window.
+ */
+async function loadConversationContext(input: {
+  project: GeneratedProject;
+  userId: string;
+  /** The model the turn will run on, for its window; Auto uses a conservative default. */
+  modelId?: string;
+  signal?: AbortSignal;
+}): Promise<{ turns: RecentHistoryMessage[]; memory: SessionMemory; sessionContext: string }> {
+  const [rows, stored] = await Promise.all([
+    isUuid(input.project.id) ? listProjectMessagesPage(input.project.id, 80, null).catch(() => []) : Promise.resolve([]),
+    loadSessionMemory(input.project.id),
+  ]);
+  const turns: SessionTurn[] = (rows as any[]).map(row => ({
+    role: row?.role === 'assistant' ? 'assistant' as const : 'user' as const,
+    content: redactSecrets(messageTextFromParts(row?.parts, row?.content || '')).trim(),
+    at: typeof row?.created_at === 'string' ? row.created_at : undefined,
+  })).filter(turn => turn.content);
+  const contextTokens = input.modelId && isAllowedModelId(input.modelId)
+    ? AI_MODEL_CAPABILITIES[input.modelId as AllowedModelId]?.maxContextTokens || 128_000
+    : 128_000;
+  const { recent, older } = selectConversationWindow(turns, conversationBudgetChars(contextTokens));
+  let memory = stored;
+  const pending = uncoveredTurns(older, stored.coveredUntil);
+  if (pending.length && hasLiveAiProvider()) {
+    memory = await compactConversation({
+      memory: stored,
+      turns: pending,
+      complete: async messages => {
+        const summarizer = selectModelForAgent('summarizer', { interactive: true }).modelId;
+        const runtime = buildAIModelRuntimeConfig({ modelId: summarizer, task: 'summary', allowTools: false, preferStructuredOutput: false, reasoningLevel: 'low', timeoutMs: 25_000 });
+        // Bounded: a slow summary must not hold the turn; the digest fallback keeps the facts.
+        const result = await providerGateway.chat(summarizer, messages, {
+          maxAttempts: 1,
+          timeoutMs: 25_000,
+          runtimeConfig: buildProviderRequestConfig(runtime),
+          allowFallback: true,
+          signal: input.signal,
+        });
+        return result.text;
+      },
+    });
+    void saveSessionMemory(input.project, input.userId, memory);
+  } else if (pending.length) {
+    memory = await compactConversation({ memory: stored, turns: pending, complete: async () => '' });
+  }
+  return {
+    turns: recent.map(turn => ({ role: turn.role, content: turn.content })),
+    memory,
+    sessionContext: renderSessionContext(memory),
+  };
+}
+
+/** The message being answered may already be stored as the last turn. */
+function dropCurrentPrompt(turns: RecentHistoryMessage[], prompt: string): RecentHistoryMessage[] {
+  const last = turns.at(-1);
+  if (last?.role === 'user' && last.content.trim() === String(prompt || '').trim()) return turns.slice(0, -1);
+  return turns;
+}
+
+/** What this run did, kept for every later turn. */
+async function recordSessionRun(project: GeneratedProject, userId: string, record: RunRecord) {
+  const memory = await loadSessionMemory(project.id);
+  await saveSessionMemory(project, userId, { ...memory, runs: appendRunRecord(memory.runs, record) });
+}
+
 async function recordAgentImprovementSignal(project: GeneratedProject, userId: string, input: {
   prompt: string;
   decision: IntentDecision;
@@ -10661,8 +10789,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   const historyTurns: RecentHistoryMessage[] = Array.isArray(req.body?.messages)
     ? req.body.messages
       .filter((message: any) => (message?.role === 'user' || message?.role === 'assistant') && String(message?.content || '').trim())
-      .slice(-12)
-      .map((message: any) => ({ role: message.role === 'assistant' ? 'assistant' as const : 'user' as const, content: redactSecrets(String(message.content || '')).slice(0, 4000) }))
+      .slice(-30)
+      .map((message: any) => ({ role: message.role === 'assistant' ? 'assistant' as const : 'user' as const, content: redactSecrets(String(message.content || '')).slice(0, 8000) }))
     : [];
   let decision: IntentDecision;
   try {
@@ -10755,6 +10883,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       project,
       prompt,
       history: historyTurns,
+      // A chat about a project knows what was built in it.
+      sessionContext: canPersistConversation ? renderSessionContext(await loadSessionMemory(project.id)) : undefined,
       files,
       decision,
       modelId: selectedModel,
@@ -12870,11 +13000,23 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    */
   const requestedEffort = normalizeAgentEffort(req.body?.effort);
   // Three independent reads; one round trip instead of three.
-  const [existingFiles, lastPlan, recentHistory] = await Promise.all([
+  const [existingFiles, lastPlan, conversation] = await Promise.all([
     loadProjectFiles(project.id),
     getLastProjectPlan(project.id),
-    getRecentDecisionHistory(project.id, 6),
+    /*
+     * The conversation, kept the way Claude Code keeps one: every recent turn
+     * whole, and a summary of the rest. This was the last six messages cut to
+     * 1,200 characters each, so a project discussed over twenty turns lost
+     * everything but the tail — and any long message lost its middle.
+     */
+    loadConversationContext({
+      project,
+      userId,
+      modelId: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection),
+    }),
   ]);
+  const recentHistory = dropCurrentPrompt(conversation.turns, prompt);
+  const sessionContext = conversation.sessionContext;
   let initialDecision: IntentDecision;
   try {
     initialDecision = await resolveAgentDecision({
@@ -13059,7 +13201,8 @@ ${agentPrompt}` : agentPrompt;
         projectName: project.name,
         userId,
         prompt: pipelinePrompt,
-        memoryContext: projectMemory,
+        // Settled decisions, then what already happened in this session.
+        memoryContext: [projectMemory, sessionContext].filter(Boolean).join('\n\n') || undefined,
         backendEnv,
         route: pipelineRoute,
         existingFiles,
@@ -13183,6 +13326,19 @@ ${agentPrompt}` : agentPrompt;
         }
 
         const diff = diffFiles(existingFiles, pipelineFiles);
+        // What this run did, for every later turn: files, outcome, what is
+        // still open. Recorded whether or not it verified — the next turn
+        // must know about a half-finished build as much as a finished one.
+        void recordSessionRun(project, userId, {
+          at: new Date().toISOString(),
+          request: prompt,
+          outcome: outcome.ok ? 'verified' : 'needs_fix',
+          files: [...diff.created, ...diff.modified, ...diff.deleted.map((path: string) => `${path} (deleted)`)],
+          summary: outcome.plan?.summary,
+          openProblems: outcome.ok ? undefined : (outcome.repairOutcome?.finalReport?.problems || [])
+            .filter((problem: any) => problem?.severity !== 'warning')
+            .map((problem: any) => redactSecrets(String(problem?.message || '')).slice(0, 300)),
+        });
         await createProjectVersion(updatedProject, pipelineFiles, prompt, {
           ...diff,
           multi_agent_pipeline: true,
@@ -13585,6 +13741,7 @@ ${agentPrompt}` : agentPrompt;
         // retest" — instructions a text reply cannot follow, so it claimed to.
         prompt: agentPrompt,
         history: recentHistory,
+        sessionContext,
         files: existingFiles,
         decision,
         modelId: requestedModelSelection,
@@ -13798,7 +13955,7 @@ ${agentPrompt}` : agentPrompt;
           requiresPreviewRebuild: false,
           nextAction: 'plan_only',
         };
-        const planResponse = await createAgentTextResponse({ project, prompt: agentPrompt, history: recentHistory, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
+        const planResponse = await createAgentTextResponse({ project, prompt: agentPrompt, history: recentHistory, sessionContext, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
         executionPlan = planResponse.text;
         measuredProviderCostUsd += Number(planResponse.cost_usd || 0);
       } catch (error) {

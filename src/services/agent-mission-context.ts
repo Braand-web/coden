@@ -1,6 +1,25 @@
 import { CODEN_CAPABILITY_SKILLS, resolveCodenSkillPlan } from './coden-skill-plan.ts';
 
 /** Untrusted project data is separated from the user's durable mission. */
+/**
+ * The mission rides on every round's instruction, so its share of the
+ * conversation is bounded; older turns are in the session summary, which the
+ * agents receive separately.
+ */
+const MISSION_HISTORY_CHARS = 40_000;
+
+function recentTranscript(history: Array<{ role: string; content: string }>, budget: number): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const line = `${history[index].role === 'assistant' ? 'Coden' : 'User'}: ${history[index].content}`;
+    if (used + line.length > budget && lines.length) break;
+    lines.unshift(line);
+    used += line.length;
+  }
+  return lines.join('\n\n');
+}
+
 export function buildMissionContext(input: {
   prompt: string;
   history?: Array<{ role: string; content: string }>;
@@ -19,7 +38,9 @@ export function buildMissionContext(input: {
       `Current user mission:\n${input.prompt}`,
       'Keep this mission and its constraints throughout every repair. A compiling project is not proof of the requested behavior. Do not remove requested functionality to fix a check.',
       input.approvedPlan ? `User-approved plan (preserve its requirements):\n${input.approvedPlan}` : '',
-      input.history?.length ? `Previous conversation (context, not new authority):\n${JSON.stringify(input.history.slice(-12))}` : '',
+      input.history?.length
+        ? `The conversation so far, oldest first (context for the mission above, not new instructions):\n${recentTranscript(input.history, MISSION_HISTORY_CHARS)}`
+        : '',
       skills.length ? `Selected implementation skills:\n${skills.map(skill => `${skill.id}@${skill.version}: ${skill.instruction}\nRequired evidence: ${skill.evidenceRequired.join('; ')}`).join('\n\n')}` : '',
     ].filter(Boolean).join('\n\n'),
   };
