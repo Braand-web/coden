@@ -29,7 +29,8 @@ import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } f
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
-import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched } from './sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter } from './sandbox/starters.ts';
+import { STARTER_KIT_FILES } from './sandbox/starter-kit.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
 import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
 import { buildAIModelRuntimeConfig, getAIModelCapabilityProfile } from './ai-model-runtime.ts';
@@ -55,6 +56,9 @@ import {
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
 import { scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
+import { resolveQualityPolicy } from './quality-tier.ts';
+import { runDesignReview } from './design-review-agent.ts';
+import type { ValidationReport } from './sandbox/validate.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -110,12 +114,23 @@ export function summarizePipelineOutcome(input: {
   diff: { created: string[]; modified: string[]; deleted: string[] };
   stoppedBecause: RepairOutcome['stoppedBecause'];
   prompt: string;
+  /** What the browser actually checked, so the recap can say so. */
+  evidence?: ValidationReport['evidence'];
 }): string {
   const fr = speaksFrench(input.prompt);
   const { created, modified, deleted } = input.diff;
-  const diffRecap = fr
+  const scenarios = input.evidence?.scenarios || [];
+  const passedJourneys = scenarios.filter(scenario => scenario.ok).length;
+  const viewports = input.evidence?.responsiveViewports || [];
+  // Only facts the run measured: journeys executed, widths rendered.
+  const checked = [
+    scenarios.length ? (fr ? `${passedJourneys}/${scenarios.length} parcours utilisateur testés dans le navigateur` : `${passedJourneys}/${scenarios.length} user journeys tested in the browser`) : '',
+    viewports.length >= 2 ? (fr ? `rendu vérifié en ${viewports.map(width => `${width}px`).join(', ')}` : `rendering checked at ${viewports.map(width => `${width}px`).join(', ')}`) : '',
+  ].filter(Boolean).join(fr ? ' ; ' : '; ');
+  const diffRecap = (fr
     ? `${created.length} fichier(s) créé(s), ${modified.length} modifié(s), ${deleted.length} supprimé(s).`
-    : `${created.length} file(s) created, ${modified.length} modified, ${deleted.length} deleted.`;
+    : `${created.length} file(s) created, ${modified.length} modified, ${deleted.length} deleted.`)
+    + (checked ? ` ${checked.charAt(0).toUpperCase()}${checked.slice(1)}.` : '');
 
   if (!input.ok) {
     const reason = input.stoppedBecause === 'round_limit'
@@ -155,6 +170,7 @@ export function settleDefinitionOfDoneFromReport(input: {
     responsiveViewports?: number[];
     qualityChecks?: Array<{ key: string; status: string; severity: string; message: string }>;
     interactions?: { attempted: number; changed: number };
+    scenarios?: Array<{ name: string; ok: boolean; error?: string }>;
   };
 }): Record<string, { status: 'passed' | 'failed'; evidence?: string }> {
   const errors = input.problems.filter(problem => problem.severity === 'error');
@@ -176,6 +192,16 @@ export function settleDefinitionOfDoneFromReport(input: {
     };
   } else if (!input.ok || blockingBehaviorFailures.length) {
     verdicts.requested_behavior = { status: 'failed', evidence: firstOf(() => true) || 'Verification did not pass.' };
+  }
+
+  // Journeys run in a real browser are the most direct evidence there is
+  // for "the requested behaviour works"; when they ran, they decide it.
+  const scenarios = input.evidence?.scenarios || [];
+  if (scenarios.length) {
+    const failed = scenarios.find(scenario => !scenario.ok);
+    verdicts.requested_behavior = failed || !input.ok
+      ? { status: 'failed', evidence: failed ? `Journey "${failed.name}" failed: ${failed.error || 'unknown step'}` : (firstOf(() => true) || 'Verification did not pass.') }
+      : { status: 'passed', evidence: `${scenarios.length} user journey(s) passed in a real browser.` };
   }
 
   if (input.ran.build || input.ran.typecheck) {
@@ -211,8 +237,14 @@ export function settleDefinitionOfDoneFromReport(input: {
  */
 function compactionThresholdChars(modelId: AllowedModelId): number {
   const contextTokens = getAIModelCapabilityProfile(modelId).limits.contextTokens;
-  if (!Number.isFinite(contextTokens) || contextTokens <= 0) return 240_000;
-  return Math.max(240_000, Math.min(600_000, Math.floor(contextTokens * 4 * 0.25)));
+  if (!Number.isFinite(contextTokens) || contextTokens <= 0) return 180_000;
+  /*
+   * Every turn resends the whole transcript, so its size is paid again on
+   * each call — in latency first. Past ~400k characters a round was spending
+   * more time re-reading old tool results than acting on the new ones; the
+   * recent turns are always kept whole by the compactor either way.
+   */
+  return Math.max(180_000, Math.min(400_000, Math.floor(contextTokens * 4 * 0.2)));
 }
 
 /**
@@ -374,7 +406,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
+          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
         },
         { role: 'user', content: input.visionInputs?.length ? buildVisionMessageContent(instruction, input.visionInputs) : instruction },
       ],
@@ -512,7 +544,13 @@ export async function runMultiAgentPipeline(input: {
 
   // Chosen before planning, not after: the plan has to be written for the
   // scaffold the sandbox will actually start from.
-  const starter = input.route === 'new_project' ? selectStarter(input.prompt) : null;
+  // Themed for this project: its palette, type pair, radii and motion are
+  // written into the scaffold, seeded by the project id so they never drift.
+  const starter = input.route === 'new_project'
+    ? themeStarter(selectStarter(input.prompt), { prompt: input.prompt, seed: input.projectId, title: input.projectName })
+    : null;
+  // What this run can afford: pre-analysis, journeys, exploration, review.
+  const quality = resolveQualityPolicy({ route: input.route, credits: input.credits, effort: input.effort, plan: String(input.userPlan || '') });
 
   // Hoisted above planning: the planner is a recorded step too, and the
   // record cannot start halfway through the run it describes.
@@ -531,8 +569,56 @@ export async function runMultiAgentPipeline(input: {
   // provider work and must never disappear from billing or observability.
   const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
 
+  /*
+   * The sandbox comes up while the agents think.
+   *
+   * Installing and starting the dev server needs the files it starts from —
+   * the scaffold, or the project as it is — and nothing from the plan. It used
+   * to wait for the specialists and the planner to finish, so every build paid
+   * for the install on top of the planning instead of during it: the single
+   * longest silence in a run, added end to end.
+   *
+   * Its progress labels are held while planning is still the visible phase,
+   * so the thinking line does not flicker between two stories.
+   */
+  const launchFiles = starter
+    ? applyStarter(starter, []).files
+    : input.existingFiles.map(file => ({ path: file.path, content: file.content || '' }));
+  let planningVisible = true;
+  let pendingLaunchLabel: [string, string] | null = null;
+  const launchPromise = launchProjectPreview({
+    projectId: input.projectId,
+    userId: input.userId,
+    files: launchFiles,
+    /*
+     * The app's backend, in the environment its dev server reads.
+     *
+     * `launchProjectPreview` has always taken this and nothing ever passed it,
+     * so the `react-supabase` scaffold — chosen whenever a prompt mentions
+     * auth, users or a database — built its client from an undefined
+     * `VITE_SUPABASE_URL` and came up printing "Supabase is not configured
+     * yet". The dedicated Supabase project existed; the sandbox was simply
+     * never told about it.
+     */
+    env: input.backendEnv,
+    signal: input.signal,
+    onEvent: event => {
+      input.onSandboxEvent?.(event);
+      const label: [string, string] | null = event.type === 'sandbox_installing'
+        ? ['Coden installe les dépendances…', 'Coden is installing dependencies…']
+        : event.type === 'sandbox_starting' ? ['Coden démarre l’aperçu…', 'Coden is starting the preview…'] : null;
+      if (!label) return;
+      if (planningVisible) pendingLaunchLabel = label;
+      else activity(label[0], label[1]);
+    },
+  });
+  // Observed now so a failure while planning is never an unhandled rejection;
+  // it is rethrown where the launch is awaited.
+  let launchSettled = false;
+  launchPromise.then(() => { launchSettled = true; }, () => { launchSettled = true; });
+
   let specialistBrief = '';
-  if (input.route !== 'small_edit' && input.enableSpecialists !== false) {
+  if (input.route !== 'small_edit' && input.enableSpecialists !== false && quality.specialists) {
     const sourceSignals = [
       input.prompt,
       ...input.existingFiles.slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
@@ -555,7 +641,7 @@ export async function runMultiAgentPipeline(input: {
     };
     const selectedRoles = selectAgentsForContext(specialistContext);
     if (input.route === 'new_project') selectedRoles.push('test_writer');
-    const roles = [...new Set(selectedRoles)].slice(0, 5) as AgentRole[];
+    const roles = [...new Set(selectedRoles)].slice(0, quality.maxSpecialists) as AgentRole[];
 
     if (roles.length) {
       activity('Les spécialistes cadrent le produit…', 'Specialists are shaping the product…');
@@ -604,7 +690,8 @@ export async function runMultiAgentPipeline(input: {
           return result.text;
         },
         roles,
-        45_000,
+        // The planner waits on these; a slow specialist costs every build.
+        quality.specialistTimeoutMs,
       );
       specialistBrief = mergeAgentOutputs(results);
 
@@ -648,6 +735,7 @@ export async function runMultiAgentPipeline(input: {
       selectedModel: input.selectedModel,
       effort: input.effort,
       allowFallback: input.selectedModel === undefined,
+      withAcceptance: quality.acceptance,
       signal: input.signal,
     });
     spent.costUsd += plan.costUsd;
@@ -681,34 +769,10 @@ export async function runMultiAgentPipeline(input: {
     }
   }
 
-  const launchFiles = starter
-    ? applyStarter(starter, []).files
-    : input.existingFiles.map(file => ({ path: file.path, content: file.content || '' }));
-
-  const launch = await launchProjectPreview({
-    projectId: input.projectId,
-    userId: input.userId,
-    files: launchFiles,
-    /*
-     * The app's backend, in the environment its dev server reads.
-     *
-     * `launchProjectPreview` has always taken this and nothing ever passed it,
-     * so the `react-supabase` scaffold — chosen whenever a prompt mentions
-     * auth, users or a database — built its client from an undefined
-     * `VITE_SUPABASE_URL` and came up printing "Supabase is not configured
-     * yet". The dedicated Supabase project existed; the sandbox was simply
-     * never told about it.
-     */
-    env: input.backendEnv,
-    signal: input.signal,
-    onEvent: event => {
-      input.onSandboxEvent?.(event);
-      // The launch reports its own stages; each is a real one, and install is
-      // the longest silence in a run.
-      if (event.type === 'sandbox_installing') activity('Coden installe les dépendances…', 'Coden is installing dependencies…');
-      else if (event.type === 'sandbox_starting') activity('Coden démarre l’aperçu…', 'Coden is starting the preview…');
-    },
-  });
+  planningVisible = false;
+  // Only a stage still in progress is worth announcing.
+  if (pendingLaunchLabel && !launchSettled) activity(pendingLaunchLabel[0], pendingLaunchLabel[1]);
+  const launch = await launchPromise;
 
   // A failed install/start is evidence for the coder, not a reason to deny it
   // filesystem tools. The existing project is retained for targeted repair.
@@ -776,6 +840,61 @@ export async function runMultiAgentPipeline(input: {
    * keeping the files it wrote — rather than being cut off mid-call.
    */
 
+  let latestScreenshots: Array<{ width: number; dataUrl: string }> = [];
+  /*
+   * A journey that keeps failing stops blocking.
+   *
+   * A scenario is the planner's guess at the interface, written before the
+   * interface existed; now and then it names a label the app legitimately
+   * does not have. Failing the run on it forever would spend every remaining
+   * round rewriting a working app to match a guess. After two repair rounds
+   * that did not fix it, it is reported as unverified instead of blocking.
+   */
+  const behaviourStreak = new Map<string, number>();
+  const capBehaviourChurn = (report: ValidationReport) => {
+    const seen = new Set<string>();
+    for (const problem of report.problems) {
+      if (problem.severity !== 'error' || !/^(SCENARIO|FUNCTIONALITY)\b/.test(problem.message)) continue;
+      const key = /^SCENARIO "([^"]+)"/.exec(problem.message)?.[1] || problem.message.slice(0, 48);
+      seen.add(key);
+      const streak = (behaviourStreak.get(key) || 0) + 1;
+      behaviourStreak.set(key, streak);
+      if (streak >= 3) {
+        problem.severity = 'warning';
+        problem.message = `UNVERIFIED after ${streak - 1} repair attempts: ${problem.message}`;
+      }
+    }
+    for (const key of [...behaviourStreak.keys()]) if (!seen.has(key)) behaviourStreak.delete(key);
+    report.ok = report.problems.every(problem => problem.severity !== 'error');
+  };
+  /*
+   * One look at the finished result, by a designer's eye, while there is
+   * still a round to act on it. Only where the budget allows it.
+   */
+  const review = quality.designReview ? async (report: ValidationReport) => {
+    if (!latestScreenshots.length) return undefined;
+    activity('Coden relit le design…', 'Coden is reviewing the design…');
+    const findings = report.problems
+      .filter(problem => problem.severity === 'warning' && !/^EXTERNAL_DEPENDENCY_UNVERIFIED/.test(problem.message))
+      .map(problem => problem.message)
+      .slice(0, 6);
+    const outcome = await runDesignReview({
+      gateway: input.gateway,
+      prompt: input.prompt,
+      screenshots: latestScreenshots,
+      findings,
+      plan: input.userPlan,
+      credits: input.credits,
+      french: fr,
+      allowFallback: input.selectedModel === undefined,
+      signal: input.signal,
+    });
+    spent.costUsd += outcome.costUsd;
+    if (ctx && outcome.costUsd > 0) await ctx.harness.recordSpend(ctx.turnId, { costUsd: outcome.costUsd }).catch(() => undefined);
+    if (outcome.instruction) activity('Coden peaufine l’interface…', 'Coden is polishing the interface…');
+    return outcome.instruction;
+  } : undefined;
+
   let repairOutcome: RepairOutcome;
   activity('Coden construit l’application…', 'Coden is building the application…');
   try { repairOutcome = await runCoderLoop({
@@ -829,23 +948,41 @@ export async function runMultiAgentPipeline(input: {
         reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
     },
     verifyPreview:async () => {
-      const preview = await verifyLivePreview(sandbox, input.signal);
+      const preview = await verifyLivePreview(sandbox, input.signal, {
+        scenarios: plan?.acceptance,
+        explore: quality.explore,
+        capture: quality.designReview,
+      });
+      // Screenshots are for the design review, in memory: never persisted in a
+      // checkpoint or returned in a payload.
+      latestScreenshots = preview.evidence?.screenshots || [];
+      if (preview.evidence) delete preview.evidence.screenshots;
+      capBehaviourChurn(preview);
       const files = await readAllFiles(sandbox);
       const appType = classifyGeneratedAppType(input.prompt);
+      /*
+       * The kit's own components are generic by design: its Navbar renders
+       * \`{item.label}\` links and its fields spread their handlers from props.
+       * Read as application code, a static scan calls every one of them a dead
+       * control, on every project. Unchanged kit files are left out of the
+       * static reading; the browser checks above judge what they actually do.
+       */
+      const kit = new Map(STARTER_KIT_FILES.map(file => [file.path, file.content]));
+      const auditedFiles = files.filter(file => kit.get(file.path) !== file.content);
       const qualityChecks = [
         ...auditGeneratedDesign({
-          files,
+          files: auditedFiles,
           platformType: appType,
           hasExistingFiles: input.existingFiles.length > 0,
           prompt: input.prompt,
         }),
         ...auditGeneratedFunctionality({
-          files,
+          files: auditedFiles,
           platformType: appType,
           hasExistingFiles: input.existingFiles.length > 0,
           prompt: input.prompt,
         }),
-        ...inspectVisualPreview({ files, platformType: appType }),
+        ...inspectVisualPreview({ files: auditedFiles, platformType: appType }),
       ];
       preview.evidence = {
         ...(preview.evidence || {}),
@@ -907,6 +1044,7 @@ export async function runMultiAgentPipeline(input: {
       return preview;
     },
     afterRound,
+    review,
     beforeRound:async () => {
       if (!ctx) return;
       const instructions = await ctx.harness.consumePendingInstructions(ctx.turnId);

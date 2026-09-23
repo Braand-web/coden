@@ -150,7 +150,7 @@ const PROVISIONED = {
 // The sandbox receives it, which is the only reason any of this matters.
 {
   const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
-  const launch = pipeline.slice(pipeline.indexOf('const launch = await launchProjectPreview({'), pipeline.indexOf('const launch = await launchProjectPreview({') + 1200);
+  const launch = pipeline.slice(pipeline.indexOf('const launchPromise = launchProjectPreview({'), pipeline.indexOf('const launchPromise = launchProjectPreview({') + 1200);
   assert.match(launch, /env: input\.backendEnv/, 'the dev server must be given the backend environment');
 
   // Both agents are told, for the reason each needs it.

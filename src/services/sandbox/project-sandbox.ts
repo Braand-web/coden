@@ -33,6 +33,7 @@ import os from 'node:os';
 import { existsSync } from 'node:fs';
 import { decideCommand } from './command-policy.ts';
 import { resolveInSandbox, sandboxDir } from './paths.ts';
+import { restoreDependencies, saveDependencies } from './dependency-cache.ts';
 
 export type SandboxState = 'idle' | 'installing' | 'starting' | 'running' | 'stopped' | 'crashed';
 
@@ -408,6 +409,12 @@ export class ProjectSandbox {
       this.state = 'installing';
       this.lastError = null;
       this.log('system', 'Installing dependencies...');
+      // Same manifest as an earlier project: copy its installed tree.
+      if (await restoreDependencies(this.dir)) {
+        this.state = 'idle';
+        this.log('system', 'Dependencies restored from the install cache.');
+        return { ok: true, output: 'Dependencies restored from the install cache.', durationMs: Date.now() - startedAt };
+      }
       const useCi = await this.hasFile('package-lock.json');
       // Generated package lifecycle hooks are untrusted code. They must not
       // execute while dependencies are installed in the host process.
@@ -426,6 +433,8 @@ export class ProjectSandbox {
             : `npm ${args[0]} exited with code ${result.code ?? 'unknown'}.`;
         } else {
           this.state = 'idle';
+          // Kept in the background for the next project with this manifest.
+          void saveDependencies(this.dir).catch(() => undefined);
         }
         return {
           ok,

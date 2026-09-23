@@ -75,7 +75,7 @@ import { buildProviderRequestConfig } from './src/services/provider-adapters.ts'
 
   // A build's first round is still exempt: the scaffold's error count is not
   // a baseline an attempt can be judged against.
-  assert.match(repair, /if \(isBuildRound\) continue;/, "a build's first round is not measured against the scaffold");
+  assert.match(repair, /if \(isBuildRound( \|\| isPolishRound)?\) continue;/, "a build's first round is not measured against the scaffold");
 
   // And the run stays bounded: patience must be well under the round ceiling,
   // or it is the same as having no stop rule at all.

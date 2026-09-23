@@ -12821,9 +12821,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * promises more work is priced for more work before the gate runs.
    */
   const requestedEffort = normalizeAgentEffort(req.body?.effort);
-  const existingFiles = await loadProjectFiles(project.id);
-  const lastPlan = await getLastProjectPlan(project.id);
-  const recentHistory = await getRecentDecisionHistory(project.id, 6);
+  // Three independent reads; one round trip instead of three.
+  const [existingFiles, lastPlan, recentHistory] = await Promise.all([
+    loadProjectFiles(project.id),
+    getLastProjectPlan(project.id),
+    getRecentDecisionHistory(project.id, 6),
+  ]);
   let initialDecision: IntentDecision;
   try {
     initialDecision = await resolveAgentDecision({
@@ -12926,8 +12929,21 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           console.warn('[coden:pipeline_run_create_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
         }
       }
-      const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
-      const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
+      /*
+       * The run's context is four independent reads — plan, balance, memory,
+       * backend — started together rather than one after another, since none
+       * needs another's answer.
+       */
+      const routingPromise = Promise.all([
+        getOrganizationPlan(project.organization_id).catch(() => 'free'),
+        getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id),
+      ]);
+      const backendEnvPromise = loadProjectBackendEnv({
+        client: getSupabase(),
+        projectId: project.id,
+      });
+      routingPromise.catch(() => undefined);
+      backendEnvPromise.catch(() => undefined);
 
 
       /*
@@ -12953,10 +12969,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
        * told the backend is live so they write real queries rather than a
        * localStorage stand-in beside a client they never call.
        */
-      const backendEnv = await loadProjectBackendEnv({
-        client: getSupabase(),
-        projectId: project.id,
-      });
+      const backendEnv = await backendEnvPromise;
+      const [routingPlan, routingCredits] = await routingPromise;
 
       /*
        * Pick up a run that died, instead of starting it again.
@@ -13168,6 +13182,7 @@ ${agentPrompt}` : agentPrompt;
             diff,
             stoppedBecause: outcome.repairOutcome.stoppedBecause,
             prompt,
+            evidence: outcome.repairOutcome.finalReport.evidence,
           }),
           model: outcome.modelId,
           real_cost_usd: pipelineCompleteCostUsd,
@@ -13407,14 +13422,21 @@ ${agentPrompt}` : agentPrompt;
   });
   let agentRunId = '';
   if (AGENT_V2_ENABLED) {
+    // Four independent reads for the context pack, fetched together.
+    const [contextMessages, contextEvents, contextVersions, contextMemory] = await Promise.all([
+      listProjectMessagesPage(project.id, 12, null).catch(() => []),
+      listAgentEventsPage(project.id, 16, null).catch(() => []),
+      listProjectVersions(project.id).catch(() => []),
+      listAgentMemory(project.id).catch(() => []),
+    ]);
     const contextPack = {
       ...buildAgentContextPack({
       project,
       files: existingFiles,
-      messages: await listProjectMessagesPage(project.id, 12, null).catch(() => []),
-      events: await listAgentEventsPage(project.id, 16, null).catch(() => []),
-      versions: await listProjectVersions(project.id).catch(() => []),
-      memory: await listAgentMemory(project.id).catch(() => []),
+      messages: contextMessages,
+      events: contextEvents,
+      versions: contextVersions,
+      memory: contextMemory,
       previewStatus: project.preview_status,
       selectedModel: effectiveModelSelection,
       requestId,
@@ -16691,7 +16713,9 @@ import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
-import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER, STARTERS } from './src/services/sandbox/starters.ts';
+import { ProjectSandbox } from './src/services/sandbox/project-sandbox.ts';
+import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
@@ -17770,6 +17794,10 @@ const httpServer = app.listen(port, () => {
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
+  // The first new project after a deploy should not pay a cold install.
+  setTimeout(() => {
+    void warmScaffoldDependencies(Object.values(STARTERS), id => new ProjectSandbox(id)).catch(() => undefined);
+  }, 10_000).unref();
 
   registerJobHandler('workflow_run', async (job, onProgress) => {
     const client = getSupabase();

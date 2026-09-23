@@ -44,7 +44,7 @@ const starters = readFileSync(new URL('./src/services/sandbox/starters.ts', impo
   assert.match(plannerCall, /designPolicy: .*designPolicy/, 'the planner must receive the design policy');
   assert.match(plannerCall, /plan: input\.userPlan/, 'in the planner call itself');
   assert.match(planner, /designPolicy\?: string/, 'the planner accepts it');
-  assert.match(planner, /buildPlannerSystemPrompt\(input\.designPolicy\)/, 'and actually uses it');
+  assert.match(planner, /buildPlannerSystemPrompt\(input\.designPolicy[,)]/, 'and actually uses it');
 
   const turn = pipeline.slice(pipeline.indexOf('turn: buildToolLoopTurn({'), pipeline.indexOf('turn: buildToolLoopTurn({') + 800);
   assert.match(turn, /designPolicy,/, 'and so must the coder');

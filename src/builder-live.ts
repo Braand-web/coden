@@ -3087,7 +3087,7 @@ async function requestProjectGeneration(
   }
 }
 
-async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto') {
+async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<'answered' | 'failed' | 'project_run'> {
   // A retry from the recovery panel arrives with no controller of its own,
   // and without one the stop button had nothing to stop.
   const ownsAbort = !activeAbort;
@@ -3100,7 +3100,12 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
     // One request, one answer. A failed request stays an honest failure,
     // never a hidden second run.
     await requestSimpleConversation(card, prompt, speaksFrench, requestedMode);
+    return 'answered';
   } catch (error) {
+    const payload = error instanceof ApiError ? (error.payload as { diagnostic_code?: string; requires_project?: boolean } | null) : null;
+    if (error instanceof ApiError && error.status === 409 && (payload?.diagnostic_code === 'PROJECT_RUN_REQUIRED' || payload?.requires_project)) {
+      return 'project_run';
+    }
     /*
      * Every exit closes the run.
      *
@@ -3110,7 +3115,7 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
      */
     if (stopRequested || (error as Error)?.name === 'AbortError') {
       failLiveRun(card, speaksFrench ? 'Réponse arrêtée.' : 'Reply stopped.', 'cancelled');
-      return;
+      return 'failed';
     }
     failLiveRun(card, safeBuilderFailureText(error, speaksFrench));
     const retry = () => void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
@@ -3121,6 +3126,7 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
     // `failLiveRun` has already said what went wrong; the panel adds the way
     // forward when there is one.
     showRuntimeRecovery(card, error, speaksFrench, { retry, useAuto });
+    return 'failed';
   } finally {
     setBusy(false);
     stopRequested = false;
@@ -6111,12 +6117,25 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     // An empty label used to reach the shimmer here, which drew nothing while
     // the model was already working. Say what is happening instead.
     setMessageShimmer(card, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
+    let outcome: Awaited<ReturnType<typeof answerSimpleConversationFromProvider>>;
     try {
-      await answerSimpleConversationFromProvider(card, safePrompt, speaksFrench, requestedMode);
+      outcome = await answerSimpleConversationFromProvider(card, safePrompt, speaksFrench, requestedMode);
     } finally {
       activeAbort = null;
     }
-    return;
+    if (outcome !== 'project_run') return;
+    /*
+     * The server read this as work on the project, not a question.
+     *
+     * The page guesses the route before sending; the server decides. When they
+     * disagreed the server answered 409 PROJECT_RUN_REQUIRED and the user was
+     * shown an error for a request that was perfectly valid — "ajoute un
+     * formulaire de contact" typed in Auto, refused. The server is the
+     * authority, so the request goes where it said: the empty reply card is
+     * removed and the same prompt continues down the build path below.
+     */
+    const cardId = messageHandleId(card);
+    if (cardId && conversationApi) conversationApi.removeMessage(cardId);
   }
 
   if (promptUiContext === 'critical_action') {

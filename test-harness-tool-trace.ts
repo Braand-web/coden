@@ -146,7 +146,7 @@ const CTX = { turnId: 'turn_1', role: 'integrator' as const };
  */
 {
   const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
-  const planning = pipeline.slice(pipeline.indexOf('plan = await runPlannerAgent({'), pipeline.indexOf('const launchFiles'));
+  const planning = pipeline.slice(pipeline.indexOf('plan = await runPlannerAgent({'), pipeline.indexOf('const launch = await launchPromise'));
 
   assert.match(planning, /kind: 'plan'/, 'the plan must be recorded as a plan');
   assert.match(planning, /role: 'planner'/, 'attributed to the planner, not the agent that writes files');
