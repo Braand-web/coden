@@ -114,35 +114,32 @@ for (const [surface, source] of [['the landing', read('src/landing-new.ts')], ['
 console.log('prompt input composer tests passed');
 
 /*
- * Four levels, and the level reaches the provider.
+ * Five levels, and the level reaches the provider exactly.
  *
- * The control shipped with three levels that moved `AgentLoopBudget` and
- * nothing else: what the provider received was `reasoningEffortForTask`,
- * derived from the task, capped at `high`, with no way for the user to
- * influence it. "Max Effort" bought wall clock and not one token of thinking.
+ * Aucun / Bas / Moyen / Élevé / Maximum map one to one onto the request's
+ * `reasoning` parameter in `buildOpenRouterRequest`; no task floor, no
+ * per-model budget table and no adapter rewrites the choice on the way.
  */
 const effortModule = read('src/services/agent-effort.ts');
 const runtime = read('src/services/ai-model-runtime.ts');
-const adapters = read('src/services/provider-adapters.ts');
+const request = read('src/services/openrouter-request.ts');
 
-assert.match(effortModule, /AGENT_EFFORT_LEVELS = \['Low', 'Medium', 'High', 'Ultra'\]/,
-  'the composer offers four levels');
+assert.match(effortModule, /AGENT_EFFORT_LEVELS = \['None', 'Low', 'Medium', 'High', 'Ultra'\]/,
+  'the composer offers five levels');
 assert.match(effortModule, /'Max Effort': 'High'/,
   'the retired top level lands on the level it was actually priced as, not on Ultra');
 assert.match(effortModule, /if \(level === 'Ultra'\) return 5;/,
   'Ultra is priced for the reasoning it buys');
 
-assert.match(runtime, /export function reasoningForEffort\(/,
+assert.match(runtime, /reasoningLevelForEffort\(requestedEffort\)/,
   'the user level decides what the provider is asked for');
-assert.match(runtime, /const chosen = task === 'security'/,
-  'only security overrides the user, so a cheap level is genuinely cheaper');
-assert.match(runtime, /export function ultraReasoningBudget\(/,
-  'Ultra gets a budget bounded by the model, not a flat number');
-assert.match(runtime, /Math\.floor\(profile\.recommended\.maxTokens \/ 2\)/,
-  'the thinking budget stays strictly below the output cap');
+assert.doesNotMatch(runtime, /reasoningForEffort|ultraReasoningBudget|taskFloor/,
+  'no task floor or budget table overrides the user');
+assert.match(request, /reasoningLevel === 'max'\s*\n?\s*\? \{ max_tokens: maxReasoningBudget\(maxTokens\) \}/,
+  'Maximum sends a budget below max_tokens, since the effort enum cannot express it');
 
-assert.match(adapters, /runtime\.reasoning\.useBudget && runtime\.thinking\?\.budgetTokens/,
-  'Ultra sends the budget, since the effort enum cannot express it');
+assert.match(component, /Ce modèle ne supporte pas le raisonnement étendu/,
+  'a model without extended reasoning disables the control and says why');
 
 assert.match(component, /AGENT_EFFORT_LABELS\[value as AgentEffort\]/,
   'the composer shows the level name and sends the wire value');

@@ -5,7 +5,8 @@ import {
   type AllowedModelId,
 } from '../config/ai-models.ts';
 import { validateAllowedModel } from './ai-validator.ts';
-import type { ChatCompletionResult, ChatMessage, OpenRouterService, StreamChatEvent } from './openrouter-service.ts';
+import { retryDelayMs, type ChatCompletionResult, type ChatMessage, type OpenRouterService, type StreamChatEvent } from './openrouter-service.ts';
+import { modelAvailability } from './openrouter-capabilities.ts';
 import type { AnthropicService } from './anthropic-service.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
 import { ProviderCancelledError, ProviderHttpError, ProviderTimeoutError, isRetryableStatus } from './provider-errors.ts';
@@ -105,7 +106,7 @@ export class ProviderGateway {
     let lastError: any = null;
 
     for (const candidate of candidates) {
-      const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
+      const candidateRuntimeConfig = this.withRouterFallbacks(candidate, options.runtimeConfigForModel?.(candidate) || options.runtimeConfig, options.allowFallback === true);
       if (candidate !== primary) {
         this.noteFallbackUse(candidate);
         try {
@@ -145,7 +146,7 @@ export class ProviderGateway {
           }
           if (attempt >= maxAttempts) break;
           this.noteRetry(candidate);
-          await sleep(250 * attempt);
+          await sleep(backoffMs(attempt, error));
         }
       }
     }
@@ -167,7 +168,7 @@ export class ProviderGateway {
     let lastError: any = null;
 
     for (const candidate of candidates) {
-      const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
+      const candidateRuntimeConfig = this.withRouterFallbacks(candidate, options.runtimeConfigForModel?.(candidate) || options.runtimeConfig, options.allowFallback === true);
       if (candidate !== primary) {
         this.noteFallbackUse(candidate);
         try {
@@ -238,6 +239,8 @@ export class ProviderGateway {
      * concern can never fail a generation.
      */
     onChunk?: (accumulated: string) => void;
+    /** The model's reasoning as it arrives, for display only. Same rules as `onChunk`. */
+    onReasoningChunk?: (delta: string) => void;
   } = {}): Promise<ChatCompletionResult> {
     const primary = this.requireProviderModel(modelId);
     const candidates = this.candidatesFor(primary, options.allowFallback === true);
@@ -260,6 +263,8 @@ export class ProviderGateway {
       };
       let costUsd = 0;
       let toolCalls: ChatCompletionResult['tool_calls'];
+      let reasoning = '';
+      let reasoningDetails: unknown[] | undefined;
 
       for await (const event of this.streamWithProvider(
         candidate,
@@ -280,8 +285,16 @@ export class ProviderGateway {
           usage = event.usage;
           costUsd = event.cost_usd;
         }
+        if (event.type === 'reasoning') {
+          reasoning += event.text;
+          if (options.onReasoningChunk) {
+            emittedAnyChunk = true;
+            try { options.onReasoningChunk(event.text); } catch { /* display only */ }
+          }
+        }
         if (event.type === 'tool_calls') {
           toolCalls = event.tool_calls as ChatCompletionResult['tool_calls'];
+          reasoningDetails = event.reasoning_details;
         }
       }
 
@@ -289,13 +302,15 @@ export class ProviderGateway {
         text,
         model,
         tool_calls: toolCalls,
+        ...(reasoning ? { reasoning } : {}),
+        ...(reasoningDetails?.length ? { reasoning_details: reasoningDetails } : {}),
         usage,
         cost_usd: costUsd,
       };
     };
 
     for (const candidate of candidates) {
-      const candidateRuntimeConfig = options.runtimeConfigForModel?.(candidate) || options.runtimeConfig;
+      const candidateRuntimeConfig = this.withRouterFallbacks(candidate, options.runtimeConfigForModel?.(candidate) || options.runtimeConfig, options.allowFallback === true);
       if (candidate !== primary) {
         this.noteFallbackUse(candidate);
         try {
@@ -338,7 +353,7 @@ export class ProviderGateway {
           if (!classified.retryable) throw classified;
           if (attempt >= maxAttempts) break;
           this.noteRetry(candidate);
-          await sleep(250 * attempt);
+          await sleep(backoffMs(attempt, error));
         }
       }
     }
@@ -384,6 +399,23 @@ export class ProviderGateway {
     return modelId;
   }
 
+  /**
+   * In Auto, OpenRouter's own `models` chain as well as ours.
+   *
+   * Ours moves to the next model after a failure we can see; OpenRouter's
+   * reroutes inside the same request when the model is down or rate-limited,
+   * which costs no round trip. Only models the live catalogue lists are named.
+   * A model the user pinned never gets one: they asked for that model.
+   */
+  private withRouterFallbacks(candidate: AllowedModelId, config: ProviderRequestConfig | undefined, allowFallback: boolean) {
+    if (!allowFallback || !config || config.fallbackModels?.length) return config;
+    const fallbackModels = this.candidatesFor(candidate, true)
+      .slice(1)
+      .filter(id => modelAvailability(id, undefined).available)
+      .slice(0, 2);
+    return fallbackModels.length ? { ...config, fallbackModels } : config;
+  }
+
   private candidatesFor(modelId: AllowedModelId, allowFallback: boolean): AllowedModelId[] {
     if (!allowFallback) return [modelId];
     return [modelId, ...(AI_MODEL_FALLBACKS[modelId] || [])]
@@ -427,7 +459,7 @@ export class ProviderGateway {
         const classified = this.classifyError(error, candidate);
         if (!classified.retryable || attempt >= maxAttempts) throw error;
         this.noteRetry(candidate);
-        await sleep(250 * attempt);
+        await sleep(backoffMs(attempt, error));
       }
     }
   }
@@ -449,7 +481,8 @@ export class ProviderGateway {
     runtimeConfig?: ProviderRequestConfig,
     signal?: AbortSignal,
   ) {
-    return this.openRouter.streamChat(modelId, messages, timeoutMs, runtimeConfig, signal);
+    // Retries are this gateway's job; one connection attempt per call below.
+    return this.openRouter.streamChat(modelId, messages, timeoutMs, runtimeConfig, signal, 1);
   }
 
   private getCircuitError(modelId: AllowedModelId): ProviderGatewayError | null {
@@ -749,6 +782,11 @@ export class ProviderGateway {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Exponential, jittered, and deferring to a provider's `Retry-After`. */
+function backoffMs(attempt: number, error: any): number {
+  return retryDelayMs(attempt, error?.retryAfter ?? error?.cause?.retryAfter, Math.random, 250);
 }
 
 /**

@@ -38,11 +38,7 @@ const runtimeConfig = buildAIModelRuntimeConfig({
 });
 
 console.log("\n⚡ [Runtime IA] Allocation du Budget de Réflexion (Thinking Budget) :");
-if (runtimeConfig.thinking.enabled) {
-  console.log(`- Budget alloué pour la génération frontend : ${runtimeConfig.thinking.budgetTokens} tokens invisibles`);
-  console.log("- Modèle sélectionné :", runtimeConfig.profile.id);
-} else {
-  console.log("- Thinking désactivé pour cette tâche/modèle.");
-}
+console.log(`- Niveau de raisonnement : ${runtimeConfig.reasoningLevel}`);
+console.log("- Modèle sélectionné :", runtimeConfig.profile.id);
 
 console.log("\n✅ Le moteur V2 a parfaitement compris les enjeux du CRM et est prêt à générer le code source complet de manière sécurisée et structurée !");

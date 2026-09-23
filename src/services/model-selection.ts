@@ -24,11 +24,14 @@ import {
   DEFAULT_PROVIDER_MODEL_ID,
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_REGISTRY,
+  PUBLIC_MODEL_CATALOG,
   UserPlan,
   normalizeUserPlan,
   type AllowedModelId,
   type ModelStrength,
 } from '../config/ai-models.ts';
+import { modelAvailability } from './openrouter-capabilities.ts';
+import type { ReasoningLevel } from './openrouter-request.ts';
 
 /** What the platform actually asks a model to do. */
 export type TaskKind =
@@ -92,6 +95,11 @@ export type SelectionResult = {
   reason: string;
   rejected: Array<{ modelId: AllowedModelId; because: string }>;
   estimatedUsdPerMillionBlended: number;
+  /**
+   * The reasoning level Auto chose with the model. A pinned model keeps the
+   * user's level; callers ignore this field then.
+   */
+  reasoningLevel: ReasoningLevel;
 };
 
 const STRENGTH_ORDER: Record<ModelStrength, number> = { low: 0, medium: 1, high: 2, frontier: 3 };
@@ -193,8 +201,34 @@ export function selectModel(request: SelectionRequest): SelectionResult {
   if (request.requestedModel && !MODELS_BY_COST.includes(request.requestedModel as AllowedModelId)) {
     throw Object.assign(new Error('The selected model is not available.'), { diagnosticCode: 'MODEL_CAPABILITY_UNAVAILABLE' });
   }
-  const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId]
-    : [preferred, ...MODELS_BY_COST.filter(id => (AUTO_MODEL_IDS as readonly string[]).includes(id) && id !== preferred)];
+  const reasoningLevel = autoReasoningLevel(request.task, complexity);
+  /*
+   * Auto chooses from the whole validated catalogue, not five fixed roles.
+   *
+   * Simple and medium work walks it cheapest-first behind the role model — the
+   * fastest model that clears the bar wins. Complex and extreme work walks it
+   * strongest-first: the point of Auto on a hard task is the best answer the
+   * user's plan and credits allow, and a cheap model that scrapes the bar is
+   * exactly what makes hard tasks fail. The decision is local and synchronous:
+   * no model is asked which model to use.
+   */
+  const pool = AUTO_POOL.filter(id => {
+    if (modelAvailability(id, MODEL_REGISTRY.find(entry => entry.id === id)).available) return true;
+    rejected.push({ modelId: id, because: 'absent from the OpenRouter catalogue' });
+    return false;
+  });
+  const strongestFirst = complexity === 'complex' || complexity === 'extreme';
+  // Complex: the strongest tier on the dimension that decides the task — the
+  // role model when it is in that tier, else the best value in it. Extreme:
+  // the strongest model outright.
+  const ordered = strongestFirst
+    ? [...pool].sort((a, b) => complexity === 'extreme'
+      ? strengthScore(b, dimensionKey) - strengthScore(a, dimensionKey) || blendedCost(b) - blendedCost(a)
+      : STRENGTH_ORDER[AI_MODEL_CAPABILITIES[b][dimensionKey]] - STRENGTH_ORDER[AI_MODEL_CAPABILITIES[a][dimensionKey]]
+        || Number(b === preferred) - Number(a === preferred)
+        || blendedCost(a) - blendedCost(b))
+    : [preferred, ...pool.filter(id => id !== preferred)].filter(id => pool.includes(id));
+  const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId] : ordered;
   for (const modelId of candidates) {
     const caps = AI_MODEL_CAPABILITIES[modelId];
 
@@ -229,9 +263,12 @@ export function selectModel(request: SelectionRequest): SelectionResult {
 
     return {
       modelId,
-      reason: `role-compatible model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
+      reason: strongestFirst
+        ? `strongest eligible model for ${request.task}/${complexity} (${bar.dimension} ${caps[dimensionKey]})`
+        : `fastest model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
       rejected,
       estimatedUsdPerMillionBlended: Number(blendedCost(modelId).toFixed(3)),
+      reasoningLevel: affordableReasoning(reasoningLevel, modelId, request.credits),
     };
   }
 
@@ -284,6 +321,8 @@ export function selectModel(request: SelectionRequest): SelectionResult {
         reason: `best accessible model for ${request.task}/${complexity}; preferred ${bar.dimension} strength is unavailable on this plan`,
         rejected,
         estimatedUsdPerMillionBlended: Number(blendedCost(fallback).toFixed(3)),
+        // A weaker model than the task deserves: let it think as hard as it can afford.
+        reasoningLevel: affordableReasoning(reasoningLevel === 'max' ? 'max' : 'high', fallback, request.credits),
       };
     }
   }
@@ -291,6 +330,46 @@ export function selectModel(request: SelectionRequest): SelectionResult {
   // No eligible candidate: surface the constraint instead of silently using
   // a model that lacks a required capability or exceeds the user's access.
   throw Object.assign(new Error(`No eligible model satisfies ${request.task}/${complexity}.`), { diagnosticCode:'MODEL_CAPABILITY_UNAVAILABLE', rejected });
+}
+
+/**
+ * The models Auto may choose: the public catalogue (one entry per model, no
+ * deferred `:batch` duplicates), plus the role models it was built around.
+ */
+const AUTO_POOL: AllowedModelId[] = [...new Set([
+  ...(AUTO_MODEL_IDS as readonly AllowedModelId[]),
+  ...PUBLIC_MODEL_CATALOG.map(model => model.id as AllowedModelId).filter(id => !isDeferredTier(id)),
+// Fable is opt-in by contract (enterprise-only, highest cost): a user picks it,
+// Auto never spends it on their behalf.
+])].filter(id => !id.includes('fable'));
+
+function strengthScore(modelId: AllowedModelId, dimensionKey: (typeof DIMENSIONS)[keyof typeof DIMENSIONS]): number {
+  const caps = AI_MODEL_CAPABILITIES[modelId];
+  // The deciding dimension first; the others break ties between equals.
+  const others = Object.values(DIMENSIONS).reduce((sum, key) => sum + STRENGTH_ORDER[caps[key]], 0);
+  return STRENGTH_ORDER[caps[dimensionKey]] * 100 + others;
+}
+
+/**
+ * How hard Auto lets the model think.
+ *
+ * Routing and recaps are answered fastest with little reasoning; the harder
+ * the task, the more the answer depends on it.
+ */
+export function autoReasoningLevel(task: TaskKind, complexity: TaskComplexity): ReasoningLevel {
+  if (task === 'classification' || task === 'summary') return 'low';
+  if (task === 'security' || task === 'architecture') return complexity === 'extreme' || complexity === 'complex' ? 'max' : 'high';
+  return ({ simple: 'low', medium: 'medium', complex: 'high', extreme: 'max' } as const)[complexity];
+}
+
+/**
+ * Maximum reasoning is billed at the output rate and can run to the model's
+ * whole output window. With too few credits to cover that, Auto thinks at
+ * `high` instead of starting a run it would have to stop.
+ */
+export function affordableReasoning(level: ReasoningLevel, modelId: AllowedModelId, credits?: number): ReasoningLevel {
+  if (level !== 'max' || typeof credits !== 'number') return level;
+  return credits >= MODEL_ACTION_CREDIT_FLOORS[modelId] * 4 ? 'max' : 'high';
 }
 
 function strengthName(rank: number): ModelStrength {

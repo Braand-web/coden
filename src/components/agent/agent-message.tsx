@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Copy, FileText, RotateCcw } from 'lucide-react';
+import { ChevronRight, Copy, FileText, RotateCcw } from 'lucide-react';
 import { Response } from '../ui/response';
 import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
-import type { AgentMessageState, AgentNotice, DecisionNotice } from './agent-parts';
+import type { AgentMessageState, AgentNotice, AutoChoice, DecisionNotice, ReasoningPart } from './agent-parts';
 import type { DecisionAnswer, DecisionQuestion } from '../../lib/agent-chat-protocol';
 import { getRuntimeRecoveryPresentation, publicRuntimeErrorMessage } from '../../lib/runtime-error-presentation';
 import '../../styles/agent-message.css';
@@ -50,6 +50,33 @@ function recoveryCopy(value: string) {
     return 'La demande ne peut pas être terminée pour le moment. Votre travail est conservé et vous pouvez la relancer.';
   }
   return raw.slice(0, 280);
+}
+
+const REASONING_LEVEL_LABELS: Record<string, string> = { none: 'Aucun', low: 'Bas', medium: 'Moyen', high: 'Élevé', max: 'Maximum' };
+
+/**
+ * The model's reasoning, folded.
+ *
+ * Open while it streams so the thinking is visible as it happens; a finished
+ * block stays closed unless someone asks for it, so the answer leads.
+ */
+function ReasoningBlock({ part, streaming }: { part: ReasoningPart; streaming: boolean }) {
+  const live = streaming && !part.done;
+  return <details className="coden-agent-reasoning" open={live || undefined} data-live={live || undefined}>
+    <summary><ChevronRight size={13} aria-hidden="true" className="coden-agent-reasoning-chevron" />{live ? 'Raisonnement en cours…' : 'Raisonnement'}</summary>
+    <div className="coden-agent-reasoning-body">{part.text.trim()}</div>
+  </details>;
+}
+
+/** Which model Auto is using, in one quiet line. */
+function AutoChoiceLine({ choices }: { choices: AutoChoice[] }) {
+  const current = choices.at(-1);
+  if (!current) return null;
+  const level = REASONING_LEVEL_LABELS[current.reasoningLevel] || current.reasoningLevel;
+  const escalated = choices.length > 1;
+  return <p className="coden-agent-auto-choice" title={escalated ? choices.map(choice => choice.label).join(' → ') : undefined}>
+    Auto · {current.label} · raisonnement {level.toLowerCase()}{escalated ? ' · renforcé' : ''}
+  </p>;
 }
 
 export type DecisionAnswersHandler = (decisionId: string, questions: DecisionQuestion[], answers: Record<number, DecisionAnswer>) => void;
@@ -99,7 +126,12 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
    */
   const thinkingLabel = state.activity?.trim() || THINKING_LABEL;
   return <section className="coden-agent-message" aria-busy={streaming} data-status={state.status}>
-    {state.parts.map(part => part.type === 'text' ? <Response key={part.id} isStreaming={streaming && !part.done}>{part.text}</Response> : <AgentToolLine key={part.id} part={part} />)}
+    {state.autoChoices?.length ? <AutoChoiceLine choices={state.autoChoices} /> : null}
+    {state.parts.map(part => part.type === 'text'
+      ? <Response key={part.id} isStreaming={streaming && !part.done}>{part.text}</Response>
+      : part.type === 'reasoning'
+        ? <ReasoningBlock key={part.id} part={part} streaming={streaming} />
+        : <AgentToolLine key={part.id} part={part} />)}
     {(state.notices || []).map(notice => <StreamNotice key={`${notice.type}-${notice.id}`} notice={notice} onDecisionSelect={onDecisionSelect} onDecisionAnswers={onDecisionAnswers} onArtifactOpen={onArtifactOpen} />)}
     {/*
       * Keyed on the label, not on the slot.

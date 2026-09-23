@@ -205,7 +205,7 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<Planner
   const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
   const systemPrompt = buildPlannerSystemPrompt(input.designPolicy, input.withAcceptance === true);
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
-  const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,maxTokens:8000,preferStructuredOutput:true,effort:input.effort}));
+  const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,preferStructuredOutput:true,effort:input.effort}));
   const runtimeConfig = runtimeFor(modelId);
 
   const result = await input.gateway.chat(modelId, [

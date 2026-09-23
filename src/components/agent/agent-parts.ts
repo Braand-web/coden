@@ -2,7 +2,11 @@ import type { ChatEvent, DecisionQuestion, FileAction } from '../../lib/agent-ch
 import { normalizeDecisionQuestions } from '../../lib/decision-questions';
 export type TextPart = { id: string; type: 'text'; text: string; done: boolean };
 export type ToolPart = { id: string; type: 'tool'; kind: 'read' | 'write'; verb: string; files: string[] };
-export type AgentPart = TextPart | ToolPart;
+/** What the model reasoned before answering, folded by default. */
+export type ReasoningPart = { id: string; type: 'reasoning'; text: string; done: boolean };
+export type AgentPart = TextPart | ToolPart | ReasoningPart;
+/** What Auto chose for this turn; the last entry is the model now working. */
+export type AutoChoice = { modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' };
 export type DecisionNotice = { type: 'decision'; id: string; question: string; options: Array<{ id: string; label: string; description?: string; recommended?: boolean }>; allowFreeText: boolean; questions?: DecisionQuestion[] };
 export type ArtifactNotice = { type: 'artifact'; id: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number };
 export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number };
@@ -11,6 +15,7 @@ export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider';
+  autoChoices?: AutoChoice[];
 };
 export const EMPTY_MESSAGE: AgentMessageState = { parts: [], activity: null, thinking: false, status: 'streaming', notices: [] };
 const VERBS = { read: 'A lu', search: 'A cherché', create: 'A créé', edit: 'A modifié', delete: 'A supprimé' };
@@ -20,12 +25,29 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
   if (sequence !== undefined && sequence <= (prev.lastSequence ?? -1)) return prev;
   if (prev.status !== 'streaming') return prev;
   const next = { ...prev, parts: [...prev.parts], notices: [...(prev.notices || [])], lastSequence: sequence ?? prev.lastSequence };
-  const closeText = () => { next.parts = next.parts.map(p => p.type === 'text' && !p.done ? { ...p, done: true } : p); };
+  const closeText = () => { next.parts = next.parts.map(p => (p.type === 'text' || p.type === 'reasoning') && !p.done ? { ...p, done: true } : p); };
   switch (event.type) {
     case 'run_started': next.thinking = true; break;
     case 'activity': closeText(); next.activity = event.label; next.thinking = true; break;
+    case 'reasoning_delta': {
+      const last = next.parts.at(-1);
+      const open = last?.type === 'reasoning' && !last.done;
+      if (open) next.parts[next.parts.length - 1] = { ...last, text: last.text + event.delta };
+      else {
+        closeText();
+        next.parts.push({ id: `reasoning-${next.parts.length}`, type: 'reasoning', text: event.delta, done: false });
+      }
+      // Still thinking: the shimmer stays until the answer itself starts.
+      next.thinking = true;
+      break;
+    }
+    case 'model_selected':
+      next.autoChoices = [...(next.autoChoices || []), { modelId: event.modelId, label: event.label, reasoningLevel: event.reasoningLevel, reason: event.reason }];
+      break;
     case 'text_delta': {
       const last = next.parts.at(-1);
+      // The answer begins: the reasoning before it is complete.
+      if (last?.type === 'reasoning' && !last.done) next.parts[next.parts.length - 1] = { ...last, done: true };
       const open = last?.type === 'text' && !last.done;
       const text = open ? last.text + event.delta : event.delta;
       if (open) next.parts[next.parts.length - 1] = { ...last, text };

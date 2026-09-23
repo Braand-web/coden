@@ -6,7 +6,7 @@ import {
   getAIModelCapabilityProfile,
   getAllAIModelCapabilityProfiles,
 } from './src/services/ai-model-runtime.ts';
-import { buildProviderRequestConfig, toOpenRouterChatPayloadExtras } from './src/services/provider-adapters.ts';
+import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter } from './src/services/model-router.ts';
 
 const profiles = getAllAIModelCapabilityProfiles();
@@ -47,7 +47,8 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(runtime.stream, true);
   assert.equal(runtime.responseFormat.type, 'text');
   assert.equal(runtime.tools.length, 0, 'Simple conversation must not force tool calling.');
-  assert.ok(runtime.temperature > 0.3, 'Conversation should stay warmer than code generation.');
+  assert.equal((runtime as any).temperature, undefined, 'No layer forces a temperature: the provider default applies.');
+  assert.equal(runtime.reasoningLevel, 'medium', 'Reasoning is on by default.');
 }
 
 {
@@ -59,7 +60,8 @@ for (const modelId of AI_ALLOWED_MODELS) {
   });
   assert.equal(runtime.longContext.enabled, true);
   assert.ok(runtime.tools.length > 0, 'Agentic build tasks should enable tools when the model supports them.');
-  assert.ok(runtime.maxTokens >= 9000, 'Code generation should reserve enough output tokens.');
+  assert.equal((runtime as any).maxTokens, undefined, 'No fixed output cap: the request uses the model ceiling.');
+  assert.equal(runtime.profile.recommended.maxTokens, MODEL_REGISTRY.find(model => model.id === 'anthropic/claude-opus-5')!.maxOutputTokens, 'The profile reports the model ceiling, not a tier.');
 }
 
 {
@@ -70,7 +72,8 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.notEqual(runtime.responseFormat.type, 'text', 'Intent routing should request structured output when supported.');
   const providerConfig = buildProviderRequestConfig(runtime);
   assert.equal(providerConfig.adapter, 'anthropic');
-  assert.deepEqual(providerConfig.responseFormat, { type: 'json_instruction' });
+  // Every model is reached through OpenRouter's OpenAI-compatible API.
+  assert.equal((providerConfig.responseFormat as any)?.type, 'json_schema');
 }
 
 {
@@ -82,7 +85,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(runtime.responseFormat.type, 'json_object', 'Fullstack generation must request structured JSON output.');
   assert.deepEqual(runtime.tools, [], 'Monolithic file generation must not expose tool calls that its stream cannot consume.');
   assert.equal(runtime.toolChoice, 'none');
-  assert.equal(runtime.thinking.budgetTokens, 1024, 'Fast fullstack generation must reserve output budget for project files.');
+  assert.equal(runtime.reasoningLevel, 'medium', 'Reasoning is not switched off to save output room: max_tokens is the model ceiling.');
 }
 
 {
@@ -156,12 +159,12 @@ for (const modelId of AI_ALLOWED_MODELS) {
     task: 'intent',
   });
   const providerConfig = buildProviderRequestConfig(runtime);
-  const extras = toOpenRouterChatPayloadExtras(providerConfig);
+  const extras = providerConfig;
   // Moonshot has no first-party integration here, so it is reached through
   // OpenRouter like any other model without one. The adapter is a transport
   // choice, not a capability claim: structured output still has to work.
   assert.equal(providerConfig.adapter, 'openrouter');
-  assert.equal((extras.response_format as any)?.type, 'json_schema', 'Kimi K3 supports structured output.');
+  assert.equal((extras.responseFormat as any)?.type, 'json_schema', 'Kimi K3 supports structured output.');
 }
 
 {
@@ -204,18 +207,15 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(profile.supports.longContext, true);
 }
 
-// Thinking/reasoning budget tests
+// Reasoning levels: the user's level reaches the runtime exactly
 {
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'security' });
-  assert.ok(runtime.thinking, 'Runtime config should include thinking section');
-  assert.ok(runtime.thinking.budgetTokens > 0, 'Security task with reasoning model should get a thinking budget');
-  assert.equal(runtime.thinking.includeInResponse, false, 'Thinking should not be included in user-facing response');
-  assert.equal(runtime.thinking.enabled, true, 'Thinking should be enabled for security task with reasoning model');
-}
-
-{
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-luna-pro', task: 'conversation' });
-  assert.ok('thinking' in runtime, 'All runtime configs should include thinking section');
+  for (const [effort, level] of [['None', 'none'], ['Low', 'low'], ['Medium', 'medium'], ['High', 'high'], ['Ultra', 'max']] as const) {
+    const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'security', effort });
+    assert.equal(runtime.reasoningLevel, level, `${effort} maps to ${level}, with no task floor overriding it`);
+    assert.equal(buildProviderRequestConfig(runtime).reasoningLevel, level);
+  }
+  const explicit = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'conversation', effort: 'Low', reasoningLevel: 'max' });
+  assert.equal(explicit.reasoningLevel, 'max', 'An explicit level (Auto) wins over the effort control.');
 }
 
 // Expanded reasoning control detection
@@ -251,25 +251,12 @@ for (const modelId of AI_ALLOWED_MODELS) {
   assert.equal(anthropicSonnetProfile.supports.reasoningControl, true, 'Claude Sonnet 5 should support reasoning control');
 }
 
-// Temperature safety via provider adapters
+// No sampling or size limits leave the runtime layer
 {
   const runtime = buildAIModelRuntimeConfig({ modelId: 'anthropic/claude-opus-5', task: 'security', stream: true });
-  const providerConfig = buildProviderRequestConfig(runtime);
-  if (runtime.thinking.enabled) {
-    assert.equal(providerConfig.temperature, 1.0, 'Thinking-enabled models should use temperature 1.0 for safety');
-    assert.ok(providerConfig.thinking_budget! > 0, 'Provider config should forward thinking budget');
-  }
-}
-
-// Thinking budget for OpenRouter extras
-{
-  const runtime = buildAIModelRuntimeConfig({ modelId: 'openai/gpt-5.6-terra-pro', task: 'backend_generation' });
-  const providerConfig = buildProviderRequestConfig(runtime);
-  const extras = toOpenRouterChatPayloadExtras(providerConfig);
-  if (providerConfig.thinking_budget) {
-    assert.ok(extras.reasoning, 'OpenRouter requires the normalized reasoning parameter');
-    assert.equal((extras.reasoning as any).exclude, true, 'private reasoning must not be rendered as public narration');
-    assert.equal(extras.thinking, undefined);
+  const providerConfig = buildProviderRequestConfig(runtime) as Record<string, unknown>;
+  for (const key of ['temperature', 'top_p', 'maxTokens', 'thinking_budget', 'reasoningEffort']) {
+    assert.equal(providerConfig[key], undefined, `${key} is not decided outside buildOpenRouterRequest`);
   }
 }
 console.log('ai-model-runtime tests passed');

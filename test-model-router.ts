@@ -66,22 +66,22 @@ assert.equal(
     taskComplexity: 'extreme',
     task: 'code_generation',
   }),
-  'openai/gpt-5.6-sol',
-  'extreme generation takes the cheapest frontier coder, not the most expensive model the plan permits.',
+  'openai/gpt-6-astra',
+  'extreme generation takes the strongest model the plan and credits permit, as the Auto policy promises.',
 );
 
 // Architecture is a reasoning task, not a coding one, so it selects on a
-// different axis — and still on price within it.
+// different axis — at complex, the best value inside the strongest tier.
 assert.equal(
   await router.selectModel({
     plan: 'scale',
     mode: 'Auto',
     userCredits: 120,
-    taskComplexity: 'extreme',
+    taskComplexity: 'complex',
     task: 'architecture',
   }),
   'openai/gpt-5.6-sol',
-  'architecture takes the cheapest frontier reasoner.',
+  'complex architecture takes the best-value frontier reasoner.',
 );
 
 assert.equal(

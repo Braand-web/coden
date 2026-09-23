@@ -2949,6 +2949,8 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
       prompt,
       requestedMode,
       modelId: selectedModel(),
+      // The reasoning level applies to a conversation too, exactly as chosen.
+      effort: composerEffort,
       projectId: currentProjectId || undefined,
       messages: recentConversationForAssistant(prompt),
       clientMessageId: messageId ? `${messageId}_user` : undefined,

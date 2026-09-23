@@ -1,7 +1,8 @@
 import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "../../lib/utils";
-import { MODEL_REGISTRY, PROVIDER_META, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
+import { PUBLIC_MODEL_CATALOG, PROVIDER_META, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
+import { useModelAvailability } from "../../lib/model-availability";
 import { providerIconSvg } from "../../model-provider-icons";
 import { AGENT_EFFORT_LABELS, AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT, type AgentEffort } from "../../services/agent-effort";
 
@@ -40,11 +41,13 @@ export const AUTO_MODEL = "auto";
 
 type ModelOption = { id: string; label: string; icon: string; minPlan: CanonicalUserPlan };
 
+// One entry per model: a `:batch` variant is the same model on a slower
+// tier, and listing both showed the same name twice.
 const MODEL_OPTIONS: ModelOption[] = [
   { id: AUTO_MODEL, label: "Auto", icon: "auto", minPlan: "free" },
   ...Array.from(
     new Map(
-      MODEL_REGISTRY.map((model: any) => [
+      PUBLIC_MODEL_CATALOG.map((model: any) => [
         model.id,
         {
           id: model.id as string,
@@ -189,21 +192,23 @@ function CloseIcon() {
 }
 
 function DynamicBarsIcon({ level }: { level: string }) {
-  // Four levels, four bars: Ultra has to look like a step beyond High, not
-  // share its icon. Lit by rank so an unknown value degrades to one bar
-  // rather than to none.
+  // Five levels on four bars: Aucun lights none, Maximum lights all four.
+  // Lit by rank, so an unknown value degrades to no bar rather than a wrong one.
   const rank = Math.max(0, (AGENT_EFFORT_LEVELS as readonly string[]).indexOf(level));
-  const lit = (index: number) => (rank >= index ? 1 : 0.3);
+  const lit = (index: number) => (rank > index ? 1 : 0.3);
 
   return (
     <svg width="16" height="14" viewBox="0 0 16 14" fill="none" aria-hidden="true">
-      <rect x="0.5" y="9" width="2.5" height="3.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={1} />
+      <rect x="0.5" y="9" width="2.5" height="3.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(0)} />
       <rect x="4" y="6.5" width="2.5" height="6" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(1)} />
       <rect x="7.5" y="4" width="2.5" height="8.5" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(2)} />
       <rect x="11" y="1.5" width="2.5" height="11" rx="1" fill="currentColor" className="transition-opacity duration-300" opacity={lit(3)} />
     </svg>
   );
 }
+
+const REASONING_UNSUPPORTED_HINT = "Ce modèle ne supporte pas le raisonnement étendu";
+const AUTO_REASONING_HINT = "En mode Auto, Coden choisit le niveau de raisonnement selon la tâche";
 
 // ----------------------------------------------------------------------
 // Attachment Thumbnail
@@ -427,7 +432,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       onSubmit,
       placeholder = "Posez votre question",
       className,
-      models = MODEL_OPTIONS.map(option => option.id),
+      models: offeredModels = MODEL_OPTIONS.map(option => option.id),
       efforts = [...AGENT_EFFORT_LEVELS],
       defaultValue = "",
       value: controlledValue,
@@ -452,6 +457,15 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [isSmoothResize, setIsSmoothResize] = useState(false);
     const [localValue, setLocalValue] = useState(defaultValue);
+    /*
+     * A model the live OpenRouter catalogue does not list is hidden, not
+     * offered and left to fail. Until the catalogue answers, nothing is hidden.
+     */
+    const availability = useModelAvailability();
+    const models = React.useMemo(
+      () => offeredModels.filter(id => id === AUTO_MODEL || availability?.get(id)?.available !== false),
+      [offeredModels, availability],
+    );
     /*
      * A seed that is offered, not imposed: a stored model the current surface
      * does not list (a retired id, a model above the plan) falls back to the
@@ -508,6 +522,11 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const isEffortControlled = controlledEffort !== undefined;
     const rawEffort = isEffortControlled ? controlledEffort : localEffort;
     const effortIndex = Math.max(0, efforts.indexOf(efforts.includes(rawEffort) ? rawEffort : DEFAULT_AGENT_EFFORT));
+    // Auto picks its own level per task; a model without extended reasoning
+    // has no level to pick. Either way the control says so instead of cycling.
+    const isAutoModel = selectedModel === AUTO_MODEL;
+    const reasoningUnsupported = !isAutoModel && availability?.get(selectedModel)?.supportsReasoning === false;
+    const effortLocked = isAutoModel || reasoningUnsupported;
 
     const handleModelChange = useCallback((next: string) => {
       if (isModelLockedForPlan(next, plan)) return;
@@ -773,6 +792,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const cycleEffort = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (effortLocked) return;
       handleEffortChange(efforts[(effortIndex + 1) % efforts.length]);
     };
 
@@ -1022,7 +1042,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                     }));
                   }}
                   className={cn(
-                    "absolute bottom-full left-0 mb-2.5 z-50 w-44 max-h-72 overflow-y-auto prompt-scrollbar rounded-2xl border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md flex flex-col gap-0.5 transition-all duration-400 cursor-default",
+                    "absolute bottom-full left-0 mb-2.5 z-50 w-[14.5rem] max-h-72 overflow-y-auto prompt-scrollbar rounded-2xl border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md flex flex-col gap-0.5 transition-all duration-400 cursor-default",
                     isModelSelectOpen
                       ? "opacity-100 scale-100 translate-y-0 pointer-events-auto ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                       : "opacity-0 scale-95 translate-y-3 pointer-events-none ease-[cubic-bezier(0.175,0.885,0.32,1.275)]"
@@ -1059,12 +1079,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                           locked ? "text-foreground/35 cursor-not-allowed" : "text-foreground/80 active:scale-[0.98]",
                         )}
                       >
-                        <span className="flex items-center gap-2">
-                          <ModelIcon model={model} className={cn("size-3.5 transition-opacity", locked ? "opacity-40" : "opacity-85 group-hover:opacity-100")} />
-                          {MODEL_LABELS.get(model) || model}
+                        {/* One line per model: a wrapped name overflowed the 32px row and ran into its plan badge. */}
+                        <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                          <ModelIcon model={model} className={cn("size-3.5 shrink-0 transition-opacity", locked ? "opacity-40" : "opacity-85 group-hover:opacity-100")} />
+                          <span className="truncate">{MODEL_LABELS.get(model) || model}</span>
                         </span>
                         {locked && requiredPlan ? (
-                          <span className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
+                          <span className="ml-2 shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/45">
                             {PLAN_LABELS[requiredPlan]}
                           </span>
                         ) : null}
@@ -1077,11 +1098,18 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={cycleEffort}
-                className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default"
-                aria-label={`Niveau de raisonnement : ${effortLabel(efforts[effortIndex])}`}
+                // aria-disabled rather than disabled: a disabled button shows no tooltip.
+                aria-disabled={effortLocked}
+                title={reasoningUnsupported ? REASONING_UNSUPPORTED_HINT : isAutoModel ? AUTO_REASONING_HINT : undefined}
+                className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default aria-disabled:hover:bg-transparent aria-disabled:hover:text-foreground/50 aria-disabled:opacity-60"
+                aria-label={reasoningUnsupported
+                  ? `Niveau de raisonnement indisponible : ${REASONING_UNSUPPORTED_HINT}`
+                  : isAutoModel
+                    ? "Niveau de raisonnement : choisi automatiquement"
+                    : `Niveau de raisonnement : ${effortLabel(efforts[effortIndex])}`}
               >
-                <DynamicBarsIcon level={efforts[effortIndex]} />
-                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={effortLabel(efforts[effortIndex])} /></span>
+                <DynamicBarsIcon level={reasoningUnsupported ? "None" : isAutoModel ? "Medium" : efforts[effortIndex]} />
+                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={reasoningUnsupported ? effortLabel("None") : isAutoModel ? "Auto" : effortLabel(efforts[effortIndex])} /></span>
               </button>
 
               <button

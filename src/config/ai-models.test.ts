@@ -22,12 +22,16 @@ const AUTHORISED = [
   'moonshotai/kimi-k3',
   'x-ai/grok-4.6',
   'openai/gpt-6-astra',
+  // Added on request; validated against the live OpenRouter catalogue at boot.
+  'openai/gpt-6-sol',
+  'openai/gpt-6-luna',
+  'anthropic/claude-opus-5.5',
 ];
 
 describe('Coden production model registry', () => {
   it('preserves historical model IDs and adds only the verified interactive models', () => {
     expect([...AI_ALLOWED_MODELS].sort()).toEqual([...AUTHORISED].sort());
-    expect(MODEL_REGISTRY).toHaveLength(15);
+    expect(MODEL_REGISTRY).toHaveLength(18);
     expect(new Set(AI_ALLOWED_MODELS).size).toBe(AI_ALLOWED_MODELS.length);
   });
   it('limits Auto to five roles and keeps Astra as a replacement escalation', () => {

@@ -7,6 +7,8 @@ import type {
 } from './openrouter-service.ts';
 import type { ProviderRequestConfig } from './provider-adapters.ts';
 import { ProviderHttpError } from './provider-errors.ts';
+import { maxReasoningBudget } from './openrouter-request.ts';
+import { MODEL_REGISTRY } from '../config/ai-models.ts';
 
 export const ANTHROPIC_API_KEY_ENV_NAMES = [
   'ANTHROPIC_API_KEY',
@@ -195,6 +197,11 @@ export class AnthropicService {
   }
 }
 
+function maxOutputFor(model: string): number {
+  const definition = MODEL_REGISTRY.find(entry => entry.id === model || entry.id === `anthropic/${model}`);
+  return Math.max(1_024, Number(definition?.maxOutputTokens || 64_000));
+}
+
 function buildAnthropicPayload(
   model: string,
   messages: ChatMessage[],
@@ -208,7 +215,8 @@ function buildAnthropicPayload(
     .join('\n\n');
   const payload: Record<string, unknown> = {
     model,
-    max_tokens: Math.max(256, Number(runtimeConfig?.maxTokens || 8192)),
+    // The model's own output ceiling, never a fixed smaller number.
+    max_tokens: maxOutputFor(model),
     messages: messages.filter(message => message.role !== 'system').map(toAnthropicMessage),
     stream,
   };
@@ -219,10 +227,14 @@ function buildAnthropicPayload(
     if (runtimeConfig?.toolChoice === 'auto') payload.tool_choice = { type: 'auto' };
   }
   const supportsExtendedThinking = /claude-(?:sonnet|opus|fable)-5/i.test(model);
-  if (supportsExtendedThinking && runtimeConfig?.thinking_budget) {
-    payload.thinking = { type: 'enabled', budget_tokens: runtimeConfig.thinking_budget };
-  } else if (Number.isFinite(runtimeConfig?.temperature)) {
-    payload.temperature = runtimeConfig?.temperature;
+  const level = runtimeConfig?.reasoningLevel ?? 'medium';
+  if (supportsExtendedThinking && level !== 'none') {
+    const maxTokens = payload.max_tokens as number;
+    // Same levels as the OpenRouter path; the budget always leaves the answer room.
+    const budget = level === 'max'
+      ? maxReasoningBudget(maxTokens)
+      : Math.min(maxReasoningBudget(maxTokens), level === 'high' ? 32_768 : level === 'medium' ? 16_384 : 4_096);
+    payload.thinking = { type: 'enabled', budget_tokens: budget };
   }
   if (runtimeConfig?.responseFormat) {
     payload.system = `${system ? `${system}\n\n` : ''}Return only valid JSON matching the requested response contract.`;

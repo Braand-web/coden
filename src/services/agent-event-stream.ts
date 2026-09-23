@@ -71,11 +71,30 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     const delta = textBuffer; textBuffer = '';
     send('chat', { type: 'text_delta', delta });
   };
-  const endText = () => { flushText(); if (textOpen) { send('chat', { type: 'text_end' }); textOpen = false; } };
+  // Reasoning is coalesced the same way, in its own buffer: it arrives in
+  // tiny pieces and is shown folded, never mixed into the answer.
+  let reasoningBuffer = '';
+  let reasoningTimer: ReturnType<typeof setTimeout> | undefined;
+  const flushReasoning = () => {
+    if (reasoningTimer) clearTimeout(reasoningTimer);
+    reasoningTimer = undefined;
+    if (!reasoningBuffer) return;
+    const delta = reasoningBuffer; reasoningBuffer = '';
+    send('chat', { type: 'reasoning_delta', delta });
+  };
+  const endText = () => { flushReasoning(); flushText(); if (textOpen) { send('chat', { type: 'text_end' }); textOpen = false; } };
   const chat = (event: ChatEvent) => {
     if (finalized) return;
+    if (event.type === 'reasoning_delta') {
+      flushText();
+      reasoningBuffer += event.delta;
+      if (reasoningBuffer.length >= 8000) flushReasoning();
+      else if (!reasoningTimer) reasoningTimer = setTimeout(flushReasoning, 60);
+      return;
+    }
     if (event.type !== 'text_delta' && event.type !== 'heartbeat') endText();
     if (event.type === 'text_delta') {
+      flushReasoning();
       transcript += event.delta;
       textOpen = true; textBuffer += event.delta;
       if (textBuffer.length >= 12000) flushText();
@@ -86,17 +105,17 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     flushText();
     send('chat', event);
   };
-  const workspace = (payload: WorkspaceEvent) => { flushText(); send('workspace', payload); };
+  const workspace = (payload: WorkspaceEvent) => { flushReasoning(); flushText(); send('workspace', payload); };
   const heartbeat = setInterval(() => chat({ type: 'heartbeat' }), 15_000);
   heartbeat.unref();
-  const cleanup = () => { finalized = true; transportOpen = false; clearInterval(heartbeat); if (textTimer) clearTimeout(textTimer); textBuffer = ''; };
+  const cleanup = () => { finalized = true; transportOpen = false; clearInterval(heartbeat); if (textTimer) clearTimeout(textTimer); if (reasoningTimer) clearTimeout(reasoningTimer); textBuffer = ''; reasoningBuffer = ''; };
   res.once('close', () => { transportOpen = false; });
   res.once('finish', () => { transportOpen = false; });
 
   return {
     chat,
     workspace,
-    drain: () => { flushText(); return settled(); },
+    drain: () => { flushReasoning(); flushText(); return settled(); },
     get lastSequence() { return seq; },
     get transcript() { return transcript.trim(); },
     async finish(payload: any, status: number) {

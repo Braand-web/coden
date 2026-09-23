@@ -24,6 +24,9 @@ const EXPECTED_ALLOWED_MODELS = [
   'anthropic/claude-opus-5',
   'anthropic/claude-fable-5.1:batch',
   'openai/gpt-6-astra',
+  'openai/gpt-6-sol',
+  'openai/gpt-6-luna',
+  'anthropic/claude-opus-5.5',
 ] as const;
 
 async function runTests() {

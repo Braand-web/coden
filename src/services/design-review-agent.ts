@@ -59,12 +59,14 @@ export async function runDesignReview(input: {
   credits?: number;
   french?: boolean;
   allowFallback?: boolean;
+  /** The model the user pinned. Reviewed with it, or not at all — never another. */
+  pinnedModel?: AllowedModelId;
   signal?: AbortSignal;
 }): Promise<{ review: DesignReview | null; instruction?: string; costUsd: number; modelId?: AllowedModelId }> {
   if (!input.screenshots.length) return { review: null, costUsd: 0 };
   let modelId: AllowedModelId;
   try {
-    modelId = selectModel({ task: 'review', plan: input.plan, credits: input.credits, complexity: 'simple', needs: { vision: true } }).modelId;
+    modelId = selectModel({ task: 'review', plan: input.plan, credits: input.credits, complexity: 'simple', needs: { vision: true }, requestedModel: input.pinnedModel }).modelId;
   } catch {
     return { review: null, costUsd: 0 };
   }
@@ -73,7 +75,6 @@ export async function runDesignReview(input: {
     task: 'vision',
     allowTools: false,
     preferStructuredOutput: true,
-    maxTokens: 1_500,
     timeoutMs: 45_000,
   }));
   const request = [

@@ -1,6 +1,8 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
-import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort } from './src/services/agent-effort.ts';
+import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
+import type { ReasoningLevel } from './src/services/openrouter-request.ts';
+import { modelAvailability, openRouterCatalog, validateCatalogModels } from './src/services/openrouter-capabilities.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
@@ -85,7 +87,7 @@ import {
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
 import { CODEN_MONETIZATION_ENABLED, CODEN_PUBLIC_ACCESS, CODEN_UNMETERED_USAGE_BUDGET } from './src/config/product-access.ts';
-import { selectModelForAgent, type TaskKind } from './src/services/model-selection.ts';
+import { selectModelForAgent, autoReasoningLevel, affordableReasoning, type TaskKind } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
   deriveProjectName,
@@ -101,6 +103,7 @@ import {
   AI_MODEL_CAPABILITIES,
   DEFAULT_PROVIDER_MODEL_ID,
   MODEL_REGISTRY,
+  PUBLIC_MODEL_CATALOG,
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_CREDIT_RATES,
   PROVIDER_META,
@@ -4735,7 +4738,8 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     task: 'intent',
     stream: false,
     timeoutMs: 18_000,
-    maxTokens: 1600,
+    // Routing is classification: fast beats deep here.
+    reasoningLevel: 'low',
   });
   const routerMessages: ChatMessage[] = [
     {
@@ -4761,7 +4765,8 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     task: 'intent',
     stream: false,
     timeoutMs: 18_000,
-    maxTokens: 1600,
+    // Routing is classification: fast beats deep here.
+    reasoningLevel: 'low',
   }));
   const result = await providerGateway.chat(routerModel, routerMessages, {
     maxAttempts: 2,
@@ -5116,7 +5121,7 @@ function createProviderRuntimeOptions(input: {
   /** Only enable tool declarations when this caller owns matching handlers. */
   allowTools?: boolean;
   timeoutMs?: number;
-  maxTokens?: number;
+  reasoningLevel?: ReasoningLevel;
   hasVisionInput?: boolean;
 }) {
   const task = inferRuntimeTaskForPrompt(input.prompt, input.decision, input.mode || 'text');
@@ -5125,16 +5130,13 @@ function createProviderRuntimeOptions(input: {
     (input.files || []).reduce((total, file) => total + String(file.content || '').length, 0)
   ) / 4);
 
-  // ✅ For generation mode: override maxTokens to match model capability
-  // The profile.recommended.maxTokens already accounts for frontier vs standard tiers
-  // Only override with explicit input.maxTokens if provided
   const runtime = buildAIModelRuntimeConfig({
     modelId: input.model,
     task,
     stream: input.stream,
     allowTools: input.allowTools ?? input.mode !== 'generation',
     timeoutMs: input.timeoutMs,
-    maxTokens: input.maxTokens, // undefined = use profile default (now properly sized)
+    reasoningLevel: input.reasoningLevel,
     hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
     estimatedInputTokens,
     // ✅ Use structured output for generation tasks on capable models
@@ -5149,7 +5151,7 @@ function createProviderRuntimeOptions(input: {
       stream: input.stream,
       allowTools: input.allowTools ?? input.mode !== 'generation',
       timeoutMs: input.timeoutMs,
-      maxTokens: input.maxTokens,
+      reasoningLevel: input.reasoningLevel,
       hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
       estimatedInputTokens,
       preferStructuredOutput: input.mode === 'generation' ? true : undefined,
@@ -5179,6 +5181,10 @@ function taskKindForAgentDecision(decision: IntentDecision): TaskKind {
   }
 }
 
+function modelDisplayLabel(modelId: string): string {
+  return MODEL_REGISTRY.find(model => model.id === modelId)?.label || modelId;
+}
+
 async function resolveAgentProviderModel(input: {
   modelId?: unknown;
   project: GeneratedProject;
@@ -5187,7 +5193,7 @@ async function resolveAgentProviderModel(input: {
   files?: GeneratedFile[];
   userCredits?: number;
   plan?: string;
-}): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number }> {
+}): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number; reasoningLevel?: ReasoningLevel }> {
   // Manual choices are still subject to the exact same access, credit and
   // capability contract as Auto. The old early return skipped this policy and
   // allowed a hidden mismatch between what Coden promised and what the model
@@ -5238,7 +5244,10 @@ async function resolveAgentProviderModel(input: {
     requiredCapabilities,
   });
   validateAllowedModel(model);
-  return { model, autoRouted: true, complexity, mode, plan: accessPlan, credits: accessBudget };
+  // Auto decides how hard to think with the model, from the same analysis —
+  // locally, in the same tick, with no extra model call.
+  const reasoningLevel = affordableReasoning(autoReasoningLevel(task, complexity), model, accessBudget);
+  return { model, autoRouted: true, complexity, mode, plan: accessPlan, credits: accessBudget, reasoningLevel };
 }
 
 function buildAgentTextMessages(input: {
@@ -5335,6 +5344,12 @@ async function createAgentTextResponse(input: {
    * user the text sooner, it does not decide what the text is.
    */
   onToken?: (delta: string) => void;
+  /** The model's reasoning as it streams, when the caller can show it. */
+  onReasoning?: (delta: string) => void;
+  /** The composer's level; ignored in Auto, which chooses its own. */
+  effort?: unknown;
+  /** Told what Auto chose, so the interface can say it. */
+  onModelSelected?: (choice: { modelId: AllowedModelId; reasoningLevel: ReasoningLevel }) => void;
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -5342,7 +5357,7 @@ async function createAgentTextResponse(input: {
     throw new Error('No AI provider is configured. Add OPENROUTER_API_KEY on Railway to enable live AI responses.');
   }
 
-  const selectedModel = (await resolveAgentProviderModel({
+  const routing = await resolveAgentProviderModel({
     modelId: input.modelId,
     project,
     prompt,
@@ -5350,10 +5365,19 @@ async function createAgentTextResponse(input: {
     files,
     userCredits: input.userCredits,
     plan: input.plan,
-  })).model;
+  });
+  const selectedModel = routing.model;
   validateAllowedModel(selectedModel);
+  // Outside Auto the user's level is applied exactly; in Auto, Auto's.
+  const reasoningLevel = routing.autoRouted && routing.reasoningLevel
+    ? routing.reasoningLevel
+    : reasoningLevelForEffort(normalizeAgentEffort(input.effort));
+  if (routing.autoRouted) {
+    try { input.onModelSelected?.({ modelId: selectedModel, reasoningLevel }); } catch { /* display only */ }
+  }
   const runtimeOptions = createProviderRuntimeOptions({
     model: selectedModel,
+    reasoningLevel,
     prompt,
     decision,
     files,
@@ -5412,6 +5436,7 @@ async function createAgentTextResponse(input: {
             seen = accumulated.length;
             if (delta) input.onToken?.(delta);
           },
+          onReasoningChunk: input.onReasoning,
         })
       : await providerGateway.chat(
       selectedModel,
@@ -5661,10 +5686,20 @@ function buildPublicModelList() {
       description: AI_AUTO_MODEL_OPTION.description,
       locked: false,
     },
-    ...AI_ALLOWED_MODELS.map(id => {
+    // One entry per model (no `:batch` duplicates), with what the live
+    // OpenRouter catalogue says it can do. A slug the catalogue does not list
+    // is returned with `available: false` and the composer hides it.
+    ...PUBLIC_MODEL_CATALOG.map(model => model.id as AllowedModelId).map(id => {
       const definition = MODEL_REGISTRY.find(model => model.id === id) as ModelDefinition | undefined;
+      const live = modelAvailability(id, definition);
       return {
         id,
+        available: live.available,
+        supports_reasoning: live.supportsReasoning,
+        supports_tools: live.supportsTools,
+        context_length: live.contextLength,
+        max_completion_tokens: live.maxCompletionTokens,
+        pricing: live.pricing,
         display_name: definition?.label || providerModelToDisplayName(id),
         tier: AI_MODEL_TIERS[id],
         capabilities: AI_MODEL_CAPABILITIES[id],
@@ -6736,10 +6771,6 @@ async function generateFilesWithAi(input: {
       // response. Keep the request bounded, but never inherit a short skill
       // budget that makes an otherwise healthy generation fail mid-object.
       timeoutMs: Math.max(90_000, Math.min(150_000, input.skillBudget?.maxDurationMs || 150_000)),
-      // Prefer a complete, previewable first slice over a huge initial dump.
-      // Follow-up turns can extend the app without making the first preview
-      // wait for 20k output tokens.
-      maxTokens: input.existingFiles.length ? 10_000 : 12_000,
       hasVisionInput: Boolean(input.visionInputs?.length),
     })
     : null;
@@ -6815,7 +6846,6 @@ async function generateFilesWithAi(input: {
             // set of tools that nobody here can execute.
             allowTools: false,
             timeoutMs: Math.min(15_000, input.skillBudget?.maxDurationMs || 15_000),
-            maxTokens: 4_000,
           });
           const filesByPath = new Map(input.existingFiles.map(file => [file.path, file]));
           const loop = await runLlmToolLoop({
@@ -10314,7 +10344,9 @@ app.post('/api/saspay/webhook', async (req: any, res: any) => {
 // ──────────────────────────────────────────────────────────────────────
 
 // GET /ai/models
-app.get('/api/ai/models', (req, res) => {
+app.get('/api/ai/models', async (req, res) => {
+  // Cached for minutes; refreshed here when due, never failing the list.
+  await openRouterCatalog.ensure().catch(() => undefined);
   res.json({
     success: true,
     models: buildPublicModelList(),
@@ -10352,8 +10384,8 @@ app.get('/api/ai/model-runtime', requireAuthWithTemporaryGeneration, (req: any, 
     fallback_secondary: profile.fallbackSecondary || null,
     limits_known: profile.limits.known,
     recommended_parameters: {
-      temperature: profile.recommended.temperature,
       max_tokens: profile.recommended.maxTokens,
+      reasoning_levels: ['none', 'low', 'medium', 'high', 'max'],
       timeout_ms: profile.recommended.timeoutMs,
       streaming_timeout_ms: profile.recommended.streamingTimeoutMs,
       reasoning_control: profile.supports.reasoningControl,
@@ -10694,6 +10726,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) });
   eventStream?.chat({ type: 'activity', label: french ? 'Coden réfléchit…' : 'Coden is thinking…' });
   const streamedText = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'text_delta', delta })) : null;
+  const streamedReasoning = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'reasoning_delta', delta })) : null;
 
   try {
     if (canPersistConversation) {
@@ -10717,11 +10750,15 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       userCredits: wallet,
       allowLocalFallback: selectedModel === 'auto',
       signal: eventStream ? chatAbort.signal : undefined,
-      onToken: streamedText ? delta => streamedText.push(delta) : undefined,
+      onToken: streamedText ? delta => { streamedReasoning?.end(); streamedText.push(delta); } : undefined,
+      onReasoning: streamedReasoning ? delta => streamedReasoning.push(delta) : undefined,
+      effort: req.body?.effort,
+      onModelSelected: eventStream ? choice => eventStream.chat({ type: 'model_selected', modelId: choice.modelId, label: modelDisplayLabel(choice.modelId), reasoningLevel: choice.reasoningLevel, reason: 'initial' }) : undefined,
       visionInputs: attachmentRecords
         .filter(record => record.mimeType.startsWith('image/'))
         .map(record => ({ url: record.dataUrl, detail: 'auto' as const })),
     });
+    streamedReasoning?.end();
     streamedText?.end();
 
     const content = redactSecrets(agentText.text || '').trim();
@@ -14153,7 +14190,6 @@ ${agentPrompt}` : agentPrompt;
                 mode: 'text',
                 stream: false,
                 timeoutMs: 60_000,
-                maxTokens: 6_000,
               });
               sandboxRepair = await runRepairLoop({
                 sandbox,
@@ -17794,6 +17830,11 @@ const httpServer = app.listen(port, () => {
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
+  // Every slug checked against the live OpenRouter catalogue: a missing one is
+  // logged and hidden, never called, and never stops the server.
+  void validateCatalogModels(MODEL_REGISTRY.map(model => model.id)).then(({ missing }) => {
+    console.info('[coden:model_catalog_validated]', { models: MODEL_REGISTRY.length, missing: missing.length });
+  }).catch(() => undefined);
   // The first new project after a deploy should not pay a cold install.
   setTimeout(() => {
     void warmScaffoldDependencies(Object.values(STARTERS), id => new ProjectSandbox(id)).catch(() => undefined);
