@@ -5139,8 +5139,10 @@ function createProviderRuntimeOptions(input: {
     reasoningLevel: input.reasoningLevel,
     hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
     estimatedInputTokens,
-    // ✅ Use structured output for generation tasks on capable models
-    preferStructuredOutput: input.mode === 'generation' ? true : undefined,
+    // JSON only for a project artifact. A text reply is prose: forcing
+    // `response_format: json_object` on a plan, a deploy question or a check
+    // made the model answer in JSON, which reached the user as gibberish.
+    preferStructuredOutput: input.mode === 'generation',
   });
   return {
     runtime,
@@ -5154,7 +5156,7 @@ function createProviderRuntimeOptions(input: {
       reasoningLevel: input.reasoningLevel,
       hasVisionInput: Boolean(input.hasVisionInput || /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel)\b/i.test(input.prompt)),
       estimatedInputTokens,
-      preferStructuredOutput: input.mode === 'generation' ? true : undefined,
+      preferStructuredOutput: input.mode === 'generation',
     })),
   };
 }
@@ -5259,30 +5261,41 @@ function buildAgentTextMessages(input: {
   executionContract?: ExecutionContract;
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
   finalizer?: boolean;
+  /** The conversation so far, oldest first, as real turns. */
+  history?: RecentHistoryMessage[];
 }): ChatMessage[] {
   const { project, prompt, files, decision, researchContext, executionContract, visionInputs } = input;
   const languageInstruction = isLikelyFrenchPrompt(prompt)
     ? 'Answer in natural French.'
-    : 'Answer in the same language as the user.';
+    : 'Answer in the language of the user\'s latest message.';
   const fileSummary = summarizeProjectFilesForAgent(files);
   const modeInstruction = decision.intent === 'plan'
-    ? 'Produce a concise execution plan. Do not claim files were changed. Do not include code unless needed for clarity.'
+    ? 'the user wants a plan. Give a concise, ordered plan for what they asked. Do not claim anything was changed, and include code only where it clarifies a decision.'
     : decision.intent === 'deploy_assist'
-      ? 'Give deployment, domain or production-readiness guidance. Do not claim files were changed.'
+      ? 'the user asks about publishing, domains or going live. Give practical guidance. Do not claim anything was changed.'
       : decision.intent === 'conversation'
-        ? 'Answer directly in 2 to 5 short sentences for simple questions. Match the user language. Do not mention intents, modes, models, credits, internal routing, files, preview, or checks unless the user explicitly asks. If the user asks technical advice, be precise. If the user asks vague product help, give 2-3 concrete examples Coden can do.'
-        : 'Answer naturally and helpfully. If implementation is needed, explain the next action in plain language without forcing the user to choose Build or Plan.';
+        ? 'answer the question itself. A greeting or a simple question gets a short reply; advice, explanations or technical questions get a complete one.'
+        : 'answer helpfully. If a change to the app is needed, say in plain words what you would change.';
 
-  const executionContext = executionContract
+  /*
+   * Facts, not orders.
+   *
+   * The whole execution contract used to be pasted in as JSON under "Follow
+   * it exactly" — internal flags derived by a keyword classifier, which the
+   * model then obeyed over the user's own words. Only a run's recap needs
+   * them, and only as the facts they are.
+   */
+  const executionContext = input.finalizer && executionContract
+    ? `Internal run facts (use them, never quote them): ${JSON.stringify(executionContract)}`
+    : undefined;
+
+  const projectContext = project.id !== 'assistant' || files.length
     ? [
-        'This is the execution contract for the current run. Follow it exactly:',
-        JSON.stringify(executionContract),
-        'Generate concise user-visible text from the supplied facts. Ask at most one clarification question when required. Never claim a file, preview, check, publication, or payment changed unless the verified result says so.',
+        `Project: ${project.name}${project.status ? ` (status: ${project.status})` : ''}${project.preview_status ? `, preview: ${project.preview_status}` : ''}.`,
+        files.length ? `Files (first ${Math.min(18, files.length)} of ${files.length}):\n${fileSummary}` : 'The project has no files yet.',
       ].join('\n')
     : undefined;
 
-  // The closing recap reports a finished run, so it does not carry the routing,
-  // build, infrastructure or research policy the conversation prompt needs.
   const systemPrompt = input.finalizer
     ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext })
     : buildAgentTextSystemPrompt({
@@ -5291,32 +5304,30 @@ function buildAgentTextMessages(input: {
         languageInstruction,
         hasResearchContext: Boolean(researchContext),
         executionContext,
+        projectContext,
       });
 
+  /*
+   * The conversation as a conversation.
+   *
+   * The model used to receive one user message holding a JSON object —
+   * `{project, request, intent, intent_category, execution_contract, files}` —
+   * with the previous turns flattened into the `request` string after the
+   * question. It had to dig the question out of a payload, and a follow-up
+   * like "et pour le mobile ?" arrived with no conversation to refer to.
+   */
+  const history = (input.history || [])
+    .filter(turn => turn.content.trim())
+    .slice(-12);
+  // The current message may already be stored as the last turn.
+  if (history.length && history[history.length - 1].role === 'user' && history[history.length - 1].content.trim() === prompt.trim().slice(0, 1200)) history.pop();
+  while (history.length && history[0].role === 'assistant') history.shift();
+
+  const request = researchContext ? `${prompt}\n\nResearch context:\n${researchContext}` : prompt;
   return [
     { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: visionInputs?.length ? buildVisionMessageContent(JSON.stringify({
-        project: { name: project.name, status: project.status, preview_status: project.preview_status },
-        request: prompt,
-        intent: decision.intent,
-        intent_category: decision.intentUnderstanding?.category || decision.understandingCategory,
-        auto_plan_required: decision.autoPlanRequired,
-        execution_contract: executionContract || undefined,
-        files: fileSummary,
-        researchContext: researchContext || undefined,
-      }), visionInputs) : JSON.stringify({
-        project: { name: project.name, status: project.status, preview_status: project.preview_status },
-        request: prompt,
-        intent: decision.intent,
-        intent_category: decision.intentUnderstanding?.category || decision.understandingCategory,
-        auto_plan_required: decision.autoPlanRequired,
-        execution_contract: executionContract || undefined,
-        files: fileSummary,
-        researchContext: researchContext || undefined,
-      }),
-    },
+    ...history.map(turn => ({ role: turn.role, content: turn.content }) as ChatMessage),
+    { role: 'user', content: visionInputs?.length ? buildVisionMessageContent(request, visionInputs) : request },
   ];
 }
 
@@ -5350,6 +5361,8 @@ async function createAgentTextResponse(input: {
   effort?: unknown;
   /** Told what Auto chose, so the interface can say it. */
   onModelSelected?: (choice: { modelId: AllowedModelId; reasoningLevel: ReasoningLevel }) => void;
+  /** The conversation so far, oldest first. */
+  history?: RecentHistoryMessage[];
 }): Promise<{ text: string; model: string; cost_usd: number }> {
   const { project, prompt, files, decision, researchContext } = input;
   const executionContract = (decision as any).executionContract as ExecutionContract | undefined;
@@ -5413,7 +5426,7 @@ async function createAgentTextResponse(input: {
   });
 
   try {
-    const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer });
+    const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer, history: input.history });
     /*
      * `streamingCompletion` consumes the provider stream and still returns one
      * atomic result, so the answer is validated and sanitized exactly as
@@ -10644,16 +10657,13 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     }
   }
 
-  const history = Array.isArray(req.body?.messages)
+  // The same turns, as turns: what the model is actually given.
+  const historyTurns: RecentHistoryMessage[] = Array.isArray(req.body?.messages)
     ? req.body.messages
       .filter((message: any) => (message?.role === 'user' || message?.role === 'assistant') && String(message?.content || '').trim())
-      .slice(-10)
-      .map((message: any) => `${message.role === 'assistant' ? 'Coden' : 'User'}: ${redactSecrets(String(message.content || '')).slice(0, 1200)}`)
-      .join('\n')
-    : '';
-  const promptWithHistory = history
-    ? `${prompt}\n\nRecent conversation context, for continuity only:\n${history}`
-    : prompt;
+      .slice(-12)
+      .map((message: any) => ({ role: message.role === 'assistant' ? 'assistant' as const : 'user' as const, content: redactSecrets(String(message.content || '')).slice(0, 4000) }))
+    : [];
   let decision: IntentDecision;
   try {
     decision = await resolveAgentDecision({
@@ -10743,7 +10753,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
 
     const agentText = await createAgentTextResponse({
       project,
-      prompt: promptWithHistory,
+      prompt,
+      history: historyTurns,
       files,
       decision,
       modelId: selectedModel,
@@ -13569,7 +13580,11 @@ ${agentPrompt}` : agentPrompt;
       let streamedAny = false;
       agentText = await createAgentTextResponse({
         project,
-        prompt: agentPromptForText,
+        // The user's own words. The deep-reasoning and senior-agent blocks
+        // appended for builds tell the model to "execute" and "repair and
+        // retest" — instructions a text reply cannot follow, so it claimed to.
+        prompt: agentPrompt,
+        history: recentHistory,
         files: existingFiles,
         decision,
         modelId: requestedModelSelection,
@@ -13783,7 +13798,7 @@ ${agentPrompt}` : agentPrompt;
           requiresPreviewRebuild: false,
           nextAction: 'plan_only',
         };
-        const planResponse = await createAgentTextResponse({ project, prompt: agentPromptForText, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
+        const planResponse = await createAgentTextResponse({ project, prompt: agentPrompt, history: recentHistory, files: existingFiles, decision: planDecision, modelId: requestedModelSelection, userCredits: walletForRouting, allowLocalFallback: requestedModelSelection === 'auto' });
         executionPlan = planResponse.text;
         measuredProviderCostUsd += Number(planResponse.cost_usd || 0);
       } catch (error) {
