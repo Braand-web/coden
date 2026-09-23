@@ -37,7 +37,12 @@ export function AgentThinkingLine({ label }: { label?: string | null }) {
     initial={reduced ? false : { opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
     exit={reduced ? { opacity: 0 } : { opacity: 0, y: -10 }}
-    transition={{ duration: reduced ? 0 : 0.3 }}
+    /*
+     * Short, because `mode="wait"` plays the exit and the entrance one after
+     * the other: at 0.3s each a change of phrase left the line empty for more
+     * than half a second, which read as the run stopping.
+     */
+    transition={{ duration: reduced ? 0 : 0.18, ease: [0.32, 0.72, 0, 1] }}
   >
     <ShimmeringText text={label?.trim() || THINKING_LABEL} />
   </motion.div>;

@@ -124,17 +124,23 @@
   white-space: pre;
 }
 .coden-response-math.is-inline { display: inline-flex; margin: 0 2px; }
+/*
+ * The writing caret: a slim bar that breathes rather than a block that
+ * blinks. It sits inline at the end of the last line, so it moves with the
+ * text instead of flashing on a line of its own under it.
+ */
 .coden-response-cursor {
   display: inline-block;
-  width: .55ch;
-  height: 1.05em;
-  margin-left: 2px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--foreground, var(--surface-soft)) 64%, transparent);
-  transform: translateY(2px);
-  animation: coden-response-caret 1s steps(2, start) infinite;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  border-radius: 999px;
+  vertical-align: -0.14em;
+  background: color-mix(in srgb, var(--foreground, var(--surface-soft)) 58%, transparent);
+  animation: coden-response-caret 1.1s ease-in-out infinite;
 }
-@keyframes coden-response-caret { 50% { opacity: 0; } }
+.coden-response-cursor.is-block { display: block; margin: 6px 0 0; }
+@keyframes coden-response-caret { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
 @media (prefers-reduced-motion: reduce) {
   .coden-response-cursor { animation: none; }

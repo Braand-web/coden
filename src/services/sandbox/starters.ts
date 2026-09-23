@@ -18,6 +18,8 @@
  */
 
 import type { SandboxFile } from './project-sandbox.ts';
+import { STARTER_KIT_FILES, STARTER_KIT_GUIDE } from './starter-kit.ts';
+import { buildProjectTheme, renderThemeCss, renderThemeIndexHtml } from './design-theme.ts';
 
 export type StarterId = 'react-vite' | 'react-supabase';
 
@@ -37,6 +39,8 @@ export type Starter = {
    */
   entryPath: string;
   files: readonly SandboxFile[];
+  /** This project's visual identity, as the prompt should describe it. */
+  themeSummary?: string;
 };
 
 /**
@@ -57,6 +61,11 @@ const VERSIONS = {
   supabase: '2.47.10',
   typesReact: '18.3.18',
   typesReactDom: '18.3.5',
+  // The interface kit: icons, motion and routing, installed with the scaffold
+  // so a generated app never stops mid-build to install them.
+  lucide: '0.468.0',
+  motion: '11.18.2',
+  reactRouter: '6.30.6',
 } as const;
 
 const TSCONFIG = JSON.stringify({
@@ -287,7 +296,13 @@ body {
 }
 `;
 
-const TAILWIND_CONFIG = `/** @type {import('tailwindcss').Config} */
+const TAILWIND_CONFIG = `/*
+ * Each token accepts an opacity modifier (bg-accent/15, border-border/60):
+ * Tailwind substitutes <alpha-value>, and color-mix applies it to the token.
+ */
+const tone = (name) => 'color-mix(in oklch, var(' + name + ') calc(<alpha-value> * 100%), transparent)';
+
+/** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: ['class', '[data-theme="light"]'],
@@ -297,21 +312,21 @@ export default {
       // border-border. Components never name a raw colour, so the theme is
       // changed in one place and dark mode follows for free.
       colors: {
-        bg: 'var(--color-bg)',
-        surface: 'var(--color-surface)',
-        'surface-raised': 'var(--color-surface-raised)',
-        border: 'var(--color-border)',
-        'border-subtle': 'var(--color-border-subtle)',
-        content: 'var(--color-text)',
-        secondary: 'var(--color-text-secondary)',
-        tertiary: 'var(--color-text-tertiary)',
-        accent: 'var(--color-accent)',
-        'accent-hover': 'var(--color-accent-hover)',
-        'on-accent': 'var(--color-on-accent)',
-        success: 'var(--color-success)',
-        warning: 'var(--color-warning)',
-        error: 'var(--color-error)',
-        info: 'var(--color-info)',
+        bg: tone('--color-bg'),
+        surface: tone('--color-surface'),
+        'surface-raised': tone('--color-surface-raised'),
+        border: tone('--color-border'),
+        'border-subtle': tone('--color-border-subtle'),
+        content: tone('--color-text'),
+        secondary: tone('--color-text-secondary'),
+        tertiary: tone('--color-text-tertiary'),
+        accent: tone('--color-accent'),
+        'accent-hover': tone('--color-accent-hover'),
+        'on-accent': tone('--color-on-accent'),
+        success: tone('--color-success'),
+        warning: tone('--color-warning'),
+        error: tone('--color-error'),
+        info: tone('--color-info'),
       },
       // A bare "border" utility should use the token, not Tailwind's reset
       // grey. Making the token the default means a component has to opt out of
@@ -327,7 +342,23 @@ export default {
         'card-hover': 'var(--shadow-card-hover)',
       },
       transitionTimingFunction: { standard: 'var(--ease-standard)' },
-      transitionDuration: { micro: '150ms', state: '250ms' },
+      transitionDuration: { micro: 'var(--duration-micro, 150ms)', state: 'var(--duration-state, 250ms)' },
+      fontFamily: {
+        // The fallback keeps text in a sans face if a stylesheet drops the token.
+        sans: ['var(--font-body, ui-sans-serif, system-ui, sans-serif)'],
+        display: ['var(--font-display, var(--font-body, ui-sans-serif, system-ui, sans-serif))'],
+        mono: ['var(--font-mono, ui-monospace, monospace)'],
+      },
+      keyframes: {
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+        'slide-up': { from: { opacity: '0', transform: 'translateY(12px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        'scale-in': { from: { opacity: '0', transform: 'scale(0.96)' }, to: { opacity: '1', transform: 'scale(1)' } },
+      },
+      animation: {
+        'fade-in': 'fade-in var(--duration-state, 250ms) var(--ease-standard) both',
+        'slide-up': 'slide-up 480ms var(--ease-standard) both',
+        'scale-in': 'scale-in var(--duration-state, 250ms) var(--ease-standard) both',
+      },
       // Tailwind's default spacing scale is already the contract's:
       // 1=4px, 2=8, 3=12, 4=16, 6=24, 8=32, 12=48, 16=64.
       maxWidth: { prose: '72ch', container: '1280px' },
@@ -363,6 +394,9 @@ function packageJson(name: string, extraDependencies: Record<string, string> = {
     dependencies: {
       react: VERSIONS.react,
       'react-dom': VERSIONS.reactDom,
+      'lucide-react': VERSIONS.lucide,
+      motion: VERSIONS.motion,
+      'react-router-dom': VERSIONS.reactRouter,
       ...extraDependencies,
     },
     devDependencies: {
@@ -399,6 +433,7 @@ const BASE_FILES: SandboxFile[] = [
   { path: 'src/index.css', content: INDEX_CSS },
   { path: 'src/components/ErrorBoundary.tsx', content: ERROR_BOUNDARY },
   { path: 'src/App.tsx', content: APP_PLACEHOLDER },
+  ...STARTER_KIT_FILES,
 ];
 
 /**
@@ -536,6 +571,26 @@ export function applyStarter(starter: Starter, generated: readonly SandboxFile[]
  * already exists and what it must not rewrite, not to read three hundred
  * lines of configuration it will never change.
  */
+/**
+ * The scaffold, dressed for one project.
+ *
+ * Same files, except the two that carry a look: the token layer and the font
+ * link are written from this project's design direction, seeded by its id so
+ * the identity is stable across rounds and different across projects.
+ */
+export function themeStarter(starter: Starter, input: { prompt: string; seed?: string; title?: string }): Starter {
+  const theme = buildProjectTheme({ prompt: input.prompt, seed: input.seed });
+  const replacements = new Map<string, string>([
+    ['src/index.css', renderThemeCss(theme)],
+    ['index.html', renderThemeIndexHtml(theme, input.title)],
+  ]);
+  return {
+    ...starter,
+    files: starter.files.map(file => replacements.has(file.path) ? { path: file.path, content: replacements.get(file.path)! } : file),
+    themeSummary: theme.summary,
+  };
+}
+
 export function describeStarter(starter: Starter): string {
   return [
     `Scaffold: ${starter.title}.`,
@@ -547,5 +602,8 @@ export function describeStarter(starter: Starter): string {
     `src/main.tsx renders ${starter.entryPath}, which holds a placeholder showing "Building…".`,
     `Write the app in ${starter.entryPath} and what it imports — anything it does not import never runs.`,
     'React + TypeScript: write .tsx/.ts, never a standalone .js entry point.',
+    '',
+    STARTER_KIT_GUIDE,
+    ...(starter.themeSummary ? ['', starter.themeSummary] : []),
   ].join('\n');
 }

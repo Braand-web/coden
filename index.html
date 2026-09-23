@@ -68,26 +68,34 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "Le prototype est-il du vrai code ?",
+      "name": "Faut-il savoir coder ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Oui : Coden génère un projet web avec des fichiers, des interactions et un aperçu. La preview sert à vérifier le parcours avant publication."
+        "text": "Non. Vous décrivez ce que vous voulez en français, Coden écrit le code, l’aperçu et les ajustements que vous demandez."
       }
     },
     {
       "@type": "Question",
-      "name": "Puis-je partir de mon design system ?",
+      "name": "Est-ce une vraie application ou une maquette ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Décrivez vos tokens, votre direction et vos contraintes dans le brief. Coden garde le système du projet au lieu d’imposer un style générique."
+        "text": "Une vraie application web : des fichiers, des interactions, une base de données si besoin, et un aperçu que vous testez avant de publier."
       }
     },
     {
       "@type": "Question",
-      "name": "Combien de temps pour un parcours de quatre écrans ?",
+      "name": "Combien ça coûte ?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "La première version dépend du brief et du contexte. Le workspace permet ensuite de demander des révisions ciblées sans reprendre les écrans à la main."
+        "text": "L’inscription est gratuite et comprend 5 crédits. Chaque action affiche son coût avant de s’exécuter, et les formules payantes sont détaillées juste en dessous."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Puis-je utiliser mon propre domaine ?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Oui, avec une formule Pro ou Business. Coden vérifie l’application avant chaque publication."
       }
     },
     {
@@ -111,97 +119,232 @@
         } catch { document.documentElement.dataset.theme = 'light'; }
       })();
     </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
   </head>
   <body data-coden-surface="landing-new">
-    <div class="landing-page-shell">
-      <header id="coden-marketing-header-root" class="landing-header">
-        <a class="landing-brand" data-coden-logo="brand" href="/" aria-label="Accueil Coden">
-          <svg class="landing-logo-mark" data-coden-logo="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)" /><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--background)" /><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--background)" /><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--background)" /></svg>
-          <span>Coden</span>
-        </a>
-        <nav class="landing-nav" id="landing-nav" aria-label="Navigation principale"><a href="#produit">Produit</a><a href="#exemples">Exemples</a><a href="/pricing.html">Tarifs</a><a href="#faq">FAQ</a></nav>
-        <div class="landing-header-actions">
-          <a class="landing-signin" href="/auth.html">Connexion</a>
-          <a class="landing-header-cta" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">Essayer</a>
-          <button class="landing-menu-button" type="button" aria-controls="landing-nav" aria-expanded="false" aria-label="Ouvrir la navigation"><span></span><span></span><span></span></button>
+    <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+
+    <main id="main-content" class="lp">
+      <section class="lp-hero" id="top" aria-labelledby="hero-title">
+        <div class="lp-hero-ambient" aria-hidden="true"></div>
+        <h1 id="hero-title" class="lp-hero-title">De l’idée à l’application web.</h1>
+        <p class="lp-hero-subtitle">Décrivez-la. Coden la construit, la vérifie et la publie.</p>
+        <div class="lp-composer">
+          <div id="landing-composer" class="lp-composer-host" aria-label="Décrire une application"></div>
+          <p id="landing-composer-status" class="lp-composer-status" role="status" aria-live="polite"></p>
         </div>
-      </header>
+        <p class="lp-hero-note">Gratuit pour commencer <span aria-hidden="true">·</span> 5 crédits offerts</p>
+      </section>
 
-      <main>
-        <section class="landing-hero" id="top" aria-labelledby="hero-title">
-          <div class="landing-hero-atmosphere" aria-hidden="true"><span></span><span></span><span></span></div>
-          <p class="landing-beta">Bêta ouverte</p>
-          <h1 id="hero-title"><span class="landing-hero-line">De la spec au prototype cliquable,</span><span class="landing-hero-line">en une conversation</span></h1>
-          <p class="landing-hero-subtitle">Décrivez le parcours. Coden génère les écrans.</p>
-          <div class="landing-composer-shell"><div id="landing-composer" class="landing-composer-host" aria-label="Décrire une application"></div><p id="landing-composer-status" class="landing-live-status" role="status" aria-live="polite"></p></div>
-          <p class="landing-reassurance">Sans carte bancaire · 3 prototypes gratuits</p>
-        </section>
-
-        <section class="landing-proof-strip" data-coden-reveal aria-label="Outils utilisés par les équipes produit"><p>Connecté aux outils que les équipes utilisent déjà</p><div class="landing-proof-logos"><div class="landing-proof-logos-track">
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-github" aria-hidden="true">◉</i><strong>GitHub</strong></span>
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-supabase" aria-hidden="true">▲</i><strong>Supabase</strong></span>
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-vercel" aria-hidden="true">△</i><strong>Vercel</strong></span>
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-figma" aria-hidden="true">◈</i><strong>Figma</strong></span>
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-stripe" aria-hidden="true">S</i><strong>Stripe</strong></span>
-          <span class="landing-proof-logo"><i class="landing-brand-glyph is-slack" aria-hidden="true">✣</i><strong>Slack</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-github">◉</i><strong>GitHub</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-supabase">▲</i><strong>Supabase</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-vercel">△</i><strong>Vercel</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-figma">◈</i><strong>Figma</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-stripe">S</i><strong>Stripe</strong></span>
-          <span class="landing-proof-logo" aria-hidden="true"><i class="landing-brand-glyph is-slack">✣</i><strong>Slack</strong></span>
-        </div></div></section>
-
-        <section class="landing-section landing-product-section" id="produit" data-coden-reveal aria-labelledby="product-title">
-          <div class="landing-section-heading"><h2 id="product-title">Assez réel pour décider, assez rapide pour jeter</h2><p>Trois choses que les maquettes statiques ne permettent pas de faire.</p></div>
-          <div class="landing-product-grid">
-            <div class="landing-feature-list" role="tablist" aria-label="Capacités de la preview">
-              <button class="landing-feature-row is-active" type="button" role="tab" aria-selected="true" aria-controls="feature-panel-navigation" data-feature-tab="navigation" data-coden-reveal-item><span>01</span><span><strong>Navigation réelle</strong><small>Les écrans sont reliés entre eux : on clique, on se trompe, on revient.</small></span></button>
-              <button class="landing-feature-row" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-states" data-feature-tab="states" data-coden-reveal-item><span>02</span><span><strong>États inclus</strong><small>Vide, chargement, erreur, succès. Générés d’office, pas ajoutés après coup.</small></span></button>
-              <button class="landing-feature-row" type="button" role="tab" aria-selected="false" aria-controls="feature-panel-iteration" data-feature-tab="iteration" data-coden-reveal-item><span>03</span><span><strong>Itération en une phrase</strong><small>Une demande claire suffit pour déplacer, corriger ou réviser un écran.</small></span></button>
+      <section class="lp-section" id="produit" aria-labelledby="product-title">
+        <header class="lp-heading" data-lp-reveal>
+          <h2 id="product-title">Une conversation suffit.</h2>
+          <p>Vous décrivez, Coden construit. Vous ajustez, l’aperçu suit.</p>
+        </header>
+        <div class="lp-cards">
+          <article class="lp-card" data-lp-reveal>
+            <div class="lp-card-visual" aria-hidden="true">
+              <div class="lp-mini-composer">
+                <p><span data-lp-typing>Un CRM pour suivre les clients de mon agence</span><i class="lp-caret"></i></p>
+                <div class="lp-mini-composer-bar"><span>Auto</span><span>Moyen</span><b><svg viewBox="0 0 16 16" fill="none"><path d="M8 12.5v-9M4 7.5l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></b></div>
+              </div>
             </div>
-            <div class="landing-feature-visual" data-coden-reveal-item>
-              <div class="landing-feature-panel" id="feature-panel-navigation" role="tabpanel"><svg viewBox="0 0 300 150" aria-hidden="true"><g fill="none" stroke="var(--border-strong)" stroke-width="1.5"><rect x="6" y="28" width="74" height="94" rx="8"></rect><rect x="113" y="28" width="74" height="94" rx="8" stroke="var(--accent)"></rect><rect x="220" y="28" width="74" height="94" rx="8"></rect></g><g fill="var(--border)"><rect x="16" y="40" width="40" height="5" rx="2.5"></rect><rect x="16" y="54" width="54" height="4" rx="2"></rect><rect x="123" y="40" width="40" height="5" rx="2.5"></rect><rect x="123" y="54" width="54" height="4" rx="2"></rect><rect x="230" y="40" width="40" height="5" rx="2.5"></rect><rect x="230" y="54" width="54" height="4" rx="2"></rect></g><g stroke="var(--accent)" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M84 75H109"></path><path d="M104 70l5 5-5 5"></path><path d="M191 75H216"></path><path d="M211 70l5 5-5 5"></path></g></svg><span>écrans reliés</span></div>
-              <div class="landing-feature-panel" id="feature-panel-states" role="tabpanel" hidden><svg viewBox="0 0 300 150" aria-hidden="true"><g fill="none" stroke="var(--border)" stroke-width="1.5"><rect x="6" y="6" width="288" height="30" rx="7"></rect><rect x="6" y="44" width="288" height="30" rx="7"></rect><rect x="6" y="82" width="288" height="30" rx="7"></rect><rect x="6" y="120" width="288" height="30" rx="7" stroke="var(--success)"></rect></g><g fill="var(--border)"><rect x="44" y="18" width="88" height="6" rx="3"></rect><rect x="44" y="56" width="120" height="6" rx="3"></rect><rect x="44" y="94" width="72" height="6" rx="3"></rect><rect x="44" y="132" width="100" height="6" rx="3"></rect></g><circle cx="26" cy="59" r="6" fill="none" stroke="var(--accent)" stroke-width="1.8"></circle><circle cx="26" cy="97" r="6" fill="var(--danger)"></circle><circle cx="26" cy="135" r="6" fill="var(--success)"></circle></svg><span>vide · chargement · erreur</span></div>
-              <div class="landing-feature-panel" id="feature-panel-iteration" role="tabpanel" hidden><svg viewBox="0 0 300 150" aria-hidden="true"><rect x="6" y="8" width="288" height="34" rx="17" fill="none" stroke="var(--accent)" stroke-width="1.5"></rect><rect x="22" y="22" width="150" height="6" rx="3" fill="var(--text-muted)"></rect><circle cx="272" cy="25" r="11" fill="var(--accent)"></circle><path d="M272 30v-10M268 24l4-4 4 4" stroke="var(--background)" stroke-width="1.6" fill="none" stroke-linecap="round"></path><g fill="none" stroke="var(--border-strong)" stroke-width="1.5"><rect x="36" y="70" width="104" height="72" rx="8"></rect><rect x="160" y="70" width="104" height="72" rx="8" stroke="var(--accent)"></rect></g><rect x="172" y="118" width="40" height="12" rx="6" fill="var(--accent)"></rect></svg><span>une phrase · une révision</span></div>
+            <h3>Décrivez votre idée</h3>
+            <p>En quelques phrases, comme à un collègue. Coden pose les questions utiles.</p>
+          </article>
+          <article class="lp-card" data-lp-reveal>
+            <div class="lp-card-visual" aria-hidden="true">
+              <div class="lp-mini-preview">
+                <div class="lp-mini-tabs"><span class="is-active"><svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 8h11M8 2.5c1.6 1.7 1.6 9.3 0 11M8 2.5c-1.6 1.7-1.6 9.3 0 11" stroke="currentColor" stroke-width="1.3"/></svg>Aperçu</span><span>Cloud</span></div>
+                <div class="lp-mini-page">
+                  <div class="lp-mini-selected"><strong>Tous vos clients,<br />au même endroit</strong><em>h1</em></div>
+                  <i></i><i></i>
+                  <svg class="lp-mini-cursor" viewBox="0 0 16 16"><path d="M3 2l9.5 5.2-4.1 1.1-1.9 3.9z" fill="currentColor" stroke="var(--surface)" stroke-width="1"/></svg>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
-
-        <section class="landing-section landing-examples-section" id="exemples" data-coden-reveal aria-labelledby="examples-title">
-          <div class="landing-section-heading landing-section-heading-row"><h2 id="examples-title">Prototypes construits avec Coden</h2><button class="landing-gallery-trigger" type="button" data-gallery-open aria-haspopup="dialog" aria-controls="landing-gallery-dialog">Voir la galerie <span aria-hidden="true">→</span></button></div>
-          <div class="landing-examples-grid">
-            <a class="landing-example-card" data-coden-reveal-item href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" aria-label="Ouvrir un espace pour créer un projet Pulseboard"><div class="landing-project-preview" aria-hidden="true"><div class="landing-project-preview-bar"><i></i><span>Pulseboard</span><span>Analytics</span></div><div class="landing-project-preview-body"><div class="landing-project-preview-nav"><i></i><i></i><i></i><i></i></div><div class="landing-project-preview-main"><div class="landing-project-preview-title"><strong></strong><span></span></div><div class="landing-project-preview-metrics"><span></span><span></span><span></span></div><div class="landing-project-preview-chart"><i></i><i></i><i></i><i></i><i></i></div></div></div></div><strong>Pulseboard</strong><small>Suivi d’activité · desktop</small></a>
-            <a class="landing-example-card" data-coden-reveal-item href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" aria-label="Ouvrir un espace pour créer un projet TaskFlow"><div class="landing-project-preview" aria-hidden="true"><div class="landing-project-preview-bar"><i></i><span>TaskFlow</span><span>Workspace</span></div><div class="landing-project-preview-body"><div class="landing-project-preview-nav"><i></i><i></i><i></i><i></i></div><div class="landing-project-preview-main"><div class="landing-project-preview-title"><strong></strong><span></span></div><div class="landing-project-preview-metrics"><span></span><span></span><span></span></div><div class="landing-project-preview-chart"><i></i><i></i><i></i><i></i><i></i></div></div></div></div><strong>TaskFlow</strong><small>Opérations et tâches · responsive</small></a>
-            <a class="landing-example-card" data-coden-reveal-item href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" aria-label="Ouvrir un espace pour créer un projet Careloop"><div class="landing-project-preview" aria-hidden="true"><div class="landing-project-preview-bar"><i></i><span>Careloop</span><span>Réservations</span></div><div class="landing-project-preview-body"><div class="landing-project-preview-nav"><i></i><i></i><i></i><i></i></div><div class="landing-project-preview-main"><div class="landing-project-preview-title"><strong></strong><span></span></div><div class="landing-project-preview-metrics"><span></span><span></span><span></span></div><div class="landing-project-preview-chart"><i></i><i></i><i></i><i></i><i></i></div></div></div></div><strong>Careloop</strong><small>Parcours de réservation · mobile</small></a>
-            <a class="landing-example-card" data-coden-reveal-item href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html" aria-label="Ouvrir un espace pour créer un projet ScoreLab"><div class="landing-project-preview" aria-hidden="true"><div class="landing-project-preview-bar"><i></i><span>ScoreLab</span><span>Classement</span></div><div class="landing-project-preview-body"><div class="landing-project-preview-nav"><i></i><i></i><i></i><i></i></div><div class="landing-project-preview-main"><div class="landing-project-preview-title"><strong></strong><span></span></div><div class="landing-project-preview-metrics"><span></span><span></span><span></span></div><div class="landing-project-preview-chart"><i></i><i></i><i></i><i></i><i></i></div></div></div></div><strong>ScoreLab</strong><small>Tableau de résultats · desktop</small></a>
-          </div>
-          <dialog class="landing-gallery-dialog" id="landing-gallery-dialog" aria-labelledby="landing-gallery-title"><div class="landing-gallery-dialog-inner"><div class="landing-gallery-dialog-head"><div><p class="landing-section-kicker">Galerie</p><h2 id="landing-gallery-title">Parcours créés avec Coden</h2></div><button type="button" data-gallery-close aria-label="Fermer la galerie">×</button></div><p class="landing-gallery-dialog-intro">Explorez les miniatures et ouvrez un espace pour reprendre un projet.</p><div class="landing-gallery-grid" data-gallery-grid></div></div></dialog>
-        </section>
-
-        <section class="landing-section landing-testimonials" data-coden-reveal aria-labelledby="testimonials-title"><div class="landing-section-heading"><p class="landing-section-kicker">Retours de parcours</p><h2 id="testimonials-title">Des équipes qui décident avec le produit sous les yeux</h2></div><div class="landing-case-study-track" data-testimonial-track><article class="landing-case-study is-active" data-testimonial-card data-coden-reveal-item><div class="landing-case-study-brand"><span class="landing-case-study-mark" aria-hidden="true">✣</span><strong>Northstar Learning</strong></div><div class="landing-case-study-body"><div><p class="landing-case-study-context">Cette équipe a construit un espace d’apprentissage complet pour aider ses utilisateurs à progresser plus vite.</p><blockquote>« Quand nous avons pu suivre le parcours complet avant de mobiliser l’équipe, les décisions produit sont devenues beaucoup plus simples. »</blockquote></div><dl><div><dt>+38 %</dt><dd>d’activation en 30 jours</dd></div><div><dt>4 jours</dt><dd>pour valider le parcours</dd></div><div><dt>12 écrans</dt><dd>testés avant le build</dd></div></dl></div><footer class="landing-case-study-footer"><div class="landing-case-study-person"><span class="landing-case-study-avatar" aria-hidden="true">AM</span><span><strong>Amélie Martin</strong><small>Lead produit</small></span></div><a href="#exemples">Lire le parcours <span aria-hidden="true">→</span></a></footer></article><div class="landing-case-study-dots" aria-label="Parcours clients"><span class="is-active"></span><span></span><span></span></div></div></section>
-
-        <section class="landing-section landing-pricing-invite" id="tarifs" data-coden-reveal aria-labelledby="pricing-invite-title"><div class="landing-section-heading landing-centered-heading"><h2 id="pricing-invite-title">Tarifs</h2><p>Commencez gratuitement. Passez à une formule supérieure quand vos besoins grandissent.</p><a class="landing-pricing-invite-cta" href="/pricing.html">Voir tous les tarifs <span aria-hidden="true">→</span></a></div></section>
-
-        <section class="landing-section landing-faq-section" id="faq" data-coden-reveal aria-labelledby="faq-title"><div class="landing-section-heading landing-centered-heading"><h2 id="faq-title">Questions fréquentes</h2></div><div class="landing-faq-list"><details class="cdn-faq"><summary>Le prototype est-il du vrai code ?<span>+</span></summary><p>Oui : Coden génère un projet web avec des fichiers, des interactions et un aperçu. La preview sert à vérifier le parcours avant publication.</p></details><details class="cdn-faq"><summary>Puis-je partir de mon design system ?<span>+</span></summary><p>Décrivez vos tokens, votre direction et vos contraintes dans le brief. Coden garde le système du projet au lieu d’imposer un style générique.</p></details><details class="cdn-faq"><summary>Combien de temps pour un parcours de quatre écrans ?<span>+</span></summary><p>La première version dépend du brief et du contexte. Le workspace permet ensuite de demander des révisions ciblées sans reprendre les écrans à la main.</p></details><details class="cdn-faq"><summary>Mes données servent-elles à l’entraînement ?<span>+</span></summary><p>Les données de votre projet restent dans les limites prévues par les pages de confidentialité et les contrôles de votre espace.</p></details></div></section>
-
-        <section class="landing-final-cta" data-coden-reveal aria-labelledby="final-cta-title"><h2 id="final-cta-title">Créez votre prochain prototype</h2><div id="landing-final-composer" class="landing-composer-host landing-final-composer-host" aria-label="Décrire une application"></div><p id="landing-final-composer-status" class="landing-live-status" role="status" aria-live="polite"></p></section>
-      </main>
-
-      <footer class="landing-footer landing-footer-minimal">
-        <div class="landing-footer-bottom">
-          <span>@coden2026</span>
-          <span>
-            <button class="landing-theme-toggle" data-theme-toggle type="button" aria-label="Activer le thème sombre" title="Activer le thème sombre">
-              <svg class="landing-theme-icon" data-theme-icon="dark" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.5 15.3A8.5 8.5 0 1 1 8.7 3.5 8.5 8.5 0 0 0 20.5 15.3Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              <svg class="landing-theme-icon" data-theme-icon="light" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-            </button>
-            <a href="/privacy.html">Confidentialité</a>
-            <a href="/terms.html">Conditions</a>
-            <a href="mailto:contact@coden.fun">Contact</a>
-          </span>
+            <h3>Affinez dans l’aperçu</h3>
+            <p>Sélectionnez un élément, demandez un changement. L’application se met à jour.</p>
+          </article>
+          <article class="lp-card" data-lp-reveal>
+            <div class="lp-card-visual" aria-hidden="true">
+              <div class="lp-mini-cloud">
+                <span class="lp-mini-cloud-group">Cloud</span>
+                <span>Database</span>
+                <span class="is-active">Users</span>
+                <span>Storage</span>
+                <span>Emails</span>
+                <span>Secrets</span>
+              </div>
+            </div>
+            <h3>Le backend est inclus</h3>
+            <p>Base de données, comptes, fichiers et e-mails, gérés depuis le même espace.</p>
+          </article>
         </div>
-      </footer>
+      </section>
+
+      <section class="lp-section" aria-labelledby="verify-title">
+        <div class="lp-verify" data-lp-reveal>
+          <div class="lp-verify-copy">
+            <h2 id="verify-title">Vérifiée avant d’être publiée.</h2>
+            <p>Chaque version est construite, testée et analysée avant de pouvoir être mise en ligne.</p>
+            <ul class="lp-verify-list">
+              <li><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Un aperçu réel, pas une image</li>
+              <li><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Versions et retour arrière</li>
+              <li><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Votre propre nom de domaine</li>
+            </ul>
+          </div>
+          <div class="lp-publish" aria-hidden="true" data-lp-publish>
+            <div class="lp-publish-head"><span><svg viewBox="0 0 16 16" fill="none"><path d="M8 2.5l5.5 3L8 8.5 2.5 5.5 8 2.5zM2.5 8.2L8 11.2l5.5-3M2.5 10.8L8 13.8l5.5-3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Publier</span><small>mon-app.coden.fun</small></div>
+            <ol class="lp-publish-steps">
+              <li data-lp-step><i></i><span>Build de production</span></li>
+              <li data-lp-step><i></i><span>Parcours testé dans le navigateur</span></li>
+              <li data-lp-step><i></i><span>Analyse de sécurité</span></li>
+            </ol>
+            <div class="lp-publish-action"><span>Prête à publier</span><b>Publier</b></div>
+          </div>
+        </div>
+        <div class="lp-stack" data-lp-reveal>
+          <p>Fonctionne avec</p>
+          <div class="lp-marquee">
+            <ul class="lp-marquee-track" aria-label="Intégrations disponibles"><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.9 1.036c-.015-.986-1.26-1.41-1.874-.637L.764 12.05C-.33 13.427.65 15.455 2.409 15.455h9.579l.113 7.51c.014.985 1.259 1.408 1.873.636l9.262-11.653c1.093-1.375.113-3.403-1.645-3.403h-9.642z"/></svg><span>Supabase</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg><span>GitHub</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 1.608 12 20.784H0Z"/></svg><span>Vercel</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727"/></svg><span>Cloudflare</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/></svg><span>Notion</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.337 23.979l7.216-1.561s-2.604-17.613-2.625-17.73c-.018-.116-.114-.192-.211-.192s-1.929-.136-1.929-.136-1.275-1.274-1.439-1.411c-.045-.037-.075-.057-.121-.074l-.914 21.104h.023zM11.71 11.305s-.81-.424-1.774-.424c-1.447 0-1.504.906-1.504 1.141 0 1.232 3.24 1.715 3.24 4.629 0 2.295-1.44 3.76-3.406 3.76-2.354 0-3.54-1.465-3.54-1.465l.646-2.086s1.245 1.066 2.28 1.066c.675 0 .975-.545.975-.932 0-1.619-2.654-1.694-2.654-4.359-.034-2.237 1.571-4.416 4.827-4.416 1.257 0 1.875.361 1.875.361l-.945 2.715-.02.01zM11.17.83c.136 0 .271.038.405.135-.984.465-2.064 1.639-2.508 3.992-.656.213-1.293.405-1.889.578C7.697 3.75 8.951.84 11.17.84V.83zm1.235 2.949v.135c-.754.232-1.583.484-2.394.736.466-1.777 1.333-2.645 2.085-2.971.193.501.309 1.176.309 2.1zm.539-2.234c.694.074 1.141.867 1.429 1.755-.349.114-.735.231-1.158.366v-.252c0-.752-.096-1.371-.271-1.871v.002zm2.992 1.289c-.02 0-.06.021-.078.021s-.289.075-.714.21c-.423-1.233-1.176-2.37-2.508-2.37h-.115C12.135.209 11.669 0 11.265 0 8.159 0 6.675 3.877 6.21 5.846c-1.194.365-2.063.636-2.16.674-.675.213-.694.232-.772.87-.075.462-1.83 14.063-1.83 14.063L15.009 24l.927-21.166z"/></svg><span>Shopify</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.992 1.966c-.434 0-.87.086-1.28.257L1.779 5.917c-.503.208-.49.908.012 1.116l8.982 3.558a3.266 3.266 0 0 0 2.454 0l8.982-3.558c.503-.196.503-.908.012-1.116l-8.957-3.694a3.255 3.255 0 0 0-1.272-.257zM23.4 8.056a.589.589 0 0 0-.222.045l-10.012 3.877a.612.612 0 0 0-.38.564v8.896a.6.6 0 0 0 .821.552L23.62 18.1a.583.583 0 0 0 .38-.551V8.653a.6.6 0 0 0-.6-.596zM.676 8.095a.644.644 0 0 0-.48.19C.086 8.396 0 8.53 0 8.69v8.355c0 .442.515.737.908.54l6.27-3.006.307-.147 2.969-1.436c.466-.22.43-.908-.061-1.092L.883 8.138a.57.57 0 0 0-.207-.044z"/></svg><span>Airtable</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/></svg><span>HubSpot</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.01 1.485c-2.082 0-3.754.02-3.743.047.01.02 1.708 3.001 3.774 6.62l3.76 6.574h3.76c2.081 0 3.753-.02 3.742-.047-.005-.02-1.708-3.001-3.775-6.62l-3.76-6.574zm-4.76 1.73a789.828 789.861 0 0 0-3.63 6.319L0 15.868l1.89 3.298 1.885 3.297 3.62-6.335 3.618-6.33-1.88-3.287C8.1 4.704 7.255 3.22 7.25 3.214zm2.259 12.653-.203.348c-.114.198-.96 1.672-1.88 3.287a423.93 423.948 0 0 1-1.698 2.97c-.01.026 3.24.042 7.222.042h7.244l1.796-3.157c.992-1.734 1.85-3.23 1.906-3.323l.104-.167h-7.249z"/></svg><span>Google Drive</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/></svg><span>Gmail</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg><span>Discord</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg><span>Telegram</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6035 0v24h4.9317V0zm9.8613 0v24h4.9317V0z"/></svg><span>ElevenLabs</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M24 3.459c0 .646-.418 1.18-1.141 1.18-.723 0-1.142-.534-1.142-1.18 0-.647.419-1.18 1.142-1.18.723 0 1.141.533 1.141 1.18zm-.228 0c0-.533-.38-.951-.913-.951s-.913.38-.913.95c0 .533.38.952.913.952.57 0 .913-.419.913-.951zm-1.37-.533h.495c.266 0 .456.152.456.38 0 .153-.076.229-.19.305l.19.266v.038h-.266l-.19-.266h-.229v.266h-.266zm.495.228h-.229v.267h.229c.114 0 .152-.038.152-.114.038-.077-.038-.153-.152-.153zM7.602 12.4c.038-.151.076-.304.076-.456 0-.114-.038-.228-.038-.342-.114-.343-.304-.647-.646-.838l-4.87-2.777c-.685-.38-1.56-.152-1.94.533-.381.685-.153 1.56.532 1.94l2.701 1.56-2.701 1.56c-.685.38-.913 1.256-.533 1.94.38.685 1.256.914 1.94.533l4.832-2.777c.343-.267.571-.533.647-.876zm1.332 2.626c-.266-.038-.57.038-.837.19l-4.832 2.777c-.685.38-.913 1.256-.532 1.94.38.686 1.255.914 1.94.533l2.701-1.56v3.12c0 .8.647 1.408 1.446 1.408.799 0 1.407-.647 1.407-1.408v-5.592c0-.761-.57-1.37-1.293-1.408zm4.946-6.088c.266.038.57-.038.837-.19l4.832-2.777c.685-.38.913-1.256.532-1.94-.38-.686-1.255-.914-1.94-.533l-2.701 1.56V1.975c0-.799-.647-1.408-1.446-1.408-.799 0-1.446.609-1.446 1.408V7.53c0 .76.609 1.37 1.332 1.407zM3.265 5.97l4.832 2.777c.266.152.533.19.837.19.723-.038 1.331-.684 1.331-1.407V1.975c0-.799-.646-1.408-1.407-1.408-.799 0-1.446.647-1.446 1.408v3.12l-2.701-1.56c-.685-.38-1.56-.152-1.94.533-.419.646-.19 1.521.494 1.902zm9.093 6.011a.412.412 0 00-.114-.266l-.57-.571a.346.346 0 00-.267-.114.412.412 0 00-.266.114l-.571.57a.411.411 0 00-.114.267c0 .076.038.19.114.267l.57.57a.345.345 0 00.267.114c.076 0 .19-.038.266-.114l.571-.57a.412.412 0 00.114-.267zm1.598.533L11.94 14.53c-.039.038-.153.114-.229.114h-.608a.411.411 0 01-.267-.114L8.82 12.514a.408.408 0 01-.076-.229v-.608c0-.076.038-.19.114-.267l2.016-2.016a.41.41 0 01.267-.114h.608a.41.41 0 01.267.114l2.016 2.016a.347.347 0 01.114.267v.608c-.076.077-.114.19-.19.229zm5.593 5.44l-4.832-2.777c-.266-.152-.57-.19-.837-.152-.723.038-1.332.684-1.332 1.408v5.554c0 .8.647 1.408 1.408 1.408.799 0 1.446-.647 1.446-1.408v-3.12l2.7 1.56c.686.38 1.561.152 1.941-.533.419-.646.19-1.521-.494-1.94zm2.549-7.533l-2.701 1.56 2.7 1.56c.686.38.914 1.256.533 1.94-.38.685-1.255.913-1.94.533l-4.832-2.778a1.644 1.644 0 01-.647-.798c-.037-.153-.076-.305-.076-.457 0-.114.039-.228.039-.342.114-.343.342-.647.646-.837l4.832-2.778c.685-.38 1.56-.152 1.94.533.457.609.19 1.484-.494 1.864"/></svg><span>Snowflake</span></li></ul>
+            <ul class="lp-marquee-track" aria-hidden="true"><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.9 1.036c-.015-.986-1.26-1.41-1.874-.637L.764 12.05C-.33 13.427.65 15.455 2.409 15.455h9.579l.113 7.51c.014.985 1.259 1.408 1.873.636l9.262-11.653c1.093-1.375.113-3.403-1.645-3.403h-9.642z"/></svg><span>Supabase</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg><span>GitHub</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 1.608 12 20.784H0Z"/></svg><span>Vercel</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727"/></svg><span>Cloudflare</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/></svg><span>Notion</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.337 23.979l7.216-1.561s-2.604-17.613-2.625-17.73c-.018-.116-.114-.192-.211-.192s-1.929-.136-1.929-.136-1.275-1.274-1.439-1.411c-.045-.037-.075-.057-.121-.074l-.914 21.104h.023zM11.71 11.305s-.81-.424-1.774-.424c-1.447 0-1.504.906-1.504 1.141 0 1.232 3.24 1.715 3.24 4.629 0 2.295-1.44 3.76-3.406 3.76-2.354 0-3.54-1.465-3.54-1.465l.646-2.086s1.245 1.066 2.28 1.066c.675 0 .975-.545.975-.932 0-1.619-2.654-1.694-2.654-4.359-.034-2.237 1.571-4.416 4.827-4.416 1.257 0 1.875.361 1.875.361l-.945 2.715-.02.01zM11.17.83c.136 0 .271.038.405.135-.984.465-2.064 1.639-2.508 3.992-.656.213-1.293.405-1.889.578C7.697 3.75 8.951.84 11.17.84V.83zm1.235 2.949v.135c-.754.232-1.583.484-2.394.736.466-1.777 1.333-2.645 2.085-2.971.193.501.309 1.176.309 2.1zm.539-2.234c.694.074 1.141.867 1.429 1.755-.349.114-.735.231-1.158.366v-.252c0-.752-.096-1.371-.271-1.871v.002zm2.992 1.289c-.02 0-.06.021-.078.021s-.289.075-.714.21c-.423-1.233-1.176-2.37-2.508-2.37h-.115C12.135.209 11.669 0 11.265 0 8.159 0 6.675 3.877 6.21 5.846c-1.194.365-2.063.636-2.16.674-.675.213-.694.232-.772.87-.075.462-1.83 14.063-1.83 14.063L15.009 24l.927-21.166z"/></svg><span>Shopify</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.992 1.966c-.434 0-.87.086-1.28.257L1.779 5.917c-.503.208-.49.908.012 1.116l8.982 3.558a3.266 3.266 0 0 0 2.454 0l8.982-3.558c.503-.196.503-.908.012-1.116l-8.957-3.694a3.255 3.255 0 0 0-1.272-.257zM23.4 8.056a.589.589 0 0 0-.222.045l-10.012 3.877a.612.612 0 0 0-.38.564v8.896a.6.6 0 0 0 .821.552L23.62 18.1a.583.583 0 0 0 .38-.551V8.653a.6.6 0 0 0-.6-.596zM.676 8.095a.644.644 0 0 0-.48.19C.086 8.396 0 8.53 0 8.69v8.355c0 .442.515.737.908.54l6.27-3.006.307-.147 2.969-1.436c.466-.22.43-.908-.061-1.092L.883 8.138a.57.57 0 0 0-.207-.044z"/></svg><span>Airtable</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.978v-.067A2.2 2.2 0 0017.238.845h-.067a2.2 2.2 0 00-2.193 2.193v.067a2.196 2.196 0 001.252 1.973l.013.006v2.852a6.22 6.22 0 00-2.969 1.31l.012-.01-7.828-6.095A2.497 2.497 0 104.3 4.656l-.012.006 7.697 5.991a6.176 6.176 0 00-1.038 3.446c0 1.343.425 2.588 1.147 3.607l-.013-.02-2.342 2.343a1.968 1.968 0 00-.58-.095h-.002a2.033 2.033 0 102.033 2.033 1.978 1.978 0 00-.1-.595l.005.014 2.317-2.317a6.247 6.247 0 104.782-11.134l-.036-.005zm-.964 9.378a3.206 3.206 0 113.215-3.207v.002a3.206 3.206 0 01-3.207 3.207z"/></svg><span>HubSpot</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.01 1.485c-2.082 0-3.754.02-3.743.047.01.02 1.708 3.001 3.774 6.62l3.76 6.574h3.76c2.081 0 3.753-.02 3.742-.047-.005-.02-1.708-3.001-3.775-6.62l-3.76-6.574zm-4.76 1.73a789.828 789.861 0 0 0-3.63 6.319L0 15.868l1.89 3.298 1.885 3.297 3.62-6.335 3.618-6.33-1.88-3.287C8.1 4.704 7.255 3.22 7.25 3.214zm2.259 12.653-.203.348c-.114.198-.96 1.672-1.88 3.287a423.93 423.948 0 0 1-1.698 2.97c-.01.026 3.24.042 7.222.042h7.244l1.796-3.157c.992-1.734 1.85-3.23 1.906-3.323l.104-.167h-7.249z"/></svg><span>Google Drive</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/></svg><span>Gmail</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg><span>Discord</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg><span>Telegram</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6035 0v24h4.9317V0zm9.8613 0v24h4.9317V0z"/></svg><span>ElevenLabs</span></li><li class="lp-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M24 3.459c0 .646-.418 1.18-1.141 1.18-.723 0-1.142-.534-1.142-1.18 0-.647.419-1.18 1.142-1.18.723 0 1.141.533 1.141 1.18zm-.228 0c0-.533-.38-.951-.913-.951s-.913.38-.913.95c0 .533.38.952.913.952.57 0 .913-.419.913-.951zm-1.37-.533h.495c.266 0 .456.152.456.38 0 .153-.076.229-.19.305l.19.266v.038h-.266l-.19-.266h-.229v.266h-.266zm.495.228h-.229v.267h.229c.114 0 .152-.038.152-.114.038-.077-.038-.153-.152-.153zM7.602 12.4c.038-.151.076-.304.076-.456 0-.114-.038-.228-.038-.342-.114-.343-.304-.647-.646-.838l-4.87-2.777c-.685-.38-1.56-.152-1.94.533-.381.685-.153 1.56.532 1.94l2.701 1.56-2.701 1.56c-.685.38-.913 1.256-.533 1.94.38.685 1.256.914 1.94.533l4.832-2.777c.343-.267.571-.533.647-.876zm1.332 2.626c-.266-.038-.57.038-.837.19l-4.832 2.777c-.685.38-.913 1.256-.532 1.94.38.686 1.255.914 1.94.533l2.701-1.56v3.12c0 .8.647 1.408 1.446 1.408.799 0 1.407-.647 1.407-1.408v-5.592c0-.761-.57-1.37-1.293-1.408zm4.946-6.088c.266.038.57-.038.837-.19l4.832-2.777c.685-.38.913-1.256.532-1.94-.38-.686-1.255-.914-1.94-.533l-2.701 1.56V1.975c0-.799-.647-1.408-1.446-1.408-.799 0-1.446.609-1.446 1.408V7.53c0 .76.609 1.37 1.332 1.407zM3.265 5.97l4.832 2.777c.266.152.533.19.837.19.723-.038 1.331-.684 1.331-1.407V1.975c0-.799-.646-1.408-1.407-1.408-.799 0-1.446.647-1.446 1.408v3.12l-2.701-1.56c-.685-.38-1.56-.152-1.94.533-.419.646-.19 1.521.494 1.902zm9.093 6.011a.412.412 0 00-.114-.266l-.57-.571a.346.346 0 00-.267-.114.412.412 0 00-.266.114l-.571.57a.411.411 0 00-.114.267c0 .076.038.19.114.267l.57.57a.345.345 0 00.267.114c.076 0 .19-.038.266-.114l.571-.57a.412.412 0 00.114-.267zm1.598.533L11.94 14.53c-.039.038-.153.114-.229.114h-.608a.411.411 0 01-.267-.114L8.82 12.514a.408.408 0 01-.076-.229v-.608c0-.076.038-.19.114-.267l2.016-2.016a.41.41 0 01.267-.114h.608a.41.41 0 01.267.114l2.016 2.016a.347.347 0 01.114.267v.608c-.076.077-.114.19-.19.229zm5.593 5.44l-4.832-2.777c-.266-.152-.57-.19-.837-.152-.723.038-1.332.684-1.332 1.408v5.554c0 .8.647 1.408 1.408 1.408.799 0 1.446-.647 1.446-1.408v-3.12l2.7 1.56c.686.38 1.561.152 1.941-.533.419-.646.19-1.521-.494-1.94zm2.549-7.533l-2.701 1.56 2.7 1.56c.686.38.914 1.256.533 1.94-.38.685-1.255.913-1.94.533l-4.832-2.778a1.644 1.644 0 01-.647-.798c-.037-.153-.076-.305-.076-.457 0-.114.039-.228.039-.342.114-.343.342-.647.646-.837l4.832-2.778c.685-.38 1.56-.152 1.94.533.457.609.19 1.484-.494 1.864"/></svg><span>Snowflake</span></li></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="lp-section lp-examples-section" id="exemples" aria-labelledby="examples-title">
+        <div class="lp-aurora" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <header class="lp-heading" data-lp-reveal>
+          <h2 id="examples-title">Commencez par un exemple.</h2>
+          <p>Choisissez un point de départ, Coden l’adapte à votre besoin.</p>
+        </header>
+        <div class="lp-examples">
+          <button class="lp-example" type="button" data-lp-reveal data-example-prompt="Un CRM pour mon agence : suivi des clients, pipeline de ventes en colonnes et relances automatiques.">
+            <span class="lp-example-visual lp-ex-crm" aria-hidden="true"><i></i><i></i><i></i></span>
+            <strong>CRM d’agence</strong>
+            <small>Pipeline, clients et relances</small>
+            <span class="lp-example-action">Utiliser cet exemple <span aria-hidden="true">→</span></span>
+          </button>
+          <button class="lp-example" type="button" data-lp-reveal data-example-prompt="Une application de réservation pour un studio de yoga : planning des cours, paiement et rappels par e-mail.">
+            <span class="lp-example-visual lp-ex-booking" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <strong>Réservation en ligne</strong>
+            <small>Planning, paiement et rappels</small>
+            <span class="lp-example-action">Utiliser cet exemple <span aria-hidden="true">→</span></span>
+          </button>
+          <button class="lp-example" type="button" data-lp-reveal data-example-prompt="Un tableau de bord analytics pour mon SaaS : revenus, inscriptions, rétention et export CSV.">
+            <span class="lp-example-visual lp-ex-analytics" aria-hidden="true"><b></b><b></b><b></b><span><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
+            <strong>Tableau de bord</strong>
+            <small>Revenus, inscriptions, rétention</small>
+            <span class="lp-example-action">Utiliser cet exemple <span aria-hidden="true">→</span></span>
+          </button>
+          <button class="lp-example" type="button" data-lp-reveal data-example-prompt="Une boutique en ligne pour ma marque de vêtements : catalogue, panier, paiement et suivi des commandes.">
+            <span class="lp-example-visual lp-ex-shop" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            <strong>Boutique en ligne</strong>
+            <small>Catalogue, panier et commandes</small>
+            <span class="lp-example-action">Utiliser cet exemple <span aria-hidden="true">→</span></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="lp-section lp-faq" id="faq" aria-labelledby="faq-title">
+        <header class="lp-heading" data-lp-reveal>
+          <h2 id="faq-title">Questions fréquentes.</h2>
+          <p>Une autre question ? <a href="mailto:contact@coden.fun">Écrivez-nous</a>.</p>
+        </header>
+        <div class="lp-faq-list" data-lp-reveal>
+          <details class="cdn-faq"><summary>Faut-il savoir coder ?<span aria-hidden="true"></span></summary><p>Non. Vous décrivez ce que vous voulez en français, Coden écrit le code, l’aperçu et les ajustements que vous demandez.</p></details>
+          <details class="cdn-faq"><summary>Est-ce une vraie application ou une maquette ?<span aria-hidden="true"></span></summary><p>Une vraie application web : des fichiers, des interactions, une base de données si besoin, et un aperçu que vous testez avant de publier.</p></details>
+          <details class="cdn-faq"><summary>Combien ça coûte ?<span aria-hidden="true"></span></summary><p>L’inscription est gratuite et comprend 5 crédits. Chaque action affiche son coût avant de s’exécuter, et les formules payantes sont détaillées juste en dessous.</p></details>
+          <details class="cdn-faq"><summary>Puis-je utiliser mon propre domaine ?<span aria-hidden="true"></span></summary><p>Oui, avec une formule Pro ou Business. Coden vérifie l’application avant chaque publication.</p></details>
+          <details class="cdn-faq"><summary>Mes données servent-elles à l’entraînement ?<span aria-hidden="true"></span></summary><p>Les données de votre projet restent dans les limites prévues par les pages de confidentialité et les contrôles de votre espace.</p></details>
+        </div>
+      </section>
+
+      <section class="lp-section lp-pricing" id="tarifs" aria-labelledby="pricing-title" data-lp-pricing>
+        <header class="lp-heading lp-pricing-heading" data-lp-reveal>
+          <h2 id="pricing-title">Commencez gratuitement.</h2>
+          <p>Passez à une formule payante quand votre application est prête à être publiée.</p>
+        </header>
+        <div class="lp-pricing-controls" data-lp-reveal>
+          <div class="lp-segmented" role="group" aria-label="Période de facturation" data-lp-segmented>
+            <span class="lp-segmented-thumb" aria-hidden="true"></span>
+            <button type="button" data-lp-interval="monthly" aria-pressed="true">Mensuel</button>
+            <button type="button" data-lp-interval="annual" aria-pressed="false">Annuel <em>−20 %</em></button>
+          </div>
+          <div class="lp-segmented" role="group" aria-label="Devise" data-lp-segmented>
+            <span class="lp-segmented-thumb" aria-hidden="true"></span>
+            <button type="button" data-lp-currency="XAF" aria-pressed="true">FCFA</button>
+            <button type="button" data-lp-currency="USD" aria-pressed="false">USD</button>
+          </div>
+        </div>
+        <div class="lp-plans">
+          <article class="lp-plan" data-lp-reveal>
+            <div class="lp-plan-head"><span class="lp-plan-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2.5v3M8 10.5v3M2.5 8h3M10.5 8h3M4.2 4.2l1.9 1.9M9.9 9.9l1.9 1.9M11.8 4.2L9.9 6.1M6.1 9.9l-1.9 1.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span><p class="lp-plan-name">Free</p></div>
+            <h3>Validez votre idée</h3>
+            <p class="lp-plan-copy">Pour transformer une intention en premier prototype fonctionnel.</p>
+            <div class="lp-plan-tier"><span>Crédits</span><p class="lp-plan-tier-static"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="6" width="11" height="7.5" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 6h12M8 6v7.5M8 6C6.5 3 4 3.5 4.6 5.2 5 6 8 6 8 6zM8 6c1.5-3 4-2.5 3.4-.8C11 6 8 6 8 6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><strong>5 crédits offerts</strong><small>une seule fois</small></p></div>
+            <div class="lp-plan-price"><s class="lp-plan-was" data-lp-was="free" hidden></s><strong><span data-lp-amount="free">0</span><small data-lp-unit>FCFA</small></strong><span class="lp-plan-period">sans engagement</span></div>
+            <p class="lp-plan-note"><span>Aucun renouvellement automatique</span></p>
+            <ul class="lp-plan-features">
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Crédits offerts une seule fois</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>1 projet actif et preview privée</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Génération et modifications selon le solde</span></li>
+            </ul>
+            <a class="lp-button lp-button-ghost" data-conversion-event="pricing_start_free" data-conversion-place="landing_pricing" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Créer mon espace</a>
+          </article>
+          <article class="lp-plan is-featured" data-lp-reveal>
+            <div class="lp-plan-head"><span class="lp-plan-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M8 2.5l5.5 3L8 8.5 2.5 5.5 8 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M2.5 8.2L8 11.2l5.5-3M2.5 10.8L8 13.8l5.5-3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span><p class="lp-plan-name">Pro</p><span class="lp-plan-badge">Recommandé</span></div>
+            <h3>Publiez des produits réels</h3>
+            <p class="lp-plan-copy">Pour itérer vite, connecter votre domaine et garder le contrôle sur vos versions.</p>
+            <div class="lp-plan-tier"><span id="lp-pro-tier-label">Crédits par mois</span>
+              <span class="lp-select" data-lp-select><select id="lp-pro-tier" data-lp-tier="pro" aria-labelledby="lp-pro-tier-label"><option value="25">25 crédits</option><option value="60">60 crédits</option><option value="100" selected>100 crédits</option><option value="200">200 crédits</option><option value="400">400 crédits</option><option value="800">800 crédits</option><option value="1200">1 200 crédits</option><option value="2000">2 000 crédits</option><option value="3000">3 000 crédits</option><option value="4000">4 000 crédits</option><option value="5000">5 000 crédits</option><option value="7500">7 500 crédits</option><option value="10000">10 000 crédits</option></select><svg class="lp-select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="lp-plan-price"><s class="lp-plan-was" data-lp-was="pro" hidden></s><strong><span data-lp-amount="pro">15 000</span><small data-lp-unit>FCFA</small></strong><span class="lp-plan-period">/ mois</span></div>
+            <p class="lp-plan-note"><span data-lp-note="pro">Facturé mensuellement</span><span class="lp-plan-save" data-lp-save="pro" hidden></span></p>
+            <ul class="lp-plan-features">
+              <li data-lp-publication="pro"><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Sites publiés illimités et 10 domaines personnalisés</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Édition et export du code</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Historique des versions et rollback</span></li>
+            </ul>
+            <a class="lp-button lp-button-primary" data-conversion-event="pricing_choose_plan" data-conversion-place="landing_pricing" data-conversion-plan="pro" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Choisir Pro</a>
+          </article>
+          <article class="lp-plan" data-lp-reveal>
+            <div class="lp-plan-head"><span class="lp-plan-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="2.2" stroke="currentColor" stroke-width="1.4"/><circle cx="11" cy="7" r="1.8" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 13c.4-2.2 1.8-3.4 3.5-3.4s3.1 1.2 3.5 3.4M10 10.2c1.8 0 3.1.9 3.5 2.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span><p class="lp-plan-name">Business</p></div>
+            <h3>Coordonnez votre équipe</h3>
+            <p class="lp-plan-copy">Pour les équipes qui ont besoin de rôles, de limites et de capacités avancées.</p>
+            <div class="lp-plan-tier"><span id="lp-business-tier-label">Crédits par mois</span>
+              <span class="lp-select" data-lp-select><select id="lp-business-tier" data-lp-tier="business" aria-labelledby="lp-business-tier-label"><option value="100" selected>100 crédits</option><option value="200">200 crédits</option><option value="400">400 crédits</option><option value="800">800 crédits</option><option value="1200">1 200 crédits</option><option value="2000">2 000 crédits</option><option value="3000">3 000 crédits</option><option value="4000">4 000 crédits</option><option value="5000">5 000 crédits</option><option value="7500">7 500 crédits</option><option value="10000">10 000 crédits</option></select><svg class="lp-select-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            </div>
+            <div class="lp-plan-price"><s class="lp-plan-was" data-lp-was="business" hidden></s><strong><span data-lp-amount="business">30 000</span><small data-lp-unit>FCFA</small></strong><span class="lp-plan-period">/ mois</span></div>
+            <p class="lp-plan-note"><span data-lp-note="business">Facturé mensuellement</span><span class="lp-plan-save" data-lp-save="business" hidden></span></p>
+            <ul class="lp-plan-features">
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Sites et domaines personnalisés illimités</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Rôles et projets internes</span></li>
+              <li><i aria-hidden="true"><svg viewBox="0 0 16 16" fill="none"><path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></i><span>Modèles premium et support prioritaire</span></li>
+            </ul>
+            <a class="lp-button lp-button-ghost" data-conversion-event="pricing_choose_plan" data-conversion-place="landing_pricing" data-conversion-plan="business" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Choisir Business</a>
+          </article>
+        </div>
+        <p class="lp-pricing-foot" data-lp-reveal><span data-lp-currency-note>Paiement en FCFA via un checkout Saspay sécurisé.</span> <a href="/pricing.html">Comparer les formules</a></p>
+      </section>
+    </main>
+
+    <div class="lp-finale">
+      <div class="lp-finale-light" aria-hidden="true"></div>
+      <section class="lp-launch" aria-labelledby="launch-title" data-lp-reveal>
+        <p class="lp-launch-kicker">Créateur d’applications IA</p>
+        <h2 id="launch-title">Quelle application allez-vous créer&nbsp;?</h2>
+        <div class="lp-composer lp-launch-composer">
+          <div id="landing-final-composer" class="lp-composer-host" aria-label="Décrire une application"></div>
+          <p id="landing-final-composer-status" class="lp-composer-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <div id="coden-marketing-footer-root"></div>
     </div>
     <script type="module" src="/src/landing-new.ts"></script>
   </body>

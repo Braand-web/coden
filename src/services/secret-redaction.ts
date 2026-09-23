@@ -65,3 +65,38 @@ export function redactSecretPayload<T>(value: T): T {
   }
   return output as T;
 }
+
+/**
+ * Redaction for text that is still being written.
+ *
+ * A streamed answer reaches the browser before it is complete, so it cannot
+ * wait for `redactSecrets` on the finished string — and running it on each
+ * delta alone would miss a key split across two of them (`sk-proj-` in one,
+ * the rest in the next). Every pattern it knows is either one unbroken word
+ * or a `name: value` whose value is one, so text is released only up to the
+ * last whitespace: everything before it is final and redacts the same way it
+ * will in the whole answer. The word still being written waits for the next
+ * delta, or for `end`.
+ */
+export function createStreamingRedactor(emit: (delta: string) => void) {
+  let raw = '';
+  let sent = 0;
+  const release = (upTo: number) => {
+    const safe = redactSecrets(raw.slice(0, upTo));
+    if (safe.length <= sent) return;
+    emit(safe.slice(sent));
+    sent = safe.length;
+  };
+  return {
+    push(delta: string) {
+      if (!delta) return;
+      raw += delta;
+      let cut = raw.length - 1;
+      while (cut >= 0 && !/\s/.test(raw[cut])) cut -= 1;
+      if (cut >= 0) release(cut + 1);
+    },
+    end() {
+      release(raw.length);
+    },
+  };
+}

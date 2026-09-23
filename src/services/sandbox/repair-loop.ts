@@ -35,7 +35,7 @@
 
 import type { ProjectSandbox } from './project-sandbox.ts';
 import { createSandboxTools, SANDBOX_TOOL_SCHEMAS } from './sandbox-tools.ts';
-import { validateProject, buildRepairInstruction, type ValidationReport } from './validate.ts';
+import { validateProject, validateBuild, buildRepairInstruction, type ValidationReport } from './validate.ts';
 import { createHash } from 'node:crypto';
 
 async function fileRevisions(sandbox: ProjectSandbox): Promise<Map<string, string>> {
@@ -155,6 +155,13 @@ export async function runCoderLoop(input: {
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
   ensureRuntime?: (restartRequired: boolean) => Promise<void>;
+  /**
+   * A design and product review of a result that already passes every check.
+   * Returns an instruction for one polish round, or nothing when the result is
+   * good enough. Called at most once, and only while a repair round would
+   * still be left after the polish.
+   */
+  review?: (report: ValidationReport, round: number) => Promise<string | undefined>;
 }): Promise<RepairOutcome> {
   const mode = input.mode ?? 'repair';
   if (mode === 'build' && !input.initialInstruction) {
@@ -166,6 +173,8 @@ export async function runCoderLoop(input: {
   const maxToolCalls = input.maxToolCallsPerRound ?? DEFAULT_MAX_TOOL_CALLS;
   const maxStalledRounds = Math.max(1, input.maxStalledRounds ?? DEFAULT_MAX_STALLED_ROUNDS);
   let stalledRounds = 0;
+  let reviewed = false;
+  let polishInstruction = '';
   const rounds: RepairRound[] = [];
   const steeringHistory: string[] = [];
   const initialFiles = mode === 'build' ? await fileRevisions(input.sandbox) : null;
@@ -218,6 +227,9 @@ export async function runCoderLoop(input: {
     // either mode, is "here is what the toolchain still does not like" — the
     // one instruction shape a repair has ever had.
     const isBuildRound = mode === 'build' && round === 1;
+    // A polish round starts from a passing app; like the first build round,
+    // it has no earlier error count to be measured against.
+    const isPolishRound = Boolean(polishInstruction);
     /*
      * A stalled round changes what the model is told, not just how many are
      * left. Sending the identical error list again is what made "it will not
@@ -228,10 +240,13 @@ export async function runCoderLoop(input: {
     const stallNotice = stalledRounds > 0
       ? `\n\nYour previous ${stalledRounds === 1 ? 'attempt' : `${stalledRounds} attempts`} did not reduce these errors. Do not repeat the same edit. Read the failing file and its imports before changing anything, and fix the cause rather than the symptom.`
       : '';
+    const mission = input.initialInstruction ? `Original mission and constraints (still mandatory):\n${input.initialInstruction}\n\n` : '';
     const instruction = (isBuildRound ? input.initialInstruction! :
-      `${input.initialInstruction ? `Original mission and constraints (still mandatory):\n${input.initialInstruction}\n\n` : ''}${buildRepairInstruction(report)}${stallNotice}`)
+      isPolishRound ? `${mission}${polishInstruction}` :
+      `${mission}${buildRepairInstruction(report)}${stallNotice}`)
       + (steeringHistory.length ? `\n\nUser instructions to preserve:\n${steeringHistory.join('\n')}` : '');
 
+    polishInstruction = '';
     await input.turn({
       instruction,
       tools: SANDBOX_TOOL_SCHEMAS,
@@ -256,7 +271,9 @@ export async function runCoderLoop(input: {
       await input.sandbox.start({ basePath });
     }
 
-    report = await validateProject(input.sandbox, { signal: input.signal });
+    // Typecheck and runtime first; the production build waits until they and
+    // the live preview are clean (below), instead of running every round.
+    report = await validateProject(input.sandbox, { skipBuild: true, signal: input.signal });
     input.signal?.throwIfAborted();
     if (report.ok && input.verifyPreview) {
       const preview = await input.verifyPreview();
@@ -267,6 +284,17 @@ export async function runCoderLoop(input: {
         ran:{...report.ran,browser:preview.ran.browser},
         durationMs:report.durationMs+preview.durationMs,
         evidence:{ ...(report.evidence || {}), ...(preview.evidence || {}) },
+      };
+    }
+    if (report.ok) {
+      const build = await validateBuild(input.sandbox, { signal: input.signal });
+      input.signal?.throwIfAborted();
+      report = {
+        ...report,
+        ok: build.ok,
+        problems: [...report.problems, ...build.problems],
+        ran: { ...report.ran, build: build.ran },
+        durationMs: report.durationMs + build.durationMs,
       };
     }
     const hasActualChanges = initialFiles && currentFiles && [...new Set([...initialFiles.keys(), ...currentFiles.keys()])]
@@ -282,7 +310,16 @@ export async function runCoderLoop(input: {
 
     if (report.ok) {
       const pending = await input.beforeRound?.(round + 1);
-      if (!pending) return finish('fixed');
+      if (!pending) {
+        // One review of a passing result, while a repair round would still
+        // remain after the polish in case it breaks something.
+        if (input.review && !reviewed && round <= maxRounds - 2) {
+          reviewed = true;
+          const polish = await input.review(report, round).catch(() => undefined);
+          if (polish) { polishInstruction = polish; continue; }
+        }
+        return finish('fixed');
+      }
       steeringHistory.push(pending);
       report = { ...report, ok: false, problems: [...report.problems, { source: 'runtime', severity: 'error', message: 'New user instructions arrived. Apply them before completion.' }] };
     }
@@ -290,7 +327,7 @@ export async function runCoderLoop(input: {
     // gets a shorter list. Not judged on a build's first round: `errorsBefore`
     // there is the empty scaffold's error count, not an earlier attempt at
     // this task, so it is not a baseline this round can be measured against.
-    if (isBuildRound) continue;
+    if (isBuildRound || isPolishRound) continue;
     if (errorsAfter < errorsBefore) stalledRounds = 0;
     else if ((stalledRounds += 1) >= maxStalledRounds) return finish('no_progress');
   }

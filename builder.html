@@ -4251,16 +4251,23 @@
     .chat-input-row #model-select-btn { display: none !important; }
 
     /* The workspace is made of independent surfaces. The right context owns one
-       rounded frame. In preview mode, the application fills that frame directly:
-       there is no second device card, dark shell, or exposed stage around it. */
+       rounded frame — the Dashboard's panel: a 12px gutter on the sidebar
+       tone and the same --radius-xl corners. In preview mode, the application
+       fills that frame directly: no second device card, dark shell, or exposed
+       stage around it, and the frame's corners clip it. */
     @media (min-width: 761px) {
       .editor-pane {
-        margin: 12px 12px 12px 0;
+        margin: 0 12px 12px 0;
         padding-top: 0 !important;
         border: 1px solid var(--border) !important;
-        border-radius: var(--radius-lg);
+        border-radius: var(--radius-xl);
         background: var(--surface) !important;
         box-shadow: var(--shadow-sm);
+        overflow: hidden;
+      }
+
+      .workspace-body.sidebar-collapsed .editor-pane {
+        margin-left: 12px;
       }
 
       .viewport-content-holder {
@@ -4298,29 +4305,24 @@
         border-radius: 0 !important;
       }
 
-      /* Preview is the canvas itself. Remove the editor shell's outer gutter
-         only while this view is active, so the generated app reaches the
-         divider, viewport edge and bottom without a dark rail around it. */
+      /* Preview and Cloud keep the frame: the application reaches the frame's
+         edges on every side and its corners are the frame's corners. */
       .editor-pane:has(#screen-layout-preview[style*="display: flex"]),
       .editor-pane:has(#screen-layout-database[style*="display: flex"]) {
-        margin: 0 !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        box-shadow: none;
         background: var(--background) !important;
         overflow: hidden;
       }
 
       .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .viewport-content-holder,
       .editor-pane:has(#screen-layout-database[style*="display: flex"]) .viewport-content-holder {
-        border-radius: 0 !important;
+        border-radius: inherit !important;
         background: transparent;
       }
 
       .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .preview-screen-panel,
       .editor-pane:has(#screen-layout-database[style*="display: flex"]) .cloud-console-screen {
         border: 0 !important;
-        border-radius: 0 !important;
+        border-radius: inherit !important;
       }
 
       .code-screen-layout.is-empty .editor-main-scroll {

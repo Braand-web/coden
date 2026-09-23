@@ -2932,8 +2932,19 @@ function renderPlanResponse(
 
 async function requestSimpleConversation(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<boolean> {
   const messageId = messageHandleId(card);
+  /*
+   * The reply is read as it is written.
+   *
+   * A conversation asks for the event stream the Builder already speaks; the
+   * server opens one only for a conversation, and answers a plan, a
+   * clarification or any refusal with the JSON body this function has always
+   * read. Either way the same payload comes out the other end: the stream's
+   * `result` event carries exactly what the JSON body would have.
+   */
+  let streamed = false;
   const payload = await apiFetch<any>('/api/assistant/chat', {
     method: 'POST',
+    headers: { Accept: 'text/event-stream, application/json' },
     body: JSON.stringify({
       prompt,
       requestedMode,
@@ -2944,12 +2955,22 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
       assistantMessageId: messageId || undefined,
     }),
     signal: activeAbort?.signal,
+  }, response => {
+    if (!response.headers.get('content-type')?.includes('text/event-stream')) return response.json();
+    streamed = true;
+    return consumeAgentStream(response, event => {
+      if (messageId && event.channel === 'chat') conversationApi?.applyChatEvent(messageId, event);
+    });
   });
 
   if (payload?.runId) lastAgentRunId = String(payload.runId);
   if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
   if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
-  if (payload?.success === false) throw new ApiError(payload.message || payload.error || 'Assistant response failed.', 503, payload);
+  if (payload?.success === false) {
+    // The stream has already closed the run with its own `run_failed`; the
+    // recovery panel below is what offers the way forward.
+    throw new ApiError(payload.message || payload.error || 'Assistant response failed.', Number(payload.status_code) || 503, payload);
+  }
 
   const content = String(payload?.text || '').trim();
   if (!content) throw new Error('The selected AI model returned an empty response.');
@@ -2974,8 +2995,21 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
   }
   const safeContent = safeAssistantDisplayText(content, speaksFrench);
   if (!safeContent) throw new Error('The selected AI model returned a response that failed the output safety checks.');
-  if (messageId && conversationApi) conversationApi.updateMessage(messageId, safeContent);
-  else updateMessage(card, safeContent);
+  if (messageId && conversationApi) {
+    /*
+     * The words on screen end up being the checked ones.
+     *
+     * What streamed is the model's raw text; `text` is that same answer after
+     * the server's sanitizer and this page's display checks. They are almost
+     * always identical, and `settleText` changes nothing then. When they are
+     * not, the checked version wins — once the typing has caught up, never
+     * in the middle of it.
+     */
+    conversationApi.settleText(messageId, safeContent);
+    // A JSON answer never opened a run on the wire, so it is closed here;
+    // a streamed one was closed by its own terminal event.
+    if (!streamed) conversationApi.finishLiveRun(messageId, safeContent);
+  } else updateMessage(card, safeContent);
   clearMessageShimmer(card);
   return true;
 }
@@ -3053,7 +3087,12 @@ async function requestProjectGeneration(
   }
 }
 
-async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto') {
+async function answerSimpleConversationFromProvider(card: HTMLElement | null, prompt: string, speaksFrench: boolean, requestedMode: ChatMode = 'auto'): Promise<'answered' | 'failed' | 'project_run'> {
+  // A retry from the recovery panel arrives with no controller of its own,
+  // and without one the stop button had nothing to stop.
+  const ownsAbort = !activeAbort;
+  if (ownsAbort) activeAbort = new AbortController();
+  stopRequested = false;
   setBusy(true);
   prepareMessageForRun(card, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
   startLiveRun(card, { mode: requestedMode, model: selectedModel(), intent: prompt });
@@ -3061,17 +3100,37 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
     // One request, one answer. A failed request stays an honest failure,
     // never a hidden second run.
     await requestSimpleConversation(card, prompt, speaksFrench, requestedMode);
+    return 'answered';
   } catch (error) {
+    const payload = error instanceof ApiError ? (error.payload as { diagnostic_code?: string; requires_project?: boolean } | null) : null;
+    if (error instanceof ApiError && error.status === 409 && (payload?.diagnostic_code === 'PROJECT_RUN_REQUIRED' || payload?.requires_project)) {
+      return 'project_run';
+    }
+    /*
+     * Every exit closes the run.
+     *
+     * Only success used to: a failure went straight to the recovery panel
+     * and a stop went there too, dressed as an error, while the run under
+     * it stayed open with its thinking line still lit.
+     */
+    if (stopRequested || (error as Error)?.name === 'AbortError') {
+      failLiveRun(card, speaksFrench ? 'Réponse arrêtée.' : 'Reply stopped.', 'cancelled');
+      return 'failed';
+    }
+    failLiveRun(card, safeBuilderFailureText(error, speaksFrench));
     const retry = () => void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
     const useAuto = () => {
       applySelectedModel('auto', { persist: true, saveWorkspace: true });
       void answerSimpleConversationFromProvider(card, prompt, speaksFrench, requestedMode);
     };
-    if (!showRuntimeRecovery(card, error, speaksFrench, { retry, useAuto })) {
-      updateMessage(card, safeBuilderFailureText(error, speaksFrench));
-    }
+    // `failLiveRun` has already said what went wrong; the panel adds the way
+    // forward when there is one.
+    showRuntimeRecovery(card, error, speaksFrench, { retry, useAuto });
+    return 'failed';
   } finally {
     setBusy(false);
+    stopRequested = false;
+    if (ownsAbort) activeAbort = null;
     // Safety net: if the request was cancelled or failed before any answer
     // arrived, the thinking indicator must never stick.
     clearMessageShimmer(card);
@@ -6058,12 +6117,25 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     // An empty label used to reach the shimmer here, which drew nothing while
     // the model was already working. Say what is happening instead.
     setMessageShimmer(card, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
+    let outcome: Awaited<ReturnType<typeof answerSimpleConversationFromProvider>>;
     try {
-      await answerSimpleConversationFromProvider(card, safePrompt, speaksFrench, requestedMode);
+      outcome = await answerSimpleConversationFromProvider(card, safePrompt, speaksFrench, requestedMode);
     } finally {
       activeAbort = null;
     }
-    return;
+    if (outcome !== 'project_run') return;
+    /*
+     * The server read this as work on the project, not a question.
+     *
+     * The page guesses the route before sending; the server decides. When they
+     * disagreed the server answered 409 PROJECT_RUN_REQUIRED and the user was
+     * shown an error for a request that was perfectly valid — "ajoute un
+     * formulaire de contact" typed in Auto, refused. The server is the
+     * authority, so the request goes where it said: the empty reply card is
+     * removed and the same prompt continues down the build path below.
+     */
+    const cardId = messageHandleId(card);
+    if (cardId && conversationApi) conversationApi.removeMessage(cardId);
   }
 
   if (promptUiContext === 'critical_action') {
@@ -6080,12 +6152,10 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   // we are not already in the workspace, reveal the builder before running — unless
   // credits are known-empty client-side, in which case show the upgrade prompt and
   // do not reveal/run.
-  if (currentBuilderLayout() && currentBuilderLayout() !== 'workspace') {
-    if (lastWalletBalance === 0) {
-      showCreditsModal();
-      return;
-    }
-    await revealWorkspaceLayout();
+  const revealsWorkspace = Boolean(currentBuilderLayout() && currentBuilderLayout() !== 'workspace');
+  if (revealsWorkspace && lastWalletBalance === 0) {
+    showCreditsModal();
+    return;
   }
 
   stopRequested = false;
@@ -6101,8 +6171,15 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
    * one people actually use — created a silent card and left it empty through
    * the whole preflight: the credit gate, the project creation and the intent
    * round all happen before `startLiveRun` is reached.
+   *
+   * The card and the busy state also come before the workspace reveal, not
+   * after it. The reveal waits for the sidebar transition — up to 450ms — and
+   * the first message of a session used to spend that time with the user's
+   * prompt on screen and no reply under it, while the send button was still
+   * live enough to start a second run.
    */
   setMessageShimmer(status, speaksFrench ? 'Coden analyse votre demande…' : 'Coden is analyzing your request…');
+  if (revealsWorkspace) await revealWorkspaceLayout();
   let generationTouchesPreview = false;
   activeGenerationTouchesPreview = false;
   let streamedText = '';

@@ -5,6 +5,9 @@ import { createNarrationFilter } from './narration-filter.ts';
 import { getAgentToolDefinition, toolNeedsApproval } from './agent-tools.ts';
 import { isDecisionRequiredError } from './agent-decision.ts';
 
+/** Tools that only observe the workspace, safe to run side by side. */
+const READ_ONLY_TOOLS = new Set(['read_file', 'list_files', 'search_files', 'get_logs']);
+
 export type LlmToolHandler = (args: Record<string, unknown>) => Promise<unknown> | unknown;
 
 export type ToolApprovalRequest = {
@@ -294,6 +297,26 @@ export async function runLlmToolLoop(input: {
     });
 
     input.onToolsStarted?.();
+    /*
+     * Reads run together.
+     *
+     * A model that opens a round by asking for six files waited for them one
+     * after another, each a filesystem round trip plus the harness record.
+     * The reads at the head of a batch — before any write can change what
+     * they would see — start at once here, and the sequential loop below
+     * picks up their results in order, so the transcript is identical.
+     */
+    const prefetched = new Map<string, Promise<{ output: unknown; threw?: unknown }>>();
+    const readBudget = Math.max(0, maxToolCalls - toolExecutions.length);
+    for (const call of result.tool_calls) {
+      const name = call.function.name;
+      const handler = input.handlers[name];
+      if (!READ_ONLY_TOOLS.has(name) || !handler || input.sensitiveTools?.[name] || prefetched.size >= readBudget) break;
+      let args: Record<string, unknown>;
+      try { args = parseToolArguments(call.function.arguments); } catch { break; }
+      if (toolNeedsApproval(name, args)) break;
+      prefetched.set(call.id, Promise.resolve().then(() => handler(args)).then(output => ({ output }), threw => ({ output: undefined, threw })));
+    }
     for (const call of result.tool_calls) {
       input.signal?.throwIfAborted();
       const handler = input.handlers[call.function.name];
@@ -360,7 +383,14 @@ export async function runLlmToolLoop(input: {
               ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
             }
           } else {
-            output = await handler(args);
+            const early = prefetched.get(call.id);
+            if (early) {
+              const settled = await early;
+              if (settled.threw) throw settled.threw;
+              output = settled.output;
+            } else {
+              output = await handler(args);
+            }
             ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
           }
         } catch (error: any) {

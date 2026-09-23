@@ -184,40 +184,71 @@ function footerLink(href: string, label: string) {
   return link;
 }
 
+type FooterColumn = { title: string; links: ReadonlyArray<readonly [string, string]> };
+
+/*
+ * Every link here resolves to a page that exists — the canonical public
+ * routes, the anchors of the landing, the account entry points and the
+ * legal pages from the route policy. No placeholder destinations.
+ */
+function footerColumns(): FooterColumn[] {
+  const signup = PUBLIC_ACTIONS.cta.href;
+  return [
+    { title: 'Produit', links: [['/features.html', 'Fonctionnalités'], ['/pricing.html', 'Tarifs'], ['/#exemples', 'Exemples'], [signup, 'Créer une application']] },
+    { title: 'Ressources', links: [['/documentation.html', 'Documentation'], ['/#faq', 'Questions fréquentes'], ['/security.html', 'Sécurité']] },
+    { title: 'Compte', links: [[PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr')], [signup, 'Créer un compte'], ['/dashboard.html', 'Mes projets']] },
+    { title: 'Mentions légales', links: PUBLIC_LEGAL_LINKS.map(link => [link.href, navLabel(link, 'fr')] as const) },
+  ];
+}
+
 function mountFooter() {
   const host = document.getElementById('coden-marketing-footer-root');
   if (!host) return;
   host.replaceChildren();
   const frame = element('div', 'coden-public-footer-frame');
   const footer = element('footer', 'coden-public-footer');
-  const intro = element('div', 'coden-public-footer-intro');
-  const title = element('p');
-  title.textContent = 'De l’idée à l’application web.';
-  const description = element('p');
-  description.textContent = 'Décrivez, construisez, vérifiez et publiez depuis un seul espace.';
-  intro.append(title, description);
 
-  const links = element('nav', 'coden-public-footer-links');
-  links.setAttribute('aria-label', 'Liens du pied de page');
-  [
-    ['/features.html', 'Fonctionnalités'],
-    ['/documentation.html', 'Documentation'],
-    ['/pricing.html', 'Tarifs'],
-    ['/security.html', 'Sécurité'],
-  ].forEach(([href, label]) => links.appendChild(footerLink(href, label)));
+  const brand = element('div', 'coden-public-footer-brand');
+  const home = element('a', 'coden-public-footer-logo');
+  home.href = '/';
+  home.setAttribute('aria-label', 'Accueil Coden');
+  home.append(logoMark());
+  const tagline = element('p');
+  tagline.textContent = 'De l’idée à l’application web.';
+  brand.append(home, tagline);
+
+  const columns = element('nav', 'coden-public-footer-columns');
+  columns.setAttribute('aria-label', 'Liens du pied de page');
+  footerColumns().forEach(column => {
+    const group = element('div', 'coden-public-footer-column');
+    const title = element('h2');
+    title.textContent = column.title;
+    const list = element('ul');
+    column.links.forEach(([href, label]) => {
+      const item = element('li');
+      item.appendChild(footerLink(href, label));
+      list.appendChild(item);
+    });
+    group.append(title, list);
+    columns.appendChild(group);
+  });
 
   const bottom = element('div', 'coden-public-footer-bottom');
-  const copyright = element('span');
-  copyright.textContent = `@coden${new Date().getFullYear()}`;
-  const legal = element('div', 'coden-public-footer-legal');
   const theme = element('button', 'coden-public-theme-toggle');
   theme.type = 'button';
   theme.dataset.themeToggle = '';
-  theme.append(themeIcon('dark'), themeIcon('light'));
-  legal.appendChild(theme);
-  PUBLIC_LEGAL_LINKS.forEach(link => legal.appendChild(footerLink(link.href, navLabel(link, 'fr'))));
-  bottom.append(copyright, legal);
-  footer.append(intro, links, bottom);
+  const lightLabel = element('span');
+  lightLabel.dataset.themeLabel = 'light';
+  lightLabel.textContent = 'Clair';
+  const darkLabel = element('span');
+  darkLabel.dataset.themeLabel = 'dark';
+  darkLabel.textContent = 'Sombre';
+  theme.append(themeIcon('dark'), themeIcon('light'), lightLabel, darkLabel);
+  const copyright = element('span', 'coden-public-footer-copyright');
+  copyright.textContent = `@coden${new Date().getFullYear()}`;
+  bottom.append(theme, copyright);
+
+  footer.append(brand, columns, bottom);
   frame.appendChild(footer);
   host.appendChild(frame);
 }

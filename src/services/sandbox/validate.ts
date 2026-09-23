@@ -39,6 +39,17 @@ export type ValidationReport = {
     responsiveViewports?: number[];
     qualityChecks?: Array<{ key: string; status: string; severity: string; message: string }>;
     interactions?: { attempted: number; changed: number };
+    /** Planner-written journeys, executed in the browser. */
+    scenarios?: Array<{ name: string; ok: boolean; failedStep?: number; error?: string }>;
+    /** Internal routes reached from the app's own links. */
+    routes?: Array<{ path: string; ok: boolean; reason?: string }>;
+    /** Mobile legibility and touch findings (warnings, fed to the design review). */
+    layout?: { smallTapTargets: string[]; smallText: number };
+    /**
+     * JPEG captures of the running app for the design review. In memory only:
+     * callers strip them before persisting a report.
+     */
+    screenshots?: Array<{ width: number; dataUrl: string }>;
   };
 };
 
@@ -236,14 +247,47 @@ export async function validateProject(
  * files are listed separately because naming them is what keeps a repair from
  * turning into a regeneration.
  */
+/**
+ * The production build on its own.
+ *
+ * The repair loop runs it once the typecheck and the live preview are clean,
+ * not on every round: while the app still has type errors a build can only
+ * repeat them with less detail, and it is the slowest check there is.
+ */
+export async function validateBuild(
+  sandbox: ProjectSandbox,
+  options: { buildTimeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<Pick<ValidationReport, 'ok' | 'problems' | 'durationMs'> & { ran: boolean }> {
+  const startedAt = Date.now();
+  const build = await sandbox.runCommand('npm', ['run', 'build'], {
+    timeoutMs: options.buildTimeoutMs ?? 180_000,
+    signal: options.signal,
+  }).catch(() => ({ code: -1, output: 'The build process could not be started or timed out.' }));
+  const problems: ValidationProblem[] = [];
+  if (build && build.code !== 0) {
+    const parsed = parseRuntimeOutput(build.output, 'build');
+    problems.push(...(parsed.length ? parsed : [{
+      source: 'build' as const,
+      severity: 'error' as const,
+      message: build.output.slice(-1_500) || 'The build failed without output.',
+    }]));
+  }
+  return { ok: problems.every(problem => problem.severity !== 'error'), problems, ran: Boolean(build), durationMs: Date.now() - startedAt };
+}
+
 export function buildRepairInstruction(report: ValidationReport, maxProblems = 12): string {
   const errors = report.problems.filter(problem => problem.severity === 'error').slice(0, maxProblems);
   if (!errors.length) return '';
 
   const packages = [...new Set(errors.map(problem => problem.missingPackage).filter(Boolean))] as string[];
   const files = [...new Set(errors.map(problem => problem.file).filter(Boolean))] as string[];
+  // A failed journey is not a crash: saying "does not run" about an app that
+  // runs sends the model looking for a compile error that is not there.
+  const behaviourOnly = errors.every(problem => /^(SCENARIO|FUNCTIONALITY|QUALITY_GATE|DESIGN_REVIEW)\b/.test(problem.message));
 
-  const lines = ['The application does not run. These are its own toolchain’s errors:'];
+  const lines = [behaviourOnly
+    ? 'The application runs, but these checks of what it does, made in a real browser, failed:'
+    : 'The application does not run. These are its own toolchain’s errors:'];
   for (const problem of errors) {
     const where = problem.file ? `${problem.file}${problem.line ? `:${problem.line}` : ''}` : problem.source;
     lines.push(`- [${problem.source}] ${where} — ${problem.message}`);

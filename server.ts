@@ -260,7 +260,7 @@ import {
   isTemporaryGenerationRoute,
   readTemporaryGenerationAccessConfig,
 } from './src/services/temporary-generation-access.ts';
-import { containsSecret, redactSecretPayload, redactSecrets } from './src/services/secret-redaction.ts';
+import { containsSecret, createStreamingRedactor, redactSecretPayload, redactSecrets } from './src/services/secret-redaction.ts';
 import {
   MEDIA_MODEL_REGISTRY,
   estimateMediaCredits,
@@ -10671,6 +10671,30 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     });
   }
 
+  /*
+   * A conversation is written in front of the reader.
+   *
+   * This route answered in one JSON body, so a reply appeared all at once
+   * after the model had finished — five, ten seconds of a thinking line and
+   * then a wall of text — while a build's narration, through `/generate`,
+   * streamed word by word. The same composer, two different products.
+   *
+   * Only a conversation streams. A plan and a clarification come back as a
+   * structured object the Builder renders as a card; streamed, the user would
+   * watch raw JSON being typed. Every refusal above has already answered with
+   * its own status and JSON, which `apiFetch` still reads as before.
+   */
+  const french = isLikelyFrenchPrompt(basePrompt);
+  const eventStream = decision.intent === 'conversation' && String(req.headers.accept || '').includes('text/event-stream')
+    ? createAgentEventStream(res, requestId, { messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) })
+    : null;
+  // A reader who left stops the model too: nobody is waiting for the rest.
+  const chatAbort = new AbortController();
+  if (eventStream) res.once('close', () => { if (!res.writableEnded) chatAbort.abort(); });
+  eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) });
+  eventStream?.chat({ type: 'activity', label: french ? 'Coden réfléchit…' : 'Coden is thinking…' });
+  const streamedText = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'text_delta', delta })) : null;
+
   try {
     if (canPersistConversation) {
       await saveProjectMessage({
@@ -10692,10 +10716,13 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       modelId: selectedModel,
       userCredits: wallet,
       allowLocalFallback: selectedModel === 'auto',
+      signal: eventStream ? chatAbort.signal : undefined,
+      onToken: streamedText ? delta => streamedText.push(delta) : undefined,
       visionInputs: attachmentRecords
         .filter(record => record.mimeType.startsWith('image/'))
         .map(record => ({ url: record.dataUrl, detail: 'auto' as const })),
     });
+    streamedText?.end();
 
     const content = redactSecrets(agentText.text || '').trim();
     if (!content) throw new Error('The selected AI model returned an empty response.');
@@ -10747,11 +10774,16 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         message: redactSecrets(chargeError?.message || String(chargeError), '[redacted]'),
       });
     }
-    return res.json({
-      success: true,
-      request_id: requestId,
-      text: content,
-    });
+    const answer = { success: true, request_id: requestId, text: content };
+    // `assistant_streamed` stops `finish` from sending the answer a second
+    // time; the client settles on `text`, which went through the sanitizer.
+    if (eventStream) {
+      // The answer is already delivered and billed; a reader who closed the
+      // tab at the last word is not a failed conversation.
+      return eventStream.finish({ ...answer, assistant_source: 'model', assistant_streamed: true }, 200)
+        .catch(streamError => console.warn('[coden:assistant_chat_stream_closed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') }));
+    }
+    return res.json(answer);
   } catch (error: any) {
     /*
      * The conversation's own failure, in the user's language and never empty.
@@ -10769,7 +10801,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       message: redactSecrets(error?.message || String(error), '[redacted]'),
     });
     const publicMessage = publicRuntimeErrorMessage(diagnostic.diagnostic_code, isLikelyFrenchPrompt(basePrompt) ? 'fr' : 'en');
-    return res.status(diagnostic.status >= 400 ? diagnostic.status : 502).json({
+    const failure = {
       success: false,
       error: publicMessage,
       message: publicMessage,
@@ -10777,7 +10809,14 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       request_id: requestId,
       suggested_action: diagnostic.suggested_action,
       recoverable: true,
-    });
+    };
+    // Once the stream is open the status line has been sent; the failure
+    // travels as the run's own terminal event instead.
+    if (eventStream) {
+      return eventStream.finish(failure, chatAbort.signal.aborted ? 499 : diagnostic.status >= 400 ? diagnostic.status : 502)
+        .catch(streamError => console.warn('[coden:assistant_chat_stream_closed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') }));
+    }
+    return res.status(diagnostic.status >= 400 ? diagnostic.status : 502).json(failure);
   }
 });
 
@@ -12782,9 +12821,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * promises more work is priced for more work before the gate runs.
    */
   const requestedEffort = normalizeAgentEffort(req.body?.effort);
-  const existingFiles = await loadProjectFiles(project.id);
-  const lastPlan = await getLastProjectPlan(project.id);
-  const recentHistory = await getRecentDecisionHistory(project.id, 6);
+  // Three independent reads; one round trip instead of three.
+  const [existingFiles, lastPlan, recentHistory] = await Promise.all([
+    loadProjectFiles(project.id),
+    getLastProjectPlan(project.id),
+    getRecentDecisionHistory(project.id, 6),
+  ]);
   let initialDecision: IntentDecision;
   try {
     initialDecision = await resolveAgentDecision({
@@ -12887,8 +12929,21 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           console.warn('[coden:pipeline_run_create_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
         }
       }
-      const routingPlan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
-      const routingCredits = await getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id);
+      /*
+       * The run's context is four independent reads — plan, balance, memory,
+       * backend — started together rather than one after another, since none
+       * needs another's answer.
+       */
+      const routingPromise = Promise.all([
+        getOrganizationPlan(project.organization_id).catch(() => 'free'),
+        getWalletWithFallback(getOptionalDbHelpers('model_routing'), project.organization_id),
+      ]);
+      const backendEnvPromise = loadProjectBackendEnv({
+        client: getSupabase(),
+        projectId: project.id,
+      });
+      routingPromise.catch(() => undefined);
+      backendEnvPromise.catch(() => undefined);
 
 
       /*
@@ -12914,10 +12969,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
        * told the backend is live so they write real queries rather than a
        * localStorage stand-in beside a client they never call.
        */
-      const backendEnv = await loadProjectBackendEnv({
-        client: getSupabase(),
-        projectId: project.id,
-      });
+      const backendEnv = await backendEnvPromise;
+      const [routingPlan, routingCredits] = await routingPromise;
 
       /*
        * Pick up a run that died, instead of starting it again.
@@ -13129,6 +13182,7 @@ ${agentPrompt}` : agentPrompt;
             diff,
             stoppedBecause: outcome.repairOutcome.stoppedBecause,
             prompt,
+            evidence: outcome.repairOutcome.finalReport.evidence,
           }),
           model: outcome.modelId,
           real_cost_usd: pipelineCompleteCostUsd,
@@ -13368,14 +13422,21 @@ ${agentPrompt}` : agentPrompt;
   });
   let agentRunId = '';
   if (AGENT_V2_ENABLED) {
+    // Four independent reads for the context pack, fetched together.
+    const [contextMessages, contextEvents, contextVersions, contextMemory] = await Promise.all([
+      listProjectMessagesPage(project.id, 12, null).catch(() => []),
+      listAgentEventsPage(project.id, 16, null).catch(() => []),
+      listProjectVersions(project.id).catch(() => []),
+      listAgentMemory(project.id).catch(() => []),
+    ]);
     const contextPack = {
       ...buildAgentContextPack({
       project,
       files: existingFiles,
-      messages: await listProjectMessagesPage(project.id, 12, null).catch(() => []),
-      events: await listAgentEventsPage(project.id, 16, null).catch(() => []),
-      versions: await listProjectVersions(project.id).catch(() => []),
-      memory: await listAgentMemory(project.id).catch(() => []),
+      messages: contextMessages,
+      events: contextEvents,
+      versions: contextVersions,
+      memory: contextMemory,
       previewStatus: project.preview_status,
       selectedModel: effectiveModelSelection,
       requestId,
@@ -16652,7 +16713,9 @@ import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
-import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER } from './src/services/sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER, STARTERS } from './src/services/sandbox/starters.ts';
+import { ProjectSandbox } from './src/services/sandbox/project-sandbox.ts';
+import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
@@ -17731,6 +17794,10 @@ const httpServer = app.listen(port, () => {
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
+  // The first new project after a deploy should not pay a cold install.
+  setTimeout(() => {
+    void warmScaffoldDependencies(Object.values(STARTERS), id => new ProjectSandbox(id)).catch(() => undefined);
+  }, 10_000).unref();
 
   registerJobHandler('workflow_run', async (job, onProgress) => {
     const client = getSupabase();

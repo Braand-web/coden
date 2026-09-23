@@ -50,45 +50,68 @@ body.coden-public-menu-open { overflow: hidden; }
 @keyframes coden-public-menu-in { from { opacity: 0; transform: translateY(-12px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes coden-public-link-in { to { opacity: 1; transform: none; } }
 
+/* ---------------------------------------------------------------------------
+ * Footer
+ *
+ * One card on the product's light: the ambient's blue, carried through violet
+ * and a warm edge at the very bottom. The light is a custom property so a page
+ * that wants it to start higher (the landing, behind its last composer) paints
+ * the same thing rather than a copy of it.
+ * ------------------------------------------------------------------------- */
+:root {
+  --footer-hue-1: var(--accent);
+  --footer-hue-2: var(--syntax-purple);
+  --footer-hue-3: var(--syntax-cyan);
+  --footer-hue-4: var(--syntax-orange);
+  --footer-hue-5: color-mix(in srgb, var(--syntax-purple) 55%, var(--danger));
+  --coden-footer-light:
+    radial-gradient(60% 42% at 16% 58%, color-mix(in srgb, var(--footer-hue-1) 88%, transparent), transparent 70%),
+    radial-gradient(55% 40% at 84% 52%, color-mix(in srgb, var(--footer-hue-1) 76%, transparent), transparent 70%),
+    radial-gradient(40% 30% at 52% 62%, color-mix(in srgb, var(--footer-hue-3) 36%, transparent), transparent 70%),
+    radial-gradient(70% 42% at 26% 88%, color-mix(in srgb, var(--footer-hue-5) 72%, transparent), transparent 70%),
+    radial-gradient(70% 42% at 80% 90%, color-mix(in srgb, var(--footer-hue-2) 64%, transparent), transparent 70%),
+    radial-gradient(90% 32% at 50% 108%, color-mix(in srgb, var(--footer-hue-4) 72%, transparent), transparent 72%);
+}
 #coden-marketing-footer-root { margin-top: 96px; }
-.coden-public-footer-frame { position: relative; width: 100%; padding: 80px max(16px, calc((100% - var(--public-shell-width)) / 2)) 24px; overflow: hidden; isolation: isolate; }
-.coden-public-footer-frame::before { content: ''; position: absolute; inset: 20% -12% -40%; z-index: -1; background: radial-gradient(circle at 24% 74%, color-mix(in srgb, var(--accent) 62%, transparent), transparent 34%), radial-gradient(circle at 78% 74%, color-mix(in srgb, var(--syntax-purple) 42%, transparent), transparent 34%), radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--syntax-cyan) 38%, transparent), transparent 44%); filter: blur(28px); opacity: .72; }
-.coden-public-footer { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 48px; padding: 40px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: var(--radius-xl); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.coden-public-footer-intro { display: grid; align-content: start; gap: 8px; max-width: 420px; }
-.coden-public-footer-intro p { margin: 0; }
-.coden-public-footer-intro p:first-child { color: var(--text-strong); font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.02em; }
-.coden-public-footer-intro p:last-child { color: var(--text-muted); font-size: 14px; line-height: 20px; text-wrap: pretty; }
-.coden-public-footer-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 24px; align-content: start; }
-.coden-public-footer-links a { min-height: 40px; display: flex; align-items: center; color: var(--text-secondary); font-size: 14px; transition: color 180ms var(--ease-standard), transform 180ms var(--ease-standard); }
-.coden-public-footer-links a:hover { color: var(--accent); transform: translateX(2px); }
+.coden-public-footer-frame { position: relative; width: 100%; padding: 160px max(16px, calc((100% - var(--public-shell-width)) / 2)) 80px; overflow: hidden; isolation: isolate; }
+.coden-public-footer-frame::before { content: ''; position: absolute; inset: 0 -8% 0; z-index: -1; background: var(--coden-footer-light); filter: blur(32px); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, var(--foreground) 40%); mask-image: linear-gradient(to bottom, transparent 0%, var(--foreground) 40%); pointer-events: none; }
+:root[data-theme='dark'] .coden-public-footer-frame::before { opacity: .55; }
+.coden-public-footer { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3.4fr); gap: 48px 32px; padding: 56px 56px 32px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: var(--radius-xl); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 32px 80px -32px color-mix(in srgb, var(--foreground) 28%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+.coden-public-footer-brand { display: grid; align-content: start; gap: 16px; }
+.coden-public-footer-logo { display: inline-flex; width: fit-content; border-radius: var(--radius-sm); transition: transform 280ms var(--ease-standard); }
+.coden-public-footer-logo:hover { transform: rotate(-6deg) scale(1.04); }
+.coden-public-footer-logo .coden-public-logo { width: 40px; height: 40px; }
+.coden-public-footer-brand p { max-width: 180px; margin: 0; color: var(--text-muted); font-size: 14px; line-height: 20px; }
+.coden-public-footer-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
+.coden-public-footer-column h2 { margin: 0 0 16px; color: var(--text-strong); font-size: 14px; font-weight: 600; line-height: 20px; }
+.coden-public-footer-column ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.coden-public-footer .coden-public-footer-column a { display: inline-flex; min-height: 32px; align-items: center; color: var(--text-muted); font-size: 14px; line-height: 20px; transition: color 180ms var(--ease-standard); }
+.coden-public-footer .coden-public-footer-column a:hover { color: var(--foreground); }
 .coden-public-footer-bottom { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; }
-.coden-public-footer-legal { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-.coden-public-footer-legal a { min-height: 36px; display: inline-flex; align-items: center; transition: color 180ms var(--ease-standard); }
-.coden-public-footer-legal a:hover { color: var(--accent); }
-.coden-public-theme-toggle { width: 36px; height: 36px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface); color: var(--text-muted); cursor: pointer; transition: border-color 180ms var(--ease-standard), color 180ms var(--ease-standard), transform 180ms var(--ease-standard); }
-.coden-public-theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.coden-public-theme-toggle:active { transform: scale(.96); }
+.coden-public-theme-toggle { display: inline-flex; width: auto; min-height: 36px; align-items: center; gap: 8px; padding: 0 14px 0 12px; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--surface); color: var(--text-secondary); cursor: pointer; font-size: 13px; font-weight: 550; transition: border-color 180ms var(--ease-standard), color 180ms var(--ease-standard), transform 180ms var(--ease-standard); }
+.coden-public-theme-toggle:hover { border-color: var(--border-strong); color: var(--foreground); }
+.coden-public-theme-toggle:active { transform: scale(.97); }
 .coden-public-theme-toggle svg { width: 16px; height: 16px; }
-:root[data-theme='dark'] .coden-public-theme-toggle [data-theme-icon='dark'], :root:not([data-theme='dark']) .coden-public-theme-toggle [data-theme-icon='light'] { display: none; }
+:root[data-theme='dark'] .coden-public-theme-toggle [data-theme-icon='light'], :root:not([data-theme='dark']) .coden-public-theme-toggle [data-theme-icon='dark'],
+:root[data-theme='dark'] .coden-public-theme-toggle [data-theme-label='light'], :root:not([data-theme='dark']) .coden-public-theme-toggle [data-theme-label='dark'] { display: none; }
 
 @media (max-width: 900px) {
   .coden-public-header { margin-top: 8px; }
   .coden-public-nav, .coden-public-actions > .coden-public-signin, .coden-public-actions > .coden-public-cta { display: none; }
   .coden-public-actions { margin-left: auto; }
   .coden-public-menu-trigger { display: grid; }
-  .coden-public-footer { grid-template-columns: 1fr; gap: 32px; padding: 32px; }
-  .coden-public-footer-bottom { grid-column: 1; }
+  .coden-public-footer { grid-template-columns: 1fr; gap: 40px; padding: 40px 32px 24px; }
+  .coden-public-footer-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
+  .coden-public-footer-brand p { max-width: none; }
 }
 
 @media (max-width: 560px) {
   .coden-public-header { width: calc(100% - 24px); padding-left: 12px; }
-  .coden-public-footer-frame { padding-top: 64px; }
-  .coden-public-footer { padding: 24px; border-radius: var(--radius-lg); }
-  .coden-public-footer-links { grid-template-columns: 1fr; }
-  .coden-public-footer-bottom { align-items: flex-start; flex-direction: column; }
+  .coden-public-footer-frame { padding-top: 96px; padding-bottom: 32px; }
+  .coden-public-footer { padding: 32px 24px 20px; border-radius: var(--radius-lg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .coden-public-header, .coden-public-nav a, .coden-public-signin, .coden-public-cta, .coden-public-menu-icon i, .coden-public-mobile-panel, .coden-public-mobile-panel a, .coden-public-footer-links a, .coden-public-theme-toggle { animation: none !important; transition: none !important; }
+  .coden-public-header, .coden-public-nav a, .coden-public-signin, .coden-public-cta, .coden-public-menu-icon i, .coden-public-mobile-panel, .coden-public-mobile-panel a, .coden-public-footer-column a, .coden-public-footer-logo, .coden-public-theme-toggle { animation: none !important; transition: none !important; }
   .coden-public-mobile-panel a { opacity: 1; transform: none; }
 }

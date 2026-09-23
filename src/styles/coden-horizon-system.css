@@ -169,9 +169,15 @@ body[data-coden-surface="dashboard"] .coden-dashboard-composer:focus-within {
 
 /* Builder, preview and cloud surfaces remain flat and contrast-led. */
 body[data-coden-surface="builder"],
-body[data-coden-surface="builder"] .app-workspace,
-body[data-coden-surface="builder"] .workspace-body {
+body[data-coden-surface="builder"] .app-workspace {
   background: var(--background) !important;
+  color: var(--foreground);
+}
+
+/* The gutter around the right frame is the sidebar's tone, as on the
+   Dashboard, so the frame's rounded corners read against it. */
+body[data-coden-surface="builder"] .workspace-body {
+  background: var(--sidebar) !important;
   color: var(--foreground);
 }
 

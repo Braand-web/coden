@@ -55,3 +55,44 @@ it('stops at the tool ceiling and returns the work, instead of failing the run',
   // The tool results the round did produce must survive for the caller.
   expect(result.messages.some(message => message.role === 'tool')).toBe(true);
 });
+
+/*
+ * Reads at the head of a batch run side by side, and the transcript still
+ * lists every result in the order the model asked for them.
+ */
+it('runs leading reads concurrently without reordering the transcript', async () => {
+  let turn = 0;
+  const chat = vi.fn(async () => (++turn === 1
+    ? {
+        text: '',
+        tool_calls: [
+          { id: 'r1', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+          { id: 'r2', function: { name: 'read_file', arguments: '{"path":"b.ts"}' } },
+          { id: 'w1', function: { name: 'write_file', arguments: '{"path":"c.ts"}' } },
+          { id: 'r3', function: { name: 'read_file', arguments: '{"path":"c.ts"}' } },
+        ],
+        usage: {},
+        cost_usd: 0,
+      }
+    : { text: 'done', usage: {}, cost_usd: 0 }));
+  let inFlight = 0;
+  let peak = 0;
+  const written: string[] = [];
+  const read_file = async (args: Record<string, unknown>) => {
+    inFlight += 1; peak = Math.max(peak, inFlight);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    inFlight -= 1;
+    return { ok: true, path: args.path, sawWrite: written.includes(String(args.path)) };
+  };
+  const result = await runLlmToolLoop({
+    gateway: { chat } as any,
+    modelId: 'test',
+    messages: [],
+    handlers: { read_file, write_file: async args => { written.push(String(args.path)); return { ok: true }; } },
+  });
+  expect(peak).toBe(2);
+  const toolMessages = result.messages.filter((message: any) => message.role === 'tool') as any[];
+  expect(toolMessages.map(message => message.tool_call_id)).toEqual(['r1', 'r2', 'w1', 'r3']);
+  // The read after the write is not prefetched: it sees the write.
+  expect(JSON.parse(toolMessages[3].content).sawWrite).toBe(true);
+});

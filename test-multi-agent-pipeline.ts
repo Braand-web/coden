@@ -153,7 +153,13 @@ try {
     assert.ok(outcome.files.some(file => file.path === 'package.json'), 'the starter scaffold must back a new project');
     assert.ok(outcome.files.some(file => file.path === 'src/App.tsx' && file.content === COUNTER_APP), 'the coder\'s write must reach the returned files');
     assert.equal(outcome.ok, true, JSON.stringify(outcome, null, 2));
-    assert.equal(provider.chatCalls.length, 3, 'one planner call plus the two-step tool loop, no more');
+    /*
+     * One planner call, the two-step tool loop, and one design review of the
+     * finished screenshots — a new project gets that look at standard
+     * budget. The scripted review answer is not JSON, so it is skipped and
+     * never adds a polish round: no more calls than that.
+     */
+    assert.equal(provider.chatCalls.length, 4, 'planner + two-step tool loop + one design review, no more');
   }
 
   // -- small_edit: no planner call, exactly the one file is touched ---------
