@@ -26,12 +26,27 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     case 'activity': closeText(); next.activity = event.label; next.thinking = true; break;
     case 'text_delta': {
       const last = next.parts.at(-1);
-      if (last?.type === 'text' && !last.done) next.parts[next.parts.length - 1] = { ...last, text: last.text + event.delta };
-      else next.parts.push({ id: `text-${next.parts.length}`, type: 'text', text: event.delta, done: false });
-      next.thinking = false; next.activity = null; break;
+      const open = last?.type === 'text' && !last.done;
+      const text = open ? last.text + event.delta : event.delta;
+      if (open) next.parts[next.parts.length - 1] = { ...last, text };
+      else next.parts.push({ id: `text-${next.parts.length}`, type: 'text', text, done: false });
+      // A reply that opens with a line break has not said anything yet; the
+      // thinking line stays until there is a character to look at, so the
+      // message never goes blank between the two.
+      if (text.trim()) { next.thinking = false; next.activity = null; }
+      break;
     }
     case 'text_end': closeText(); break;
-    case 'files_touched': closeText(); next.parts.push(toolPart(`tool-${next.parts.length}`, event.action, event.paths)); next.thinking = false; next.activity = null; break;
+    /*
+     * Touching a file is a step, not the end of the work.
+     *
+     * The run carries on after it — reading the next file, writing the next
+     * one — and nothing is said until the following event. Turning the
+     * thinking line off here left the reply silent for that whole stretch,
+     * which reads as a stall. It stays lit, on the default label, until text
+     * or a terminal event puts it away.
+     */
+    case 'files_touched': closeText(); next.parts.push(toolPart(`tool-${next.parts.length}`, event.action, event.paths)); next.thinking = true; next.activity = null; break;
     case 'run_finished': {
       closeText();
       /*

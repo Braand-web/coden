@@ -52,24 +52,48 @@ describe('typing pacer', () => {
     expect(pacer.pending).toBe(false);
   });
 
-  it('stops pacing the moment the run ends', () => {
-    // Otherwise the message keeps writing itself after the spinner stopped —
-    // and a backgrounded tab may never fire the tick that would finish it.
+  it('finishes the text quickly once the run ends, then closes, in order', () => {
+    // Dumping the queue on the terminal event drew a run's closing summary in
+    // a single frame. It is typed out instead — fast, and never after the end
+    // event it arrived ahead of.
     const pacer = createTypingPacer(64);
     pacer.push(text('z'.repeat(500)));
     pacer.push({ type: 'run_finished', reason: 'completed' });
-    const released = pacer.drain(1000);
+    const first = pacer.drain(1000);
+    expect(said(first).length).toBeLessThan(500);
+    expect(first.some(event => event.type === 'run_finished')).toBe(false);
+    const released = [...first];
+    for (let t = 1016; t <= 4000 && pacer.pending; t += 16) released.push(...pacer.drain(t));
     expect(said(released)).toBe('z'.repeat(500));
     expect(released.at(-1)?.type).toBe('run_finished');
     expect(pacer.pending).toBe(false);
+  });
+
+  it('keeps no more than about a second of text behind a fast model', () => {
+    const pacer = createTypingPacer(64);
+    pacer.push(text('w'.repeat(2000)));
+    let out = '';
+    for (let t = 1000; t <= 2000; t += 16) out += said(pacer.drain(t));
+    // A fixed 64 chars/s would have shown ~64 of them by now.
+    expect(out.length).toBeGreaterThan(1000);
   });
 
   it('does not dump the queue after a backgrounded tab', () => {
     const pacer = createTypingPacer(64);
     pacer.push(text('q'.repeat(5000)));
     pacer.drain(1000);
-    // Five minutes with no tick.
-    expect(said(pacer.drain(301_000)).length).toBeLessThanOrEqual(64);
+    // Five minutes with no tick: half a second's worth at most, not all of it.
+    const after = said(pacer.drain(301_000)).length;
+    expect(after).toBeLessThanOrEqual(5000 / 2 + 8);
+    expect(pacer.pending).toBe(true);
+  });
+
+  it('cuts on a word boundary when one is near', () => {
+    const pacer = createTypingPacer(64);
+    pacer.push(text('Bonjour tout le monde, voici une réponse assez longue pour être coupée.'));
+    const first = said(pacer.drain(1000));
+    expect(first.length).toBeGreaterThan(0);
+    expect(/\s$/.test(first)).toBe(true);
   });
 
   it('starts a new run from nothing', () => {

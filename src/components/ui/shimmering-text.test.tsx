@@ -31,6 +31,15 @@ describe('ShimmeringText', () => {
     expect(html).toContain('coden-shimmer-text');
   });
 
+  it('is styled in one place only, so nothing later in the page can override it', () => {
+    // The conversation island injected its own `.coden-shimmer-text` rule into
+    // <head> after this stylesheet: `background: var(--surface)` clipped to
+    // transparent glyphs painted every thinking label in the background colour.
+    const island = readFileSync(new URL('../../builder-conversation-island.tsx', import.meta.url), 'utf8');
+    expect(island).not.toMatch(/\.coden-shimmer-text\s*[,{]/);
+    expect(island).not.toContain('coden-text-shimmer');
+  });
+
   it('keeps a caller class alongside its own', () => {
     expect(renderToStaticMarkup(React.createElement(ShimmeringText, { text: 'x', className: 'mine' })))
       .toContain('class="coden-shimmer-text mine"');

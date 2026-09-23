@@ -135,6 +135,11 @@ export type CodenConversationApi = {
   setFlow: (id: string, flow: unknown) => void;
   startLiveRun: (id: string, meta?: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string }) => void;
   finishLiveRun: (id: string, summary?: string) => void;
+  /**
+   * The server's final, sanitised answer for a streamed reply. The streamed
+   * text is only a preview of it; where the two differ, this one wins.
+   */
+  settleText: (id: string, text: string) => void;
   applyChatEvent: (id: string, event: AgentEnvelope) => void;
   failLiveRun: (id: string, message: string, status?: 'failed' | 'cancelled' | 'incomplete') => void;
   removeMessage: (id: string) => void;
@@ -418,12 +423,22 @@ export function createStore(storageKey = conversationStorageKey()) {
     window.addEventListener('pagehide', persist);
   }
 
+  /*
+   * At most once a second.
+   *
+   * This ran on every animation frame, and during a stream every frame
+   * mutates: the whole conversation — up to 120 messages — was serialised to
+   * JSON and written to sessionStorage sixty times a second, on the same
+   * thread that draws the text. Persistence is a safety net for a reload; a
+   * second of lag on it costs nothing, and `pagehide` still writes the
+   * latest state on the way out.
+   */
   const schedulePersist = () => {
-    if (persistFrame || typeof window === 'undefined') return;
-    persistFrame = window.requestAnimationFrame(() => {
+    if (persistFrame || typeof window === 'undefined' || typeof window.setTimeout !== 'function') return;
+    persistFrame = window.setTimeout(() => {
       persistFrame = 0;
       persist();
-    });
+    }, 1000) as unknown as number;
   };
 
   const notify = () => {
@@ -451,7 +466,35 @@ export function createStore(storageKey = conversationStorageKey()) {
    * after, so a tool line never lands above the sentence introducing it.
    */
   const pacers = new Map<string, TypingPacer>();
-  let pacingTimer: ReturnType<typeof setInterval> | null = null;
+  /*
+   * Work that has to wait for the text queued ahead of it.
+   *
+   * The end of a run is reported twice: by the stream's own terminal event,
+   * which travels through the pacer behind the text, and by the Builder when
+   * the request resolves — which is the moment the last byte arrived, not the
+   * moment it was drawn. Applying the second one straight away closed the
+   * message while paced text was still queued, and the reducer drops text on
+   * a closed message: the end of the reply was lost. It waits here instead.
+   */
+  const afterDrain = new Map<string, Array<() => void>>();
+  const whenDrained = (id: string, work: () => void) => {
+    if (!pacers.get(id)?.pending) { work(); return; }
+    afterDrain.set(id, [...(afterDrain.get(id) || []), work]);
+  };
+  const runAfterDrain = (id: string) => {
+    const work = afterDrain.get(id);
+    if (!work) return;
+    afterDrain.delete(id);
+    work.forEach(item => item());
+  };
+  /** Everything queued for one message, applied now. */
+  const flushMessage = (id: string) => {
+    const pacer = pacers.get(id);
+    if (pacer) {
+      applyPaced(id, pacer.flush());
+      pacers.delete(id);
+    }
+  };
 
   const applyPaced = (id: string, events: ChatEvent[]) => {
     if (!events.length) return;
@@ -477,23 +520,42 @@ export function createStore(storageKey = conversationStorageKey()) {
     message.working = chat.status === 'streaming';
   };
 
+  /*
+   * The pacer is drained once per display frame.
+   *
+   * It used to run on a 50ms interval whose result was then drawn on the
+   * following animation frame: two clocks out of phase, so characters landed
+   * in uneven steps of one to three frames. Draining inside the frame and
+   * notifying in that same frame gives every frame its share and nothing
+   * waits for the next one.
+   */
+  const canPace = typeof window !== 'undefined'
+    && typeof window.requestAnimationFrame === 'function'
+    && typeof window.cancelAnimationFrame === 'function';
+  let pacingFrame = 0;
+
   const stopPacing = () => {
-    if (!pacingTimer) return;
-    clearInterval(pacingTimer);
-    pacingTimer = null;
+    if (!pacingFrame) return;
+    window.cancelAnimationFrame(pacingFrame);
+    pacingFrame = 0;
   };
 
+  // One clock for pushing and draining: the frame timestamp and Date.now()
+  // count from different origins, and mixing them made every elapsed time
+  // either negative or enormous.
   const tick = () => {
+    pacingFrame = 0;
+    const now = Date.now();
     let stillPending = false;
-    mutate(() => {
-      for (const [id, pacer] of [...pacers]) {
-        if (!find(id)) { pacers.delete(id); continue; }
-        applyPaced(id, pacer.drain(Date.now()));
-        if (pacer.pending) stillPending = true;
-        else pacers.delete(id);
-      }
-    });
-    if (!stillPending) stopPacing();
+    for (const [id, pacer] of [...pacers]) {
+      if (!find(id)) { pacers.delete(id); continue; }
+      applyPaced(id, pacer.drain(now));
+      if (pacer.pending) stillPending = true;
+      else { pacers.delete(id); runAfterDrain(id); }
+    }
+    schedulePersist();
+    listeners.forEach((listener) => listener());
+    if (stillPending) pacingFrame = window.requestAnimationFrame(tick);
   };
 
   /*
@@ -504,12 +566,32 @@ export function createStore(storageKey = conversationStorageKey()) {
    * reply would simply never appear. So where nothing can tick, nothing is
    * held back: the events apply exactly as they did before pacing existed.
    */
-  const canPace = typeof window !== 'undefined' && typeof window.setInterval === 'function';
-
   const startPacing = () => {
-    if (pacingTimer || !canPace) return;
-    pacingTimer = window.setInterval(tick, 50) as unknown as ReturnType<typeof setInterval>;
+    if (pacingFrame || !canPace) return;
+    pacingFrame = window.requestAnimationFrame(tick);
   };
+
+  /*
+   * A hidden tab gets no frames, so nothing paced would ever arrive.
+   *
+   * Everything queued is shown at once when the page is hidden — there is
+   * nobody watching it type — and the run carries on unpaced until the page
+   * is visible again.
+   */
+  const pageHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  const flushAll = () => {
+    if (!pacers.size) return;
+    const ids = [...pacers.keys()];
+    mutate(() => {
+      for (const [id, pacer] of [...pacers]) applyPaced(id, pacer.flush());
+      pacers.clear();
+    });
+    ids.forEach(runAfterDrain);
+    stopPacing();
+  };
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => { if (pageHidden()) flushAll(); });
+  }
 
   const ensureLiveRun = (message: CodenConversationMessage, meta: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string } = {}): LiveRunState => {
     if (!message.liveRun) {
@@ -617,6 +699,16 @@ export function createStore(storageKey = conversationStorageKey()) {
         const message = find(id);
         if (!message) return;
         message.working = false;
+        /*
+         * "Stop showing work" has to reach the line that shows it.
+         *
+         * The shimmer is drawn from `liveRun.chat.thinking`, which this never
+         * touched: a card whose run was not closed by a terminal event kept
+         * "Coden analyse votre demande…" shimmering under the finished answer
+         * for the rest of the session.
+         */
+        const chat = message.liveRun?.chat;
+        if (chat?.status === 'streaming' && chat.thinking) message.liveRun!.chat = { ...chat, thinking: false };
       });
     },
     setBlock(id, block) {
@@ -654,9 +746,22 @@ export function createStore(storageKey = conversationStorageKey()) {
       });
     },
     startLiveRun(id, meta = {}) {
+      // A new run replaces the old one: nothing queued for it may land later.
+      pacers.delete(id);
+      afterDrain.delete(id);
       mutate(() => {
         const message = find(id);
         if (!message) return;
+        /*
+         * The phrase already on screen stays on screen.
+         *
+         * The Builder lights the shimmer with "Coden analyse votre demande…"
+         * the instant the message is sent, then starts the run a moment
+         * later. Starting from a blank state here swapped that phrase for the
+         * default one, and the line faded out and back in for no reason at
+         * the very first second of every reply.
+         */
+        const carriedActivity = message.liveRun?.chat?.status === 'streaming' ? message.liveRun.chat.activity : null;
         message.liveRun = undefined;
         message.content = '';
         const run = ensureLiveRun(message, meta);
@@ -672,7 +777,7 @@ export function createStore(storageKey = conversationStorageKey()) {
          * The reducer turns it off again on the first `text_delta` or on any
          * terminal event, so starting true cannot leave it stuck on.
          */
-        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId, thinking: true, activity: meta.activeText || run.activeText || null };
+        run.chat = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: meta.runId, thinking: true, activity: meta.activeText || carriedActivity || run.activeText || null };
         message.working = true;
       });
     },
@@ -696,13 +801,14 @@ export function createStore(storageKey = conversationStorageKey()) {
         const pacer = pacers.get(id) ?? createTypingPacer();
         pacers.set(id, pacer);
         pacer.push(event.payload);
-        applyPaced(id, canPace ? pacer.drain(Date.now()) : pacer.flush());
+        applyPaced(id, canPace && !pageHidden() ? pacer.drain(Date.now()) : pacer.flush());
         if (!pacer.pending) pacers.delete(id);
       });
       if (pacers.has(id)) startPacing();
+      else runAfterDrain(id);
     },
     finishLiveRun(id, summary = "") {
-      mutate(() => {
+      whenDrained(id, () => mutate(() => {
         const message = find(id);
         if (!message) return;
         const run = ensureLiveRun(message);
@@ -716,10 +822,40 @@ export function createStore(storageKey = conversationStorageKey()) {
         }
         message.working = false;
         if (!message.content && run.summary) message.content = run.summary;
-      });
+      }));
+    },
+    settleText(id, text) {
+      const final = String(text || '').trim();
+      if (!final) return;
+      whenDrained(id, () => mutate(() => {
+        const message = find(id);
+        const chat = message?.liveRun?.chat;
+        if (!message || !chat) return;
+        const streamed = chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n').trim();
+        if (!message.content) message.content = final;
+        if (streamed === final) return;
+        /*
+         * Replaced only where nothing else would move.
+         *
+         * A reply that is a single block of text can be swapped for its
+         * checked version in place. A run that interleaved its narration with
+         * file and tool lines cannot: collapsing the text into one part would
+         * lift every sentence above the work it describes. There the streamed
+         * text stays, and the settled version is only used when nothing
+         * streamed at all.
+         */
+        const others = chat.parts.filter(part => part.type !== 'text');
+        if (streamed && others.length) return;
+        message.liveRun!.chat = { ...chat, parts: [{ id: 'final-text', type: 'text', text: final, done: true }, ...others] };
+        message.content = final;
+      }));
     },
     failLiveRun(id, summary, status = 'failed') {
+      // A failure or a cancellation is immediate: what already arrived is
+      // shown in full, then the run is closed.
+      afterDrain.delete(id);
       mutate(() => {
+        flushMessage(id);
         const message = find(id);
         if (!message) return;
         const run = ensureLiveRun(message);
@@ -734,6 +870,7 @@ export function createStore(storageKey = conversationStorageKey()) {
     },
     removeMessage(id) {
       pacers.delete(id);
+      afterDrain.delete(id);
       if (!pacers.size) stopPacing();
       mutate(() => {
         messages = messages.filter((message) => message.id !== id);
@@ -756,6 +893,7 @@ export function createStore(storageKey = conversationStorageKey()) {
     },
     clear() {
       pacers.clear();
+      afterDrain.clear();
       stopPacing();
       mutate(() => {
         messages = [];
@@ -930,16 +1068,16 @@ function ensureConversationStyles() {
       white-space: nowrap;
     }
 
-    .coden-shimmer-text {
-      display: inline;
-      color: color-mix(in srgb, var(--foreground) 86%, var(--accent));
-      background: var(--surface);
-      background-size: 260% 100%;
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: coden-text-shimmer 2.25s ease-in-out infinite;
-    }
+    /*
+     * No \`.coden-shimmer-text\` rule here.
+     *
+     * There was one, and this sheet is appended to <head> after the
+     * component's own \`shimmering-text.css\`, so it won: \`background:
+     * var(--surface)\` clipped to the glyphs with \`-webkit-text-fill-color:
+     * transparent\` painted every thinking label in the page's background
+     * colour. "Coden réfléchit…" was on screen from the first frame and could
+     * not be seen. The component styles its own text.
+     */
 
     .coden-shimmer-dots {
       display: inline-block;
@@ -1392,11 +1530,6 @@ function ensureConversationStyles() {
       50% { opacity: 1; transform: scale(1.08); }
     }
 
-    @keyframes coden-text-shimmer {
-      0% { background-position: 180% 0; }
-      100% { background-position: -80% 0; }
-    }
-
     @keyframes coden-dots-pulse {
       0%, 100% { opacity: .35; transform: translateY(0); }
       50% { opacity: 1; transform: translateY(-1px); }
@@ -1470,13 +1603,8 @@ function ensureConversationStyles() {
       .coden-live-dot,
       .coden-live-line.is-active span:first-child,
       .coden-chat-working::before,
-      .coden-shimmer-text,
       .coden-shimmer-dots {
         animation: none !important;
-      }
-      .coden-shimmer-text {
-        -webkit-text-fill-color: currentColor;
-        background: none;
       }
     }
   `;
@@ -1771,7 +1899,15 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
         }
       };
       scrollFrameRef.current = window.requestAnimationFrame(animate);
-    } else if (version > 0) {
+    } else if (version > 0 && !shouldFollow) {
+      /*
+       * Only when the reader has actually scrolled away.
+       *
+       * This branch also caught the case where the view was following but a
+       * glide was already under way — which, while a reply streams, is most
+       * frames. The "Nouveaux messages" pill flashed on and off under a
+       * reader who was sitting at the bottom watching the text arrive.
+       */
       setHasUnread(true);
     }
 

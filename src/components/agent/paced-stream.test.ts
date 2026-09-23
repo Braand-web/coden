@@ -63,15 +63,78 @@ describe('paced streaming', () => {
     expect((parts[0] as any).text).toContain('Je regarde les fichiers concernés.');
   });
 
-  it('shows the rest at once when the run ends, rather than typing on after it', () => {
+  it('types the rest out after the end event, then closes the run', () => {
+    // Showing everything at once on `run_finished` drew a run's closing
+    // summary in one frame — the burst the pacing exists to remove.
     const id = api.addMessage({ role: 'assistant', content: '' });
     api.startLiveRun(id);
     api.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'x'.repeat(800) }));
     api.applyChatEvent(id, envelope(2, { type: 'run_finished', reason: 'completed' }));
 
-    // Synchronously, without waiting for a single further tick.
+    expect(api.messages()[0].content.length).toBeLessThan(800);
+    expect(api.messages()[0].liveRun?.chat?.status).toBe('streaming');
+
+    settle();
     expect(api.messages()[0].content).toBe('x'.repeat(800));
     expect(api.messages()[0].liveRun?.chat?.status).toBe('done');
+  });
+
+  it('waits for the typing before the Builder closes the run', () => {
+    // `finishLiveRun` arrives the moment the request resolves, often with a
+    // second of text still queued. Closing then would have cut it off.
+    const id = api.addMessage({ role: 'assistant', content: '' });
+    api.startLiveRun(id);
+    api.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'Une réponse complète. '.repeat(20) }));
+    api.finishLiveRun(id, '');
+    expect(api.messages()[0].liveRun?.chat?.status).toBe('streaming');
+    settle();
+    expect(api.messages()[0].liveRun?.chat?.status).toBe('done');
+    expect(api.messages()[0].content).toBe('Une réponse complète. '.repeat(20));
+  });
+
+  it('shows everything that arrived when the run fails, then the failure', () => {
+    const id = api.addMessage({ role: 'assistant', content: '' });
+    api.startLiveRun(id);
+    api.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'y'.repeat(600) }));
+    api.failLiveRun(id, 'Connexion perdue.');
+    const chat = api.messages()[0].liveRun?.chat;
+    expect(chat?.status).toBe('error');
+    expect(chat?.parts.filter(part => part.type === 'text').map(part => (part as any).text).join('')).toBe('y'.repeat(600));
+  });
+
+  it('settles a single-block reply on its checked text once typing is done', () => {
+    const id = api.addMessage({ role: 'assistant', content: '' });
+    api.startLiveRun(id);
+    api.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'Voici la clé sk-proj-abc' }));
+    api.settleText(id, 'Voici la clé [masked-secret]');
+    api.applyChatEvent(id, envelope(2, { type: 'run_finished', reason: 'completed' }));
+    settle();
+    const parts = api.messages()[0].liveRun?.chat?.parts ?? [];
+    expect(parts.filter(part => part.type === 'text').map(part => (part as any).text)).toEqual(['Voici la clé [masked-secret]']);
+  });
+
+  it('never collapses narration interleaved with tool lines', () => {
+    const id = api.addMessage({ role: 'assistant', content: '' });
+    api.startLiveRun(id);
+    api.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'Je lis le fichier.' }));
+    api.applyChatEvent(id, envelope(2, { type: 'files_touched', action: 'read', paths: ['src/App.tsx'] }));
+    api.applyChatEvent(id, envelope(3, { type: 'text_delta', delta: 'Terminé.' }));
+    api.applyChatEvent(id, envelope(4, { type: 'run_finished', reason: 'completed' }));
+    api.settleText(id, 'Résumé final.');
+    settle();
+    const parts = api.messages()[0].liveRun?.chat?.parts ?? [];
+    expect(parts.map(part => part.type)).toEqual(['text', 'tool', 'text']);
+  });
+
+  it('lights the thinking line from the click and puts it out when work stops', () => {
+    const id = api.addMessage({ role: 'assistant', content: '', working: true });
+    api.setWorking(id, 'Coden analyse votre demande…');
+    expect(api.messages()[0].liveRun?.chat?.thinking).toBe(true);
+    api.startLiveRun(id);
+    // The phrase already on screen is carried into the run, not reset.
+    expect(api.messages()[0].liveRun?.chat?.activity).toBe('Coden analyse votre demande…');
+    api.clearWorking(id);
+    expect(api.messages()[0].liveRun?.chat?.thinking).toBe(false);
   });
 
   it('ignores a sequence it has already taken, so a replay cannot duplicate text', () => {

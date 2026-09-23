@@ -2,7 +2,7 @@ import React from 'react';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Response } from '../ui/response';
+import { Response, settleStreamingMarkdown } from '../ui/response';
 import { AgentThinkingLine } from './agent-thinking-line';
 import { COMPOSER_AGENT_MODES } from './agent-mode-composer';
 import { normalizeAgentMode } from '../../services/agent-mode';
@@ -19,6 +19,27 @@ describe('agent conversation UI', () => {
   it('shows the cursor only when a response is still being written', () => {
     expect(renderToStaticMarkup(React.createElement(Response, { isStreaming: false }, 'Réponse incomplète'))).not.toContain('coden-response-cursor');
     expect(renderToStaticMarkup(React.createElement(Response, { isStreaming: true }, 'Réponse terminée.'))).toContain('coden-response-cursor');
+  });
+
+  it('writes the cursor at the end of the text, not on a line under it', () => {
+    const html = renderToStaticMarkup(React.createElement(Response, { isStreaming: true }, 'Premier paragraphe.\n\nSecond en cours'));
+    expect(html).toMatch(/Second en cours<span class="coden-response-cursor"[^>]*><\/span><\/p>/);
+    const list = renderToStaticMarkup(React.createElement(Response, { isStreaming: true }, '- un\n- deux'));
+    expect(list).toMatch(/deux<span class="coden-response-cursor"[^>]*><\/span><\/li>/);
+  });
+
+  it('never shows half-written markdown syntax while a reply streams', () => {
+    expect(settleStreamingMarkdown('Voici **impor')).toBe('Voici impor');
+    expect(settleStreamingMarkdown('Lance `npm i')).toBe('Lance npm i');
+    expect(settleStreamingMarkdown('Voir [la doc](https://ex')).toBe('Voir la doc');
+    expect(settleStreamingMarkdown('Liste :\n- ')).toBe('Liste :\n');
+    expect(settleStreamingMarkdown('* un point *ital')).toBe('* un point ital');
+    // Finished pairs, identifiers and code blocks are left exactly as written.
+    expect(settleStreamingMarkdown('fini **ok**')).toBe('fini **ok**');
+    expect(settleStreamingMarkdown('snake_case ok')).toBe('snake_case ok');
+    expect(settleStreamingMarkdown('a\n```ts\nconst x = `y')).toBe('a\n```ts\nconst x = `y');
+    // And the finished message is never touched.
+    expect(renderToStaticMarkup(React.createElement(Response, { isStreaming: false }, 'Voici **impor'))).toContain('**impor');
   });
 
   it('filters dangerous link protocols without rendering raw HTML', () => {
