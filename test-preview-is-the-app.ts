@@ -27,18 +27,16 @@ import { readFileSync } from 'node:fs';
 const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
 const builder = readFileSync(new URL('./builder.html', import.meta.url), 'utf8');
 
-/* Desktop Preview, Cloud and Code share one rounded workspace frame. The
- * generated app still fills that frame directly; the parent clips every view
- * so all four corners stay consistent without adding a nested device card. */
+/* Desktop Preview and Cloud are the right workspace itself, not a rounded
+ * card nested inside it. Device simulation may add a frame later, but the
+ * desktop canvas must meet the divider and every viewport edge exactly. */
 {
-  const roundedFrameStart = builder.indexOf('/* The workspace is made of independent surfaces. Preview, Cloud and Code');
-  const roundedFrame = builder.slice(roundedFrameStart, builder.indexOf('.code-screen-layout.is-empty .editor-main-scroll', roundedFrameStart));
-  assert.match(roundedFrame, /\.editor-pane \{\s*margin: 12px;/, 'the right workspace keeps an even gutter on all four sides');
-  assert.match(roundedFrame, /border: 1px solid var\(--border\) !important;/, 'the shared frame has one complete border');
-  assert.match(roundedFrame, /border-radius: var\(--radius-lg\);/, 'the shared frame uses the canonical 16px radius');
-  assert.match(roundedFrame, /\.viewport-content-holder \{[\s\S]*?border-radius: inherit;[\s\S]*?overflow: hidden;/, 'all workspace content is clipped to the four rounded corners');
-  assert.match(roundedFrame, /\.viewport-content-holder > :is\(\.code-screen-layout, \.preview-screen-panel, \.analysis-screen-panel\)/, 'Code, Preview and Cloud inherit the same frame');
-  assert.doesNotMatch(roundedFrame, /\.editor-pane:has\(/, 'no active view may remove the shared rounded frame');
+  const edgeToEdgeStart = builder.indexOf('.editor-pane:has(#screen-layout-preview[style*="display: flex"])');
+  const edgeToEdge = builder.slice(edgeToEdgeStart, builder.indexOf('.code-screen-layout.is-empty .editor-main-scroll', edgeToEdgeStart));
+  assert.match(edgeToEdge, /#screen-layout-database\[style\*="display: flex"\]/, 'Cloud shares the edge-to-edge workspace rule');
+  assert.match(edgeToEdge, /margin: 0 !important;/, 'no outer gutter remains');
+  assert.match(edgeToEdge, /border: 0 !important;/, 'no sub-pixel outer border remains');
+  assert.match(edgeToEdge, /border-radius: 0 !important;/, 'desktop corners cannot expose the shell underneath');
 }
 
 // The two questions are asked separately, because they are different questions.

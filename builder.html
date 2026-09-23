@@ -4250,11 +4250,12 @@
     .code-empty-action:hover { border-color: var(--border-strong); background: var(--surface-soft); }
     .chat-input-row #model-select-btn { display: none !important; }
 
-    /* The workspace is made of independent surfaces. Preview, Cloud and Code
-       share one rounded frame, while their content fills and is clipped by it. */
+    /* The workspace is made of independent surfaces. The right context owns one
+       rounded frame. In preview mode, the application fills that frame directly:
+       there is no second device card, dark shell, or exposed stage around it. */
     @media (min-width: 761px) {
       .editor-pane {
-        margin: 12px;
+        margin: 12px 12px 12px 0;
         padding-top: 0 !important;
         border: 1px solid var(--border) !important;
         border-radius: var(--radius-lg);
@@ -4294,6 +4295,31 @@
 
       .preview-screen-panel[data-preview-device="desktop"] .preview-iframe-view {
         background: var(--background);
+        border-radius: 0 !important;
+      }
+
+      /* Preview is the canvas itself. Remove the editor shell's outer gutter
+         only while this view is active, so the generated app reaches the
+         divider, viewport edge and bottom without a dark rail around it. */
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]),
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) {
+        margin: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none;
+        background: var(--background) !important;
+        overflow: hidden;
+      }
+
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .viewport-content-holder,
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) .viewport-content-holder {
+        border-radius: 0 !important;
+        background: transparent;
+      }
+
+      .editor-pane:has(#screen-layout-preview[style*="display: flex"]) .preview-screen-panel,
+      .editor-pane:has(#screen-layout-database[style*="display: flex"]) .cloud-console-screen {
+        border: 0 !important;
         border-radius: 0 !important;
       }
 
