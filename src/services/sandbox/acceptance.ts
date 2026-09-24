@@ -20,7 +20,7 @@
  * naming what was tried and what did not happen.
  */
 
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 
 export type AcceptanceStep =
   | { action: 'click'; target: string }
@@ -84,23 +84,76 @@ export const ACCEPTANCE_CONTRACT = [
   'Never test external services, payments, email delivery or authentication with real credentials.',
 ].join('\n');
 
-async function locate(page: Page, target: string) {
-  const exact = { name: target, exact: false } as const;
-  const candidates = [
-    page.getByRole('button', exact),
-    page.getByRole('link', exact),
-    page.getByRole('tab', exact),
-    page.getByRole('menuitem', exact),
-    page.getByRole('checkbox', exact),
-    page.getByLabel(target, { exact: false }),
-    page.getByPlaceholder(target, { exact: false }),
-    page.getByText(target, { exact: false }),
-  ];
-  for (const candidate of candidates) {
-    const count = await candidate.count().catch(() => 0);
-    for (let index = 0; index < Math.min(count, 6); index += 1) {
-      const element = candidate.nth(index);
-      if (await element.isVisible().catch(() => false)) return element;
+type LocateKind = 'click' | 'fill' | 'select';
+
+/** Whether an element can take typed text or a chosen option. */
+async function isFillable(element: Locator): Promise<boolean> {
+  return element.evaluate(node => {
+    const el = node as HTMLElement;
+    if (el.isContentEditable) return true;
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    if (el.tagName !== 'INPUT') return false;
+    const type = ((el as HTMLInputElement).type || 'text').toLowerCase();
+    return !['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'hidden', 'range', 'color'].includes(type);
+  }).catch(() => false);
+}
+
+/*
+ * Where a step lands depends on what the step does.
+ *
+ * One lookup served every action, buttons first — so "fill Nouvelle tâche"
+ * found the button "Ajouter une nouvelle tâche" before the field with that
+ * placeholder, and every journey failed on "Element is not an <input>". The
+ * app was fine; the coder was then sent round after round to repair it, and
+ * the run ran out of time doing so. A field is looked up among fields, a
+ * control among controls.
+ */
+async function locate(page: Page, target: string, kind: LocateKind = 'click') {
+  /*
+   * Exact names first. "click Ajouter" on a page that also has "Ajouter une
+   * nouvelle tâche" earlier in the DOM clicked the longer one; a partial
+   * match is only the fallback when nothing is named exactly that.
+   */
+  for (const exactMatch of [true, false]) {
+    const byName = { name: target, exact: exactMatch } as const;
+    const byText = { exact: exactMatch } as const;
+    const candidates = kind === 'click'
+      ? [
+        page.getByRole('button', byName),
+        page.getByRole('link', byName),
+        page.getByRole('tab', byName),
+        page.getByRole('menuitem', byName),
+        page.getByRole('checkbox', byName),
+        page.getByLabel(target, byText),
+        page.getByPlaceholder(target, byText),
+        page.getByText(target, byText),
+      ]
+      : kind === 'select'
+        ? [
+          page.getByLabel(target, byText),
+          page.getByRole('combobox', byName),
+          page.getByRole('listbox', byName),
+          // A visible label that is not wired to its control (no `for`).
+          page.getByText(target, byText).locator('xpath=following::select[1]'),
+        ]
+        : [
+          page.getByLabel(target, byText),
+          page.getByPlaceholder(target, byText),
+          page.getByRole('textbox', byName),
+          page.getByRole('searchbox', byName),
+          page.getByRole('spinbutton', byName),
+          page.getByRole('combobox', byName),
+          // A visible label that is not wired to its field (no `for`).
+          page.getByText(target, byText).locator('xpath=following::*[self::input or self::textarea][1]'),
+        ];
+    for (const candidate of candidates) {
+      const count = await candidate.count().catch(() => 0);
+      for (let index = 0; index < Math.min(count, 6); index += 1) {
+        const element = candidate.nth(index);
+        if (!(await element.isVisible().catch(() => false))) continue;
+        if (kind !== 'click' && !(await isFillable(element))) continue;
+        return element;
+      }
     }
   }
   return null;
@@ -153,11 +206,11 @@ export async function runAcceptanceScenarios(page: Page, baseUrl: URL, scenarios
           await element.click({ timeout: 3_000 });
           await page.waitForTimeout(250);
         } else if (step.action === 'fill') {
-          const element = await locate(page, step.target);
+          const element = await locate(page, step.target, 'fill');
           if (!element) { fail('no visible field with this label or placeholder'); break; }
           await element.fill(step.value, { timeout: 3_000 });
         } else if (step.action === 'select') {
-          const element = await locate(page, step.target);
+          const element = await locate(page, step.target, 'select');
           if (!element) { fail('no visible select with this label'); break; }
           await element.selectOption({ label: step.value }, { timeout: 3_000 }).catch(() => element.selectOption(step.value, { timeout: 3_000 }));
         } else if (step.action === 'press') {

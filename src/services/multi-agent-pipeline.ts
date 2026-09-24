@@ -138,7 +138,9 @@ export function summarizePipelineOutcome(input: {
   if (!input.ok) {
     const reason = input.stoppedBecause === 'round_limit'
       ? (fr ? 'le nombre maximal de tentatives de correction a été atteint' : 'the maximum number of repair rounds was reached')
-      : (fr ? 'les corrections successives n\'ont plus progressé' : 'successive fixes stopped making progress');
+      : input.stoppedBecause === 'time_budget'
+        ? (fr ? 'le temps alloué à cette demande est écoulé — relancez pour continuer les corrections' : 'the time allotted to this request ran out — ask again to continue the fixes')
+        : (fr ? 'les corrections successives n\'ont plus progressé' : 'successive fixes stopped making progress');
     return fr
       ? `Le travail est sauvegardé, mais la vérification n'est pas encore passée : ${reason}. ${diffRecap}`
       : `The work is saved, but verification did not pass yet: ${reason}. ${diffRecap}`;
@@ -264,6 +266,9 @@ function compactionThresholdChars(modelId: AllowedModelId): number {
  * starving. The deadline is per route as well, since the wall clock is what
  * actually ends a run.
  */
+/** How long past its deadline a run may take to finish the round in flight. */
+const RUN_DEADLINE_GRACE_MS = 150_000;
+
 function budgetForRoute(route: PipelineRoute): { maxRounds: number; maxToolCallsPerRound: number; maxStalledRounds: number; runDeadlineMs: number } {
   if (route === 'small_edit') return { maxRounds: 3, maxToolCallsPerRound: 14, maxStalledRounds: 2, runDeadlineMs: 3 * 60_000 };
   if (route === 'large_change') return { maxRounds: 6, maxToolCallsPerRound: 30, maxStalledRounds: 3, runDeadlineMs: 8 * 60_000 };
@@ -582,7 +587,16 @@ export async function runMultiAgentPipeline(input: {
    */
   const routeBudget = scaleRouteBudgetForEffort(budgetForRoute(input.route), input.effort);
   const runDeadline = Date.now() + (input.runDeadlineMs ?? routeBudget.runDeadlineMs);
-  const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now()));
+  /*
+   * The deadline is where the run stops starting work; this is where it is
+   * stopped. They used to be the same instant, so the moment the clock ran
+   * out the call in flight was aborted and the run failed outright — five
+   * and a half minutes of a todo app, written, running, four errors from
+   * done, reported as "La demande ne peut pas être terminée". The grace lets
+   * the round in flight finish and its checks run, and the run delivers what
+   * it has with what is still open.
+   */
+  const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now() + RUN_DEADLINE_GRACE_MS));
   input = { ...input, signal: input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal };
   // Reject an incompatible manual selection before planning or starting a process.
   const selectionRequest = { task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } };
@@ -1010,6 +1024,7 @@ export async function runMultiAgentPipeline(input: {
   activity('Coden construit l’application…', 'Coden is building the application…');
   try { repairOutcome = await runCoderLoop({
     sandbox,
+    deadline: runDeadline,
     mode: 'build',
     initialInstruction,
     maxRounds: routeBudget.maxRounds,

@@ -152,6 +152,26 @@ try {
     assert.equal(turns, 0, 'a healthy project costs no model call at all');
   }
 
+  // -- the run's clock ends the loop between rounds, never mid-call -------
+  // A round that cannot finish its checks before the deadline is not started;
+  // the loop reports what is still open instead of being aborted.
+  {
+    const sandbox = await freshSandbox('repair-deadline');
+    sandboxes.push(sandbox);
+    const before = await validateProject(sandbox, { skipBuild: true });
+    let turns = 0;
+    const outcome = await runRepairLoop({
+      sandbox,
+      initialReport: before,
+      deadline: Date.now() + 30_000,
+      maxStalledRounds: 5,
+      turn: async () => { turns += 1; return { toolCalls: 0 }; },
+    });
+    assert.equal(outcome.stoppedBecause, 'time_budget');
+    assert.equal(outcome.ok, false);
+    assert.equal(turns, 1, 'the first round runs; no new round starts without time to check it');
+  }
+
   console.log('sandbox repair loop tests passed');
 } finally {
   for (const sandbox of sandboxes) await sandbox.destroy().catch(() => null);
