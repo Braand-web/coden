@@ -1,6 +1,8 @@
 import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
 import { mountPublicShell } from './public-shell';
+import { hasStoredSession } from './lib/stored-session';
+import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
 import {
@@ -381,6 +383,32 @@ function setupPricing() {
 
   let interval: BillingInterval = 'monthly';
   let currency: DisplayCurrency = 'XAF';
+  let signedIn = hasStoredSession();
+  let currentPlan: string | null = null;
+  const ctaFor = (plan: string) => section.querySelector<HTMLAnchorElement>(
+    plan === 'free' ? 'a[data-conversion-event="pricing_start_free"]' : `a[data-conversion-plan="${plan}"]`,
+  );
+  /*
+   * The offer buttons carry the choice — plan, credits, interval — to the
+   * dashboard's billing, through sign-up for a visitor. They used to lead to
+   * a bare sign-up and the choice was lost on the way.
+   */
+  const updateCtas = () => {
+    const free = ctaFor('free');
+    if (free) {
+      free.href = planChoiceHref({ plan: 'free', interval }, signedIn);
+      free.textContent = signedIn ? (currentPlan === 'free' ? 'Mon espace' : 'Ouvrir mon espace') : 'Créer mon espace';
+    }
+    tiers.forEach(select => {
+      const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
+      const cta = ctaFor(plan);
+      if (!cta) return;
+      const current = signedIn && currentPlan === plan;
+      cta.href = current ? '/dashboard.html?settings=facturation' : planChoiceHref({ plan, credits: Number(select.value), interval }, signedIn);
+      cta.textContent = current ? 'Gérer mon abonnement' : `Choisir ${plan === 'business' ? 'Business' : 'Pro'}`;
+      cta.closest('.lp-plan')?.classList.toggle('is-current-plan', current);
+    });
+  };
   try {
     if (localStorage.getItem(CURRENCY_STORAGE_KEY) === 'USD') currency = 'USD';
   } catch { /* the default currency is fine */ }
@@ -425,6 +453,7 @@ function setupPricing() {
       if (plan === 'pro') setText(section.querySelector('[data-lp-publication="pro"] span'), publicationLabel(price.credits), false);
     });
     dropdowns.forEach(dropdown => dropdown.refresh());
+    updateCtas();
     if (currencyNote) {
       currencyNote.textContent = currency === 'USD'
         ? `Montants en dollars indicatifs (1 $ = ${BILLING_XAF_PER_USD} FCFA). Paiement en FCFA via un checkout Saspay sécurisé.`
@@ -446,6 +475,12 @@ function setupPricing() {
   if ('ResizeObserver' in window) new ResizeObserver(() => placeThumbs(section)).observe(section);
   void document.fonts?.ready.then(() => placeThumbs(section));
   render(false);
+  void fetchCurrentPlan().then(plan => {
+    if (!plan) return;
+    signedIn = true;
+    currentPlan = plan;
+    updateCtas();
+  });
 }
 
 function init() {

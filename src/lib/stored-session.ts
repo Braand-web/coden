@@ -69,3 +69,19 @@ export function applySignedInLinks(root: ParentNode = document): number {
   });
   return changed;
 }
+
+/** The stored access token, for a same-site API call that only upgrades the page. */
+export function storedAccessToken(storage: Pick<Storage, 'getItem' | 'length' | 'key'> | null = readStorage()): string | null {
+  if (!storage) return null;
+  const tokenOf = (raw: string | null) => {
+    try {
+      const value = JSON.parse(raw || 'null');
+      const session = value?.currentSession || value?.session || value;
+      return typeof session?.access_token === 'string' ? session.access_token : null;
+    } catch { return null; }
+  };
+  try {
+    for (const key of SESSION_KEYS) { const token = tokenOf(storage.getItem(key)); if (token) return token; }
+  } catch { /* blocked storage */ }
+  return null;
+}

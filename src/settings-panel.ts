@@ -1,5 +1,6 @@
 import { apiFetch } from './lib/api';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
+import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
 
 type SettingsTab =
   | 'profile'
@@ -141,6 +142,10 @@ let billingCatalog: BillingCatalogResponse['catalog'] | null = null;
 let billingWallet: BillingWalletResponse | null = null;
 let billingWalletUnavailable = false;
 let selectedBillingInterval: BillingInterval = 'monthly';
+/** An offer chosen on the landing or the pricing page, waiting for the buyer's confirmation. */
+let pendingPlanChoice: { plan: PaidPlan; credits?: number } | null = null;
+/** What the payment page answered, shown once at the top of Billing. */
+let billingReturnNotice: BillingReturn | null = null;
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
 const SETTINGS_DIRTY_CLASS = 'settings-dirty';
@@ -683,6 +688,29 @@ function installSettingsStyle() {
 
     .billing-plan-card[data-plan="pro"] {
       border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    }
+
+    .billing-plan-card.is-selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    }
+
+    .billing-intent {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .billing-intent[hidden] { display: none; }
+    .billing-intent h3 { margin: 0 0 4px; }
+    .billing-intent p { margin: 0; }
+    .billing-intent[data-tone="accent"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    .billing-intent[data-tone="success"] { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+    .billing-intent .settings-action-button.is-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-foreground, #fff);
     }
 
     .billing-plan-head,
@@ -1587,6 +1615,7 @@ function settingsMarkup() {
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-facturation" data-settings-heading="Billing">
+        <div class="settings-card billing-intent" data-billing-intent hidden></div>
         <div class="settings-card billing-balance-card">
           <div>
             <h3 data-settings-billing-plan>Forfait gratuit</h3>
@@ -1950,6 +1979,18 @@ async function handleSettingsAction(action: string) {
     activateSettingsTab('facturation');
     return;
   }
+  if (action === 'billing-refresh') {
+    billingReturnNotice = null;
+    await loadBillingSettings(true);
+    return;
+  }
+  if (action === 'billing-dismiss-choice') {
+    pendingPlanChoice = null;
+    billingReturnNotice = null;
+    document.querySelectorAll('.billing-plan-card.is-selected').forEach(card => card.classList.remove('is-selected'));
+    renderBillingIntent();
+    return;
+  }
   if (action === 'open-integrations') {
     closeSettings();
     document.dispatchEvent(new CustomEvent('coden:open-connectors'));
@@ -2279,6 +2320,7 @@ function renderBillingSettings() {
   });
   const grid = document.querySelector<HTMLElement>('[data-billing-plan-grid]');
   if (grid) grid.innerHTML = `${billingPlanMarkup('pro')}${billingPlanMarkup('business')}`;
+  renderBillingIntent();
 
   const topupSelect = document.querySelector<HTMLSelectElement>('[data-billing-topup-product]');
   const topupButton = document.querySelector<HTMLButtonElement>('[data-settings-action="billing-topup"]');
@@ -2290,6 +2332,78 @@ function renderBillingSettings() {
     topupSelect.disabled = !isPaid;
   }
   if (topupButton) topupButton.disabled = !isPaid;
+}
+
+/*
+ * The chosen offer, or the payment's outcome, at the top of Billing.
+ *
+ * The offer is confirmed rather than paid on arrival: the buyer sees the plan,
+ * the credits and the amount before being sent to Saspay, and a reload cannot
+ * start a second payment.
+ */
+function renderBillingIntent() {
+  const box = document.querySelector<HTMLElement>('[data-billing-intent]');
+  if (!box) return;
+  const returnCopy: Record<BillingReturn, { title: string; body: string; tone: string }> = {
+    success: { title: 'Paiement reçu', body: 'Votre forfait s’active dès que Saspay confirme le paiement, en général en quelques instants.', tone: 'success' },
+    cancelled: { title: 'Paiement annulé', body: 'Aucun montant n’a été prélevé. Vous pouvez choisir une offre à nouveau.', tone: 'neutral' },
+    'topup-success': { title: 'Recharge reçue', body: 'Les crédits sont ajoutés dès que Saspay confirme le paiement.', tone: 'success' },
+    'topup-cancelled': { title: 'Recharge annulée', body: 'Aucun montant n’a été prélevé.', tone: 'neutral' },
+  };
+  if (billingReturnNotice) {
+    const copy = returnCopy[billingReturnNotice];
+    const pending = billingReturnNotice === 'success' || billingReturnNotice === 'topup-success';
+    box.hidden = false;
+    box.dataset.tone = copy.tone;
+    box.innerHTML = `<div><h3>${escapeHtml(copy.title)}</h3><p>${escapeHtml(copy.body)}</p></div>${pending ? '<button type="button" class="settings-action-button" data-settings-action="billing-refresh">Actualiser</button>' : ''}`;
+    return;
+  }
+  if (!pendingPlanChoice || !billingCatalog) { box.hidden = true; box.innerHTML = ''; return; }
+  const { plan } = pendingPlanChoice;
+  const name = billingCatalog.plans.find(item => item.key === plan)?.name || (plan === 'business' ? 'Business' : 'Pro');
+  if (billingWallet?.plan === plan) {
+    box.hidden = false;
+    box.dataset.tone = 'neutral';
+    box.innerHTML = `<div><h3>${escapeHtml(name)} est déjà votre forfait</h3><p>Vous pouvez changer le nombre de crédits ou ajouter une recharge ci-dessous.</p></div><button type="button" class="settings-action-button" data-settings-action="billing-dismiss-choice">Fermer</button>`;
+    return;
+  }
+  const select = document.querySelector<HTMLSelectElement>(`[data-billing-tier="${plan}"]`);
+  if (select && pendingPlanChoice.credits && Array.from(select.options).some(option => Number(option.value) === pendingPlanChoice!.credits)) {
+    select.value = String(pendingPlanChoice.credits);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  document.querySelector(`.billing-plan-card[data-plan="${plan}"]`)?.classList.add('is-selected');
+  const credits = Number(select?.value || pendingPlanChoice.credits || 100);
+  const price = billingPrice(plan, credits);
+  const total = formatBillingAmount(price?.amount ?? price?.monthlyEquivalent, price?.currency);
+  const cadence = selectedBillingInterval === 'annual' ? ' / an' : ' / mois';
+  box.hidden = false;
+  box.dataset.tone = 'accent';
+  box.innerHTML = `<div><h3>Vous avez choisi ${escapeHtml(name)}</h3><p>${new Intl.NumberFormat('fr-FR').format(credits)} crédits par mois · ${selectedBillingInterval === 'annual' ? 'paiement annuel' : 'paiement mensuel'}. Le paiement se fait sur la page sécurisée Saspay.</p></div>`
+    + `<div class="billing-inline-actions"><button type="button" class="settings-action-button" data-settings-action="billing-dismiss-choice">Changer d’offre</button>`
+    + `<button type="button" class="settings-action-button is-primary" data-billing-checkout="${plan}">Payer ${escapeHtml(name)} — ${escapeHtml(total)}${cadence}</button></div>`;
+}
+
+/**
+ * The dashboard's billing links: `?settings=facturation&plan=pro&credits=100&interval=annual`
+ * from an offer button, `?billing=success|cancelled|…` back from Saspay.
+ * Consumed once and removed from the address.
+ */
+export function openBillingFromUrl(location: Location = window.location): boolean {
+  const choice = readPlanChoice(location.search);
+  const back = readBillingReturn(location.search);
+  if (!choice && !back && !wantsBillingSettings(location.search)) return false;
+  try { window.history.replaceState(window.history.state, '', withoutPlanParams(location.href)); } catch { /* the address keeps them */ }
+  if (choice) {
+    pendingPlanChoice = { plan: choice.plan, credits: choice.credits };
+    selectedBillingInterval = choice.interval;
+  }
+  billingReturnNotice = back;
+  if (!ensureSettingsPanel()) return false;
+  openSettings('billing');
+  // Back from a payment: the plan and the balance may just have changed.
+  if (back) void loadBillingSettings(true);
+  return true;
 }
 
 async function loadBillingSettings(force = false) {

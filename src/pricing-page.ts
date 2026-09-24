@@ -1,5 +1,7 @@
 import './public-page';
 import './pricing-page.css';
+import { hasStoredSession } from './lib/stored-session';
+import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
 
 type PricingPlan = {
@@ -27,7 +29,7 @@ const status = document.getElementById('pricing-data-status');
 let selectedInterval: BillingInterval = 'monthly';
 let prices: PublicPrice[] = [];
 const plans = new Map<PricingPlan['key'], PricingPlan>();
-let signedIn = false;
+let signedIn = hasStoredSession();
 let currentPlan: string | null = null;
 
 function money(value: number, currency = 'XAF') {
@@ -76,10 +78,7 @@ function priceFor(plan: 'pro' | 'business', credits: number) {
  * them to prove again something the page already knows.
  */
 function planRedirect(plan: 'free' | 'pro' | 'business', credits?: number) {
-  const query = new URLSearchParams({ settings: 'facturation', plan, interval: selectedInterval });
-  if (credits) query.set('credits', String(credits));
-  const destination = `/dashboard.html?${query.toString()}`;
-  return signedIn ? destination : `/auth.html?mode=signup&redirect=${encodeURIComponent(destination)}`;
+  return planChoiceHref({ plan, credits, interval: selectedInterval }, signedIn);
 }
 
 /**
@@ -236,14 +235,15 @@ updateAllCards();
  * completely for someone who has never signed in, so this only ever upgrades
  * what is already on screen.
  */
-void fetch('/api/billing/wallet', { headers: { Accept: 'application/json' }, credentials: 'include' })
-  .then(response => (response.ok ? response.json() : null))
-  .then((data: { plan?: { key?: string } | null; planKey?: string } | null) => {
-    if (!data) return;
-    signedIn = true;
-    currentPlan = String(data.plan?.key || data.planKey || '') || null;
-    updateAllCards();
-  })
-  .catch(() => {
-    // A visitor, or an offline wallet. Either way the page stays as it is.
-  });
+/*
+ * It used to ask with cookies, which this API does not use (it reads a bearer
+ * token), and to read `plan.key` from a wallet that answers `plan: "pro"`: so
+ * no one was ever recognised, and the current plan was never marked.
+ */
+void fetchCurrentPlan().then(plan => {
+  // A visitor, or an unreachable wallet: the page stays as it is.
+  if (!plan) return;
+  signedIn = true;
+  currentPlan = plan;
+  updateAllCards();
+});
