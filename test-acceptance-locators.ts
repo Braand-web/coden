@@ -23,6 +23,11 @@ const page = `<!doctype html><html><body>
     <button type="submit">Ajouter</button>
   </form>
   <ul id="list"></ul>
+  <ul id="tasks">
+    <li><span>Envoyer le compte rendu</span> <input type="checkbox" aria-label="Marquer comme terminée" onchange="this.parentElement.dataset.done='1'; document.getElementById('status').textContent='Terminée : Envoyer le compte rendu'"></li>
+    <li><span>Préparer la réunion de lundi</span> <input type="checkbox" aria-label="Marquer comme terminée" onchange="this.parentElement.dataset.done='1'; document.getElementById('status').textContent='Terminée : Préparer la réunion de lundi'"></li>
+  </ul>
+  <p id="status"></p>
 </main>
 <script>
   document.getElementById('f').addEventListener('submit', event => {
@@ -52,6 +57,27 @@ try {
     ],
   }]);
   assert.deepEqual(result, { name: 'Créer une tâche', ok: true }, JSON.stringify(result));
+
+  /*
+   * A label the planner guessed before the interface existed: the control is
+   * "Marquer comme terminée", and the task name lives in its row. The right
+   * row's checkbox is found, not the first one.
+   */
+  const [guessed] = await runAcceptanceScenarios(tab, new URL(`http://127.0.0.1:${port}/`), [{
+    name: 'Terminer une tâche',
+    steps: [
+      { action: 'click', target: 'Marquer « Préparer la réunion de lundi » comme terminée' },
+      { action: 'expect_text', text: 'Terminée : Préparer la réunion de lundi' },
+    ],
+  }]);
+  assert.deepEqual(guessed, { name: 'Terminer une tâche', ok: true }, JSON.stringify(guessed));
+
+  // And a target that shares nothing with any control still fails honestly.
+  const [missing] = await runAcceptanceScenarios(tab, new URL(`http://127.0.0.1:${port}/`), [{
+    name: 'Exporter',
+    steps: [{ action: 'click', target: 'Exporter en PDF' }],
+  }]);
+  assert.equal(missing.ok, false);
   console.log('acceptance locator tests passed');
 } finally {
   await browser.close();

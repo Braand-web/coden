@@ -43,6 +43,7 @@ import { recordToolCall } from './agent-harness/sandbox-tool-map.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { createStreamingRedactor, redactSecrets } from './secret-redaction.ts';
+import { renderScenariosForCoder } from './sandbox/acceptance.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
 import { buildWorldClassUiPolicy, classifyGeneratedAppType } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
@@ -318,6 +319,8 @@ function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
   for (const file of plan.files) lines.push(`- [${file.action}] ${file.path} — ${file.rationale}`);
   if (plan.risks?.length) lines.push('', `Unresolved risks (not approvals): ${plan.risks.join('; ')}. Do not perform sensitive operations without explicit authorization.`);
+  const journeys = renderScenariosForCoder(plan.acceptance);
+  if (journeys) lines.push('', journeys);
   return lines.join('\n');
 }
 
@@ -983,7 +986,11 @@ export async function runMultiAgentPipeline(input: {
       seen.add(key);
       const streak = (behaviourStreak.get(key) || 0) + 1;
       behaviourStreak.set(key, streak);
-      if (streak >= 3) {
+      // A control the journey cannot even find, after the coder was shown the
+      // journey up front and had one repair to add it, is most likely a label
+      // the planner guessed — not a missing feature. It stops blocking sooner.
+      const unfound = /no visible (element|field|select)/i.test(problem.message);
+      if (streak >= (unfound ? 2 : 3)) {
         problem.severity = 'warning';
         problem.message = `UNVERIFIED after ${streak - 1} repair attempts: ${problem.message}`;
       }
