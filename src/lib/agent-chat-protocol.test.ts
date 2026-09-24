@@ -154,7 +154,7 @@ describe('agent streaming protocol', () => {
     expect(wire).not.toContain('text_delta');
   });
 
-  it('persists every envelope before broadcasting and preserves sequence order', async () => {
+  it('broadcasts at once, persists every envelope in order, and records the end before announcing it', async () => {
     const res = new EventEmitter() as any; const order: string[] = [];
     res.status = () => res; res.set = () => res; res.flushHeaders = () => {};
     res.write = (s:string) => { order.push(`write:${JSON.parse(s.split('data: ')[1]).seq}`); };
@@ -163,7 +163,12 @@ describe('agent streaming protocol', () => {
     stream.chat({ type: 'activity', label: 'Lecture des fichiers' });
     stream.workspace({ type: 'build_started', buildId: 'build-1' });
     await stream.finish({ success: true }, 200);
-    expect(order).toEqual(['persist:1','write:1','persist:2','write:2','persist:3','write:3','persist:4','write:4']);
+    const writes = order.filter(entry => entry.startsWith('write:'));
+    const persists = order.filter(entry => entry.startsWith('persist:'));
+    expect(writes).toEqual(['write:1','write:2','write:3','write:4']);
+    expect(persists).toEqual(['persist:1','persist:2','persist:3','persist:4']);
+    // The terminal event is on the record before the client is told the run ended.
+    expect(order.indexOf('persist:4')).toBeLessThan(order.indexOf('write:4'));
   });
 
   it('keeps persisting a durable run after the browser transport disconnects', async () => {

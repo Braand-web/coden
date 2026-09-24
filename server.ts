@@ -17,7 +17,7 @@ import {
 } from './src/services/session-context.ts';
 import { modelAvailability, openRouterCatalog, validateCatalogModels } from './src/services/openrouter-capabilities.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
-import { createAgentEventStream } from './src/services/agent-event-stream.ts';
+import { createAgentEventStream, expandPersistedEnvelope } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
 import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
@@ -13066,6 +13066,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   };
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
   if (harnessContext) eventStream?.workspace({type:'run_acknowledged',threadId:harnessContext.thread.id,turnId:harnessContext.turn.id,runId:harnessContext.turn.id});
+  // Deciding what the message asks for is a model call of its own; the
+  // status line says so from the first moment instead of sitting blank.
+  eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden lit ta demande…' : 'Coden is reading your request…' });
 
   // The decision call can take noticeable time on a live provider. Acknowledge
   // the run without inventing model-authored narration so the Builder never looks
@@ -13929,56 +13932,68 @@ ${resolvedMission}` : resolvedMission;
     const chargedCredits = agentText.model === 'router' || (agentText.model === 'auto' && agentText.cost_usd === 0) ? 0 : cost.finalCredits;
     const textProviderCostUsd = withProviderPurchaseFee(Number(agentText.cost_usd || costRealCostUsd || 0));
     const textCompleteCostUsd = textProviderCostUsd + 0.0001;
-    try {
-      if (chargedCredits > 0 && textReservation) {
-        const usageEventId = await recordUnifiedUsageEvent({
-          accountId: billingAccountId,
-          projectId: project.id,
-          runId: agentRunId || null,
-          category: 'ai_gateway',
-          resource: cost.action || decision.intent,
-          provider: 'openrouter',
-          model: agentText.model,
-          providerCostUsd: textProviderCostUsd,
-          allocatedPlatformCostUsd: 0.0001,
-          completeCostUsd: textCompleteCostUsd,
-          idempotencyKey: `text:${requestId}:usage`,
-          providerPayload: { action: cost.action, charged_credits: chargedCredits },
-        });
-        await settleUnifiedUsage({ reservation: textReservation, usageEventId, creditsCharged: chargedCredits, completeCostUsd: textCompleteCostUsd });
-        textReservation = null;
-      } else {
-        await releaseUnifiedUsage(textReservation);
-        textReservation = null;
-      }
-    } catch (chargeError) {
-      console.error('[coden:chat_settlement_pending]', {
-        requestId,
-        reservation_id: textReservation?.id || null,
-        provider_cost_usd: textProviderCostUsd,
-        message: redactSecrets(String(chargeError), '[redacted]'),
-      });
-    }
-    await recordAgentImprovementSignal(project, userId, {
-      prompt,
-      decision,
-      outcome: improvementOutcomeForDecision(decision),
-      previewChanged: false,
-      qualityStatus: 'not_applicable',
-    });
     /*
-     * What the answer actually cost, from the provider's own report.
-     *
-     * `real_cost_usd` is declared and null on all 57 recorded runs, so the
-     * product has never been able to say what a run costs — the credit ledger
-     * knows, but the run itself does not, and the two could drift without
-     * anything noticing. This is the number the provider returned for this
-     * call, recorded against the run that made it.
+     * The answer is on screen and saved; what is left is bookkeeping. It ran
+     * as five database round trips in a row — settle, improvement signal, run
+     * status — while the client waited for `run_finished` with the composer
+     * locked: close to three seconds after the last word on every reply.
+     * None of the three depends on another, so they run together.
      */
-    await updateAgentRunStatus(agentRunId, 'completed', {
-      real_cost_usd: Number(agentText.cost_usd || costRealCostUsd || 0) || null,
-      effective_model: agentText.model || null,
-    });
+    const settleTextUsage = async () => {
+      try {
+        if (chargedCredits > 0 && textReservation) {
+          const usageEventId = await recordUnifiedUsageEvent({
+            accountId: billingAccountId,
+            projectId: project.id,
+            runId: agentRunId || null,
+            category: 'ai_gateway',
+            resource: cost.action || decision.intent,
+            provider: 'openrouter',
+            model: agentText.model,
+            providerCostUsd: textProviderCostUsd,
+            allocatedPlatformCostUsd: 0.0001,
+            completeCostUsd: textCompleteCostUsd,
+            idempotencyKey: `text:${requestId}:usage`,
+            providerPayload: { action: cost.action, charged_credits: chargedCredits },
+          });
+          await settleUnifiedUsage({ reservation: textReservation, usageEventId, creditsCharged: chargedCredits, completeCostUsd: textCompleteCostUsd });
+          textReservation = null;
+        } else {
+          await releaseUnifiedUsage(textReservation);
+          textReservation = null;
+        }
+      } catch (chargeError) {
+        console.error('[coden:chat_settlement_pending]', {
+          requestId,
+          reservation_id: textReservation?.id || null,
+          provider_cost_usd: textProviderCostUsd,
+          message: redactSecrets(String(chargeError), '[redacted]'),
+        });
+      }
+    };
+    await Promise.all([
+      settleTextUsage(),
+      recordAgentImprovementSignal(project, userId, {
+        prompt,
+        decision,
+        outcome: improvementOutcomeForDecision(decision),
+        previewChanged: false,
+        qualityStatus: 'not_applicable',
+      }),
+      /*
+       * What the answer actually cost, from the provider's own report.
+       *
+       * `real_cost_usd` is declared and null on all 57 recorded runs, so the
+       * product has never been able to say what a run costs — the credit
+       * ledger knows, but the run itself does not, and the two could drift
+       * without anything noticing. This is the number the provider returned
+       * for this call, recorded against the run that made it.
+       */
+      updateAgentRunStatus(agentRunId, 'completed', {
+        real_cost_usd: Number(agentText.cost_usd || costRealCostUsd || 0) || null,
+        effective_model: agentText.model || null,
+      }),
+    ]);
     return respondJson(200, {
       success: true,
       intent: decision,
@@ -15172,15 +15187,16 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
     for (const event of events) {
       harnessCursor = Math.max(harnessCursor, Number(event.sequence || 0));
       if (event.turnId !== turn.id || event.type !== 'public.stream') continue;
-      const envelope = event.payload as any;
-      const sequence = Number(envelope?.seq || 0);
-      if (!Number.isSafeInteger(sequence) || sequence <= afterEnvelope || envelope?.runId !== turn.id) continue;
-      afterEnvelope = sequence;
-      if (!res.write(`id: ${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
-        await new Promise<void>(resolve => res.once('drain', resolve));
+      for (const envelope of expandPersistedEnvelope(event.payload)) {
+        const sequence = Number(envelope?.seq || 0);
+        if (!Number.isSafeInteger(sequence) || sequence <= afterEnvelope || envelope?.runId !== turn.id) continue;
+        afterEnvelope = sequence;
+        if (!res.write(`id: ${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
+          await new Promise<void>(resolve => res.once('drain', resolve));
+        }
+        const type = String(envelope?.payload?.type || '');
+        if (type === 'run_finished' || type === 'run_failed' || type === 'run_cancelled') terminalEnvelopeSeen = true;
       }
-      const type = String(envelope?.payload?.type || '');
-      if (type === 'run_finished' || type === 'run_failed' || type === 'run_cancelled') terminalEnvelopeSeen = true;
     }
     if (terminalEnvelopeSeen || disconnected) break;
     const latestTurn = await resolved.harness.store.getTurn(turn.id);

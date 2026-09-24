@@ -604,6 +604,8 @@ export class ProviderGateway {
       });
     }
     if (status === 402) {
+      // The operator's account, not the user's: say so where the operator looks.
+      console.error('[coden:provider_billing_refused]', { provider: error.provider, modelId, detail: String(error.body || error.message || '').slice(0, 300) });
       return new ProviderGatewayError('The AI provider rejected the request because the provider account has insufficient credits or quota.', {
         diagnosticCode: 'PROVIDER_QUOTA_OR_BILLING', statusCode: 503, retryable: false, modelId,
       });
