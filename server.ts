@@ -2502,7 +2502,7 @@ function normalizeGeneratedFiles(rawFiles: any, options: { ensureIndex?: boolean
     })
     .filter((file: GeneratedFile) => isSafeProjectFilePath(file.path) && file.content.trim().length > 0);
 
-  return files.slice(0, 80);
+  return files;
 }
 
 type AssistantAttachmentRecord = {
@@ -2636,6 +2636,18 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
   const now = new Date().toISOString();
   const byPath = new Map(files.map(file => [file.path.replace(/\\/g, '/'), { ...file }]));
   const addIfMissing = (filePath: string, content: string, language = inferGeneratedLanguage(filePath)) => {
+    // A config with another supported extension is still the project's config.
+    // Adding a second one can silently shadow its plugins and design tokens.
+    const configFamily = filePath.match(/^(vite|tailwind|postcss)\.config\./)?.[1];
+    if (configFamily && [...byPath.keys()].some(path => new RegExp(`^${configFamily}\\.config\\.(?:[cm]?[jt]s)$`).test(path))) return;
+    if (configFamily === 'tailwind' || configFamily === 'postcss') {
+      try {
+        const pkg = JSON.parse(byPath.get('package.json')?.content || '{}');
+        const dependencies = { ...pkg.devDependencies, ...pkg.dependencies };
+        // Tailwind 4 uses its own Vite/PostCSS plugin and CSS-first theme.
+        if (dependencies['@tailwindcss/vite'] || dependencies['@tailwindcss/postcss'] || /^[~^]?4\./.test(dependencies.tailwindcss || '')) return;
+      } catch { /* Leave invalid package JSON for the diagnostic repair pass. */ }
+    }
     if (!byPath.has(filePath)) {
       byPath.set(filePath, { path: filePath, content, language, updated_at: now });
     }
@@ -2808,7 +2820,7 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
     '',
   ].join('\n'), 'markdown');
 
-  let outputFiles = Array.from(byPath.values()).slice(0, 80);
+  let outputFiles = Array.from(byPath.values());
   const fullstackRequirement = detectCodenCloudRequirements(promptOrDescription);
   if (shouldApplyCodenFullstackKit({ prompt: promptOrDescription, files: outputFiles, requirement: fullstackRequirement })) {
     outputFiles = applyCodenFullstackKit({
@@ -2816,7 +2828,7 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
       projectName,
       prompt: promptOrDescription,
       requirement: fullstackRequirement,
-    }).slice(0, 90);
+    });
   }
 
   const runtimeManifest = manifestFile({
@@ -2827,7 +2839,7 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
   outputFiles = [
     ...outputFiles.filter(file => file.path !== runtimeManifest.path),
     runtimeManifest,
-  ].slice(0, 100);
+  ];
 
   if (CODEN_AGENT_FLAGS.universalManifest) {
     const universalManifest = createProjectManifest({
@@ -2843,7 +2855,7 @@ function ensureModernFrontendProject(files: GeneratedFile[], projectName: string
         language: 'json',
         updated_at: now,
       },
-    ].slice(0, 100);
+    ];
   }
 
   return outputFiles;
@@ -6789,12 +6801,7 @@ function runAutoFixEngine(project: GeneratedProject, files: GeneratedFile[], err
   working = shouldForceModernVite ? ensureModernFrontendProject(working, project.name, promptForFix, project.id) : working;
   const byPath = new Map(working.map(file => [generatedPath(file.path), { ...file, path: generatedPath(file.path) }]));
 
-  if (shouldForceModernVite || !byPath.has('index.html')) {
-    setGeneratedFile(byPath, 'index.html', createAutoFixViteIndexHtml(project.name, project.prompt || project.name), 'html', summaries);
-  }
-
-  const indexHtml = byPath.get('index.html')?.content || '';
-  if (!/<div\s+id=["']root["']\s*><\/div>/i.test(indexHtml) || !/<script[^>]+type=["']module["'][^>]+src=["']\/src\/main\.tsx["'][^>]*><\/script>/i.test(indexHtml)) {
+  if (!byPath.has('index.html')) {
     setGeneratedFile(byPath, 'index.html', createAutoFixViteIndexHtml(project.name, project.prompt || project.name), 'html', summaries);
   }
 
@@ -6816,28 +6823,9 @@ function runAutoFixEngine(project: GeneratedProject, files: GeneratedFile[], err
     setGeneratedFile(byPath, 'src/index.css', createAutoFixIndexCss(), 'css', summaries);
   }
 
-  if (shouldForceModernVite) {
-    fixPackageJsonScripts(byPath, summaries);
-    setGeneratedFile(byPath, 'tailwind.config.ts', [
-      "import type { Config } from 'tailwindcss';",
-      '',
-      'export default {',
-      "  content: ['./index.html', './src/**/*.{ts,tsx}'],",
-      '  theme: { extend: {} },',
-      '  plugins: [],',
-      '} satisfies Config;',
-      '',
-    ].join('\n'), 'ts', summaries);
-    setGeneratedFile(byPath, 'postcss.config.cjs', [
-      'module.exports = {',
-      '  plugins: {',
-      '    tailwindcss: {},',
-      '    autoprefixer: {},',
-      '  },',
-      '};',
-      '',
-    ].join('\n'), 'js', summaries);
-  }
+  // Scaffold only missing files above. Generic runner failures do not justify
+  // replacing the app's theme, plugins, scripts or dependency versions.
+  // Existing malformed files are repaired from actual diagnostics by the model.
 
   working = Array.from(byPath.values()).sort((a, b) => a.path.localeCompare(b.path));
   working = applyGeneratedDestructiveSafety(working, summaries);
