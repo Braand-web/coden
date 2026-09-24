@@ -1,4 +1,5 @@
 import { apiFetch } from './lib/api';
+import { publicBillingCatalog } from './config/billing-v2';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
 import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
 
@@ -258,6 +259,15 @@ function saveSettingsPreferences(value: SettingsPreferences) {
   localStorage.setItem(SETTINGS_PREFS_KEY, JSON.stringify(value));
 }
 
+/** The onboarding's first answer becomes the Profile tab's role. */
+export function rememberOnboardingProfile(role: string) {
+  try {
+    const prefs = loadSettingsPreferences();
+    prefs.profile.role = role.slice(0, 80);
+    saveSettingsPreferences(prefs);
+  } catch { /* storage unavailable: the answer is still on the account */ }
+}
+
 function resolveThemePreference(theme: SettingsPreferences['appearance']['theme']) {
   if (theme === 'system') {
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -298,11 +308,18 @@ function readSettingsForm(): SettingsPreferences {
   });
 }
 
+let settingsStatusTimer = 0;
 function setSettingsStatus(message: string, tone: 'idle' | 'saving' | 'success' | 'error' = 'idle') {
   const status = document.querySelector<HTMLElement>('[data-settings-status]');
   if (!status) return;
+  window.clearTimeout(settingsStatusTimer);
   status.textContent = message;
   status.dataset.tone = tone;
+  // A confirmation is a moment, not a label: "Identifiant copié" used to stay
+  // on every tab until the next action. It settles back to "Enregistré".
+  if (tone === 'success' && message !== 'Enregistré') {
+    settingsStatusTimer = window.setTimeout(() => setSettingsStatus('Enregistré', 'success'), 2400);
+  }
 }
 
 function markSettingsDirty() {
@@ -1508,6 +1525,7 @@ function settingsMarkup() {
           <button class="settings-tab" type="button" data-tab="compte">${settingsIcon('account')}<span>Compte et sécurité</span></button>
           <button class="settings-tab" type="button" data-tab="apparence">${settingsIcon('appearance')}<span>Apparence</span></button>
           <button class="settings-tab" type="button" data-tab="facturation">${settingsIcon('billing')}<span>Facturation</span></button>
+          <button class="settings-tab" type="button" data-tab="ia">${settingsIcon('usage')}<span>Consommation</span></button>
           <button class="settings-tab" type="button" data-tab="connecteurs">${settingsIcon('connectors')}<span>Intégrations</span></button>
           <button class="settings-tab" type="button" data-tab="confidentialite">${settingsIcon('privacy')}<span>Confidentialité</span></button>
         </div>
@@ -1553,6 +1571,7 @@ function settingsMarkup() {
                 <option value="agency">Agence</option>
                 <option value="developer">Développeur</option>
                 <option value="marketer">Marketing</option>
+                <option value="other">Autre</option>
               </select>
             </div>
             <div class="settings-field">
@@ -1815,8 +1834,8 @@ function aiUsageMarkup() {
         </div>
       </div>
       <div class="settings-card">
-        <h3>History</h3>
-        <div id="ai-usage-history"><div class="usage-empty">AI usage history will appear here after your first Plan, Build, Fix or Deploy action.</div></div>
+        <h3>Historique</h3>
+        <div id="ai-usage-history"><div class="usage-empty">L’historique apparaîtra ici après votre première génération, correction ou publication.</div></div>
       </div>
       <div class="settings-card">
         <h3>Tarification mesurée</h3>
@@ -1913,7 +1932,7 @@ async function hydrateSettingsPanel() {
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
   } catch (error) {
     renderAuthSummary(currentAuthSummary, prefs);
-    setSettingsStatus(error instanceof Error ? error.message : 'Account unavailable', 'error');
+    setSettingsStatus(error instanceof Error ? error.message : 'Compte momentanément indisponible', 'error');
   }
 }
 
@@ -1996,8 +2015,12 @@ async function handleSettingsAction(action: string) {
     return;
   }
   if (action === 'open-integrations') {
-    closeSettings();
-    document.dispatchEvent(new CustomEvent('coden:open-connectors'));
+    // The connectors panel lives in the Builder. From anywhere else the
+    // button used to close Settings and open nothing at all.
+    const detail = { handled: false };
+    document.dispatchEvent(new CustomEvent('coden:open-connectors', { detail }));
+    if (detail.handled) { closeSettings(); return; }
+    setSettingsStatus('Ouvrez un projet : les connecteurs se gèrent depuis le Builder.', 'error');
     return;
   }
   if (action === 'open-privacy') {
@@ -2025,7 +2048,7 @@ async function handleSettingsAction(action: string) {
     return;
   }
   if (action === 'sign-out') {
-    if (!window.confirm('Sign out on this device?')) return;
+    if (!window.confirm('Se déconnecter de cet appareil ?')) return;
     await signOutCurrentDevice();
     window.location.href = '/auth.html';
   }
@@ -2420,8 +2443,11 @@ async function loadBillingSettings(force = false) {
     billingCatalog = catalogResponse.catalog || null;
     if (!billingCatalog) throw new Error('Le catalogue des forfaits est indisponible.');
   } catch (error) {
-    if (grid) grid.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'La facturation est momentanément indisponible.')}</div>`;
-    return;
+    // The public prices are versioned in the bundle as well: an unreachable
+    // catalogue route shows them rather than "catalogue indisponible". The
+    // checkout is still the server's, which validates the tier again.
+    console.warn('[coden:billing_catalog_fallback]', error);
+    billingCatalog = publicBillingCatalog() as unknown as NonNullable<BillingCatalogResponse['catalog']>;
   }
 
   billingWalletUnavailable = false;
@@ -2540,14 +2566,14 @@ function renderAiUsage(data: AiUsageResponse) {
     history.innerHTML = rows.length ? rows.map(item => `
       <div class="usage-row">
         <div class="usage-row-head">
-          <span class="usage-row-title">${escapeHtml(item.mode || 'AI action')}</span>
-          <span class="usage-credit-pill">${escapeHtml(formatCredits(item.credits_charged))} credits</span>
+          <span class="usage-row-title">${escapeHtml(item.mode || 'Action')}</span>
+          <span class="usage-credit-pill">${escapeHtml(formatCredits(item.credits_charged))} crédit${Number(item.credits_charged) > 1 ? 's' : ''}</span>
         </div>
         <div class="usage-row-meta">
-          ${escapeHtml(item.model_name || 'Auto')} · ${escapeHtml(item.project_name || 'Project')} · ${escapeHtml(item.status || 'completed')} · ${escapeHtml(formatDate(item.created_at))}
+          ${escapeHtml(item.model_name || 'Auto')} · ${escapeHtml(item.project_name || 'Projet')} · ${escapeHtml(({ completed: 'terminé', failed: 'échoué', refunded: 'remboursé', pending: 'en cours' } as Record<string, string>)[String(item.status || 'completed')] || String(item.status))} · ${escapeHtml(formatDate(item.created_at))}
         </div>
       </div>
-    `).join('') : '<div class="usage-empty">AI usage history will appear here after your first Plan, Build, Fix or Deploy action.</div>';
+    `).join('') : '<div class="usage-empty">L’historique apparaîtra ici après votre première génération, correction ou publication.</div>';
   }
 
 }
@@ -2555,12 +2581,12 @@ function renderAiUsage(data: AiUsageResponse) {
 async function loadAiUsageSettings(force = false) {
   if (aiUsageLoaded && !force) return;
   const history = document.getElementById('ai-usage-history');
-  if (history) history.innerHTML = '<div class="usage-empty">Loading AI usage...</div>';
+  if (history) history.innerHTML = '<div class="usage-empty">Chargement de la consommation…</div>';
   try {
     const usage = await apiFetch<AiUsageResponse>('/api/users/me/ai-usage');
     renderAiUsage(usage);
     aiUsageLoaded = true;
   } catch (error) {
-    if (history) history.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'Unable to load AI usage.')}</div>`;
+    if (history) history.innerHTML = `<div class="usage-empty">${escapeHtml(error instanceof Error ? error.message : 'La consommation est momentanément indisponible.')}</div>`;
   }
 }

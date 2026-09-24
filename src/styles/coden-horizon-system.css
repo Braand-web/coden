@@ -98,32 +98,7 @@ body[data-coden-surface="public"] .navbar {
   border-top-color: var(--border) !important;
 }
 
-body[data-coden-surface="auth"],
-body[data-coden-surface="auth"] .auth-page {
-  background: var(--background) !important;
-}
-
-body[data-coden-surface="auth"] .auth-card {
-  background: var(--surface) !important;
-  border-color: var(--border) !important;
-}
-
-body[data-coden-surface="auth"] :where(.tabs, .input, .password-control) {
-  color: var(--foreground);
-  background: var(--input) !important;
-  border-color: var(--border) !important;
-}
-
-body[data-coden-surface="auth"] .tab-btn.active {
-  color: var(--foreground) !important;
-  background: var(--surface-hover) !important;
-}
-
-body[data-coden-surface="auth"] .btn-submit {
-  color: var(--text-on-accent) !important;
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-}
+/* Auth has its own complete stylesheet: src/styles/auth-studio.css. */
 
 /* Dashboard owns a floating workspace composition. Keep the global atmosphere
    visible around the transparent sidebar and the single rounded workspace. */
