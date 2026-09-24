@@ -1484,3 +1484,37 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root)::before {
 }
 @keyframes coden-dashboard-light { to { transform: translate(8%, 6%) rotate(8deg); } }
 html[data-theme="dark"] #coden-dashboard-react-root { position: relative; z-index: 1; }
+
+/*
+ * Arrival. The page builds itself top to bottom: the badge, the question,
+ * the composer, then the toolbar and the projects, each a beat after the
+ * last, and the sidebar's projects slide in from the edge. Longer and softer
+ * than the shared 320ms entrance: this is the page people land on, and its
+ * arrival is meant to be felt once. Fill is `backwards` so nothing keeps a
+ * transform afterwards (a transformed ancestor would re-anchor the
+ * composer's fixed menus).
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .coden-dashboard-create > *,
+  .coden-dashboard-project-toolbar,
+  .coden-dashboard-project-list.coden-enter-stagger > * {
+    animation: coden-dashboard-rise 720ms var(--ease-out) backwards;
+  }
+  .coden-dashboard-create > :nth-child(2) { animation-delay: 80ms; }
+  .coden-dashboard-create > :nth-child(3) { animation-delay: 160ms; }
+  .coden-dashboard-create > :nth-child(n+4) { animation-delay: 240ms; }
+  .coden-dashboard-project-toolbar { animation-delay: 280ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(1) { animation-delay: 320ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(2) { animation-delay: 380ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(3) { animation-delay: 440ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(4) { animation-delay: 500ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(5) { animation-delay: 560ms; }
+  .coden-dashboard-project-list.coden-enter-stagger > :nth-child(n+6) { animation-delay: 620ms; }
+  .coden-dashboard-sidebar .coden-dashboard-project-link { animation: coden-dashboard-slide 560ms var(--ease-out) backwards; }
+  .coden-dashboard-sidebar .coden-dashboard-project-link:nth-child(2) { animation-delay: 50ms; }
+  .coden-dashboard-sidebar .coden-dashboard-project-link:nth-child(3) { animation-delay: 100ms; }
+  .coden-dashboard-sidebar .coden-dashboard-project-link:nth-child(4) { animation-delay: 150ms; }
+  .coden-dashboard-sidebar .coden-dashboard-project-link:nth-child(n+5) { animation-delay: 200ms; }
+}
+@keyframes coden-dashboard-rise { from { opacity: 0; transform: translateY(16px); filter: blur(6px); } }
+@keyframes coden-dashboard-slide { from { opacity: 0; transform: translateX(-12px); } }

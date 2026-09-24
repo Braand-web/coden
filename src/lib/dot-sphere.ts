@@ -27,12 +27,14 @@ function fibonacciSphere(count: number): Point[] {
   return points;
 }
 
-export function mountDotSphere(canvas: HTMLCanvasElement, options: { count?: number; speed?: number; tilt?: number } = {}): () => void {
+export function mountDotSphere(canvas: HTMLCanvasElement, options: { count?: number; speed?: number; tilt?: number; scrollSpin?: number } = {}): () => void {
   const context = canvas.getContext('2d');
   if (!context) return () => {};
   const points = fibonacciSphere(options.count ?? 460);
   const speed = options.speed ?? 0.00009; // radians per millisecond
   const tilt = options.tilt ?? 0.42;
+  // Extra turn per scrolled pixel: scrolling the page spins the sphere.
+  const scrollSpin = options.scrollSpin ?? 0;
   const reduced = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
   let width = 0;
@@ -54,9 +56,9 @@ export function mountDotSphere(canvas: HTMLCanvasElement, options: { count?: num
 
   const resize = () => {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = canvas.getBoundingClientRect();
-    width = Math.max(1, rect.width);
-    height = Math.max(1, rect.height);
+    // Layout size, not the painted one: the page scales the canvas as it scrolls.
+    width = Math.max(1, canvas.clientWidth);
+    height = Math.max(1, canvas.clientHeight);
     canvas.width = Math.round(width * ratio);
     canvas.height = Math.round(height * ratio);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -68,8 +70,9 @@ export function mountDotSphere(canvas: HTMLCanvasElement, options: { count?: num
     const radius = Math.min(width, height) * 0.48;
     const cx = width / 2;
     const cy = height / 2;
-    const cosA = Math.cos(angle);
-    const sinA = Math.sin(angle);
+    const turn = angle + (scrollSpin && !reduced ? window.scrollY * scrollSpin : 0);
+    const cosA = Math.cos(turn);
+    const sinA = Math.sin(turn);
     const cosT = Math.cos(tilt);
     const sinT = Math.sin(tilt);
     const ring = radius * 0.034;
