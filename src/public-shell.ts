@@ -1,4 +1,5 @@
 import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV } from './config/public-routes';
+import { applySignedInLinks, hasStoredSession } from './lib/stored-session';
 import { trackFunnelEvent } from './conversion-events';
 import { initThemeController } from './theme-controller';
 import './styles/public-shell.css';
@@ -117,12 +118,18 @@ function mountHeader() {
   PUBLIC_NAV.forEach(link => nav.appendChild(navigationLink(link.href, navLabel(link, 'fr'))));
 
   const actions = element('div', 'coden-public-actions');
+  // Signed in: one way back to the projects, no sign-in or sign-up offer.
+  const signedIn = hasStoredSession();
   const signIn = navigationLink(PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr'), 'coden-public-signin');
   signIn.dataset.conversionEvent = 'sign_in_click';
   signIn.dataset.conversionPlace = 'navbar';
-  const cta = navigationLink(PUBLIC_ACTIONS.cta.href, 'Créer mon application', 'coden-public-cta');
-  cta.dataset.conversionEvent = 'start_building_click';
-  cta.dataset.conversionPlace = 'navbar';
+  const cta = signedIn
+    ? navigationLink('/dashboard.html', 'Mes projets', 'coden-public-cta')
+    : navigationLink(PUBLIC_ACTIONS.cta.href, 'Créer mon application', 'coden-public-cta');
+  if (!signedIn) {
+    cta.dataset.conversionEvent = 'start_building_click';
+    cta.dataset.conversionPlace = 'navbar';
+  }
 
   const trigger = element('button', 'coden-public-menu-trigger');
   trigger.type = 'button';
@@ -133,7 +140,8 @@ function mountHeader() {
   menuIcon.setAttribute('aria-hidden', 'true');
   menuIcon.append(element('i'), element('i'), element('i'));
   trigger.appendChild(menuIcon);
-  actions.append(signIn, cta, trigger);
+  if (signedIn) actions.append(cta, trigger);
+  else actions.append(signIn, cta, trigger);
   header.append(brand, nav, actions);
 
   const mobileMenu = element('div', 'coden-public-mobile-menu');
@@ -147,10 +155,14 @@ function mountHeader() {
   const mobilePanel = element('nav', 'coden-public-mobile-panel');
   mobilePanel.setAttribute('aria-label', 'Navigation mobile');
   PUBLIC_NAV.forEach(link => mobilePanel.appendChild(navigationLink(link.href, navLabel(link, 'fr'))));
-  mobilePanel.append(
-    navigationLink(PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr'), 'coden-public-mobile-secondary'),
-    navigationLink(PUBLIC_ACTIONS.cta.href, 'Créer mon application', 'coden-public-mobile-primary'),
-  );
+  if (signedIn) {
+    mobilePanel.append(navigationLink('/dashboard.html', 'Mes projets', 'coden-public-mobile-primary'));
+  } else {
+    mobilePanel.append(
+      navigationLink(PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr'), 'coden-public-mobile-secondary'),
+      navigationLink(PUBLIC_ACTIONS.cta.href, 'Créer mon application', 'coden-public-mobile-primary'),
+    );
+  }
   mobileMenu.appendChild(mobilePanel);
   host.append(header, mobileMenu);
 
@@ -191,12 +203,15 @@ type FooterColumn = { title: string; links: ReadonlyArray<readonly [string, stri
  * routes, the anchors of the landing, the account entry points and the
  * legal pages from the route policy. No placeholder destinations.
  */
-function footerColumns(): FooterColumn[] {
-  const signup = PUBLIC_ACTIONS.cta.href;
+function footerColumns(signedIn = hasStoredSession()): FooterColumn[] {
+  const signup = signedIn ? '/dashboard.html' : PUBLIC_ACTIONS.cta.href;
+  const account: ReadonlyArray<readonly [string, string]> = signedIn
+    ? [['/dashboard.html', 'Mes projets']]
+    : [[PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr')], [signup, 'Créer un compte'], ['/dashboard.html', 'Mes projets']];
   return [
     { title: 'Produit', links: [['/features.html', 'Fonctionnalités'], ['/pricing.html', 'Tarifs'], ['/#exemples', 'Exemples'], [signup, 'Créer une application']] },
     { title: 'Ressources', links: [['/documentation.html', 'Documentation'], ['/#faq', 'Questions fréquentes'], ['/security.html', 'Sécurité']] },
-    { title: 'Compte', links: [[PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr')], [signup, 'Créer un compte'], ['/dashboard.html', 'Mes projets']] },
+    { title: 'Compte', links: account },
     { title: 'Mentions légales', links: PUBLIC_LEGAL_LINKS.map(link => [link.href, navLabel(link, 'fr')] as const) },
   ];
 }
@@ -273,6 +288,8 @@ export function mountPublicShell() {
   document.querySelectorAll('.navbar, .seo-nav, .navbar-line, .footer, .seo-footer, .pricing-footer').forEach(node => node.remove());
   mountHeader();
   mountFooter();
+  // The page's own sign-up buttons (pricing cards, final call to action).
+  if (hasStoredSession()) applySignedInLinks(document);
   initThemeController();
   bindConversionTracking();
 }
