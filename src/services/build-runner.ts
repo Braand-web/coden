@@ -106,7 +106,7 @@ function buildEnv(includeInstallNetwork = false, publicEnv: Record<string, strin
  * (see `publishProjectToVercel`'s `buildOnProvider`).
  */
 export function localBuildAllowed(env: Record<string, string | undefined> = process.env): boolean {
-  return env.NODE_ENV !== 'production' || env.CODEN_BUILD_RUNNER_ISOLATION === 'container';
+  return !(env.NODE_ENV === 'production' && env.CODEN_BUILD_RUNNER_ISOLATION !== 'container');
 }
 
 function assertSecureBuildRuntime(): void {

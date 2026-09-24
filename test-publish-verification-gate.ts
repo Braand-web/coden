@@ -12,7 +12,12 @@ assert.equal(canonicalPublishRoutes.length, 1, 'Publish must have one canonical 
 assert.equal(canonicalDeployRoutes.length, 1, 'Deploy must have one canonical Vercel route.');
 assert.doesNotMatch(server, /publishCloudflareProjectForRequest/, 'Generated apps must not re-enter the retired Cloudflare publisher.');
 assert.match(server, /if \(!publishStatus\.can_publish\)/, 'Publishing must be gated by verified publish status.');
-assert.match(server, /await requirePublicationEntitlement\(project, 'publish'\)/, 'Every publish and rollback path must require an active paid subscription.');
+// Owner policy (2026-09-24): every user publishes free on the Coden domain;
+// a custom domain requires a paid subscription.
+assert.doesNotMatch(server, /requirePublicationEntitlement\(project, 'publish'\)/, 'Publishing on the Coden domain must not require a subscription.');
+assert.match(server, /operation: 'domain',/, 'Only the custom-domain operation is gated by the subscription.');
+assert.match(server, /reason: 'custom_domains_detached'/, 'A lapsed subscription detaches custom domains instead of taking the site down.');
+assert.doesNotMatch(server, /await pauseVercelProject\(vercelProject\)/, 'The Coden address is never paused for lack of a subscription.');
 assert.match(server, /await requirePublicationEntitlement\(project, 'domain', domain,/, 'Every custom-domain path must require an active paid subscription and enforce the exact requested domain.');
 assert.match(server, /await canServePublishedProject\(project\)/, 'Published proxy routes must enforce expiry and grace periods server-side.');
 assert.match(server, /reconcilePublishedSiteEntitlements/, 'Direct provider URLs must be reconciled with paid publication entitlement.');
