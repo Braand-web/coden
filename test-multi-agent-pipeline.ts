@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { rm } from 'node:fs/promises';
 import { ProviderGateway } from './src/services/provider-gateway.ts';
+import { ProviderHttpError } from './src/services/provider-errors.ts';
 import { applyStarter, STARTERS } from './src/services/sandbox/starters.ts';
 import { runMultiAgentPipeline } from './src/services/multi-agent-pipeline.ts';
 import { blendedCost } from './src/services/model-selection.ts';
@@ -187,6 +188,48 @@ try {
     assert.equal(provider.chatCalls.length, 2, 'no planner call means the script starts directly on the coder\'s steps');
     const app = outcome.files.find(file => file.path === 'src/App.tsx');
     assert.match(app?.content || '', /Count: 1/);
+  }
+
+  // -- a pinned model that refuses the work mid-run is replaced, not fatal ---
+  // Production: Gemini, pinned, refused the coder's request after nine tool
+  // calls and the run ended on "Ce modèle ne convient pas à cette demande".
+  {
+    const PINNED = 'google/gemini-3.8-flash' as AllowedModelId;
+    const provider = scriptedProvider([
+      { text: '', toolCall: { name: 'edit_file', args: { path: 'src/App.tsx', find: 'Count: 0', replace: 'Count: 5' } } },
+      { text: 'Done.' },
+    ]);
+    const refusing = {
+      ...provider.service,
+      async *streamChat(modelId: string, ...rest: unknown[]) {
+        if (modelId === PINNED) {
+          provider.chatCalls.push({ modelId });
+          throw new ProviderHttpError('OpenRouter', 400, '{"error":{"message":"Gemini models require OpenRouter reasoning details to be preserved in each request."}}');
+        }
+        yield* (provider.service.streamChat as any)(modelId, ...rest);
+      },
+    };
+    const events: Array<{ type: string; reason?: string; modelId?: string }> = [];
+    const outcome = await runMultiAgentPipeline({
+      gateway: new ProviderGateway(refusing as any),
+      projectId: 'pipeline-pinned-refusal',
+      enableSpecialists: false,
+      userId: 'user-1',
+      prompt: 'change the counter to start at 5',
+      route: 'small_edit',
+      existingFiles: applyStarter(STARTERS['react-vite'], [{path:'src/App.tsx',content:COUNTER_APP}]).files,
+      userPlan: 'pro',
+      selectedModel: PINNED,
+      onChatEvent: event => events.push(event as any),
+    }).catch(async (error) => { await cleanup('pipeline-pinned-refusal'); throw error; });
+    await cleanup('pipeline-pinned-refusal');
+
+    assert.equal(outcome.started, true, JSON.stringify(outcome));
+    assert.match(outcome.files.find(file => file.path === 'src/App.tsx')?.content || '', /Count: 5/, 'the round must be done by the replacement model');
+    assert.equal(provider.chatCalls[0]?.modelId, PINNED, 'the pinned model is tried first');
+    assert.ok(provider.chatCalls.slice(1).every(call => call.modelId !== PINNED), 'then the run carries on without it');
+    const switched = events.find(event => event.type === 'model_selected' && event.reason === 'substitution');
+    assert.ok(switched && switched.modelId !== PINNED, 'the switch is announced to the user');
   }
 
   // -- startup failure remains repairable and never silently falls back -----

@@ -139,7 +139,8 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
   assert.match(body, /void ensureLivePreview\(\);/, 'the sandbox start is launched, not awaited');
   assert.doesNotMatch(body, /await ensureLivePreview\(\);/, 'the builder no longer blocks on it');
   // The reader still gets the honest state meanwhile.
-  assert.match(body, /setEmptyPreviewState\('idle'\);/, 'and is told the preview is not running yet');
+  // Meanwhile the reader is told it is starting, not shown an idle panel.
+  assert.match(body, /setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\);/, 'and is told the preview is starting');
 }
 
 console.log('credits and auto mode tests passed');

@@ -621,6 +621,7 @@ export class ProviderGateway {
       });
     }
     if (status === 400 || status === 422) {
+      logProviderRejection(modelId, status, error.body || error.message);
       // Keep required capabilities intact. A retry must not silently drop them.
       if (/unsupported|not supported|response_format|tool_choice|json_schema|reasoning/i.test(error.body)) {
         return new ProviderGatewayError('The selected model rejected a required runtime option. The request was stopped without removing capabilities.', {
@@ -756,6 +757,7 @@ export class ProviderGateway {
       });
     }
     if (/unsupported parameter|unsupported.*response_format|tool_choice|tools|reasoning|json_schema/i.test(message)) {
+      logProviderRejection(modelId, null, message);
       return new ProviderGatewayError('The selected model rejected a required runtime option. The request was stopped without removing capabilities.', {
         diagnosticCode: 'PROVIDER_UNSUPPORTED_RUNTIME_CONFIG',
         statusCode: 502,
@@ -764,6 +766,7 @@ export class ProviderGateway {
       });
     }
     if (/bad request|invalid request|provider rejected/i.test(message)) {
+      logProviderRejection(modelId, null, message);
       return new ProviderGatewayError('OpenRouter rejected the AI request format. Retry with Auto; if it keeps happening, check the selected model and Railway logs.', {
         diagnosticCode: 'PROVIDER_BAD_REQUEST',
         statusCode: 502,
@@ -789,6 +792,21 @@ export class ProviderGateway {
       modelId,
     });
   }
+}
+
+/*
+ * What the provider actually said when it refused a request.
+ *
+ * The refusal was turned into "the selected model rejected a required runtime
+ * option" and its text thrown away, so a run that failed that way left nothing
+ * that named the option, the message or the provider behind it.
+ */
+function logProviderRejection(modelId: string, status: number | null, detail: unknown) {
+  console.warn('[coden:provider_request_rejected]', {
+    model: modelId,
+    status,
+    detail: String(detail || '').replace(/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '[redacted]').replace(/\s+/g, ' ').slice(0, 600),
+  });
 }
 
 function sleep(ms: number) {
