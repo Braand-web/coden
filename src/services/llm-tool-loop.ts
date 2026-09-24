@@ -125,7 +125,7 @@ export function compactTranscript(messages: ChatMessage[], keepRecent = 8, maxKe
 
 function compactToolCallArguments(call: NonNullable<ChatMessage['tool_calls']>[number]) {
   const raw = call.function.arguments || '';
-  if (raw.length <= 1_200) return call;
+  if (raw.length <= 800) return call;
   let args: Record<string, unknown>;
   try { args = JSON.parse(raw); } catch { return call; }
   const compacted = Object.fromEntries(Object.entries(args).map(([key, value]) => [
@@ -378,6 +378,8 @@ export async function runLlmToolLoop(input: {
       // Handed back so a reasoning model continues its chain after the tools.
       ...(result.reasoning_details?.length ? { reasoning_details: result.reasoning_details } : {}),
     });
+    const assistantIndex = messages.length - 1;
+    const applied = new Set<string>();
 
     input.onToolsStarted?.();
     /*
@@ -492,12 +494,30 @@ export async function runLlmToolLoop(input: {
         }
       }
       toolExecutions.push({ name: call.function.name, ok, approvalRequired, approved });
+      if (ok) applied.add(call.id);
       messages.push({
         role: 'tool',
         tool_call_id: call.id,
         name: call.function.name,
         content: safeToolResult(output),
       });
+    }
+    /*
+     * A write is on disk the moment it succeeds; its body need not ride along.
+     *
+     * Every later step re-sent the whole transcript, and a successful
+     * `write_file` kept the entire file in it as the call's argument — about
+     * 6,000 characters per component, re-sent on every step after it. A
+     * fourteen-file build sent some 300,000 input tokens, most of them files
+     * the model had already written and could read back in one call. Stubbed
+     * here, once, right after the step: the transcript stays append-only, so
+     * the prompt prefix a provider caches is not disturbed later.
+     */
+    if (applied.size) {
+      const owner = messages[assistantIndex];
+      if (owner?.role === 'assistant' && owner.tool_calls?.length) {
+        messages[assistantIndex] = { ...owner, tool_calls: owner.tool_calls.map(call => applied.has(call.id) ? compactToolCallArguments(call) : call) };
+      }
     }
     input.onToolsCompleted?.();
   }

@@ -4796,7 +4796,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
         hasLastPlan: Boolean(input.lastPlan),
         // The router needs the last exchanges, not the whole session: what
         // Coden just asked or proposed is what a short reply answers.
-        recentHistory: (input.recentHistory || []).slice(-8).map(turn => ({ role: turn.role, content: String(turn.content || '').slice(0, 2_000) })),
+        recentHistory: (input.recentHistory || []).slice(-6).map(turn => ({ role: turn.role, content: String(turn.content || '').slice(0, 1_500) })),
         localUnderstanding: fallback.intentUnderstanding || null,
         fallbackIntent: fallback.intent,
       }),
@@ -5335,6 +5335,10 @@ async function resolveAgentProviderModel(input: {
   return { model, autoRouted: true, complexity, mode, plan: accessPlan, credits: accessBudget, reasoningLevel };
 }
 
+/** Conversation a text reply carries verbatim; older turns live in the session memory. */
+const TEXT_HISTORY_CHARS = 24_000;
+const TEXT_HISTORY_TURN_CHARS = 6_000;
+
 function buildAgentTextMessages(input: {
   project: GeneratedProject;
   prompt: string;
@@ -5402,9 +5406,22 @@ function buildAgentTextMessages(input: {
    * question. It had to dig the question out of a payload, and a follow-up
    * like "et pour le mobile ?" arrived with no conversation to refer to.
    */
-  const history = (input.history || [])
-    .filter(turn => turn.content.trim())
-    .slice(-12);
+  /*
+   * The newest turns within a budget, not a count. Twelve turns of up to
+   * twelve thousand characters each put some 36,000 tokens in front of a
+   * "bonjour" late in a long session; the session memory already carries the
+   * substance of everything older.
+   */
+  const history: RecentHistoryMessage[] = [];
+  let historyChars = 0;
+  for (const turn of (input.history || []).filter(item => item.content.trim()).slice(-12).reverse()) {
+    const content = turn.content.length > TEXT_HISTORY_TURN_CHARS
+      ? `${turn.content.slice(0, TEXT_HISTORY_TURN_CHARS)}\n…[the rest of this message is summarized in the session memory]`
+      : turn.content;
+    if (historyChars + content.length > TEXT_HISTORY_CHARS && history.length) break;
+    history.unshift({ ...turn, content });
+    historyChars += content.length;
+  }
   // The current message may already be stored as the last turn.
   if (history.length && history[history.length - 1].role === 'user' && prompt.trim().startsWith(history[history.length - 1].content.trim().slice(0, 1200))) history.pop();
   while (history.length && history[0].role === 'assistant') history.shift();

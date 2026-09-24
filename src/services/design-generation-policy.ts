@@ -1096,11 +1096,25 @@ export function buildWorldClassUiPolicy(input: {
     `Detected platform type (hint): ${appType}.`,
     `Design direction (hint): ${designDirection}.`,
     '',
-    'Structured design brief to follow before coding:',
-    JSON.stringify(designBrief, null, 2),
+    /*
+     * The brief's own fields, minus what "Platform intelligence" below already
+     * says. It used to be pasted as indented JSON on top of the same facts as
+     * bullets — some 1,700 characters said twice, on every step of every
+     * build, since this block is the coder's system message.
+     */
+    'Design brief:',
+    `- Audience: ${designBrief.audience}`,
+    `- Product promise: ${designBrief.product_promise}`,
+    ...(designBrief.risk_flags?.length ? [`- Risks: ${designBrief.risk_flags.join('; ')}`] : []),
     '',
     'Project-specific Design DNA (stable for this project, deliberately different across products):',
-    JSON.stringify(designDna, null, 2),
+    `- Composition candidates: ${designDna.compositionCandidates.map((candidate, index) => `(${index + 1}) ${candidate}`).join(' ')}`,
+    `- Selected composition: ${designDna.selectedComposition}`,
+    `- Typography pair: ${designDna.typographyPair}`,
+    `- Palette character: ${designDna.paletteCharacter}`,
+    `- Shape language: ${designDna.shapeLanguage}`,
+    `- Density rhythm: ${designDna.densityRhythm}`,
+    `- Motion signature: ${designDna.motionSignature}`,
     'Sketch the three composition candidates mentally, select the one that best serves the core journey, then implement one coherent direction. The selected composition is the default, not an excuse to ignore a clearly better candidate. Do not collapse the result into a centered hero followed by equal cards.',
     '',
     'Platform intelligence:',

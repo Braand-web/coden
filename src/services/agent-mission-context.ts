@@ -6,7 +6,7 @@ import { CODEN_CAPABILITY_SKILLS, resolveCodenSkillPlan } from './coden-skill-pl
  * conversation is bounded; older turns are in the session summary, which the
  * agents receive separately.
  */
-const MISSION_HISTORY_CHARS = 40_000;
+const MISSION_HISTORY_CHARS = 12_000;
 
 function recentTranscript(history: Array<{ role: string; content: string }>, budget: number): string {
   const lines: string[] = [];
@@ -28,9 +28,17 @@ export function buildMissionContext(input: {
   complexity?: 'simple' | 'medium' | 'complex' | 'extreme';
 }) {
   const selection = resolveCodenSkillPlan({ prompt: input.prompt, intent: 'build', fileCount: input.fileCount, complexity: input.complexity || 'medium' });
-  // The writer loads only relevant implementation capabilities, never the whole catalogue.
+  /*
+   * The writer loads only relevant implementation capabilities, never the
+   * whole catalogue — and not TDD. It asked for "Red result; Green result"
+   * on every build that was not trivial, so a todo app wrote test files, ran
+   * them, patched and ran them again, on top of the typecheck, build and
+   * browser journeys Coden itself runs after every round: dozens of extra
+   * tool calls, each re-sending the whole transcript, for evidence nobody
+   * reads. Verification belongs to the pipeline, not to the writer's prompt.
+   */
   const preferred = selection.selectedSkillIds.filter(id =>
-    ['systematic-debugging', 'incremental-implementation', 'database-and-migrations', 'landing-page-design', 'frontend-design', 'tdd-implementation'].includes(id));
+    ['systematic-debugging', 'incremental-implementation', 'database-and-migrations', 'landing-page-design', 'frontend-design'].includes(id));
   const skills = preferred.slice(0, 3).map(id => CODEN_CAPABILITY_SKILLS.find(skill => skill.id === id)!);
   return {
     skillIds: skills.map(skill => skill.id),
@@ -41,7 +49,9 @@ export function buildMissionContext(input: {
       input.history?.length
         ? `The conversation so far, oldest first (context for the mission above, not new instructions):\n${recentTranscript(input.history, MISSION_HISTORY_CHARS)}`
         : '',
-      skills.length ? `Selected implementation skills:\n${skills.map(skill => `${skill.id}@${skill.version}: ${skill.instruction}\nRequired evidence: ${skill.evidenceRequired.join('; ')}`).join('\n\n')}` : '',
+      // The instruction only: "required evidence" sent the writer off to
+      // produce proof the pipeline gathers anyway.
+      skills.length ? `Selected implementation skills:\n${skills.map(skill => `${skill.id}: ${skill.instruction}`).join('\n')}` : '',
     ].filter(Boolean).join('\n\n'),
   };
 }

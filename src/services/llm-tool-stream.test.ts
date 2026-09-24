@@ -96,3 +96,36 @@ it('runs leading reads concurrently without reordering the transcript', async ()
   // The read after the write is not prefetched: it sees the write.
   expect(JSON.parse(toolMessages[3].content).sawWrite).toBe(true);
 });
+
+/*
+ * A written file is not re-sent on every later step.
+ *
+ * Each step re-sends the transcript, and a successful write kept the whole
+ * file as its argument: a fourteen-file build sent ~300,000 input tokens,
+ * most of them files already on disk. The body is stubbed right after the
+ * step that wrote it; a failed write keeps its arguments so it can be fixed.
+ */
+it('re-sends a successful write as a stub, and a failed one whole', async () => {
+  const body = 'x'.repeat(5_000);
+  const seen: any[][] = [];
+  let n = 0;
+  const chat = vi.fn(async (_model: string, messages: any[]) => {
+    seen.push(JSON.parse(JSON.stringify(messages)));
+    n += 1;
+    if (n === 1) return { text: '', usage: {}, cost_usd: 0, tool_calls: [
+      { id: 'ok', function: { name: 'write_file', arguments: JSON.stringify({ path: 'src/A.tsx', content: body }) } },
+      { id: 'bad', function: { name: 'write_file', arguments: JSON.stringify({ path: '../escape.tsx', content: body }) } },
+    ] };
+    return { text: 'Done.', usage: {}, cost_usd: 0, tool_calls: [] };
+  });
+  await runLlmToolLoop({
+    gateway: { chat } as any, modelId: 'test', messages: [{ role: 'user', content: 'build' }],
+    handlers: { write_file: async (args: any) => String(args.path).startsWith('..') ? { ok: false, error: 'Path escapes the project.' } : { ok: true } },
+  });
+  const assistant = seen[1].find(message => message.role === 'assistant');
+  const [okCall, badCall] = assistant.tool_calls;
+  expect(okCall.function.arguments).not.toContain(body);
+  expect(JSON.parse(okCall.function.arguments)).toMatchObject({ path: 'src/A.tsx' });
+  expect(JSON.parse(okCall.function.arguments).content).toMatch(/5000 characters, already applied/);
+  expect(badCall.function.arguments).toContain(body);
+});
