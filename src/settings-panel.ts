@@ -2286,7 +2286,8 @@ function billingPrice(plan: 'pro' | 'business', credits: number) {
 function billingPlanMarkup(plan: 'pro' | 'business') {
   const catalogPlan = billingCatalog?.plans.find(item => item.key === plan);
   const tiers = Array.from(new Set((billingCatalog?.prices || []).filter(price => price.plan === plan).map(price => price.credits))).sort((a, b) => a - b);
-  const defaultTier = tiers.includes(100) ? 100 : (tiers[0] || 100);
+  // The entry tier: Pro starts at 25 credits (5 000 FCFA), Business at 100.
+  const defaultTier = tiers[0] || 100;
   const price = billingPrice(plan, defaultTier);
   const current = billingWallet?.plan === plan;
   return `
