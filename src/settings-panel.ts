@@ -167,15 +167,22 @@ const settingsTabMeta: Record<string, { title: string; description: string }> = 
   profil: { title: 'Profil', description: 'Nom, langue et préférences personnelles.' },
   compte: { title: 'Compte et sécurité', description: 'Identité et session active.' },
   confidentialite: { title: 'Confidentialité', description: 'Mémoire, données et protections.' },
-  capacites: { title: 'Capabilities', description: 'Workshops and agent capabilities.' },
-  automatisations: { title: 'Agent autonomy', description: 'Budgets, approvals and workflow safety.' },
+  capacites: { title: 'Capacités', description: 'Ateliers et capacités de l’agent.' },
+  automatisations: { title: 'Autonomie de l’agent', description: 'Budgets, validations et sécurité des automatisations.' },
   connecteurs: { title: 'Intégrations', description: 'Services réellement connectés à votre espace.' },
-  api: { title: 'API', description: 'Webhooks and safe connector controls.' },
+  api: { title: 'API', description: 'Webhooks et contrôle des connecteurs.' },
   apparence: { title: 'Apparence', description: 'Thème, densité et animations.' },
   facturation: { title: 'Facturation', description: 'Forfait, crédits, renouvellement et paiements.' },
-  ia: { title: 'Usage', description: 'Build, Cloud, IA intégrée et historique de consommation.' },
-  danger: { title: 'Danger', description: 'Reversible resets and sign-out.' },
+  ia: { title: 'Consommation', description: 'Build, Cloud, IA intégrée et historique de consommation.' },
+  danger: { title: 'Zone sensible', description: 'Réinitialisations réversibles et déconnexion.' },
 };
+
+/** "free" and "Free" read as the plan's French name; other plan names are proper nouns. */
+function planDisplayName(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw || /^free$/i.test(raw) || /^gratuit$/i.test(raw)) return 'Gratuit';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -301,7 +308,7 @@ function setSettingsStatus(message: string, tone: 'idle' | 'saving' | 'success' 
 function markSettingsDirty() {
   const panel = document.getElementById('settings-panel');
   panel?.classList.add(SETTINGS_DIRTY_CLASS);
-  setSettingsStatus('Unsaved changes', 'saving');
+  setSettingsStatus('Modifications non enregistrées', 'saving');
 }
 
 function setSegmentActive(group: string, value: string) {
@@ -803,10 +810,13 @@ function installSettingsStyle() {
       cursor: pointer;
     }
 
+    /* A tint of the accent under the foreground colour: accent text on
+       --accent-soft read blue on blue. */
     .settings-segment button.active {
       border-color: var(--accent);
-      background: var(--accent-soft);
-      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+      color: var(--foreground);
+      font-weight: 700;
     }
 
     .settings-integration-grid {
@@ -848,7 +858,7 @@ function installSettingsStyle() {
       margin-top: 12px;
     }
 
-    .cloud-summary-grid {
+    .settings-cloud-summary-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
@@ -856,7 +866,7 @@ function installSettingsStyle() {
     }
 
     .usage-summary-card,
-    .cloud-summary-card {
+    .settings-cloud-summary-card {
       border: 1px solid var(--border-subtle, color-mix(in srgb, var(--border) 78%, transparent));
       border-radius: 10px;
       padding: 10px;
@@ -864,7 +874,7 @@ function installSettingsStyle() {
     }
 
     .usage-summary-label,
-    .cloud-summary-label {
+    .settings-cloud-summary-label {
       display: block;
       margin-bottom: 6px;
       color: var(--text-secondary, var(--text-muted));
@@ -875,7 +885,7 @@ function installSettingsStyle() {
     }
 
     .usage-summary-value,
-    .cloud-summary-value {
+    .settings-cloud-summary-value {
       color: var(--accent);
       font-size: 18px;
       font-weight: 850;
@@ -1242,15 +1252,9 @@ function installSettingsStyle() {
       margin: 0 auto;
     }
 
-    .tab-panel::before {
-      content: attr(data-settings-heading);
-      display: block;
-      margin: 2px 0 22px;
-      color: var(--foreground);
-      font-size: 18px;
-      font-weight: 760;
-      letter-spacing: -.025em;
-    }
+    /* The panel header already names the section (settings-active-title);
+       a second, English copy of it used to sit above every tab. */
+    .tab-panel { padding-top: 2px; }
 
     .settings-card {
       border: 0;
@@ -1335,7 +1339,7 @@ function installSettingsStyle() {
 
     .settings-integration,
     .usage-summary-card,
-    .cloud-summary-card,
+    .settings-cloud-summary-card,
     .usage-row,
     .model-rate-row {
       background: var(--surface-soft);
@@ -1439,7 +1443,7 @@ function installSettingsStyle() {
     @media (max-width: 640px) {
 
       .usage-summary-grid,
-      .cloud-summary-grid,
+      .settings-cloud-summary-grid,
       .model-credit-grid,
       .settings-field-grid,
       .settings-integration-grid {
@@ -1531,7 +1535,7 @@ function settingsMarkup() {
             <h3 data-settings-profile-name>Profil du workspace</h3>
             <p data-settings-profile-email>Chargement du compte…</p>
           </div>
-          <span class="settings-plan-badge" data-settings-plan-badge>Free</span>
+          <span class="settings-plan-badge" data-settings-plan-badge>Gratuit</span>
         </div>
         <div class="settings-card">
           <h3>Préférences personnelles</h3>
@@ -1544,11 +1548,11 @@ function settingsMarkup() {
             <div class="settings-field">
               <label for="settings-role">Rôle</label>
               <select id="settings-role" data-settings-field="role">
-                <option value="founder">Founder</option>
-                <option value="freelancer">Freelancer</option>
-                <option value="agency">Agency</option>
-                <option value="developer">Developer</option>
-                <option value="marketer">Marketer</option>
+                <option value="founder">Fondateur ou fondatrice</option>
+                <option value="freelancer">Indépendant</option>
+                <option value="agency">Agence</option>
+                <option value="developer">Développeur</option>
+                <option value="marketer">Marketing</option>
               </select>
             </div>
             <div class="settings-field">
@@ -1560,7 +1564,7 @@ function settingsMarkup() {
               </select>
             </div>
             <div class="settings-field">
-              <label for="settings-timezone">Timezone</label>
+              <label for="settings-timezone">Fuseau horaire</label>
               <input id="settings-timezone" data-settings-field="timezone" type="text" placeholder="Africa/Douala">
             </div>
             <div class="settings-field full">
@@ -1570,21 +1574,21 @@ function settingsMarkup() {
           </div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-compte" data-settings-heading="Account">
+      <div class="tab-panel hidden" id="tab-compte" data-settings-heading="Compte et sécurité">
         <div class="settings-card">
-          <h3>Account</h3>
-          <p>Your identity, plan and current browser session.</p>
+          <h3>Votre compte</h3>
+          <p>Votre identité, votre forfait et la session de ce navigateur.</p>
           <div class="settings-row">
             <div><strong>E-mail</strong><span data-settings-account-email>Chargement…</span></div>
-            <span class="settings-mini-badge" data-settings-account-plan>Free</span>
+            <span class="settings-mini-badge" data-settings-account-plan>Gratuit</span>
           </div>
           <div class="settings-row">
-            <div><strong>User ID</strong><code data-settings-account-id>--</code></div>
-            <button type="button" class="settings-action-button" data-settings-action="copy-user-id">Copy</button>
+            <div><strong>Identifiant</strong><code data-settings-account-id>--</code></div>
+            <button type="button" class="settings-action-button" data-settings-action="copy-user-id">Copier</button>
           </div>
           <div class="settings-row">
-            <div><strong>Session</strong><span data-settings-session-state>Verified when Settings opened.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="refresh-session">Refresh</button>
+            <div><strong>Session</strong><span data-settings-session-state>Vérifiée à l’ouverture des paramètres.</span></div>
+            <button type="button" class="settings-action-button" data-settings-action="refresh-session">Actualiser</button>
           </div>
           <div class="settings-row">
             <div><strong>Facturation</strong><span>Comparez les forfaits et choisissez votre niveau de publication.</span></div>
@@ -1592,34 +1596,34 @@ function settingsMarkup() {
           </div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-confidentialite" data-settings-heading="Privacy">
+      <div class="tab-panel hidden" id="tab-confidentialite" data-settings-heading="Confidentialité">
         <div class="settings-card">
-          <h3>Project memory</h3>
-          <p>Coden can remember useful project decisions and preferences. Secrets, provider payloads and private tokens are never added to memory.</p>
+          <h3>Mémoire des projets</h3>
+          <p>Coden retient les décisions et préférences utiles à vos projets. Les secrets, les réponses des fournisseurs et les jetons privés n’y sont jamais ajoutés.</p>
           <div class="settings-row">
-            <div><strong>Controlled project memory</strong><span>Uses saved project decisions to keep future changes coherent.</span></div>
-            <span class="settings-mini-badge">Protected</span>
+            <div><strong>Mémoire maîtrisée</strong><span>Les décisions enregistrées gardent les prochaines modifications cohérentes.</span></div>
+            <span class="settings-mini-badge">Protégée</span>
           </div>
           <div class="settings-row">
-            <div><strong>Secret redaction</strong><span>Sensitive values are removed from user-visible logs and agent memory.</span></div>
-            <span class="settings-mini-badge">Always on</span>
+            <div><strong>Masquage des secrets</strong><span>Les valeurs sensibles sont retirées des journaux visibles et de la mémoire de l’agent.</span></div>
+            <span class="settings-mini-badge">Toujours actif</span>
           </div>
         </div>
         <div class="settings-card">
-          <h3>Data controls</h3>
-          <p>Local UI preferences can be reset from Danger. Account-level data requests stay behind authenticated support flows.</p>
+          <h3>Vos données</h3>
+          <p>Les préférences locales se réinitialisent depuis la zone sensible. Les demandes portant sur les données du compte passent par le support, après authentification.</p>
           <div class="settings-row">
-            <div><strong>Privacy documentation</strong><span>Review how Coden handles platform and generated-app data.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-privacy">Open</button>
+            <div><strong>Politique de confidentialité</strong><span>Comment Coden traite les données de la plateforme et des applications générées.</span></div>
+            <button type="button" class="settings-action-button" data-settings-action="open-privacy">Ouvrir</button>
           </div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-facturation" data-settings-heading="Billing">
+      <div class="tab-panel hidden" id="tab-facturation" data-settings-heading="Facturation">
         <div class="settings-card billing-intent" data-billing-intent hidden></div>
         <div class="settings-card billing-balance-card">
           <div>
             <h3 data-settings-billing-plan>Forfait gratuit</h3>
-            <p>Un solde unique pour Build, Cloud et l’IA intégrée. Les grants spécialisés sont consommés en premier.</p>
+            <p>Un solde unique pour la génération, le Cloud et l’IA intégrée. Les crédits réservés à un usage sont consommés en premier.</p>
             <strong class="billing-balance-value" data-billing-balance>—</strong>
           </div>
           <button type="button" class="settings-action-button" data-settings-action="open-usage">Voir l’usage</button>
@@ -1651,129 +1655,129 @@ function settingsMarkup() {
           </div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-apparence" data-settings-heading="Appearance">
+      <div class="tab-panel hidden" id="tab-apparence" data-settings-heading="Apparence">
         <div class="settings-card">
-          <h3>Appearance</h3>
-          <p>Adjust the interface without refreshing the builder. Motion respects reduced-motion preferences.</p>
-          <div class="settings-control-label">Theme</div>
+          <h3>Interface</h3>
+          <p>Ajustez l’interface sans recharger le builder. Les animations respectent la préférence « réduire les animations » de votre appareil.</p>
+          <div class="settings-control-label">Thème</div>
           <div class="settings-segment">
-            <button type="button" data-settings-theme="system">System</button>
-            <button type="button" data-settings-theme="light">Light</button>
-            <button type="button" data-settings-theme="dark">Dark</button>
+            <button type="button" data-settings-theme="system">Système</button>
+            <button type="button" data-settings-theme="light">Clair</button>
+            <button type="button" data-settings-theme="dark">Sombre</button>
           </div>
-          <div class="settings-control-label" style="margin-top:16px;">Density</div>
+          <div class="settings-control-label" style="margin-top:16px;">Densité</div>
           <div class="settings-segment">
-            <button type="button" data-settings-density="comfortable">Comfortable</button>
-            <button type="button" data-settings-density="compact">Compact</button>
+            <button type="button" data-settings-density="comfortable">Confortable</button>
+            <button type="button" data-settings-density="compact">Compacte</button>
           </div>
-          <div class="settings-control-label" style="margin-top:16px;">Motion</div>
+          <div class="settings-control-label" style="margin-top:16px;">Animations</div>
           <div class="settings-segment">
             <button type="button" data-settings-motion="normal">Normal</button>
-            <button type="button" data-settings-motion="reduced">Reduced</button>
+            <button type="button" data-settings-motion="reduced">Réduites</button>
           </div>
-          <div class="settings-control-label" style="margin-top:16px;">Accent</div>
+          <div class="settings-control-label" style="margin-top:16px;">Couleur d’accent</div>
           <div class="settings-segment">
-            <button type="button" data-settings-accent="coden-blue">Coden blue</button>
-            <button type="button" data-settings-accent="neutral">Neutral</button>
+            <button type="button" data-settings-accent="coden-blue">Bleu Coden</button>
+            <button type="button" data-settings-accent="neutral">Neutre</button>
           </div>
         </div>
       </div>
       ${aiUsageMarkup()}
-      <div class="tab-panel hidden" id="tab-capacites" data-settings-heading="Capabilities">
+      <div class="tab-panel hidden" id="tab-capacites" data-settings-heading="Capacités">
         <div class="settings-card">
-          <h3>Coden workshops</h3>
-          <p>One assistant, multiple focused workshops. Availability follows the current account plan.</p>
+          <h3>Ateliers Coden</h3>
+          <p>Un assistant, plusieurs ateliers spécialisés. Leur disponibilité suit votre forfait.</p>
           <div class="settings-integration-grid">
-            <div class="settings-integration"><strong>Sites</strong><span>Build, edit, verify and publish complete web applications.</span></div>
-            <div class="settings-integration"><strong>Pitch decks</strong><span>Presentation structure, slide narrative and one-pagers.</span></div>
-            <div class="settings-integration"><strong>Coden Media</strong><span>Marketing assets, product visuals, UGC and campaign concepts.</span></div>
+            <div class="settings-integration"><strong>Sites</strong><span>Créer, modifier, vérifier et publier des applications web complètes.</span></div>
+            <div class="settings-integration"><strong>Présentations</strong><span>Structure, récit des diapositives et one-pagers.</span></div>
+            <div class="settings-integration"><strong>Coden Media</strong><span>Visuels marketing, images produit, UGC et concepts de campagne.</span></div>
           </div>
         </div>
         <div class="settings-card">
-          <h3>Agent capabilities</h3>
-          <p>Coden selects compatible reasoning, code, vision and tool workflows without exposing internal provider details.</p>
-          <div class="settings-row"><div><strong>Automatic model routing</strong><span>Chooses a compatible workflow for the requested task.</span></div><span class="settings-mini-badge">Active</span></div>
-          <div class="settings-row"><div><strong>Verification and recovery</strong><span>Checks generated work and keeps recoverable drafts when blocked.</span></div><span class="settings-mini-badge">Active</span></div>
+          <h3>Capacités de l’agent</h3>
+          <p>Coden choisit les modes de raisonnement, de code, de vision et d’outils adaptés, sans exposer les détails des fournisseurs.</p>
+          <div class="settings-row"><div><strong>Choix automatique du modèle</strong><span>Sélectionne un mode de travail adapté à la demande.</span></div><span class="settings-mini-badge">Actif</span></div>
+          <div class="settings-row"><div><strong>Vérification et reprise</strong><span>Contrôle le travail généré et conserve un brouillon récupérable en cas de blocage.</span></div><span class="settings-mini-badge">Actif</span></div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-automatisations" data-settings-heading="Agent autonomy">
+      <div class="tab-panel hidden" id="tab-automatisations" data-settings-heading="Autonomie de l’agent">
         <div class="settings-card">
-          <h3>Bounded autonomy</h3>
-          <p>Coden can handle reversible work automatically. Publishing, deletion, migrations, secrets, domains, Git push and billing always require explicit confirmation.</p>
-          <div class="settings-row"><div><strong>Skills</strong><span>Build, debug, review, security, test, research and release policies.</span></div><span class="settings-mini-badge">Managed</span></div>
-          <div class="settings-row"><div><strong>Verification</strong><span>Runs keep their real checks and never report success without evidence.</span></div><span class="settings-mini-badge">Required</span></div>
-          <div class="settings-row"><div><strong>Scheduled workflows</strong><span>Schedules are paused after repeated failures and use an idempotency key.</span></div><span class="settings-mini-badge">Bounded</span></div>
+          <h3>Autonomie encadrée</h3>
+          <p>Coden réalise seul le travail réversible. Publication, suppression, migrations, secrets, domaines, push Git et facturation demandent toujours votre confirmation.</p>
+          <div class="settings-row"><div><strong>Compétences</strong><span>Règles de construction, débogage, relecture, sécurité, tests, recherche et mise en ligne.</span></div><span class="settings-mini-badge">Géré</span></div>
+          <div class="settings-row"><div><strong>Vérification</strong><span>Chaque exécution garde ses vrais contrôles et n’annonce jamais un succès sans preuve.</span></div><span class="settings-mini-badge">Obligatoire</span></div>
+          <div class="settings-row"><div><strong>Tâches planifiées</strong><span>Mises en pause après des échecs répétés, protégées contre les doubles exécutions.</span></div><span class="settings-mini-badge">Encadré</span></div>
         </div>
         <div class="settings-card">
-          <h3>Workspace limits</h3>
+          <h3>Limites de l’espace</h3>
           <div class="settings-field-grid">
-            <div class="settings-field"><label for="settings-agent-max-steps">Max tool steps</label><input id="settings-agent-max-steps" type="number" min="1" max="20" value="10" disabled></div>
-            <div class="settings-field"><label for="settings-agent-concurrency">Concurrent runs</label><input id="settings-agent-concurrency" type="number" min="1" max="3" value="3" disabled></div>
+            <div class="settings-field"><label for="settings-agent-max-steps">Étapes d’outils maximum</label><input id="settings-agent-max-steps" type="number" min="1" max="20" value="10" disabled></div>
+            <div class="settings-field"><label for="settings-agent-concurrency">Exécutions simultanées</label><input id="settings-agent-concurrency" type="number" min="1" max="3" value="3" disabled></div>
           </div>
-          <p style="margin-top:12px;font-size:12px;color:var(--text-secondary)">Limits are enforced server-side. Contact your workspace owner to change plan-level budgets.</p>
+          <p style="margin-top:12px;font-size:12px;color:var(--text-secondary)">Ces limites sont appliquées côté serveur. Contactez le propriétaire de l’espace pour changer les budgets du forfait.</p>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-connecteurs" data-settings-heading="Connectors">
+      <div class="tab-panel hidden" id="tab-connecteurs" data-settings-heading="Intégrations">
         <div class="settings-card">
-          <h3>Platform connectors</h3>
-          <p>Connections are handled through protected backend flows. Secret values never appear in this panel.</p>
+          <h3>Services de la plateforme</h3>
+          <p>Les connexions passent par des flux serveur protégés. Aucune valeur secrète n’apparaît dans ce panneau.</p>
           <div class="settings-integration-grid">
-            <div class="settings-integration"><strong>GitHub</strong><span>Repository synchronization and versioned collaboration.</span></div>
-            <div class="settings-integration"><strong>Supabase</strong><span>Platform auth and generated-app backend services.</span></div>
-            <div class="settings-integration"><strong>Vercel</strong><span>Production deployment and live URL verification.</span></div>
+            <div class="settings-integration"><strong>GitHub</strong><span>Synchronisation du dépôt et collaboration versionnée.</span></div>
+            <div class="settings-integration"><strong>Supabase</strong><span>Authentification et backend des applications générées.</span></div>
+            <div class="settings-integration"><strong>Vercel</strong><span>Déploiement en production et vérification de l’adresse publique.</span></div>
             <div class="settings-integration"><strong>Saspay</strong><span>Checkout FCFA protégé, paiements FlowPay et webhooks signés.</span></div>
           </div>
         </div>
         <div class="settings-card">
-          <h3>Manage connections</h3>
-          <p>Open Connecteurs to connect or review services available to the current workspace.</p>
+          <h3>Gérer les connexions</h3>
+          <p>Connectez ou vérifiez les services disponibles pour votre espace.</p>
           <div class="settings-row">
-            <div><strong>Workspace connectors</strong><span>Connection availability depends on your plan and configured backend environment.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-integrations">Open Connecteurs</button>
+            <div><strong>Connecteurs de l’espace</strong><span>Leur disponibilité dépend de votre forfait et de la configuration du serveur.</span></div>
+            <button type="button" class="settings-action-button" data-settings-action="open-integrations">Ouvrir les connecteurs</button>
           </div>
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-api" data-settings-heading="API">
         <div class="settings-card">
           <h3>API</h3>
-          <p>Safe connector controls. Secrets stay server-side or inside project Database secrets.</p>
+          <p>Contrôle des connecteurs. Les secrets restent côté serveur ou dans les secrets Cloud du projet.</p>
           <div class="settings-integration-grid">
-            <div class="settings-integration"><strong>Supabase</strong><span>Platform auth and generated app backend stay separated.</span></div>
-            <div class="settings-integration"><strong>Vercel</strong><span>Publish runs through backend tokens only.</span></div>
-            <div class="settings-integration"><strong>OpenRouter</strong><span>AI provider keys are never shown in the browser.</span></div>
-            <div class="settings-integration"><strong>Project secrets</strong><span>Per-app keys are managed from Database when a project needs them.</span></div>
+            <div class="settings-integration"><strong>Supabase</strong><span>L’authentification de la plateforme et le backend des applications restent séparés.</span></div>
+            <div class="settings-integration"><strong>Vercel</strong><span>La publication passe uniquement par des jetons serveur.</span></div>
+            <div class="settings-integration"><strong>OpenRouter</strong><span>Les clés des fournisseurs d’IA ne sont jamais affichées dans le navigateur.</span></div>
+            <div class="settings-integration"><strong>Secrets de projet</strong><span>Les clés propres à une application se gèrent depuis Cloud quand un projet en a besoin.</span></div>
           </div>
         </div>
         <div class="settings-card">
-          <h3>Webhook preferences</h3>
-          <p>Store your preferred webhook endpoint locally until account-level webhooks are enabled server-side.</p>
+          <h3>Webhooks</h3>
+          <p>Votre adresse de webhook est gardée sur cet appareil en attendant l’activation des webhooks de compte côté serveur.</p>
           <div class="settings-field-grid">
             <div class="settings-field full">
-              <label for="settings-webhook-url">Webhook URL</label>
+              <label for="settings-webhook-url">Adresse du webhook</label>
               <input id="settings-webhook-url" data-settings-field="webhookUrl" type="url" placeholder="https://example.com/coden-webhook">
             </div>
             <div class="settings-field full">
-              <label for="settings-webhook-events">Events</label>
+              <label for="settings-webhook-events">Événements</label>
               <input id="settings-webhook-events" data-settings-field="webhookEvents" type="text" placeholder="publish, rollback, generation_failed">
             </div>
           </div>
         </div>
       </div>
-      <div class="tab-panel hidden" id="tab-danger" data-settings-heading="Danger">
+      <div class="tab-panel hidden" id="tab-danger" data-settings-heading="Zone sensible">
         <div class="settings-card settings-danger-zone">
-          <h3>Danger zone</h3>
-          <p>Only reversible local actions are exposed here. Account deletion and billing changes must go through protected backend flows.</p>
+          <h3>Zone sensible</h3>
+          <p>Seules des actions locales et réversibles figurent ici. La suppression du compte et les changements de facturation passent par des flux serveur protégés.</p>
           <div class="settings-row">
-            <div><strong>Reset UI preferences</strong><span>Restores theme, motion, density and profile preferences on this device.</span></div>
-            <button type="button" class="settings-danger-button" data-settings-action="reset-preferences">Reset</button>
+            <div><strong>Réinitialiser l’interface</strong><span>Rétablit le thème, les animations, la densité et le profil sur cet appareil.</span></div>
+            <button type="button" class="settings-danger-button" data-settings-action="reset-preferences">Réinitialiser</button>
           </div>
           <div class="settings-row">
-            <div><strong>Clear local drafts</strong><span>Removes cached builder prompts and temporary local settings from this browser.</span></div>
-            <button type="button" class="settings-danger-button" data-settings-action="clear-drafts">Clear</button>
+            <div><strong>Effacer les brouillons</strong><span>Supprime les demandes en cours et les réglages temporaires gardés par ce navigateur.</span></div>
+            <button type="button" class="settings-danger-button" data-settings-action="clear-drafts">Effacer</button>
           </div>
           <div class="settings-row">
-            <div><strong>Sign out this device</strong><span>Ends the local Supabase session and returns to authentication.</span></div>
-            <button type="button" class="settings-danger-button" data-settings-action="sign-out">Sign out</button>
+            <div><strong>Se déconnecter de cet appareil</strong><span>Ferme la session sur ce navigateur et revient à la connexion.</span></div>
+            <button type="button" class="settings-danger-button" data-settings-action="sign-out">Se déconnecter</button>
           </div>
         </div>
       </div>
@@ -1789,25 +1793,25 @@ function settingsMarkup() {
 
 function aiUsageMarkup() {
   return `
-    <div class="tab-panel hidden" id="tab-ia" data-settings-heading="Usage">
+    <div class="tab-panel hidden" id="tab-ia" data-settings-heading="Consommation">
       <div class="settings-card">
-        <h3>AI Usage</h3>
-        <p>Credits are shown for your account only. Provider costs, margins and internal platform costs are never exposed here.</p>
+        <h3>Consommation</h3>
+        <p>Les crédits de votre compte uniquement. Les coûts des fournisseurs et de la plateforme ne sont jamais affichés ici.</p>
         <div class="usage-summary-grid">
-          <div class="usage-summary-card"><span class="usage-summary-label">Balance</span><strong class="usage-summary-value" id="ai-usage-balance">--</strong></div>
-          <div class="usage-summary-card"><span class="usage-summary-label">Monthly</span><strong class="usage-summary-value" id="ai-usage-monthly">--</strong></div>
-          <div class="usage-summary-card"><span class="usage-summary-label">Daily promo</span><strong class="usage-summary-value" id="ai-usage-daily">--</strong></div>
-          <div class="usage-summary-card"><span class="usage-summary-label">Top-ups</span><strong class="usage-summary-value" id="ai-usage-topups">--</strong></div>
+          <div class="usage-summary-card"><span class="usage-summary-label">Solde</span><strong class="usage-summary-value" id="ai-usage-balance">--</strong></div>
+          <div class="usage-summary-card"><span class="usage-summary-label">Mensuels</span><strong class="usage-summary-value" id="ai-usage-monthly">--</strong></div>
+          <div class="usage-summary-card"><span class="usage-summary-label">Bonus du jour</span><strong class="usage-summary-value" id="ai-usage-daily">--</strong></div>
+          <div class="usage-summary-card"><span class="usage-summary-label">Recharges</span><strong class="usage-summary-value" id="ai-usage-topups">--</strong></div>
         </div>
       </div>
       <div class="settings-card">
         <h3>Crédits disponibles</h3>
         <p>Ce que chaque type d’action peut réellement dépenser en ce moment. Les crédits partagés sont comptés dans les trois premiers, puisqu’ils peuvent payer n’importe lequel.</p>
-        <div class="cloud-summary-grid">
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Générer et corriger</span><strong class="cloud-summary-value" id="grant-build">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Cloud et déploiement</span><strong class="cloud-summary-value" id="grant-cloud">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Discussion avec l’agent</span><strong class="cloud-summary-value" id="grant-ai">--</strong></div>
-          <div class="cloud-summary-card"><span class="cloud-summary-label">Dont partagés</span><strong class="cloud-summary-value" id="grant-general">--</strong></div>
+        <div class="settings-cloud-summary-grid">
+          <div class="settings-cloud-summary-card"><span class="settings-cloud-summary-label">Générer et corriger</span><strong class="settings-cloud-summary-value" id="grant-build">--</strong></div>
+          <div class="settings-cloud-summary-card"><span class="settings-cloud-summary-label">Cloud et déploiement</span><strong class="settings-cloud-summary-value" id="grant-cloud">--</strong></div>
+          <div class="settings-cloud-summary-card"><span class="settings-cloud-summary-label">Discussion avec l’agent</span><strong class="settings-cloud-summary-value" id="grant-ai">--</strong></div>
+          <div class="settings-cloud-summary-card"><span class="settings-cloud-summary-label">Dont partagés</span><strong class="settings-cloud-summary-value" id="grant-general">--</strong></div>
         </div>
       </div>
       <div class="settings-card">
@@ -1863,8 +1867,8 @@ function updateSettingsForm(prefs = loadSettingsPreferences()) {
 function renderAuthSummary(auth: AuthMeResponse | null, prefs = loadSettingsPreferences()) {
   const email = auth?.user?.email || 'Session active';
   const userId = auth?.user?.id || '--';
-  const displayName = prefs.profile.displayName || email.split('@')[0] || 'Coden user';
-  const planLabel = auth?.plan?.label || auth?.plan?.key || 'Free';
+  const displayName = prefs.profile.displayName || email.split('@')[0] || 'Utilisateur Coden';
+  const planLabel = planDisplayName(auth?.plan?.label || auth?.plan?.key);
 
   const avatar = document.querySelector<HTMLElement>('[data-settings-avatar]');
   const profileName = document.querySelector<HTMLElement>('[data-settings-profile-name]');
@@ -1882,7 +1886,7 @@ function renderAuthSummary(auth: AuthMeResponse | null, prefs = loadSettingsPref
   if (accountEmail) accountEmail.textContent = email;
   if (accountId) accountId.textContent = userId;
   if (accountPlan) accountPlan.textContent = String(planLabel);
-  if (billingPlan) billingPlan.textContent = `${String(planLabel)} plan`;
+  if (billingPlan) billingPlan.textContent = planLabel === 'Gratuit' ? 'Forfait gratuit' : `Forfait ${String(planLabel)}`;
 }
 
 async function hydrateSettingsPanel() {
@@ -1928,30 +1932,30 @@ async function saveSettingsFromPanel() {
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
     setSettingsStatus('Enregistré', 'success');
   } catch (error) {
-    setSettingsStatus(error instanceof Error ? error.message : 'Could not save settings', 'error');
+    setSettingsStatus(error instanceof Error ? error.message : 'Enregistrement impossible', 'error');
   }
 }
 
-async function copyText(value: string, label = 'Copied') {
+async function copyText(value: string, label = 'Copié') {
   try {
     await navigator.clipboard.writeText(value);
     setSettingsStatus(label, 'success');
   } catch {
-    setSettingsStatus('Copy failed', 'error');
+    setSettingsStatus('Copie impossible', 'error');
   }
 }
 
 function resetLocalPreferences() {
-  if (!window.confirm('Reset local Coden preferences on this device?')) return;
+  if (!window.confirm('Réinitialiser les préférences Coden de cet appareil ?')) return;
   localStorage.removeItem(SETTINGS_PREFS_KEY);
   const prefs = defaultSettingsPreferences();
   saveSettingsPreferences(prefs);
   updateSettingsForm(prefs);
-  setSettingsStatus('Preferences reset', 'success');
+  setSettingsStatus('Préférences réinitialisées', 'success');
 }
 
 function clearLocalDrafts() {
-  if (!window.confirm('Clear local builder drafts and temporary local settings?')) return;
+  if (!window.confirm('Effacer les brouillons et réglages temporaires de ce navigateur ?')) return;
   [
     'coden-dashboard-draft',
     'coden-builder-draft',
@@ -1959,20 +1963,20 @@ function clearLocalDrafts() {
     'coden-media-settings',
     'coden-last-builder-project-id',
   ].forEach(key => localStorage.removeItem(key));
-  setSettingsStatus('Local drafts cleared', 'success');
+  setSettingsStatus('Brouillons effacés', 'success');
 }
 
 async function handleSettingsAction(action: string) {
   if (action === 'copy-user-id') {
-    await copyText(document.querySelector<HTMLElement>('[data-settings-account-id]')?.textContent || '', 'User ID copied');
+    await copyText(document.querySelector<HTMLElement>('[data-settings-account-id]')?.textContent || '', 'Identifiant copié');
     return;
   }
   if (action === 'refresh-session') {
-    setSettingsStatus('Refreshing session...', 'saving');
+    setSettingsStatus('Actualisation de la session…', 'saving');
     const session = await refreshVerifiedSession();
     const sessionState = document.querySelector<HTMLElement>('[data-settings-session-state]');
-    if (sessionState) sessionState.textContent = session ? 'Session refreshed just now.' : 'Session could not be refreshed.';
-    setSettingsStatus(session ? 'Session refreshed' : 'Refresh failed', session ? 'success' : 'error');
+    if (sessionState) sessionState.textContent = session ? 'Session actualisée à l’instant.' : 'La session n’a pas pu être actualisée.';
+    setSettingsStatus(session ? 'Session actualisée' : 'Actualisation impossible', session ? 'success' : 'error');
     return;
   }
   if (action === 'open-pricing') {

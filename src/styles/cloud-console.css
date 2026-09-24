@@ -227,18 +227,28 @@
 .db-action:hover { background: var(--surface-soft); }
 .cloud-console-action:active,
 .db-action:active { transform: scale(.98); }
+/* Filled with the accent. It used to be the surface colour with
+   --text-on-accent on top, which in the dark theme is the background colour:
+   near-black text on a near-black button. */
 .cloud-console-action.is-primary,
 .db-action-primary {
   border-color: var(--accent);
-  background: var(--surface);
+  background: var(--accent);
   color: var(--text-on-accent, var(--foreground));
 }
+.cloud-console-action.is-primary:hover,
+.db-action-primary:hover {
+  border-color: color-mix(in srgb, var(--accent) 86%, var(--foreground));
+  background: color-mix(in srgb, var(--accent) 86%, var(--foreground));
+}
+.cloud-console-action:disabled,
+.db-action:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 
 .cloud-console-content { display: grid; gap: 16px; }
 
 .cloud-summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 12px;
 }
 
@@ -274,7 +284,9 @@
   line-height: 28px;
   font-weight: 700;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wraps rather than cutting a date to "1 janv. 202…" in a four-up row. */
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .cloud-summary-card small {
@@ -316,14 +328,17 @@
 
 .cloud-services-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 12px;
 }
 
+/* Icon, then name and detail, then the count on its own line: with the count
+   beside the text, a 230px card left the description a 70px column and it
+   broke one word per line. */
 .cloud-service-card {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   min-width: 0;
   padding: 16px;
@@ -367,6 +382,14 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 16px;
+}
+
+.cloud-service-card .cloud-service-meta {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 2px;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .cloud-service-meta {
@@ -529,6 +552,12 @@
 input.cloud-filter { flex: 1 1 240px; }
 .db-input { flex: 1 1 240px; }
 .db-file-input { max-width: 100%; color: var(--text-muted); font: inherit; font-size: 12px; }
+/* The native picker is hidden behind a button in the product's own style:
+   the browser's reads "Choose File / No file chosen", in English, grey on grey. */
+.db-file-picker { display: inline-flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 240px; }
+.db-file-picker input[type="file"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.db-file-picker-name { overflow: hidden; color: var(--text-muted); font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.db-file-picker:focus-within .db-action { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .db-card,
 .db-note,
@@ -543,7 +572,8 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-card-list,
 .db-file-list { display: grid; margin-top: 12px; }
 .db-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
-.db-row-key { overflow: hidden; color: var(--foreground); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.db-row-key { overflow: hidden; min-width: 0; color: var(--foreground); font-size: 14px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.db-row-key > small { display: block; overflow: hidden; text-overflow: ellipsis; }
 .db-row-meta { color: var(--text-muted); font-size: 12px; line-height: 16px; }
 .db-browser,
 .db-endusers,
