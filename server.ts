@@ -11617,7 +11617,7 @@ app.get('/api/admin/feature-flags', async (req: any, res) => {
     success: true,
     flags: [
       { key: 'coden_media', label: 'Coden Media', enabled: true, rollout: 'beta', risk: 'medium' },
-      { key: 'coden_design', label: 'Coden Design', enabled: true, rollout: 'beta', risk: 'medium' },
+      { key: 'coden_design', label: 'Coden Design', enabled: false, rollout: 'removed', risk: 'low' },
       { key: 'coden_decks', label: 'Coden Decks', enabled: true, rollout: 'beta', risk: 'medium' },
       { key: 'rich_message_parts_stream', label: 'Rich message parts stream', enabled: true, rollout: 'all', risk: 'low' },
       { key: 'browser_testing', label: 'Browser testing runtime', enabled: true, rollout: 'all', risk: 'medium' },

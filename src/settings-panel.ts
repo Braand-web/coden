@@ -1656,7 +1656,6 @@ function settingsMarkup() {
           <p>One assistant, multiple focused workshops. Availability follows the current account plan.</p>
           <div class="settings-integration-grid">
             <div class="settings-integration"><strong>Sites</strong><span>Build, edit, verify and publish complete web applications.</span></div>
-            <div class="settings-integration"><strong>Coden Design</strong><span>UI direction, design critique, prototypes and visual polish.</span></div>
             <div class="settings-integration"><strong>Pitch decks</strong><span>Presentation structure, slide narrative and one-pagers.</span></div>
             <div class="settings-integration"><strong>Coden Media</strong><span>Marketing assets, product visuals, UGC and campaign concepts.</span></div>
           </div>
