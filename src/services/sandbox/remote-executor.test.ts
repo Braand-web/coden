@@ -162,3 +162,39 @@ describe('preview proxy to a VM origin', () => {
     }
   });
 });
+
+describe('remote executor VM lifetime', () => {
+  it('keeps a watched VM alive, and replaces one that expired instead of reusing it', async () => {
+    const root = await projectDir({ 'package.json': '{"scripts":{"dev":"vite"}}' });
+    const first = fakeVm();
+    const second = fakeVm();
+    let extended = 0;
+    let gone = false;
+    first.client.setTimeout = async () => {
+      if (gone) throw new Error('Sandbox sbx_test not found');
+      extended += 1;
+    };
+    const vms = [first.client, second.client];
+    const executor = new RemoteExecutor('p1', root, async () => vms.shift()!);
+    await executor.run('node', ['-v'], { timeoutMs: 1_000 });
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      // Viewing the preview extends the VM, at most once a minute.
+      clock.mockReturnValue(now + 61_000);
+      expect(await executor.keepAlive()).toBe(true);
+      expect(await executor.keepAlive()).toBe(true);
+      expect(extended).toBe(1);
+
+      // The VM expires: it is forgotten, and the next command gets a new one.
+      gone = true;
+      clock.mockReturnValue(now + 130_000);
+      expect(await executor.keepAlive()).toBe(false);
+      await executor.run('node', ['-v'], { timeoutMs: 1_000 });
+      expect(second.commands.some(entry => entry.cmd.includes('node'))).toBe(true);
+      expect(executor.sandboxId).toBe('sbx_test');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});
