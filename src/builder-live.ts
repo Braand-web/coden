@@ -4,6 +4,7 @@ import './styles/modern-shell.css';
 import './styles/coherence.css';
 import './styles/publish-panel.css';
 import './styles/cloud-console.css';
+import './styles/code-workshop.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
 import { initThemeController } from './theme-controller';
@@ -16,6 +17,7 @@ import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
+import { buildFileTree, CHEVRON_SVG as CODE_CHEVRON_SVG, escapeHtml as escapeCodeHtml, fileIconSvg, FOLDER_ICON_SVG as CODE_FOLDER_ICON_SVG, highlightLines, languageOf, type TreeNode } from './lib/code-view';
 import {
   consumePendingPromptAttachments,
   initPromptInputActions,
@@ -3834,29 +3836,104 @@ function refreshPreviewFrame() {
   showTransientNotice('No preview to refresh yet.');
 }
 
+/*
+ * The Code workshop.
+ *
+ * A folder tree (folders collapse, a filter narrows it), and the open file
+ * highlighted with line numbers, its language and size, and a copy button.
+ * Files come from the model: every name and line is escaped in code-view.ts.
+ */
+const CODE_VIEW_MAX_LINES = 3000;
+const collapsedCodeFolders = new Set<string>();
+let codeFilter = '';
+let openCodePath = '';
+
+function renderCodeTree() {
+  const tree = document.querySelector<HTMLElement>('.explorer-tree-scroll');
+  if (!tree) return;
+  const query = codeFilter.trim().toLowerCase();
+  const paths = currentFiles.map(file => file.path).filter(path => !query || path.toLowerCase().includes(query));
+  const count = document.getElementById('explorer-file-count');
+  if (count) count.textContent = currentFiles.length ? String(currentFiles.length) : '';
+  if (!paths.length) {
+    tree.innerHTML = `<div class="explorer-empty">${query ? 'Aucun fichier ne correspond.' : 'Aucun fichier.'}</div>`;
+    return;
+  }
+  const renderNodes = (nodes: TreeNode[], depth: number): string => nodes.map(node => {
+    const indent = `style="--depth:${depth}"`;
+    if (node.kind === 'folder') {
+      // A filter opens every folder it matched in.
+      const open = Boolean(query) || !collapsedCodeFolders.has(node.path);
+      return `<div class="tree-folder" role="group">
+        <button type="button" class="tree-folder-title" data-folder="${escapeCodeHtml(node.path)}" aria-expanded="${open}" ${indent}>${CODE_CHEVRON_SVG}${CODE_FOLDER_ICON_SVG}<span>${escapeCodeHtml(node.name)}</span></button>
+        ${open ? `<div class="tree-folder-children">${renderNodes(node.children, depth + 1)}</div>` : ''}
+      </div>`;
+    }
+    const selected = node.path === openCodePath;
+    return `<button type="button" role="treeitem" class="tree-file${selected ? ' selected' : ''}" data-file="${escapeCodeHtml(node.path)}" aria-selected="${selected}" title="${escapeCodeHtml(node.path)}" ${indent}>${fileIconSvg(node.path)}<span>${escapeCodeHtml(node.name)}</span></button>`;
+  }).join('');
+  tree.innerHTML = renderNodes(buildFileTree(paths), 0);
+}
+
+function bindCodeWorkshop() {
+  const tree = document.querySelector<HTMLElement>('.explorer-tree-scroll');
+  if (tree && tree.dataset.codeBound !== 'true') {
+    tree.dataset.codeBound = 'true';
+    tree.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      const folder = target?.closest<HTMLElement>('[data-folder]');
+      if (folder) {
+        const path = folder.dataset.folder || '';
+        if (collapsedCodeFolders.has(path)) collapsedCodeFolders.delete(path);
+        else collapsedCodeFolders.add(path);
+        renderCodeTree();
+        return;
+      }
+      const file = target?.closest<HTMLElement>('[data-file]');
+      if (file?.dataset.file) selectFile(file.dataset.file);
+    });
+  }
+  const filter = document.getElementById('explorer-filter-input') as HTMLInputElement | null;
+  if (filter && filter.dataset.codeBound !== 'true') {
+    filter.dataset.codeBound = 'true';
+    filter.addEventListener('input', () => { codeFilter = filter.value; renderCodeTree(); });
+  }
+  const copy = document.getElementById('btn-copy-open-file') as HTMLButtonElement | null;
+  if (copy && copy.dataset.codeBound !== 'true') {
+    copy.dataset.codeBound = 'true';
+    copy.addEventListener('click', async () => {
+      const file = currentFiles.find(item => item.path === openCodePath);
+      if (!file) return;
+      const label = copy.querySelector('span');
+      try {
+        await navigator.clipboard.writeText(file.content);
+        if (label) label.textContent = 'Copié';
+      } catch {
+        if (label) label.textContent = 'Copie impossible';
+      }
+      window.setTimeout(() => { if (label) label.textContent = 'Copier'; }, 1600);
+    });
+  }
+}
+
 function renderFiles(files: GeneratedFile[]) {
   currentFiles = files;
   syncProjectReadinessClass();
   const codeLayout = document.getElementById('screen-layout-code');
   codeLayout?.classList.toggle('is-empty', files.length === 0);
-  const tree = document.querySelector('.explorer-tree-scroll');
-  if (tree) {
-    tree.innerHTML = '';
-    files.forEach((file, index) => {
-      const item = document.createElement('div');
-      item.className = `tree-file${index === 0 ? ' selected' : ''}`;
-      item.setAttribute('data-file', file.path);
-      item.innerHTML = `<span class="tree-file-icon">File</span><span>${escapeHtml(file.path)}</span>`;
-      item.addEventListener('click', () => selectFile(file.path));
-      tree.appendChild(item);
-    });
-  }
+  bindCodeWorkshop();
+  if (!files.some(file => file.path === openCodePath)) openCodePath = '';
+  renderCodeTree();
   if (files[0]) {
-    selectFile(files.find(file => file.path === 'index.html')?.path || files[0].path);
+    selectFile(openCodePath || files.find(file => file.path === 'index.html')?.path || files[0].path);
     return;
   }
   const label = document.getElementById('open-file-tab-label');
   if (label) label.textContent = 'Code';
+  const meta = document.getElementById('open-file-meta');
+  if (meta) meta.textContent = '';
+  const copy = document.getElementById('btn-copy-open-file');
+  if (copy) copy.hidden = true;
   const code = document.getElementById('code-content-view-panel');
   if (code) {
     code.innerHTML = '<div class="code-empty-state"><h3>Aucun fichier généré</h3><p>Demandez à Coden de créer ou modifier l’application.</p><button class="code-empty-action" type="button" data-focus-composer>Écrire à Coden</button></div>';
@@ -3878,18 +3955,39 @@ function syncProjectReadinessClass() {
 }
 
 function selectFile(filePath: string) {
-  document.querySelectorAll('.tree-file').forEach(item => item.classList.toggle('selected', item.getAttribute('data-file') === filePath));
-  const label = document.getElementById('open-file-tab-label');
-  if (label) label.textContent = filePath;
-
   const file = currentFiles.find(item => item.path === filePath);
-  const code = document.getElementById('code-content-view-panel');
-  if (!code || !file) return;
+  if (!file) return;
+  openCodePath = filePath;
+  // Open the folders on the way to it, so a file opened from Cloud is visible in the tree.
+  filePath.split('/').slice(0, -1).forEach((_, index, parts) => collapsedCodeFolders.delete(parts.slice(0, index + 1).join('/')));
+  renderCodeTree();
+  document.querySelector<HTMLElement>(`.tree-file[data-file="${CSS.escape(filePath)}"]`)?.scrollIntoView({ block: 'nearest' });
 
-  const lines = file.content.split('\n').slice(0, 600);
+  const language = languageOf(filePath);
+  const label = document.getElementById('open-file-tab-label');
+  if (label) {
+    const parts = filePath.split('/');
+    label.innerHTML = parts.map((part, index) => index === parts.length - 1 ? `<strong>${escapeCodeHtml(part)}</strong>` : `<span>${escapeCodeHtml(part)}</span>`).join('<i aria-hidden="true">/</i>');
+    label.title = filePath;
+  }
+  const icon = document.getElementById('open-file-tab-icon');
+  if (icon) icon.innerHTML = fileIconSvg(filePath);
+  const allLines = file.content.replace(/\r\n?/g, '\n').split('\n');
+  if (allLines.length > 1 && allLines[allLines.length - 1] === '') allLines.pop();
+  const meta = document.getElementById('open-file-meta');
+  if (meta) meta.textContent = `${language.label} · ${allLines.length.toLocaleString('fr-FR')} ligne${allLines.length === 1 ? '' : 's'}`;
+  const copy = document.getElementById('btn-copy-open-file');
+  if (copy) copy.hidden = false;
+
+  const code = document.getElementById('code-content-view-panel');
+  if (!code) return;
+  const shown = allLines.slice(0, CODE_VIEW_MAX_LINES).join('\n');
+  const lines = highlightLines(shown, language.id);
+  const rest = allLines.length - CODE_VIEW_MAX_LINES;
   code.innerHTML = lines
-    .map((line, index) => `<div class="editor-line-row"><span class="editor-line-number">${index + 1}</span><span class="editor-line-content">${escapeHtml(line) || '&nbsp;'}</span></div>`)
-    .join('');
+    .map((line, index) => `<div class="editor-line-row"><span class="editor-line-number">${index + 1}</span><span class="editor-line-content">${line || ' '}</span></div>`)
+    .join('') + (rest > 0 ? `<div class="editor-truncated">${rest.toLocaleString('fr-FR')} ligne${rest === 1 ? '' : 's'} de plus : exportez le projet pour lire le fichier en entier.</div>` : '');
+  document.getElementById('editor-source-output')?.scrollTo({ top: 0 });
 }
 
 function ensureToolbar() {
@@ -7301,8 +7399,8 @@ function renderDatabaseSection3(db: any): string {
             <span>${dbBadge('success', 'Gestion active')}</span>
           </div>
           <div class="db-enduser-create">
-            <input id="db-storage-file" class="db-file-input" type="file" accept="image/*,application/pdf,text/plain,application/json,video/*,audio/*" />
-            <button type="button" class="db-action db-action-primary" id="db-storage-upload">Importer</button>
+            ${storageFilePicker()}
+            <button type="button" class="db-action db-action-primary" id="db-storage-upload" disabled>Importer</button>
           </div>
           <div id="db-storage-msg" class="db-enduser-msg" aria-live="polite"></div>
           ${assetsList}
@@ -7311,34 +7409,60 @@ function renderDatabaseSection3(db: any): string {
     </section>`;
 }
 
+/** A size people read: "2 Ko", "1,4 Mo", not "0 Mo" for a 2 KB logo or "2 048 octets". */
+function formatBytes(bytes: number): string {
+  const value = Math.max(0, Number.isFinite(bytes) ? bytes : 0);
+  if (value < 1024) return `${value.toLocaleString('fr-FR')} o`;
+  if (value < 1024 * 1024) return `${(value / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Ko`;
+  if (value < 1024 ** 3) return `${(value / 1024 / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo`;
+  return `${(value / 1024 ** 3).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} Go`;
+}
+
+function cloudModeLabel(mode: unknown): string {
+  const value = String(mode || 'shared');
+  if (value === 'shared') return 'Partagé, isolé par projet';
+  if (value === 'dedicated') return 'Dédié';
+  return value;
+}
+
+const END_USER_ROLE_LABELS: Record<string, string> = { user: 'Utilisateur', admin: 'Administrateur', owner: 'Propriétaire', editor: 'Éditeur', viewer: 'Lecteur', member: 'Membre' };
+function endUserRoleLabel(role: string): string {
+  return END_USER_ROLE_LABELS[role] || role;
+}
+
+/** The browser's own picker, behind a button in the product's style. */
+function storageFilePicker(): string {
+  return `<label class="db-file-picker"><input id="db-storage-file" type="file" accept="image/*,application/pdf,text/plain,application/json,video/*,audio/*"><span class="db-action" aria-hidden="true">Choisir un fichier</span><span class="db-file-picker-name" id="db-storage-file-name">Aucun fichier choisi · 4 Mo max</span></label>`;
+}
+
 const CLOUD_CONSOLE_VIEWS: Array<{ id: CloudConsoleView; label: string; group?: string }> = [
   { id: 'overview', label: 'Vue d’ensemble', group: 'Cloud' },
-  { id: 'database', label: 'Database' },
-  { id: 'users', label: 'Users' },
-  { id: 'storage', label: 'Storage' },
-  { id: 'emails', label: 'Emails' },
+  { id: 'database', label: 'Base de données' },
+  { id: 'users', label: 'Utilisateurs' },
+  { id: 'storage', label: 'Stockage' },
+  { id: 'emails', label: 'E-mails' },
   { id: 'secrets', label: 'Secrets' },
-  { id: 'jobs', label: 'Jobs' },
-  { id: 'functions', label: 'Functions' },
-  { id: 'logs', label: 'Logs' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'advanced', label: 'Paramètres avancés' },
+  { id: 'jobs', label: 'Tâches planifiées' },
+  { id: 'functions', label: 'Fonctions' },
+  { id: 'logs', label: 'Journaux' },
+  { id: 'usage', label: 'Consommation' },
+  { id: 'analytics', label: 'Statistiques' },
+  { id: 'advanced', label: 'Paramètres' },
 ];
 
 const CLOUD_CONSOLE_COPY: Record<CloudConsoleView, { title: string; description: string; action: string }> = {
   overview: { title: 'Vue d’ensemble', description: 'État réel des services utilisés par cette application.', action: 'Actualiser' },
-  database: { title: 'Database', description: 'Tables, schémas et données du backend du projet.', action: 'Actualiser' },
-  users: { title: 'Users', description: 'Comptes, rôles et accès de l’application générée.', action: 'Inviter' },
-  storage: { title: 'Storage', description: 'Fichiers et médias stockés pour ce projet.', action: 'Importer' },
-  emails: { title: 'Emails', description: 'Configuration d’envoi transactionnel et domaine expéditeur.', action: 'Configurer' },
+  database: { title: 'Base de données', description: 'Tables, schémas et données du backend du projet.', action: 'Actualiser' },
+  users: { title: 'Utilisateurs', description: 'Comptes, rôles et accès de l’application générée.', action: 'Inviter' },
+  storage: { title: 'Stockage', description: 'Fichiers et médias stockés pour ce projet.', action: 'Importer' },
+  emails: { title: 'E-mails', description: 'Configuration d’envoi transactionnel et domaine expéditeur.', action: 'Configurer' },
   secrets: { title: 'Secrets', description: 'Variables sensibles chiffrées et accessibles uniquement côté serveur.', action: 'Ajouter un secret' },
-  jobs: { title: 'Jobs', description: 'Automatisations manuelles et planifiées rattachées au projet.', action: 'Actualiser' },
-  functions: { title: 'Functions', description: 'Fonctions backend et routes détectées dans les fichiers du projet.', action: 'Créer une fonction' },
-  logs: { title: 'Logs', description: 'Derniers événements techniques corrélés à ce projet.', action: 'Actualiser' },
-  usage: { title: 'Usage', description: 'Crédits et consommation mesurée par le ledger Coden V2.', action: 'Actualiser' },
-  analytics: { title: 'Analytics', description: 'Trafic réel collecté sur l’application publiée.', action: 'Actualiser' },
-  advanced: { title: 'Paramètres avancés', description: 'Configuration, export et informations d’isolation du backend.', action: 'Exporter' },
+  jobs: { title: 'Tâches planifiées', description: 'Automatisations manuelles et planifiées rattachées au projet.', action: 'Actualiser' },
+  functions: { title: 'Fonctions', description: 'Fonctions backend et routes détectées dans les fichiers du projet.', action: 'Créer une fonction' },
+  logs: { title: 'Journaux', description: 'Derniers événements techniques corrélés à ce projet.', action: 'Actualiser' },
+  usage: { title: 'Consommation', description: 'Crédits disponibles et consommation mesurée pour ce projet.', action: 'Actualiser' },
+  analytics: { title: 'Statistiques', description: 'Trafic réel collecté sur l’application publiée.', action: 'Actualiser' },
+  advanced: { title: 'Paramètres', description: 'Configuration, export et informations d’isolation du backend.', action: 'Exporter' },
 };
 
 function cloudConsoleIcon(name: CloudConsoleView | 'cloud' | 'refresh' | 'plus' | 'arrow'): string {
@@ -7385,17 +7509,17 @@ function cloudConsoleOverview(db: any) {
   const authNeeded = Boolean(cloud.requirements?.needs_auth);
   const provider = dbProviderName(cloud.provider || 'coden_cloud');
   const services: Array<{ id: CloudConsoleView; label: string; detail: string; meta: string }> = [
-    { id: 'database', label: 'Database', detail: 'Tables, schémas et migrations', meta: `${tables.length} table${tables.length === 1 ? '' : 's'}` },
-    { id: 'users', label: 'Users', detail: 'Authentification et comptes', meta: authNeeded ? 'Requise' : 'Non requise' },
-    { id: 'storage', label: 'Storage', detail: 'Fichiers du projet', meta: `${assets.length} fichier${assets.length === 1 ? '' : 's'}` },
-    { id: 'emails', label: 'Emails', detail: 'Envoi transactionnel', meta: secrets.some((item: any) => /RESEND/i.test(item.variable || '')) ? 'Configuré' : 'À configurer' },
-    { id: 'functions', label: 'Functions', detail: 'Routes et logique backend', meta: `${functions.length} détectée${functions.length === 1 ? '' : 's'}` },
+    { id: 'database', label: 'Base de données', detail: 'Tables, schémas et migrations', meta: `${tables.length} table${tables.length === 1 ? '' : 's'}` },
+    { id: 'users', label: 'Utilisateurs', detail: 'Authentification et comptes', meta: authNeeded ? 'Requise' : 'Non requise' },
+    { id: 'storage', label: 'Stockage', detail: 'Fichiers du projet', meta: `${assets.length} fichier${assets.length === 1 ? '' : 's'}` },
+    { id: 'emails', label: 'E-mails', detail: 'Envoi transactionnel', meta: secrets.some((item: any) => /RESEND/i.test(item.variable || '')) ? 'Configuré' : 'À configurer' },
+    { id: 'functions', label: 'Fonctions', detail: 'Routes et logique backend', meta: `${functions.length} détectée${functions.length === 1 ? '' : 's'}` },
     { id: 'secrets', label: 'Secrets', detail: 'Variables chiffrées', meta: `${secrets.length} secret${secrets.length === 1 ? '' : 's'}` },
   ];
   return `
     <div class="cloud-summary-grid">
       <article class="cloud-summary-card"><span>Backend</span><strong>${cloudStatus(cloud.status || db.backend_status || '')}</strong><small>${escapeHtml(provider)}</small></article>
-      <article class="cloud-summary-card"><span>Région</span><strong>${escapeHtml(cloud.region && cloud.region !== 'auto' ? cloud.region : 'Auto')}</strong><small>${escapeHtml(cloud.mode || db.mode || 'shared')}</small></article>
+      <article class="cloud-summary-card"><span>Région</span><strong>${escapeHtml(cloud.region && cloud.region !== 'auto' ? cloud.region : 'Auto')}</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></article>
       <article class="cloud-summary-card"><span>Ressources</span><strong>${Number(cloud.resources?.length || 0)}</strong><small>provisionnées</small></article>
       <article class="cloud-summary-card"><span>Dernière activité</span><strong>${cloudDate(db.last_sync_at)}</strong><small>état synchronisé</small></article>
     </div>
@@ -7419,7 +7543,7 @@ function cloudConsoleDatabasePage(db: any) {
       <article class="cloud-summary-card"><span>État</span><strong>${cloudStatus(cloud.status || db.backend_status || '')}</strong><small>${escapeHtml(dbProviderName(cloud.provider))}</small></article>
       <article class="cloud-summary-card"><span>Tables</span><strong>${tables.length}</strong><small>schéma applicatif</small></article>
       <article class="cloud-summary-card"><span>RLS</span><strong>${db.security?.rls_required ? 'Requis' : 'Non détecté'}</strong><small>isolation par projet</small></article>
-      <article class="cloud-summary-card"><span>Schéma</span><strong>${escapeHtml(cloud.schema_name || 'Non provisionné')}</strong><small>${escapeHtml(cloud.mode || db.mode || 'shared')}</small></article>
+      <article class="cloud-summary-card"><span>Schéma</span><strong>${escapeHtml(cloud.schema_name || 'Non provisionné')}</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></article>
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Tables et vues</h2><p>La lecture est limitée aux schémas déclarés par ce projet.</p></div></div>
@@ -7446,18 +7570,18 @@ function cloudConsoleStoragePage(db: any) {
   const size = assets.reduce((sum, asset) => sum + Math.max(0, Number(asset.size_bytes || 0)), 0);
   const rows = assets.length ? assets.map(asset => `
     <div class="db-row" data-storage-asset="${escapeHtml(String(asset.id || ''))}">
-      <span class="db-row-key" title="${escapeHtml(asset.name || '')}">${escapeHtml(asset.name || '(sans nom)')}<small class="db-row-meta">${escapeHtml(asset.mime_type || asset.kind || 'fichier')} · ${Math.max(0, Number(asset.size_bytes || 0)).toLocaleString('fr-FR')} octets</small></span>
+      <span class="db-row-key" title="${escapeHtml(asset.name || '')}">${escapeHtml(asset.name || '(sans nom)')}<small class="db-row-meta">${escapeHtml(asset.mime_type || asset.kind || 'fichier')} · ${formatBytes(Number(asset.size_bytes || 0))}</small></span>
       <span class="db-file-actions">${asset.url ? `<a href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer">Ouvrir</a>` : ''}<button type="button" class="db-eu-btn db-eu-del" data-storage-delete="${escapeHtml(String(asset.id || ''))}">Supprimer</button></span>
     </div>`).join('') : '<div class="db-empty">Aucun fichier dans ce projet.</div>';
   return `
     <div class="cloud-summary-grid">
       <article class="cloud-summary-card"><span>Bucket</span><strong>project-assets</strong><small>privé par défaut</small></article>
       <article class="cloud-summary-card"><span>Fichiers</span><strong>${assets.length}</strong><small>objets enregistrés</small></article>
-      <article class="cloud-summary-card"><span>Taille</span><strong>${(size / 1024 / 1024).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} Mo</strong><small>stockage mesuré</small></article>
+      <article class="cloud-summary-card"><span>Taille</span><strong>${formatBytes(size)}</strong><small>stockage mesuré</small></article>
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Fichiers</h2><p>Import, consultation et suppression des médias du projet.</p></div></div>
-      <div class="db-enduser-create"><input id="db-storage-file" class="db-file-input" type="file" accept="image/*,application/pdf,text/plain,application/json,video/*,audio/*"><button type="button" class="db-action db-action-primary" id="db-storage-upload">Importer</button></div>
+      <div class="db-enduser-create">${storageFilePicker()}<button type="button" class="db-action db-action-primary" id="db-storage-upload" disabled>Importer</button></div>
       <div id="db-storage-msg" class="db-enduser-msg" aria-live="polite"></div>
       <div class="db-file-list">${rows}</div>
     </section>`;
@@ -7471,7 +7595,7 @@ function cloudConsoleEmailsPage(db: any) {
   const configured = hasKey || /enabled|connected|active/i.test(integration?.status || '');
   return `
     <div class="cloud-summary-grid">
-      <article class="cloud-summary-card"><span>Provider</span><strong>Resend</strong><small>adapter Coden</small></article>
+      <article class="cloud-summary-card"><span>Fournisseur</span><strong>Resend</strong><small>intégration Coden</small></article>
       <article class="cloud-summary-card"><span>État</span><strong><span class="cloud-status" data-tone="${configured ? 'ok' : 'warn'}">${configured ? 'Configuré' : 'À configurer'}</span></strong><small>clé conservée côté serveur</small></article>
     </div>
     <section class="cloud-empty">
@@ -7489,7 +7613,7 @@ function cloudConsoleSecretsPage(db: any) {
       <span><strong>${escapeHtml(secret.variable || 'SECRET')}</strong><small>${escapeHtml(secret.service || 'Custom')} · ${escapeHtml(secret.masked_value || '••••••••')}</small></span>
       <span class="cloud-row-actions"><button type="button" class="cloud-link-button is-danger" data-cloud-delete-secret="${escapeHtml(String(secret.id || ''))}">Supprimer</button></span>
     </div>`).join('') : '';
-  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Variables sécurisées</h2><p>Les valeurs sont write only. Seuls les noms et masques sont affichés.</p></div></div>${rows ? `<div class="cloud-secret-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('secrets')}</span><h2>Aucun secret configuré</h2><p>Ajoutez uniquement les clés nécessaires au backend de cette application.</p><button type="button" class="cloud-console-action is-primary" data-cloud-add-secret>Ajouter un secret</button></div>`}</section>`;
+  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Variables sécurisées</h2><p>Les valeurs sont en écriture seule : seuls les noms et les masques sont affichés.</p></div></div>${rows ? `<div class="cloud-secret-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('secrets')}</span><h2>Aucun secret configuré</h2><p>Ajoutez uniquement les clés nécessaires au backend de cette application.</p><button type="button" class="cloud-console-action is-primary" data-cloud-add-secret>Ajouter un secret</button></div>`}</section>`;
 }
 
 function cloudConsoleFunctionsPage() {
@@ -7509,7 +7633,7 @@ function cloudConsoleAdvancedPage(db: any) {
   return `
     <section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Configuration du backend</h2><p>Informations techniques publiques du projet.</p></div></div><div class="cloud-detail-list">
       <div class="cloud-detail-row"><span><strong>Fournisseur</strong><small>${escapeHtml(dbProviderName(cloud.provider || 'coden_cloud'))}</small></span>${cloudStatus(cloud.status || db.backend_status || '')}</div>
-      <div class="cloud-detail-row"><span><strong>Mode d’isolation</strong><small>${escapeHtml(cloud.mode || db.mode || 'shared')}</small></span><span class="cloud-service-meta">RLS requise</span></div>
+      <div class="cloud-detail-row"><span><strong>Mode d’isolation</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></span><span class="cloud-service-meta">RLS requise</span></div>
       <div class="cloud-detail-row"><span><strong>Région</strong><small>${escapeHtml(cloud.region || 'auto')}</small></span><span class="cloud-service-meta">gérée par Coden</span></div>
       <div class="cloud-detail-row"><span><strong>Schéma</strong><small>${escapeHtml(cloud.schema_name || 'non provisionné')}</small></span><span class="cloud-service-meta">Postgres</span></div>
     </div></section>
@@ -7639,7 +7763,7 @@ async function loadCloudConsoleJobs() {
   try {
     const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/workflows`);
     const jobs: any[] = Array.isArray(payload.workflows) ? payload.workflows : [];
-    host.innerHTML = `<div class="cloud-panel-head"><div><h2>Automatisations</h2><p>Exécutions enregistrées dans le scheduler Coden.</p></div></div>${jobs.length ? `<div class="cloud-job-list">${jobs.map(job => `<div class="cloud-job-row"><span><strong>${escapeHtml(job.name || 'Workflow')}</strong><small>${escapeHtml(job.trigger_type || 'manual')} · ${escapeHtml(job.cron || 'à la demande')} · prochaine exécution ${cloudDate(job.next_run_at)}</small></span><span class="cloud-row-actions"><span class="cloud-status" data-tone="${job.status === 'active' ? 'ok' : 'neutral'}">${escapeHtml(job.status || 'inconnu')}</span>${job.status === 'active' ? `<button class="cloud-link-button" data-cloud-job-action="run" data-job-id="${escapeHtml(job.id)}">Exécuter</button><button class="cloud-link-button" data-cloud-job-action="pause" data-job-id="${escapeHtml(job.id)}">Pause</button>` : `<button class="cloud-link-button" data-cloud-job-action="resume" data-job-id="${escapeHtml(job.id)}">Reprendre</button>`}</span></div>`).join('')}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('jobs')}</span><h2>Aucun job configuré</h2><p>Créez une automatisation planifiée depuis Coden. Elle apparaîtra ici avec son prochain passage et son historique.</p><button type="button" class="cloud-console-action is-primary" data-cloud-create-job>Créer avec Coden</button></div>`}`;
+    host.innerHTML = `<div class="cloud-panel-head"><div><h2>Automatisations</h2><p>Exécutions enregistrées dans le planificateur Coden.</p></div></div>${jobs.length ? `<div class="cloud-job-list">${jobs.map(job => `<div class="cloud-job-row"><span><strong>${escapeHtml(job.name || 'Workflow')}</strong><small>${escapeHtml(job.trigger_type || 'manual')} · ${escapeHtml(job.cron || 'à la demande')} · prochaine exécution ${cloudDate(job.next_run_at)}</small></span><span class="cloud-row-actions"><span class="cloud-status" data-tone="${job.status === 'active' ? 'ok' : 'neutral'}">${escapeHtml(job.status || 'inconnu')}</span>${job.status === 'active' ? `<button class="cloud-link-button" data-cloud-job-action="run" data-job-id="${escapeHtml(job.id)}">Exécuter</button><button class="cloud-link-button" data-cloud-job-action="pause" data-job-id="${escapeHtml(job.id)}">Pause</button>` : `<button class="cloud-link-button" data-cloud-job-action="resume" data-job-id="${escapeHtml(job.id)}">Reprendre</button>`}</span></div>`).join('')}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('jobs')}</span><h2>Aucune tâche planifiée</h2><p>Créez une automatisation planifiée depuis Coden. Elle apparaîtra ici avec son prochain passage et son historique.</p><button type="button" class="cloud-console-action is-primary" data-cloud-create-job>Créer avec Coden</button></div>`}`;
     host.querySelector('[data-cloud-create-job]')?.addEventListener('click', () => focusBuilderComposerWithPrompt('Crée une tâche planifiée fiable pour cette application, avec budget, logs, gestion des erreurs et possibilité de reprise.'));
     host.querySelectorAll<HTMLButtonElement>('[data-cloud-job-action]').forEach(button => button.addEventListener('click', async () => {
       const action = button.dataset.cloudJobAction;
@@ -7678,7 +7802,7 @@ async function loadCloudConsoleUsage() {
      */
     const spendable = payload.wallet?.spendable || {};
     const credits = (amount: unknown) => Number(amount || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
-    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Usage affiché</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements issus du ledger unifié.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
+    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Consommé ici</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements enregistrés pour ce projet.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Usage indisponible.')}</div>`; }
 }
 
@@ -7726,6 +7850,12 @@ function storageMsg(message: string, isError = false) {
 function bindProjectStorageHandlers() {
   const input = document.getElementById('db-storage-file') as HTMLInputElement | null;
   const upload = document.getElementById('db-storage-upload') as HTMLButtonElement | null;
+  input?.addEventListener('change', () => {
+    const file = input.files?.[0];
+    const name = document.getElementById('db-storage-file-name');
+    if (name) name.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : 'Aucun fichier choisi · 4 Mo max';
+    if (upload) upload.disabled = !file;
+  });
   upload?.addEventListener('click', async () => {
     const file = input?.files?.[0];
     if (!file) { storageMsg('Choisissez un fichier.', true); return; }
@@ -7929,7 +8059,7 @@ async function loadProjectEndUsers() {
 
 function renderEndUsers(host: HTMLElement, data: any) {
   const users: any[] = Array.isArray(data?.users) ? data.users : [];
-  const roleOptions = endUserRoles.map(role => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join('');
+  const roleOptions = endUserRoles.map(role => `<option value="${escapeHtml(role)}">${escapeHtml(endUserRoleLabel(role))}</option>`).join('');
   const createRow = `
     <div class="db-enduser-create">
       <input type="email" id="db-enduser-email" class="db-input" placeholder="email@exemple.com" autocomplete="off" />
@@ -7941,9 +8071,9 @@ function renderEndUsers(host: HTMLElement, data: any) {
         const statusBadge = user.banned ? dbBadge('warning', 'banni') : (user.confirmed ? dbBadge('success', 'confirmé') : dbBadge('neutral', 'en attente'));
         return `
         <div class="db-row db-enduser-row" data-uid="${escapeHtml(user.id)}" data-email="${escapeHtml(user.email || '')}">
-          <span class="db-row-key">${escapeHtml(user.email || '(sans email)')} ${statusBadge}${user.role ? ` <span class="db-row-meta">${escapeHtml(user.role)}</span>` : ''}</span>
+          <span class="db-row-key">${escapeHtml(user.email || '(sans email)')} ${statusBadge}${user.role ? ` <span class="db-row-meta">${escapeHtml(endUserRoleLabel(user.role))}</span>` : ''}</span>
           <span class="db-file-actions">
-            <button class="db-eu-btn" type="button" data-eu-reset>Réinit. MDP</button>
+            <button class="db-eu-btn" type="button" data-eu-reset>Réinitialiser le mot de passe</button>
             <button class="db-eu-btn" type="button" data-eu-ban data-banned="${user.banned ? '1' : '0'}">${user.banned ? 'Débannir' : 'Bannir'}</button>
             <button class="db-eu-btn db-eu-del" type="button" data-eu-del>Supprimer</button>
           </span>

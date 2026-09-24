@@ -142,11 +142,42 @@ const localPreviewModels = {
   ],
 };
 
+/*
+ * A small project to look at: the Code and Cloud workshops are empty screens
+ * without files, and an interface cannot be reviewed from its empty state.
+ * Only ever served on loopback with ?localPreview=1.
+ */
+const localPreviewFiles = [
+  { path: 'index.html', content: '<!doctype html>\n<html lang="fr">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <title>Pulseboard</title>\n  </head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.tsx"></script>\n  </body>\n</html>\n' },
+  { path: 'package.json', content: '{\n  "name": "pulseboard",\n  "private": true,\n  "type": "module",\n  "scripts": {\n    "dev": "vite",\n    "build": "vite build"\n  },\n  "dependencies": {\n    "react": "^19.0.0",\n    "react-dom": "^19.0.0"\n  }\n}\n' },
+  { path: 'src/main.tsx', content: "import { createRoot } from 'react-dom/client';\nimport App from './App';\nimport './styles.css';\n\ncreateRoot(document.getElementById('root')!).render(<App />);\n" },
+  { path: 'src/App.tsx', content: "import { useState } from 'react';\nimport { StatCard } from './components/StatCard';\n\n// Three numbers the team checks every morning.\nconst stats = [\n  { label: 'Projets', value: 12 },\n  { label: 'Tâches', value: 38 },\n  { label: 'Équipe', value: 7 },\n];\n\nexport default function App() {\n  const [range, setRange] = useState<'7d' | '30d'>('7d');\n  return (\n    <main className=\"page\">\n      <h1>Votre activité, en un coup d’œil.</h1>\n      <button onClick={() => setRange(range === '7d' ? '30d' : '7d')}>\n        {range === '7d' ? '7 jours' : '30 jours'}\n      </button>\n      <section className=\"grid\">\n        {stats.map(stat => <StatCard key={stat.label} {...stat} />)}\n      </section>\n    </main>\n  );\n}\n" },
+  { path: 'src/components/StatCard.tsx', content: "type Props = { label: string; value: number };\n\nexport function StatCard({ label, value }: Props) {\n  return (\n    <article className=\"card\">\n      <span>{label}</span>\n      <strong>{value.toLocaleString('fr-FR')}</strong>\n    </article>\n  );\n}\n" },
+  { path: 'src/styles.css', content: ':root {\n  --accent: #3a83f7;\n  font-family: system-ui, sans-serif;\n}\n\n.page {\n  max-width: 960px;\n  margin: 0 auto;\n  padding: 48px 24px;\n}\n\n.grid {\n  display: grid;\n  grid-template-columns: repeat(3, 1fr);\n  gap: 12px;\n}\n\n.card strong {\n  font-size: 24px;\n  color: var(--accent);\n}\n' },
+  { path: 'api/contacts.ts', content: "// Lists the workspace contacts; the key stays on the server.\nexport async function GET(request: Request) {\n  const url = new URL(request.url);\n  const limit = Number(url.searchParams.get('limit') || 20);\n  return Response.json({ contacts: [], limit });\n}\n" },
+];
+
+const localPreviewHtml = '<!doctype html><html><body style="margin:0;font-family:system-ui;background:#fff;color:#1a1c1f"><main style="max-width:960px;margin:0 auto;padding:48px 24px"><h1 style="font-size:34px;margin:0 0 24px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Projets<br><b style="font-size:24px;color:#3a83f7">12</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Tâches<br><b style="font-size:24px;color:#3a83f7">38</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Équipe<br><b style="font-size:24px;color:#3a83f7">7</b></div></div></main></body></html>';
+
+const localPreviewDatabase = {
+  cloud: { status: 'ready', provider: 'coden_cloud', region: 'eu-west', mode: 'shared', schema_name: 'app_pulseboard', resources: [{}, {}], requirements: { needs_auth: true } },
+  tables: [{ name: 'contacts' }, { name: 'tasks' }],
+  assets: [{ id: 'a1', name: 'logo.svg', mime_type: 'image/svg+xml', size_bytes: 2048 }],
+  secrets: [{ id: 's1', variable: 'RESEND_API_KEY', service: 'Resend', masked_value: 're_••••••••4f2a' }],
+  activity: [
+    { event_type: 'deploy', message: 'Aperçu reconstruit', created_at: '2026-01-01T09:00:00.000Z' },
+    { event_type: 'migration', message: 'Table contacts créée', created_at: '2026-01-01T08:55:00.000Z' },
+  ],
+  integrations: [],
+  security: { rls_required: true },
+  last_sync_at: '2026-01-01T09:00:00.000Z',
+};
+
 function localPreviewProjectPayload() {
   return {
     success: true,
     project: localPreviewProject,
-    files: [],
+    files: localPreviewFiles,
     messages: [],
     events: [],
     workspace_state: {
@@ -156,7 +187,7 @@ function localPreviewProjectPayload() {
       active_tab: 'preview',
       preview_device: 'desktop',
     },
-    preview: { status: 'unknown', html: '' },
+    preview: { status: 'unknown', html: localPreviewHtml },
     verification_status: 'unknown',
     local_preview: true,
   };
@@ -254,7 +285,7 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
     return { handled: true, payload: { success: true, versions: [], local_preview: true } };
   }
   if (path.endsWith('/database')) {
-    return { handled: true, payload: { success: true, database: { provisioning_required: true, status: 'not_configured' }, local_preview: true } };
+    return { handled: true, payload: { success: true, database: localPreviewDatabase, local_preview: true } };
   }
   if (path.endsWith('/db/schemas')) {
     return { handled: true, payload: { success: true, provisioning_required: true, schemas: [], local_preview: true } };
