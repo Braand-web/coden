@@ -106,7 +106,7 @@ console.log('sandbox gate checks passed');
 {
   // Leaving the page never stopped the run; the page coming back lost it.
   const builderLive = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
-  assert.match(builderLive, /restoreHarnessApprovalState\(\)\.then\(\(\) => resumeActiveRun\(\)\)/, 'the builder looks for a live run when a project loads');
+  assert.match(builderLive, /void approvalsRestored\.then\(\(\) => resumeActiveRun\(\)\)/, 'the builder looks for a live run when a project loads');
   assert.match(builderLive, /\/agent\/active-turn/, 'it asks the server which run is live');
   assert.match(builderLive, /__codenAttach/, 'and follows it instead of sending a new request');
   assert.match(builderLive, /if \(!isRecoveryRetry && !attach\) appendMessage\('user'/, 'without repeating the request already in the conversation');

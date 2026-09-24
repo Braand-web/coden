@@ -5640,6 +5640,26 @@ async function loadProject() {
     if (currentProjectId) await flushPendingPromptAttachments();
     renderFiles(payload.files || []);
     applyWorkspaceState(payload.workspace_state || null);
+    /*
+     * The conversation first: it needs nothing but the payload, and it used to
+     * wait behind the preview's runtime check, a network round trip that has
+     * nothing to do with reading one's own messages.
+     *
+     * Replace the conversation, rather than empty it and hope.
+     *
+     * The payload is in hand by this line, so the old feed is only dropped at
+     * the moment there is a new one to put in its place. Until here the reader
+     * keeps seeing the conversation they had — which is both correct (it is
+     * still the truth until the new project arrives) and the difference
+     * between a slow load and a lost history.
+     */
+    ensureConversationApi()?.clear();
+    if (scroll) delete scroll.dataset.restored;
+    restoreMessages(payload);
+    const approvalsRestored = restoreHarnessApprovalState();
+    const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
+    // Decorates messages already on screen; nothing below waits for it.
+    if (!restoredStreamParts) void restoreLatestStreamPartsFromRunHistory(payload).catch(() => undefined);
     // Resolve the server runtime before starting a competing browser runtime.
     const resumedLive = await resumeLivePreview();
     if (resumedLive) {
@@ -5671,21 +5691,9 @@ async function loadProject() {
     }
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
-    /*
-     * Replace the conversation, rather than empty it and hope.
-     *
-     * The payload is in hand by this line, so the old feed is only dropped at
-     * the moment there is a new one to put in its place. Until here the reader
-     * keeps seeing the conversation they had — which is both correct (it is
-     * still the truth until the new project arrives) and the difference
-     * between a slow load and a lost history.
-     */
-    ensureConversationApi()?.clear();
-    if (scroll) delete scroll.dataset.restored;
-    restoreMessages(payload);
-    void restoreHarnessApprovalState().then(() => resumeActiveRun());
-    const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
-    if (!restoredStreamParts) await restoreLatestStreamPartsFromRunHistory(payload);
+    // A run still going on the server is picked up once the preview state is
+    // settled, so its own preview events are not overwritten by the idle one.
+    void approvalsRestored.then(() => resumeActiveRun());
     const activeTab = payload.workspace_state?.active_tab || userWorkspaceState?.builder_active_tab;
     if (activeTab === 'code' || activeTab === 'database' || activeTab === 'analysis') {
       activateBuilderView(activeTab);

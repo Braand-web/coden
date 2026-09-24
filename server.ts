@@ -1,5 +1,6 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
+import { responseCompression } from './src/services/http-compression.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
 import {
@@ -322,6 +323,19 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.disable('x-powered-by');
+/*
+ * Compressed on the way out.
+ *
+ * Nothing was: the builder downloaded ~1.7 MB of JavaScript and CSS as-is on
+ * a cold load, and every project payload — all of its files as JSON — went
+ * out raw. Brotli or gzip takes that to roughly a quarter.
+ *
+ * Two things must stay uncompressed. An event stream would be buffered by
+ * the compressor, which is exactly the "text arrives in bursts" defect the
+ * streaming fixes removed; and a preview is the generated app's own dev
+ * server, proxied, with its own encoding and HMR socket.
+ */
+app.use(responseCompression());
 const port = Number(process.env.PORT || 3000);
 const staticRoot = path.join(__dirname, 'dist');
 
@@ -605,6 +619,30 @@ function getPlatformAdminEmails() {
   return new Set([...DEFAULT_PLATFORM_ADMIN_EMAILS, ...configured]);
 }
 
+/*
+ * A session verified a moment ago is still verified.
+ *
+ * Every API call asked Supabase Auth over the network who the token belongs
+ * to — 100 to 300 ms each — and opening a project makes a dozen calls, many
+ * of them one after another. The answer is kept for thirty seconds, never
+ * past the token's own expiry, keyed by a hash of the token so the token
+ * itself is not held in memory. A session signed out elsewhere stops working
+ * here within those thirty seconds.
+ */
+const VERIFIED_SESSION_TTL_MS = 30_000;
+const verifiedSessions = new Map<string, { user: any; until: number }>();
+function tokenExpiryMs(token: string): number {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'));
+    return Number(payload?.exp) > 0 ? Number(payload.exp) * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+function verifiedSessionKey(token: string) {
+  return createHash('sha256').update(token).digest('base64url');
+}
+
 async function requireAuth(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -612,6 +650,15 @@ async function requireAuth(req: any, res: any, next: any) {
   if (!token) {
     return res.status(401).json(authSessionUnavailablePayload(undefined, 'Authentication required'));
   }
+
+  const sessionKey = verifiedSessionKey(token);
+  const remembered = verifiedSessions.get(sessionKey);
+  if (remembered && remembered.until > Date.now()) {
+    req.user = remembered.user;
+    req.auth = { user: remembered.user, userId: String(remembered.user.id), email: String(remembered.user.email || '') };
+    return next();
+  }
+  if (remembered) verifiedSessions.delete(sessionKey);
 
   const authClient = getSupabaseAuthClient();
   if (!authClient) {
@@ -641,6 +688,12 @@ async function requireAuth(req: any, res: any, next: any) {
   }
 
   rememberUnlimitedTestCreditUser(user);
+  const expiresAt = tokenExpiryMs(token);
+  const until = Math.min(Date.now() + VERIFIED_SESSION_TTL_MS, expiresAt || Date.now());
+  if (until > Date.now()) {
+    if (verifiedSessions.size >= 5_000) verifiedSessions.delete(verifiedSessions.keys().next().value as string);
+    verifiedSessions.set(sessionKey, { user, until });
+  }
   req.user = user;
   req.auth = {
     user,
@@ -12158,7 +12211,8 @@ app.get('/api/projects/:id', async (req: any, res: any) => {
     loadDurableProjectSnapshot(project.id, userId),
   ]);
   const recovered = recoverProjectPayloadFromSnapshot({ project, files, messages, events, workspace: workspaceState, snapshot });
-  await upsertUserWorkspaceState(userId, { last_project_id: project.id, last_route: `/builder.html?project=${project.id}` });
+  // Remembered in the background: the reply does not wait on a bookkeeping write.
+  void upsertUserWorkspaceState(userId, { last_project_id: project.id, last_route: `/builder.html?project=${project.id}` }).catch(() => undefined);
   res.json({
     success: true,
     recovery_source: recovered.recovery_source,
