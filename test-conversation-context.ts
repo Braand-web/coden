@@ -92,4 +92,15 @@ console.log('sandbox gate checks passed');
   const sandbox = readFileSync(new URL('./src/services/sandbox/project-sandbox.ts', import.meta.url), 'utf8');
   assert.match(sandbox, /if \(remoteSandboxConfigured\(\)\) return true;/, 'an E2B key enables the isolated sandbox');
 }
+{
+  // A deploy drains the runs in flight only if the server itself receives
+  // SIGTERM. `npm run start` exits on the signal without passing it on, and
+  // the container stops with it: every deploy killed the builds under way.
+  const railway = JSON.parse(readFileSync(new URL('./railway.json', import.meta.url), 'utf8'));
+  assert.doesNotMatch(railway.deploy.startCommand, /^npm\b/, 'Railway starts Node directly, not through npm');
+  assert.match(railway.deploy.startCommand, /^node\b/);
+  const nixpacks = readFileSync(new URL('./nixpacks.toml', import.meta.url), 'utf8');
+  assert.match(nixpacks, /\[start\]\s*(?:#.*\n\s*)*cmd = "node /, 'the Nixpacks start command runs Node directly');
+  assert.ok(railway.deploy.drainingSeconds >= 600, 'the old instance gets time to finish its runs');
+}
 console.log('session analysis regression checks passed');
