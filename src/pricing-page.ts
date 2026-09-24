@@ -108,7 +108,7 @@ function markCurrentPlan() {
 
 function updateCard(plan: 'pro' | 'business') {
   const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);
-  const credits = Number(select?.value || 100);
+  const credits = Number(select?.value || (plan === 'pro' ? 25 : 100));
   const price = priceFor(plan, credits);
   const priceNode = document.querySelector<HTMLElement>(`[data-pricing-price="${plan}"]`);
   const unitNode = document.querySelector<HTMLElement>(`[data-pricing-price-unit="${plan}"]`);
