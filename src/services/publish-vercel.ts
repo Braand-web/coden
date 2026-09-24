@@ -403,15 +403,25 @@ async function waitForCodenDomain(
   return latest;
 }
 
-async function waitForDeployment(deploymentId: string): Promise<VercelDeployment> {
+/*
+ * Up to six minutes, by the clock. The old ceiling was 45 polls — about a
+ * minute — which a build on Vercel's side (install, then build, behind a
+ * queue) regularly outlives: the deployment went on to succeed after Coden
+ * had already told the user it failed.
+ */
+const DEPLOYMENT_WAIT_MS = 6 * 60_000;
+
+async function waitForDeployment(deploymentId: string, waitMs = DEPLOYMENT_WAIT_MS): Promise<VercelDeployment> {
+  const deadline = Date.now() + waitMs;
   let current = await vercelRequest<VercelDeployment>(`/v13/deployments/${encodeURIComponent(deploymentId)}`);
-  for (let attempt = 0; attempt < 45; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
     const state = String(current?.readyState || '').toUpperCase();
     if (state === 'READY') return current;
     if (state === 'ERROR' || state === 'CANCELED' || state === 'CANCELLED') {
       throw new Error(`Vercel deployment failed${current.errorMessage ? `: ${redactProviderMessage(current.errorMessage)}` : '.'}`);
     }
-    await new Promise(resolve => setTimeout(resolve, Math.min(2_000, 500 + attempt * 50)));
+    if (Date.now() >= deadline) break;
+    await new Promise(resolve => setTimeout(resolve, Math.min(3_000, 500 + attempt * 100)));
     current = await vercelRequest<VercelDeployment>(`/v13/deployments/${encodeURIComponent(deploymentId)}`);
   }
   throw new Error('Vercel deployment did not become ready before the timeout.');
@@ -461,15 +471,30 @@ export async function publishProjectToVercel(params: {
   sourceDir?: string;
   outputDirectory?: string;
   publicEnv?: Record<string, string>;
+  /**
+   * Send a static app's source and let Vercel install and build it in its
+   * own isolated builders. Production may not run a generated build itself
+   * (`localBuildAllowed`), and every publication there failed on that refusal
+   * before reaching Vercel at all.
+   */
+  buildOnProvider?: boolean;
 }): Promise<VercelPublishResult> {
   const projectName = vercelProjectNameForSlug(params.slug);
-  const sourceDeployment = Boolean(params.sourceDir) && params.runtime !== 'static-assets';
+  const staticSourceBuild = params.runtime === 'static-assets' && params.buildOnProvider === true && Boolean(params.sourceDir);
+  const sourceDeployment = Boolean(params.sourceDir) && (params.runtime !== 'static-assets' || staticSourceBuild);
   const deploymentRoot = sourceDeployment ? params.sourceDir! : params.distDir;
-  if (sourceDeployment) prepareVercelSource(deploymentRoot, params.runtime);
+  if (sourceDeployment && !staticSourceBuild) prepareVercelSource(deploymentRoot, params.runtime);
   const files = sourceDeployment ? collectFiles(deploymentRoot) : collectStaticBuildOutput(params.distDir);
   await uploadDeploymentFiles(files);
   const outputDirectory = String(params.outputDirectory || 'dist').replace(/^[/\\]+/, '') || '.';
-  const projectSettings = sourceDeployment
+  const projectSettings = staticSourceBuild
+    ? {
+        framework: 'vite',
+        buildCommand: 'npm run build',
+        installCommand: 'npm install --ignore-scripts --no-audit --no-fund',
+        outputDirectory,
+      }
+    : sourceDeployment
     ? {
         framework: params.runtime === 'vercel-functions' ? 'tanstack-start' : null,
         buildCommand: 'npm run build',

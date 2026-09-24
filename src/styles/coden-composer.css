@@ -126,6 +126,9 @@ body[data-coden-surface="builder"] .chat-input-row.coden-composer-host {
 body[data-coden-surface="dashboard"] .coden-dashboard-prompt-input {
   align-self: center;
   margin-inline: auto;
+  /* The spacing the old composer carried (25px) did not come with the
+     component, and the hero title sat directly on the input. */
+  margin-top: clamp(22px, 3.2vh, 32px);
 }
 
 @media (max-width: 560px) {

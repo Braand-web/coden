@@ -28,6 +28,8 @@ export type ProviderRequestConfig = {
   toolChoice?: 'auto' | 'none';
   /** OpenRouter `models` fallback chain, for Auto only. */
   fallbackModels?: string[];
+  /** OpenRouter web search for this request (see `buildOpenRouterRequest`). */
+  webSearch?: { maxResults?: number };
   metadata?: Record<string, unknown>;
 };
 

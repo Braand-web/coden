@@ -47,6 +47,11 @@ export type OpenRouterRequestOptions = {
   adapter?: string;
   /** Default true: every response streams. */
   stream?: boolean;
+  /**
+   * OpenRouter's web search, for an answer that needs the current web: the
+   * provider searches, and the results reach the model with their sources.
+   */
+  webSearch?: { maxResults?: number };
 };
 
 /**
@@ -149,6 +154,10 @@ export function buildOpenRouterRequest(
       : reasoningLevel === 'max'
         ? { max_tokens: maxReasoningBudget(maxTokens) }
         : { effort: reasoningLevel };
+  }
+
+  if (options.webSearch) {
+    body.plugins = [{ id: 'web', max_results: Math.min(8, Math.max(1, options.webSearch.maxResults || 5)) }];
   }
 
   if (options.stream !== false) {

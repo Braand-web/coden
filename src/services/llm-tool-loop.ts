@@ -6,7 +6,7 @@ import { getAgentToolDefinition, toolNeedsApproval } from './agent-tools.ts';
 import { isDecisionRequiredError } from './agent-decision.ts';
 
 /** Tools that only observe the workspace, safe to run side by side. */
-const READ_ONLY_TOOLS = new Set(['read_file', 'list_files', 'search_files', 'get_logs']);
+const READ_ONLY_TOOLS = new Set(['read_file', 'list_files', 'search_files', 'get_logs', 'web_search', 'fetch_url']);
 
 export type LlmToolHandler = (args: Record<string, unknown>) => Promise<unknown> | unknown;
 

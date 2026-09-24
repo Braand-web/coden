@@ -191,6 +191,7 @@ import {
 } from './src/services/agent-runtime-v2.ts';
 import { inspectVisualPreview } from './src/services/visual-preview-inspector.ts';
 import { scanGeneratedSecurity } from './src/services/generated-security-scanner.ts';
+import { createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
 import {
   WebResearchGateway,
   researchToPromptContext,
@@ -1026,6 +1027,28 @@ const projectRunner = new HybridProjectRunner({ executeScripts: process.env.AGEN
 const webResearchGateway = new WebResearchGateway(process.env);
 const falMediaGateway = new FalMediaGateway(process.env);
 
+/*
+ * The agent's web tools (`web_search`, `fetch_url`): a configured search API
+ * when there is one, OpenRouter's own web search otherwise — so the agent can
+ * look things up with nothing more than the key Coden already has.
+ */
+setAgentWebProvider(createAgentWebProvider({
+  research: webResearchGateway,
+  modelSearch: async (query: string) => {
+    const modelId = selectModelForAgent('summarizer', { interactive: true }).modelId;
+    const runtime = buildAIModelRuntimeConfig({ modelId, task: 'summary', allowTools: false, preferStructuredOutput: false, reasoningLevel: 'low', timeoutMs: 40_000 });
+    const result = await providerGateway.chat(modelId, [
+      { role: 'system', content: 'You are a web research assistant for a software agent. Search the web and answer with the most relevant, current facts for the query: official documentation first. List each source as "- Title — URL: two or three sentences of what it says". No preamble.' },
+      { role: 'user', content: query },
+    ], {
+      maxAttempts: 1,
+      timeoutMs: 40_000,
+      runtimeConfig: { ...buildProviderRequestConfig(runtime), webSearch: { maxResults: 5 } },
+    });
+    return result.text;
+  },
+}));
+
 const modelRouter = new ModelRouter();
 const costEstimator = new CostEstimatorService();
 
@@ -1216,6 +1239,30 @@ function diagnosePublishError(error: any) {
       diagnostic_code: String(error.diagnostic_code),
       suggested_action: String(error.suggested_action || 'retry'),
       status: statusCode,
+    };
+  }
+  /*
+   * A build that failed on Vercel is the app's problem, and the one message
+   * that says which: the compiler's own line. It fell through to "Vercel a
+   * refusé le contenu" or to a generic retry, and retrying the same broken
+   * build is all the user could do.
+   */
+  const buildFailure = /Vercel deployment failed:?\s*(.*)$/is.exec(message);
+  if (buildFailure) {
+    const detail = redactSecrets(buildFailure[1] || '', '[redacted]').trim().slice(0, 400);
+    return {
+      message: `La compilation de production a échoué sur Vercel${detail ? ` : ${detail}` : '.'} Le site en ligne n’a pas changé. Demandez à Coden de corriger l’erreur de build, puis republiez.`,
+      diagnostic_code: 'VERCEL_BUILD_FAILED',
+      suggested_action: 'fix_build_then_publish',
+      status: 422,
+    };
+  }
+  if (/did not become ready before the timeout/i.test(message)) {
+    return {
+      message: 'Vercel n’a pas terminé la compilation à temps. Le site en ligne n’a pas changé ; réessayez dans une minute.',
+      diagnostic_code: 'VERCEL_BUILD_TIMEOUT',
+      suggested_action: 'retry',
+      status: 504,
     };
   }
   if (/VERCEL_TOKEN|Missing VERCEL_|Missing environment variable/i.test(message)) {
@@ -3308,7 +3355,23 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
     projectUpdatedAt &&
     Date.parse(projectUpdatedAt) > Date.parse(latestPublishedAt),
   );
-  const previewReady = project.preview_status === 'verified' && Boolean(project.preview_html);
+  /*
+   * What publication requires of the preview.
+   *
+   * It used to be `verified` and nothing else, and almost nothing ever was:
+   * the real build that verification ran is refused in production, and a
+   * single browser journey whose label the planner had guessed kept a working
+   * app at `needs_fix`. The button said "relancez la génération" forever.
+   *
+   * A generated app that renders is publishable; what remains unverified is
+   * said plainly (a warning, not a wall), and the publication itself is the
+   * strict gate — Vercel compiles the app for production and Coden checks
+   * the live pages before it reports success.
+   */
+  const previewVerified = project.preview_status === 'verified';
+  // Said before the click, not discovered after it.
+  const hostingConfigured = Boolean(String(process.env.VERCEL_TOKEN || '').trim());
+  const previewReady = previewVerified || project.preview_status === 'needs_fix';
   const hasFiles = files.length > 0;
   const securityScan = scanGeneratedSecurity(files);
   const securityBlocking = securityScan.findings.filter(item => item.status === 'fail');
@@ -3337,9 +3400,17 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
     latest_published_at: latestPublishedAt,
     project_updated_at: projectUpdatedAt,
     badge_required: false,
-    can_publish: entitlement.canPublish && previewReady && hasFiles && !securityBlocking.length,
+    can_publish: hostingConfigured && entitlement.canPublish && previewReady && hasFiles && !securityBlocking.length,
     has_unpublished_changes: hasUnpublishedChanges,
     checks: [
+      {
+        key: 'hosting',
+        label: 'Hébergement',
+        status: hostingConfigured ? 'pass' : 'fail',
+        detail: hostingConfigured
+          ? 'L’hébergement Coden est prêt.'
+          : 'La publication n’est pas encore activée sur ce serveur. L’administrateur doit configurer l’hébergement (VERCEL_TOKEN).',
+      },
       {
         key: 'billing',
         label: 'Abonnement',
@@ -3357,8 +3428,12 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
       {
         key: 'preview',
         label: 'Aperçu',
-        status: previewReady ? 'pass' : 'fail',
-        detail: previewReady ? 'L’aperçu vérifié est prêt.' : 'Relancez la génération jusqu’à obtenir un aperçu vérifié.',
+        status: previewVerified ? 'pass' : previewReady ? 'warn' : 'fail',
+        detail: previewVerified
+          ? 'L’aperçu vérifié est prêt.'
+          : previewReady
+            ? 'Certaines vérifications ne sont pas encore passées. La publication compile l’application pour la production et vérifie le site en ligne avant de confirmer.'
+            : 'Générez l’application et attendez la fin de la génération avant de publier.',
       },
       {
         key: 'security',
@@ -5583,6 +5658,19 @@ async function createAgentTextResponse(input: {
     structuredOutput: runtimeOptions.runtime.responseFormat.type !== 'text',
     toolCalling: runtimeOptions.runtime.tools.length > 0,
   });
+  /*
+   * An answer about something current — a price, a release, the docs of a
+   * service, a page the user linked — is written with the web in hand: the
+   * provider searches and the model answers from the sources. The research
+   * gateway was built for this and never called, so every such answer came
+   * from training data alone.
+   */
+  if (!input.finalizer && !researchContext && shouldUseWebResearch({ prompt, intent: decision.intent })) {
+    const withWeb = <T extends Record<string, any> | undefined>(config: T) => (config ? { ...config, webSearch: { maxResults: 5 } } : config);
+    runtimeOptions.providerConfig = withWeb(runtimeOptions.providerConfig) as typeof runtimeOptions.providerConfig;
+    const forModel = runtimeOptions.runtimeConfigForModel;
+    if (forModel) runtimeOptions.runtimeConfigForModel = ((modelId: any) => withWeb(forModel(modelId))) as typeof forModel;
+  }
 
   try {
     const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer, history: input.history, sessionContext: input.sessionContext });
@@ -17266,7 +17354,7 @@ import {
   pauseVercelProject,
   unpauseVercelProject,
 } from './src/services/publish-vercel.ts';
-import { buildStaticSource } from './src/services/build-runner.ts';
+import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
@@ -17548,8 +17636,17 @@ async function verifyProjectPreviewWithRealBuild(project: GeneratedProject, file
 
   const buildId = `preview_${randomUUID()}`;
   const workDir = path.join('/tmp', 'coden-preview-builds', buildId);
-  let build: { id: string; status: 'passed' | 'failed'; output_directory: string; error?: string };
-  try {
+  let build: { id: string; status: 'passed' | 'failed' | 'skipped'; output_directory: string; error?: string };
+  /*
+   * Where this process may not run a generated build (production), the
+   * production build is Vercel's, at publication, in its isolated builders.
+   * Attempting it here only ever failed on SECURE_BUILD_RUNNER_REQUIRED and
+   * left every preview "needs_fix" for a reason that had nothing to do with
+   * the app. The browser verification below still runs.
+   */
+  if (!localBuildAllowed()) {
+    build = { id: buildId, status: 'skipped', output_directory: manifest.outputDirectory };
+  } else try {
     const distDir = await buildStaticSource({ files: extractStaticFiles(project, files) }, {
       slug: String(project.slug || project.id),
       workDir,
@@ -17708,21 +17805,36 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     let result: Awaited<ReturnType<typeof publishProjectToVercel>>;
     try {
       publishAttemptStarted = true;
-      const distDir = await buildStaticSource({ files: extractStaticFiles(project, contract.files) }, {
-        slug,
-        workDir,
-        runViteBuild: true,
-        outputDirectory: contract.manifest.outputDirectory,
-        publicEnv: publicBuildEnv,
-      });
+      /*
+       * Where the generated build runs.
+       *
+       * Production refuses to run a generated `npm run build` in this process
+       * (it holds every platform secret), and every publication failed right
+       * here on SECURE_BUILD_RUNNER_REQUIRED, before Vercel was ever called.
+       * There the source goes to Vercel, which installs and builds it in its
+       * own isolated builders; a local build remains for development and for
+       * a deployment that provides an isolated build worker.
+       */
+      const buildOnProvider = !localBuildAllowed();
+      const sourceFiles = { files: extractStaticFiles(project, contract.files) };
+      const distDir = buildOnProvider
+        ? (materializeStaticSource(sourceFiles, workDir), workDir)
+        : await buildStaticSource(sourceFiles, {
+            slug,
+            workDir,
+            runViteBuild: true,
+            outputDirectory: contract.manifest.outputDirectory,
+            publicEnv: publicBuildEnv,
+          });
       await persistGeneratedRuntimeContract(project, contract.manifest);
       result = await publishProjectToVercel({
         slug,
         distDir,
         runtime: contract.manifest.runtime,
-        sourceDir: contract.manifest.runtime === 'static-assets' ? undefined : workDir,
+        sourceDir: contract.manifest.runtime === 'static-assets' && !buildOnProvider ? undefined : workDir,
         outputDirectory: contract.manifest.outputDirectory,
         publicEnv: publicBuildEnv,
+        buildOnProvider,
       });
       publishProviderResult = result;
       if (!result.codenUrl) {

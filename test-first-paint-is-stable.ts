@@ -186,7 +186,7 @@ console.log('first paint is stable tests passed');
 
   // The loudest element on the panel was also the least informative: one
   // filled bar whether it could publish, could not act, or offered a retry.
-  assert.match(panel, /data-variant="\$\{statusMissing \? 'retry' : canPublish \? 'go' : 'idle'\}"/,
+  assert.match(panel, /data-variant="\$\{statusMissing \|\| \(error && canPublish\) \? 'retry' : canPublish \? 'go' : 'idle'\}"/,
     'the primary action is styled by what it can actually do');
   assert.match(css, /\.cdn-pub__primary\[data-variant='retry'\]/, 'a retry is an outline, not an achievement');
   assert.match(css, /\.cdn-pub__primary\[data-variant='idle'\]:disabled/, 'and an inert action recedes');
