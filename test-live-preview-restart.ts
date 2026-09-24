@@ -37,8 +37,12 @@ assert.match(start, /setLivePreview\(url\)/, 'and the result points the panel at
  * runs `npm install` and boots Vite, and awaiting it inside `loadProject` put
  * the whole install in front of the builder's first layout.
  */
-assert.match(builder, /setEmptyPreviewState\('idle'\);[\s\S]{0,1400}?void ensureLivePreview\(\)/,
-  'a missing runtime must restart automatically');
+assert.match(builder, /setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\);[\s\S]{0,1400}?void ensureLivePreview\(\)/,
+  'a missing runtime must restart automatically, and the panel says it is starting');
+
+// A preview that went away (a deploy, an expired VM) asks the builder to
+// restart it, instead of promising a restart that nothing performed.
+assert.match(builder, /'coden-preview-unavailable'[\s\S]{0,700}?void ensureLivePreview\(\)/, 'the preview page can ask for its own restart');
 assert.doesNotMatch(builder, /await ensureLivePreview\(\)/, 'without blocking the builder on a dependency install');
 
 // Starting takes a minute; a second click would start it twice.

@@ -3675,6 +3675,31 @@ async function resumeLivePreview() {
  * server starts only after a successful generation, without exposing a second
  * manual action or asking the model to rebuild existing files.
  */
+/*
+ * The preview asks to be restarted.
+ *
+ * Its "unavailable" page is served when the dev server is gone — after a
+ * Coden deploy (sandboxes live in memory) or when a VM expired — and it
+ * promised an automatic restart that nothing performed. It now posts this
+ * message and reloads itself; the builder answers by starting the preview.
+ * The iframe is sandboxed (opaque origin), so the sender is recognised by
+ * being our iframe, and a cooldown keeps a reload loop from being a restart
+ * loop.
+ */
+let lastPreviewRecoveryAt = 0;
+function bindPreviewRecovery() {
+  window.addEventListener('message', event => {
+    if ((event.data as { type?: string } | null)?.type !== 'coden-preview-unavailable') return;
+    const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
+    if (!frame || event.source !== frame.contentWindow) return;
+    // A run owns its own runtime and restarts it itself.
+    if (isGenerating || liveStartInFlight || !currentProjectId) return;
+    if (Date.now() - lastPreviewRecoveryAt < 20_000) return;
+    lastPreviewRecoveryAt = Date.now();
+    void ensureLivePreview();
+  });
+}
+
 async function ensureLivePreview() {
   if (!currentProjectId || liveStartInFlight) return;
   const projectId = currentProjectId;
@@ -5774,7 +5799,9 @@ async function loadProject() {
       setPreview(payload.preview.html, payload.preview.status);
     } else {
       currentPreviewHtml = '';
-      setEmptyPreviewState('idle');
+      // Said, not left blank: a cold preview takes about half a minute to
+      // install and boot, and an idle placeholder read as "nothing will come".
+      setEmptyPreviewState('working', 'Démarrage de l’aperçu…');
       /*
        * Started, not awaited.
        *
@@ -8750,6 +8777,7 @@ function initShell() {
   initCodenMotion();
   initCodenNavigationTransitions();
   bindGlobalKeyboardShortcuts();
+  bindPreviewRecovery();
   ensureConversationApi();
   bindSharedModelSelectionEvents();
   // The stored mode and model come from localStorage, which is readable

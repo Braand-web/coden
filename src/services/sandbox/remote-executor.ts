@@ -88,8 +88,11 @@ export function prepareRemoteTemplate(manifest: Record<string, unknown>): Promis
         .runCmd([
           `mkdir -p ${PREINSTALLED_DEPS}`,
           `cat > ${PREINSTALLED_DEPS}/package.json <<'CODEN_JSON'\n${packageJson}\nCODEN_JSON`,
-          `cd ${PREINSTALLED_DEPS} && npm install --ignore-scripts --no-audit --no-fund`,
-          `chmod -R a+rX ${PREINSTALLED_DEPS}`,
+          // The download cache ships with the image, writable by the VM's user:
+          // a project's install then resolves from it instead of re-fetching
+          // every package's metadata from the registry (27 s in production).
+          `cd ${PREINSTALLED_DEPS} && npm install --ignore-scripts --no-audit --no-fund --cache ${PREINSTALLED_DEPS}/.npm`,
+          `chmod -R a+rX ${PREINSTALLED_DEPS} && chmod -R a+rwX ${PREINSTALLED_DEPS}/.npm`,
         ], { user: 'root' });
       await Template.build(template as any, CODEN_TEMPLATE_NAME, { apiKey: process.env.E2B_API_KEY, cpuCount: 2, memoryMB: 2048 } as any);
       console.info('[coden:e2b_template_ready]', { template: CODEN_TEMPLATE_NAME });
@@ -118,7 +121,9 @@ export const e2bFactory: RemoteSandboxFactory = async options => {
   const sandbox = template ? await Sandbox.create(template, opts) : await Sandbox.create(opts);
   // Start from the preinstalled tree when the image has one.
   await sandbox.commands.run(
-    `mkdir -p ${APP_DIR} && if [ -d ${PREINSTALLED_DEPS}/node_modules ] && [ ! -d ${APP_DIR}/node_modules ]; then cp -r ${PREINSTALLED_DEPS}/node_modules ${APP_DIR}/; fi`,
+    `mkdir -p ${APP_DIR} && if [ -d ${PREINSTALLED_DEPS}/node_modules ] && [ ! -d ${APP_DIR}/node_modules ]; then cp -r ${PREINSTALLED_DEPS}/node_modules ${APP_DIR}/; fi`
+    // Only when the image carries the cache; the default image has none.
+    + ` && if [ -w ${PREINSTALLED_DEPS}/.npm ]; then npm config set cache ${PREINSTALLED_DEPS}/.npm --location=user && npm config set prefer-offline true --location=user; fi`,
     { timeoutMs: 120_000 },
   ).catch(() => undefined);
   return sandbox as unknown as RemoteSandboxClient;
@@ -218,11 +223,10 @@ export class RemoteExecutor {
     this.cancelRelease();
     if (this.client) {
       // Kept alive while in use; throttled so a burst of commands is one call.
-      if (Date.now() - this.lastExtendedAt > 60_000) {
-        this.lastExtendedAt = Date.now();
-        await this.client.setTimeout(this.vmTimeoutMs).catch(() => undefined);
-      }
-      return this.client;
+      if (await this.extend()) return this.client!;
+      // The VM is gone (it expired, or E2B reclaimed it): start from a fresh
+      // one rather than send every later command to a machine that is not
+      // there — which is how a preview stayed broken until Coden restarted.
     }
     this.creating ??= this.factory({
       template: this.options.template ?? (process.env.CODEN_E2B_TEMPLATE || undefined),
@@ -368,6 +372,45 @@ export class RemoteExecutor {
   }
 
   /** Release the VM now. Its files are the host's; nothing is lost. */
+  /**
+   * Push the VM's expiry forward, at most once a minute. False when the VM
+   * no longer exists, in which case it is forgotten so the next use creates
+   * a new one.
+   *
+   * Only commands used to extend it. Someone looking at the preview runs no
+   * command, so a VM expired thirty minutes after the last build step while
+   * its app was on screen.
+   */
+  private async extend(): Promise<boolean> {
+    const client = this.client;
+    if (!client) return false;
+    if (Date.now() - this.lastExtendedAt <= 60_000) return true;
+    this.lastExtendedAt = Date.now();
+    try {
+      await client.setTimeout(this.vmTimeoutMs);
+      return true;
+    } catch (error: any) {
+      if (!/not.?found|not running|does not exist|404|expired|killed/i.test(String(error?.message || error))) return true;
+      this.forget();
+      return false;
+    }
+  }
+
+  /** Viewing the preview counts as use: the VM stays while it is watched. */
+  async keepAlive(): Promise<boolean> {
+    if (!this.client) return false;
+    this.cancelRelease();
+    return this.extend();
+  }
+
+  private forget() {
+    this.client = null;
+    this.server = null;
+    this.synced.clear();
+    this.installedManifest = null;
+    this.lastExtendedAt = 0;
+  }
+
   async destroy(): Promise<void> {
     this.cancelRelease();
     const client = this.client;

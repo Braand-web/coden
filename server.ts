@@ -17288,13 +17288,13 @@ app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       return res.end(previewErrorDocument(
         'Aperçu en cours de démarrage',
-        'Le serveur de développement de ce projet n’est pas encore lancé. Il démarre automatiquement.',
+        'Le serveur de développement de ce projet n’est pas encore lancé. Coden le démarre ; cette page se recharge toute seule.',
         status?.lastError || '',
       ));
     }
     return res.json({ error: 'preview_not_running', state: status?.state || 'idle', message: status?.lastError || 'The preview is not running.' });
   }
-  sandbox.lastUsedAt = Date.now();
+  sandbox.touch();
   // Nothing is stripped: the dev server was started with this exact prefix as
   // its base, so it owns the whole path. Stripping it would hand the server a
   // URL outside its own base, which it answers with a redirect back to the
@@ -18678,7 +18678,7 @@ if (LIVE_SANDBOX_ENABLED) {
       socket.destroy();
       return;
     }
-    sandbox!.lastUsedAt = Date.now();
+    sandbox!.touch();
     const origin = sandbox!.status().origin;
     proxyUpgrade(req, socket, head, origin ? { origin } : { port }, sandbox!.status().basePath ? '' : `/preview/${token}`);
   });

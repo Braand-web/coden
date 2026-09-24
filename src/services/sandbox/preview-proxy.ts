@@ -91,6 +91,18 @@ export function proxyHttp(
       headers: forwardableHeaders(req.headers, up.hostHeader),
     },
     upstreamRes => {
+      /*
+       * A VM's public edge answers for a machine that is gone (expired,
+       * reclaimed) with a gateway error of its own. Passed through, that page
+       * sat in the iframe with nothing to recover from it; it is a dead dev
+       * server like any other, so it is reported as one.
+       */
+      if ('origin' in target && [502, 503, 504].includes(upstreamRes.statusCode || 0)) {
+        upstreamRes.resume();
+        onError?.(new Error(`The isolated sandbox answered ${upstreamRes.statusCode}.`));
+        writeUnavailable(res, `HTTP ${upstreamRes.statusCode}`);
+        return;
+      }
       const headers: Record<string, string | string[]> = {};
       for (const [key, value] of Object.entries(upstreamRes.headers)) {
         if (value === undefined) continue;
@@ -119,25 +131,31 @@ export function proxyHttp(
     // status read can send the client to a restart instead of back here.
     onError?.(error as Error);
     if (res.headersSent) { res.destroy(); return; }
-    // This response is rendered inside an iframe, so it is a document rather
-    // than JSON. A raw `{"error":…}` body is what a user reads as "the app it
-    // generated is broken" — the failure is the sandbox's, but the unstyled
-    // JSON is what they see and what they judge the product by.
-    // The reason stays machine-readable in a header: the document is for the
-    // person looking at the iframe, the header for anything that has to act
-    // on the failure rather than read it.
-    res.writeHead(502, {
-      'content-type': 'text/html; charset=utf-8',
-      'cross-origin-embedder-policy': 'credentialless',
-      'x-coden-preview-error': 'preview_unavailable',
-    });
-    res.end(previewErrorDocument(
-      'Aperçu indisponible',
-      'Le serveur de développement de ce projet ne répond plus. Il va redémarrer automatiquement.',
-      String((error as any)?.message || error),
-    ));
+    writeUnavailable(res, String((error as any)?.message || error));
   });
   req.pipe(upstream);
+}
+
+/*
+ * This response is rendered inside an iframe, so it is a document rather
+ * than JSON. A raw `{"error":…}` body is what a user reads as "the app it
+ * generated is broken" — the failure is the sandbox's, but the unstyled JSON
+ * is what they see and what they judge the product by. The reason stays
+ * machine-readable in a header: the document is for the person looking at the
+ * iframe, the header for anything that has to act on the failure.
+ */
+function writeUnavailable(res: ServerResponse, detail: string) {
+  if (res.headersSent) { res.destroy(); return; }
+  res.writeHead(502, {
+    'content-type': 'text/html; charset=utf-8',
+    'cross-origin-embedder-policy': 'credentialless',
+    'x-coden-preview-error': 'preview_unavailable',
+  });
+  res.end(previewErrorDocument(
+    'Aperçu indisponible',
+    'Le serveur de développement de ce projet ne répond plus. Coden le redémarre ; cette page se recharge toute seule.',
+    detail,
+  ));
 }
 
 /**
@@ -228,7 +246,17 @@ export function previewErrorDocument(title: string, message: string, detail = ''
 <h1><span class="dot"></span>${escape(title)}</h1>
 <p>${escape(message)}</p>
 ${detail ? `<code>${escape(detail)}</code>` : ''}
-</div></body></html>`;
+</div>
+<script>
+  /*
+   * The page recovers by itself. It used to promise a restart that nothing
+   * performed: after every deploy (sandboxes live in memory) or an expired VM
+   * the iframe kept this page until the user reloaded the whole builder. It
+   * asks the builder to start the preview, then retries on its own.
+   */
+  try { parent.postMessage({ type: 'coden-preview-unavailable' }, '*'); } catch (error) {}
+  setTimeout(function () { location.reload(); }, 5000);
+</script></body></html>`;
 }
 
 /** `/preview/abc/src/App.tsx` under base `/preview/abc` becomes `/src/App.tsx`. */

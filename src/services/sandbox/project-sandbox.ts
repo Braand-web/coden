@@ -236,6 +236,20 @@ export class ProjectSandbox {
    * So the proxy tells the sandbox when reality disagrees with it, and the
    * next status read sends the client down the restart path instead.
    */
+  /**
+   * The preview is being looked at. Locally that only postpones idle
+   * eviction; in a VM it also keeps the machine itself alive, and finds out
+   * when it is not — the next status read then sends the page to a restart
+   * instead of an iframe pointed at a machine that no longer exists.
+   */
+  touch(): void {
+    this.lastUsedAt = Date.now();
+    if (!this.remote) return;
+    void this.remote.keepAlive().then(alive => {
+      if (!alive) this.markUnreachable('La machine de l’aperçu a expiré ; elle est recréée au prochain démarrage.');
+    }).catch(() => undefined);
+  }
+
   markUnreachable(reason: string): void {
     if (this.state !== 'running' && this.state !== 'starting') return;
     this.state = 'crashed';
