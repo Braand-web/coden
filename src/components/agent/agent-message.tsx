@@ -30,6 +30,8 @@ function failureCopy(state: AgentMessageState): { title: string; body: string } 
   if (code) {
     const recovery = getRuntimeRecoveryPresentation(code, UI_LOCALE);
     if (recovery) return recovery;
+    // The app was built; only some checks are still open. Not an interruption.
+    if (/^VERIFICATION_INCOMPLETE$/i.test(code)) return { title: 'Vérification à compléter', body: publicRuntimeErrorMessage(code, UI_LOCALE) };
     return { title: 'La génération est interrompue', body: publicRuntimeErrorMessage(code, UI_LOCALE) };
   }
   return { title: 'La génération est interrompue', body: recoveryCopy(state.error || '') };

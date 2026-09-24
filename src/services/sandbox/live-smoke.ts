@@ -75,12 +75,17 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       // sandbox or a missing favicon is the network's story, not the app's.
       const location = message.location()?.url || '';
       if (/^Failed to load resource/.test(message.text()) && (!location || tolerated(location))) return;
+      // The browser declining to hand mailto:/tel: to a mail or phone app.
+      if (/(?:Not allowed|Failed) to launch '(?:mailto|tel|sms|callto|geo|maps):/i.test(message.text())) return;
       fail(`Console exception: ${message.text()}`);
     });
     page.on('response', response => {
       if (response.status() >= 400 && ['document','script','stylesheet','fetch','xhr'].includes(response.request().resourceType()) && !tolerated(response.url())) fail(`HTTP ${response.status()}: ${new URL(response.url()).pathname}`);
     });
     page.on('requestfailed', request => {
+      // mailto:, tel:, sms: — handed to another application, never loaded
+      // here. A click on "Nous écrire" is not a resource that failed.
+      if (!/^https?:/i.test(request.url())) return;
       if (tolerated(request.url())) {
         if (policyBlocked.has(request.url())) report.problems.push({ source: 'runtime', severity: 'warning', message: `EXTERNAL_DEPENDENCY_UNVERIFIED: ${new URL(request.url()).hostname}` });
         return;
