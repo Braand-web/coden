@@ -96,12 +96,21 @@ function buildEnv(includeInstallNetwork = false, publicEnv: Record<string, strin
   return env;
 }
 
+/**
+ * Whether this process may run a generated app's build itself.
+ *
+ * `npm run build` executes generated JavaScript. Environment filtering is
+ * useful defense-in-depth, but it is not a filesystem/process/network
+ * boundary, so production only builds here behind a separate container/VM
+ * worker. Everywhere else the build goes to the host's own isolated builders
+ * (see `publishProjectToVercel`'s `buildOnProvider`).
+ */
+export function localBuildAllowed(env: Record<string, string | undefined> = process.env): boolean {
+  return env.NODE_ENV !== 'production' || env.CODEN_BUILD_RUNNER_ISOLATION === 'container';
+}
+
 function assertSecureBuildRuntime(): void {
-  // `npm run build` executes generated JavaScript. Environment filtering is
-  // useful defense-in-depth, but it is not a filesystem/process/network
-  // boundary. Production must use a separate container/VM worker before this
-  // code is allowed to execute untrusted project code.
-  if (process.env.NODE_ENV === 'production' && process.env.CODEN_BUILD_RUNNER_ISOLATION !== 'container') {
+  if (!localBuildAllowed()) {
     throw new Error('SECURE_BUILD_RUNNER_REQUIRED: generated builds need an isolated container or VM runner.');
   }
 }

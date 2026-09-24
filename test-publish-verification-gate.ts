@@ -21,7 +21,11 @@ assert.match(server, /verifyProjectPreviewWithRealBuild/, 'Preview verification 
 assert.match(server, /runViteBuild: true/, 'Preview and publication verification must execute a real project build.');
 assert.match(server, /runtime: contract\.manifest\.runtime/, 'The manifest runtime must drive Vercel deployment.');
 assert.match(server, /verifyVercelDeployment\(result, publicRoutes\)/, 'A deployment must pass real HTTP checks before success.');
-assert.match(server, /sourceDir: contract\.manifest\.runtime === 'static-assets' \? undefined : workDir/, 'Static apps must use prebuilt output while server apps send source.');
+assert.match(server, /sourceDir: contract\.manifest\.runtime === 'static-assets' && !buildOnProvider \? undefined : workDir/, 'Static apps use prebuilt output where Coden may build them; server apps always send source.');
+// Production may not run a generated build itself; there Vercel builds the
+// static app from source in its own isolated builders.
+assert.match(server, /const buildOnProvider = !localBuildAllowed\(\);/, 'Production publication must not depend on a local generated build.');
+assert.match(publisher, /framework: 'vite',/, 'A provider-side static build must be declared as a Vite build.');
 assert.match(server, /const publicUrl = publishedDeployment/, 'No public URL may be exposed before a ready deployment exists.');
 assert.match(server, /status: 'failed',[\s\S]{0,500}diagnostic_code: diagnostic\.diagnostic_code/, 'Failed attempts must remain observable.');
 assert.match(publisher, /apiUrl\('\/v2\/files'\)/, 'Files must be uploaded before deployment creation.');

@@ -3896,7 +3896,9 @@ function ensureToolbar() {
 }
 
 function publishPrimaryLabel(status: PublishStatusPayload | null) {
-  if (!status?.can_publish) return 'Vérifier d’abord';
+  // A disabled button that says "Vérifier d'abord" invites a click that does
+  // nothing; the reason is shown right above it instead.
+  if (!status?.can_publish) return 'Publication bloquée';
   if (status.state === 'published' || status.state === 'changes_unpublished') return 'Mettre à jour';
   return 'Publier';
 }
@@ -3956,12 +3958,18 @@ function ensurePublishPanel() {
   root.addEventListener('click', event => {
     if (event.target === root) closePublishPanel();
   });
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && document.getElementById('coden-publish-panel')) closePublishPanel();
-  });
-  window.addEventListener('resize', positionPublishDropdown);
+  // Once per page: the panel is rebuilt on every open, and adding these each
+  // time stacked one more pair of listeners per open.
+  if (!publishPanelListenersBound) {
+    publishPanelListenersBound = true;
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.getElementById('coden-publish-panel')) closePublishPanel();
+    });
+    window.addEventListener('resize', positionPublishDropdown);
+  }
   return root;
 }
+let publishPanelListenersBound = false;
 
 function positionPublishDropdown() {
   const root = document.getElementById('coden-publish-panel');
@@ -3972,10 +3980,16 @@ function positionPublishDropdown() {
   if (button) {
     const rect = button.getBoundingClientRect();
     const top = Math.round(rect.bottom + 8);
-    const right = Math.max(12, Math.round(window.innerWidth - rect.right));
+    // Aligned to the button's right edge, but never past either side of the
+    // screen: on a phone the button sits too far left for a right-aligned
+    // 380px panel, which then started off-screen.
+    const width = section.offsetWidth || 380;
+    const left = Math.min(Math.max(12, Math.round(rect.right - width)), Math.max(12, window.innerWidth - width - 12));
     section.style.top = `${top}px`;
-    section.style.right = `${right}px`;
-    section.style.left = 'auto';
+    section.style.left = `${left}px`;
+    section.style.right = 'auto';
+    section.style.maxHeight = `${Math.max(240, window.innerHeight - top - 12)}px`;
+    section.style.overflowY = 'auto';
   } else {
     section.style.top = '60px';
     section.style.right = '16px';
@@ -4116,6 +4130,39 @@ function renderDomainSection() {
   `;
 }
 
+/** What a blocked check lets the user do about it, when there is something to do. */
+function publishBlockerAction(key: string): { action: string; label: string } | null {
+  if (key === 'billing') return { action: 'see-plans', label: 'Voir les offres' };
+  if (key === 'security') return { action: 'fix-security', label: 'Faire corriger par Coden' };
+  if (key === 'preview' || key === 'files') return { action: 'back-to-chat', label: 'Retour au chat' };
+  return null;
+}
+
+let publishStartedAt = 0;
+let publishJustSucceeded = false;
+let publishTimer: number | null = null;
+function formatElapsed(since: number) {
+  if (!since) return '0:00';
+  const seconds = Math.max(0, Math.floor((Date.now() - since) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+/*
+ * A publication takes one to three minutes. The panel said the same sentence
+ * the whole time, which after a minute reads as frozen; the clock says it is
+ * still going.
+ */
+function syncPublishTimer(running: boolean) {
+  if (running && !publishTimer) {
+    publishTimer = window.setInterval(() => {
+      const target = document.querySelector('[data-publish-elapsed]');
+      if (target) target.textContent = formatElapsed(publishStartedAt);
+    }, 1000);
+  } else if (!running && publishTimer) {
+    window.clearInterval(publishTimer);
+    publishTimer = null;
+  }
+}
+
 /*
  * Three different situations used to render as the same dead panel.
  *
@@ -4159,6 +4206,10 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const issueCount = failCount + warnCount;
   const visibleCheckCount = issueCount || passCount;
   const canPublish = Boolean(status?.can_publish && !isPublishing);
+  const blockers = status && !status.can_publish ? checks.filter(check => check.status === 'fail') : [];
+  const notes = checks.filter(check => check.status === 'warn' && check.key !== 'domain');
+  const justPublished = Boolean(payload && (payload as { deployment?: unknown }).deployment && publishJustSucceeded);
+  syncPublishTimer(isPublishing);
   const summary = loading
     ? 'Lecture de l’état de publication…'
     : statusMissing
@@ -4242,13 +4293,28 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           </div>
         `}
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
-        ${summary ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
-        ${isPublishing ? '<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span>Coden publie et vérifie cette version sur Vercel…</div>' : ''}
+        ${summary && !isPublishing && !blockers.length ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
+        ${justPublished && liveUrl ? `
+          <div class="cdn-pub__success" role="status">
+            <strong>Votre application est en ligne.</strong>
+            <span>Partagez le lien ci-dessus : chaque visiteur voit cette version.</span>
+          </div>` : ''}
+        ${blockers.length && !isPublishing ? `
+          <div class="cdn-pub__blockers" role="status">
+            <strong>Avant de publier</strong>
+            ${blockers.map(check => `
+              <div class="cdn-pub__blocker">
+                <span>${escapeHtml(check.detail)}</span>
+                ${publishBlockerAction(check.key) ? `<button type="button" class="cdn-pub__small" data-publish-action="${publishBlockerAction(check.key)!.action}">${escapeHtml(publishBlockerAction(check.key)!.label)}</button>` : ''}
+              </div>`).join('')}
+          </div>` : ''}
+        ${notes.length && !blockers.length && !isPublishing ? `<p class="cdn-pub__note">${escapeHtml(notes[0].detail)}</p>` : ''}
+        ${isPublishing ? `<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span><div>Coden compile et met en ligne cette version sur Vercel, puis vérifie le site. Comptez 1 à 3 minutes. <b class="cdn-pub__elapsed" data-publish-elapsed>${formatElapsed(publishStartedAt)}</b></div></div>` : ''}
         <button type="button"
           class="cdn-pub__primary"
-          data-variant="${statusMissing ? 'retry' : canPublish ? 'go' : 'idle'}"
+          data-variant="${statusMissing || (error && canPublish) ? 'retry' : canPublish ? 'go' : 'idle'}"
           data-publish-action="${statusMissing ? 'reload' : 'publish'}"
-          ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
+          ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(error && canPublish && !isPublishing ? 'Réessayer la publication' : primaryLabel)}</button>
         <div class="cdn-pub__links">
           <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
             ${failCount ? 'Problèmes' : warnCount ? 'À vérifier' : 'Contrôles'}
@@ -4324,6 +4390,20 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, false, error);
       }
       if (action === 'confirm-publish') void publishCurrentProject(payload);
+      if (action === 'see-plans') window.location.href = '/pricing.html';
+      if (action === 'back-to-chat') {
+        closePublishPanel();
+        chatComposer()?.focus();
+      }
+      if (action === 'fix-security') {
+        closePublishPanel();
+        const composer = chatComposer();
+        if (composer) {
+          composer.value = 'Corrige les problèmes de sécurité qui bloquent la publication de cette application, sans changer ce qui fonctionne.';
+          composer.dispatchEvent(new Event('input', { bubbles: true }));
+          composer.focus();
+        }
+      }
       // A panel that could not read the status is not a dead end: asking again
       // is the whole remedy, and it is the user's only way out of it.
       if (action === 'reload') void openPublishPanel();
@@ -4337,6 +4417,7 @@ async function openPublishPanel() {
     return;
   }
   publishPanelMode = 'main';
+  if (!publishInFlight) publishJustSucceeded = false;
   const projectId = currentProjectId;
   renderPublishPanel(null, Boolean(publishInFlight), '', true);
   try {
@@ -4395,6 +4476,8 @@ async function publishCurrentProject(previousPayload: PublishApiPayload | null) 
   if (!currentProjectId || publishInFlight) return;
   const projectId = currentProjectId;
   publishPanelMode = 'main';
+  publishStartedAt = Date.now();
+  publishJustSucceeded = false;
   renderPublishPanel(previousPayload, true);
   const idempotencyKey = typeof crypto?.randomUUID === 'function'
     ? crypto.randomUUID()
@@ -4407,13 +4490,17 @@ async function publishCurrentProject(previousPayload: PublishApiPayload | null) 
   publishInFlight = request;
   try {
     const payload = await request;
+    publishJustSucceeded = true;
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) renderPublishPanel(payload);
+    // The panel may have been closed during the wait; the result still lands.
+    else if (currentProjectId === projectId && payload?.publish?.public_url) showTransientNotice(`Application publiée : ${formatPublishUrl(payload.publish.public_url)}`, 6000);
   } catch (error) {
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
       renderPublishPanel(previousPayload, false, error instanceof Error ? error.message : 'La publication a échoué.');
     }
   } finally {
     if (publishInFlight === request) publishInFlight = null;
+    syncPublishTimer(false);
   }
 }
 
