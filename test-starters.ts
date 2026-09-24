@@ -57,7 +57,10 @@ assert.doesNotMatch(byPath.get('src/main.tsx')!, /replaced entry point/, 'the en
 const described = describeStarter(starter);
 assert.match(described, /must not be rewritten/);
 assert.match(described, /package\.json/);
-assert.ok(described.length < 700, `the scaffold description rides on every prompt, got ${described.length} chars`);
+// Raised from 700 when the kit guide and the project's theme joined it: they
+// are what lets the coder compose the ready-made components instead of
+// rewriting them, which costs far more than these ~500 tokens.
+assert.ok(described.length < 2_600, `the scaffold description rides on every prompt, got ${described.length} chars`);
 
 // -- each scaffold actually works --------------------------------------
 const timings: Record<string, unknown> = {};

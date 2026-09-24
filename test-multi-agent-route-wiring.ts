@@ -24,8 +24,8 @@ const route = server.slice(generateStart, server.indexOf('\napp.post(', generate
 // rollback may disable it.
 assert.match(route, /const pipelineRoute = resolvePipelineRoute\(\{ intent: decision\.intent, nextAction: decision\.nextAction, hasFiles: existingFiles\.length > 0 \}\);/,
   'the route must be resolved from the real decision, not re-derived from the prompt text');
-assert.match(route, /if \(CODEN_AGENT_FLAGS\.multiAgentPipeline && pipelineRoute\) \{/,
-  'the canonical branch must use the central rollout flag instead of an ad-hoc environment check');
+assert.match(route, /if \(CODEN_AGENT_FLAGS\.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed\(\)\) \{/,
+  'the canonical branch must use the central rollout flag, and run only where its sandbox may execute code');
 const featureFlags = readFileSync('./src/config/coden-agent-feature-flags.ts', 'utf8');
 assert.match(featureFlags, /multiAgentPipeline:\s*readBooleanFlag\(env, 'CODEN_MULTI_AGENT_PIPELINE'\)/,
   'the pipeline must be enabled by the normal feature-flag mechanism and retain an explicit rollback switch');

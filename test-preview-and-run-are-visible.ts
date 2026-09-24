@@ -97,7 +97,7 @@ const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
  * clarification that took the other branch.
  */
 {
-  const branch = server.slice(server.indexOf('if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute)'));
+  const branch = server.slice(server.indexOf('if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed())'));
   const opening = branch.slice(0, branch.indexOf('const routingPlan ='));
 
   assert.match(opening, /pipelineRunId = \(await createAgentRun\(/, 'the pipeline opens a run');
