@@ -8,8 +8,6 @@ import python from "highlight.js/lib/languages/python";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import "highlight.js/styles/github-dark.css";
-import katex from "katex";
-import "katex/dist/katex.min.css";
 import MarkdownIt from "markdown-it";
 import { ChevronDown, FileText } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -223,7 +221,45 @@ function formatFileDoneLine(event: { path: string; additions?: number; deletions
   return `Modification de ${event.path}${suffix}`;
 }
 
+/*
+ * KaTeX, on demand.
+ *
+ * It was imported up front — some 260 KB of script, a stylesheet and a dozen
+ * fonts on every builder load — for formulas that appear in a small minority
+ * of answers. It is fetched the first time a message actually contains math;
+ * until it arrives the expression shows as code, then every message holding
+ * math renders again.
+ */
+type KatexModule = typeof import("katex");
+let katexModule: KatexModule["default"] | null = null;
+let katexLoading: Promise<void> | null = null;
+let katexVersion = 0;
+const katexListeners = new Set<(version: number) => void>();
+function loadKatex() {
+  katexLoading ||= Promise.all([import("katex"), import("katex/dist/katex.min.css")])
+    .then(([module]) => {
+      katexModule = module.default;
+      katexVersion += 1;
+      katexListeners.forEach(listener => listener(katexVersion));
+    })
+    .catch(() => { katexLoading = null; });
+  return katexLoading;
+}
+function useKatexVersion() {
+  const [version, setVersion] = useState(katexVersion);
+  useEffect(() => {
+    katexListeners.add(setVersion);
+    return () => { katexListeners.delete(setVersion); };
+  }, []);
+  return version;
+}
+
 function renderMath(value: string, displayMode: boolean) {
+  const katex = katexModule;
+  if (!katex) {
+    void loadKatex();
+    return displayMode ? `<pre><code>${escapeHtml(value)}</code></pre>` : `<code>${escapeHtml(value)}</code>`;
+  }
   try {
     return katex.renderToString(value, {
       displayMode,
@@ -1612,7 +1648,8 @@ function ensureConversationStyles() {
 }
 
 function RichResponse({ content }: { content: string }) {
-  const html = useMemo(() => renderMarkdown(content), [content]);
+  const katexReady = useKatexVersion();
+  const html = useMemo(() => renderMarkdown(content), [content, katexReady]);
   return <div className="coden-rich-response" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 

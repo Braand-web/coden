@@ -278,6 +278,18 @@ export class SupabaseAgentHarnessStore implements AgentHarnessStore {
     return mapEvent(row);
   }
 
+  async firstSequenceForTurn(threadId: string, turnId: string) {
+    const result = await this.client.from('agent_harness_events').select('sequence').eq('thread_id', threadId).eq('turn_id', turnId).order('sequence', { ascending: true }).limit(1);
+    const rows = (assertResult(result, 'Find turn start') || []) as any[];
+    return rows.length ? Number(rows[0].sequence) : null;
+  }
+
+  async lastEventAtForTurn(threadId: string, turnId: string) {
+    const result = await this.client.from('agent_harness_events').select('created_at').eq('thread_id', threadId).eq('turn_id', turnId).order('sequence', { ascending: false }).limit(1);
+    const rows = (assertResult(result, 'Find turn activity') || []) as any[];
+    return rows.length ? String(rows[0].created_at) : null;
+  }
+
   async listEvents(threadId: string, afterSequence = 0, limit = 500) {
     const result = await this.client.from('agent_harness_events').select('*').eq('thread_id', threadId).gt('sequence', afterSequence).order('sequence', { ascending: true }).limit(Math.max(1, Math.min(limit, 2_000)));
     return ((assertResult(result, 'List harness events') || []) as any[]).map(mapEvent);

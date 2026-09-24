@@ -30,10 +30,11 @@ describe('conversation window', () => {
     expect(recent[0].content).toContain('characters omitted');
   });
 
-  it('sizes the budget from the model window, bounded', () => {
-    expect(conversationBudgetChars(128_000)).toBe(96_000);
-    expect(conversationBudgetChars(1_000_000)).toBe(240_000);
-    expect(conversationBudgetChars(8_000)).toBe(24_000);
+  it('sizes the budget from the model window, bounded so it stays cheap to re-send', () => {
+    expect(conversationBudgetChars(64_000)).toBe(48_000);
+    expect(conversationBudgetChars(128_000)).toBe(60_000);
+    expect(conversationBudgetChars(1_000_000)).toBe(60_000);
+    expect(conversationBudgetChars(8_000)).toBe(16_000);
   });
 
   it('only asks to summarise turns the summary does not cover yet', () => {

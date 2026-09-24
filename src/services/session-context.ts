@@ -64,7 +64,9 @@ const MAX_SUMMARY_CHARS = 12_000;
  */
 export function conversationBudgetChars(contextTokens: number): number {
   const quarter = Math.floor((contextTokens || 128_000) * 0.25) * 3;
-  return Math.max(24_000, Math.min(240_000, quarter));
+  // Capped well below what a large window could hold: this is re-sent on
+  // every call of a turn, and the summary keeps what falls out of it.
+  return Math.max(16_000, Math.min(60_000, quarter));
 }
 
 function clipTurn(content: string): string {

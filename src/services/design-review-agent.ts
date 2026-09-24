@@ -43,6 +43,7 @@ const RUBRIC = [
   '- Colour and contrast: text readable on its background, accent used for meaning not decoration, coherent palette.',
   '- Craft: consistent radii, borders and shadows; icons aligned with text; real content instead of placeholder or lorem.',
   '- Completeness: empty states that explain, visible feedback for actions, navigation that makes every section reachable.',
+  '- First impression: the first screen shows the product working with believable content, and has a considered backdrop and depth — not a sparse page or a flat white column.',
   '- Mobile: nothing cut off or overlapping, touch-sized controls, a real mobile navigation, sensible stacking.',
   'Return only JSON: {"score":number,"issues":[{"area":string,"problem":string,"fix":string}]}.',
   'List at most 6 issues, most visible first; each fix is concrete and implementable (which element, what change: spacing, size, colour token, layout).',

@@ -43,6 +43,7 @@ import { recordToolCall } from './agent-harness/sandbox-tool-map.ts';
 import { verifyLivePreview } from './sandbox/live-smoke.ts';
 import { createHash } from 'node:crypto';
 import { createStreamingRedactor, redactSecrets } from './secret-redaction.ts';
+import { renderScenariosForCoder } from './sandbox/acceptance.ts';
 import { buildMissionContext } from './agent-mission-context.ts';
 import { buildWorldClassUiPolicy, classifyGeneratedAppType } from './design-generation-policy.ts';
 import { describeDesignResources } from './design-resource-catalogue.ts';
@@ -318,6 +319,8 @@ function renderPlanAsInstruction(plan: BuildPlan): string {
   const lines = [`Build this, exactly as planned: ${plan.summary}`, ''];
   for (const file of plan.files) lines.push(`- [${file.action}] ${file.path} — ${file.rationale}`);
   if (plan.risks?.length) lines.push('', `Unresolved risks (not approvals): ${plan.risks.join('; ')}. Do not perform sensitive operations without explicit authorization.`);
+  const journeys = renderScenariosForCoder(plan.acceptance);
+  if (journeys) lines.push('', journeys);
   return lines.join('\n');
 }
 
@@ -447,7 +450,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
+          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
         },
         ...carried,
         {
@@ -983,7 +986,11 @@ export async function runMultiAgentPipeline(input: {
       seen.add(key);
       const streak = (behaviourStreak.get(key) || 0) + 1;
       behaviourStreak.set(key, streak);
-      if (streak >= 3) {
+      // A control the journey cannot even find, after the coder was shown the
+      // journey up front and had one repair to add it, is most likely a label
+      // the planner guessed — not a missing feature. It stops blocking sooner.
+      const unfound = /no visible (element|field|select)/i.test(problem.message);
+      if (streak >= (unfound ? 2 : 3)) {
         problem.severity = 'warning';
         problem.message = `UNVERIFIED after ${streak - 1} repair attempts: ${problem.message}`;
       }

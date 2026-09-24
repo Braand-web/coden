@@ -80,6 +80,7 @@ export const ACCEPTANCE_CONTRACT = [
   '{"action":"select","target":field label,"value":option label}, {"action":"press","key":"Enter"}, {"action":"navigate","path":"/route"},',
   '{"action":"reload"}, {"action":"expect_text","text":visible text}, {"action":"expect_no_text","text":text that must be gone}.',
   'Each scenario starts on "/" with empty storage and must contain at least one expect_text. Use the exact labels the interface will show, in the user language.',
+  'The app seeds realistic sample items on a first visit, so never assume an empty list at the start: create your own uniquely named item (e.g. "Test Coden 1") and act on that one.',
   'Cover the core journey (create/complete/remove the main object, or submit the main form) and persistence when data is created (reload, then expect it again).',
   'Never test external services, payments, email delivery or authentication with real credentials.',
 ].join('\n');
@@ -156,7 +157,60 @@ async function locate(page: Page, target: string, kind: LocateKind = 'click') {
       }
     }
   }
-  return null;
+  return fuzzyLocate(page, target, kind);
+}
+
+/*
+ * The planner writes a journey before the interface exists, so its labels are
+ * guesses: "Marquer « Préparer la réunion de lundi » comme terminée" for what
+ * the app calls "Marquer comme terminée" inside the row of that task. Exact
+ * lookup failed every such step and sent the coder to rename working
+ * controls, round after round. As a last resort the control is found by the
+ * words it shares with the target — its own accessible name plus the text of
+ * the row or card it sits in — and only when most of the target's words are
+ * there and at least one of them names the control itself.
+ */
+async function fuzzyLocate(page: Page, target: string, kind: LocateKind): Promise<Locator | null> {
+  const marker = `coden-${Math.random().toString(36).slice(2, 10)}`;
+  const found = await page.evaluate(({ target, kind, marker }) => {
+    const STOP = new Set(['le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'd', 'l', 'et', 'a', 'au', 'aux', 'en', 'pour', 'sur', 'par', 'avec', 'comme', 'ce', 'cette', 'mon', 'ma', 'mes', 'the', 'an', 'of', 'to', 'for', 'on', 'in', 'and', 'or', 'with', 'as', 'this', 'my', 'is']);
+    const words = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .split(/[^a-z0-9]+/).filter(word => word.length > 1 && !STOP.has(word));
+    const wanted = [...new Set(words(target))];
+    if (!wanted.length) return false;
+    const selector = kind === 'fill'
+      ? 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea, [contenteditable="true"]'
+      : kind === 'select'
+        ? 'select, [role=combobox], [role=listbox]'
+        : 'button, a[href], [role=button], [role=link], [role=tab], [role=menuitem], [role=checkbox], [role=switch], input[type=checkbox], input[type=radio], summary';
+    const visible = (el: Element) => {
+      const box = (el as HTMLElement).getBoundingClientRect();
+      const style = getComputedStyle(el as HTMLElement);
+      return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const nameOf = (el: Element) => {
+      const html = el as HTMLElement & { labels?: NodeListOf<HTMLLabelElement>; placeholder?: string; value?: string };
+      const labelled = el.getAttribute('aria-labelledby')?.split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ') || '';
+      return [el.getAttribute('aria-label') || '', labelled, el.getAttribute('title') || '', html.placeholder || '',
+        [...(html.labels || [])].map(label => label.textContent || '').join(' '), html.innerText || '', kind === 'click' ? String(html.value || '') : ''].join(' ');
+    };
+    let best: { el: Element; score: number } | null = null;
+    for (const el of Array.from(document.querySelectorAll(selector))) {
+      if (!visible(el)) continue;
+      const own = new Set(words(nameOf(el)));
+      const row = el.closest('li, tr, [role=row], [role=listitem], article, [data-row], [class*="card" i], [class*="item" i]');
+      const context = new Set(row && row !== el ? words((row as HTMLElement).innerText || '').slice(0, 60) : []);
+      const ownHits = wanted.filter(word => own.has(word)).length;
+      const hits = wanted.filter(word => own.has(word) || context.has(word)).length;
+      if (!ownHits && kind === 'click') continue;
+      const score = hits / wanted.length + ownHits * 0.01;
+      if (!best || score > best.score) best = { el, score };
+    }
+    if (!best || best.score < 0.6) return false;
+    best.el.setAttribute('data-coden-target', marker);
+    return true;
+  }, { target, kind, marker }).catch(() => false);
+  return found ? page.locator(`[data-coden-target="${marker}"]`).first() : null;
 }
 
 async function visibleText(page: Page, value: string): Promise<boolean> {
@@ -235,6 +289,21 @@ export async function runAcceptanceScenarios(page: Page, baseUrl: URL, scenarios
     results.push({ name: scenario.name, ok: !error, ...(error ? { failedStep, error } : {}) });
   }
   return results;
+}
+
+/**
+ * The journeys as the coder should read them before writing a line.
+ *
+ * They were only ever shown after round one had failed them: the app was
+ * written without knowing that a field would be looked up as "Nouvelle tâche"
+ * or a button as "Ajouter", and a round was spent learning the labels.
+ */
+export function renderScenariosForCoder(scenarios: AcceptanceScenario[] | undefined): string {
+  if (!scenarios?.length) return '';
+  return [
+    'Browser journeys that will be run against the app after this round (build so they pass: the labels, placeholders and texts they use must exist exactly as written — as a visible label, placeholder, button text or aria-label):',
+    ...scenarios.map((scenario, index) => `${index + 1}. ${scenario.name}: ${scenario.steps.map(describe).join(' → ')}`),
+  ].join('\n');
 }
 
 export type ExplorationResult = {

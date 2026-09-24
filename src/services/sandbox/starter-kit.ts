@@ -31,6 +31,11 @@ const STORAGE = `import { useEffect, useState } from 'react';
  * State that survives a reload, stored in localStorage under \`key\`.
  * Use it for anything the user creates (items, settings, drafts) when the app
  * has no backend, so their work is still there when they come back.
+ *
+ * Pass realistic sample records as \`initial\`: they appear on a first visit
+ * only (nothing stored yet), so the app opens showing itself at work, and
+ * whatever the user does afterwards — clearing everything included — is what
+ * persists.
  */
 export function usePersistentState<T>(key: string, initial: T): [T, (next: T | ((previous: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => {

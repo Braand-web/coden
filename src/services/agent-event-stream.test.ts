@@ -96,3 +96,30 @@ describe('agent event stream ordering', () => {
     expect(envelopes(response).some(envelope => envelope.type === 'run_finished')).toBe(true);
   });
 });
+
+describe('agent event stream liveness', () => {
+  it('records a heartbeat only when nothing else has been recorded for a while', async () => {
+    const { vi } = await import('vitest');
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-24T03:00:00Z'));
+      const response = new ResponseStub();
+      const stored: string[] = [];
+      const stream = createAgentEventStream(response as any, 'run', { persist: async envelope => { stored.push(envelope.payload.type); } });
+      stream.chat({ type: 'heartbeat' });
+      vi.setSystemTime(new Date('2026-09-24T03:00:20Z'));
+      stream.chat({ type: 'activity', label: 'install' });
+      vi.setSystemTime(new Date('2026-09-24T03:00:40Z'));
+      stream.chat({ type: 'heartbeat' });
+      vi.setSystemTime(new Date('2026-09-24T03:00:55Z'));
+      stream.chat({ type: 'heartbeat' });
+      await vi.runOnlyPendingTimersAsync();
+      await Promise.resolve();
+      // The first heartbeat and the one 20 s after the activity say nothing
+      // new; the one 35 s after it is the proof of life.
+      expect(stored).toEqual(['activity', 'heartbeat']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

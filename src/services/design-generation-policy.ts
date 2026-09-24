@@ -709,6 +709,8 @@ const antiAiDesignRules = [
   'Never produce UI that looks AI-generated, like a Tailwind starter kit, purple/blue gradient page, generic hero, or identical card grid.',
   'ANTI-GENERIC (reject and redesign before output if any appears): a purple/blue gradient hero or any decorative gradient with no meaning; three identical feature cards or identical-card grids as the whole layout; an oversized hero-only page with a vague headline and two buttons; a fake SaaS dashboard shell for something that is not one (and the reverse: a marketing hero on what should be an operational tool); meaningless glassmorphism, random elevation, lifeless flat cards, decorative blobs/orbs, or animated backgrounds that compete with the workflow; template copy ("Welcome to our platform"), lorem ipsum, inert CTAs; nesting decorative cards inside cards or turning every section into a floating card.',
   'Cards are for repeated items, tools, panels, and modals — not for every section.',
+  'FIRST SCREEN IS ALIVE: an app that manages data opens with realistic, domain-specific sample content in the user language (6-12 items with believable names, dates, amounts, statuses) seeded once when storage is empty, so the first paint shows the product working; "clear all" still reaches the designed empty state. Never lorem ipsum, "Item 1", or an empty page as the first impression.',
+  'ATMOSPHERE AND DEPTH: give the first screen a considered backdrop tied to the brand (a subtle tinted gradient, soft grain or a quiet geometric pattern), layered surfaces with the elevation scale, and one orchestrated staggered reveal on first paint — never a flat white page with a centered column.',
   'DESIGN TOKENS (mandatory, concrete) via CSS custom properties or a Tailwind-consistent theme, never scattered one-off values: one neutral family (warm or cool), one primary accent used sparingly for the main action, and semantic --success / --warning / --error / --info.',
   'Type scale near 12 / 14 / 16 / 20 / 24 / 32 / 48px; body line-height 1.5-1.7; reading width 65-75ch for long text; tabular numbers for metrics/money.',
   'Spacing on a strict 4/8px rhythm; related elements group tight, unrelated ones separate clearly. No random one-off gaps. One radius scale, one shadow/elevation scale, one z-index scale (e.g. 10/20/30/50), one motion duration set (fast ~120ms, base ~180ms, slow ~280ms).',
@@ -1096,11 +1098,25 @@ export function buildWorldClassUiPolicy(input: {
     `Detected platform type (hint): ${appType}.`,
     `Design direction (hint): ${designDirection}.`,
     '',
-    'Structured design brief to follow before coding:',
-    JSON.stringify(designBrief, null, 2),
+    /*
+     * The brief's own fields, minus what "Platform intelligence" below already
+     * says. It used to be pasted as indented JSON on top of the same facts as
+     * bullets — some 1,700 characters said twice, on every step of every
+     * build, since this block is the coder's system message.
+     */
+    'Design brief:',
+    `- Audience: ${designBrief.audience}`,
+    `- Product promise: ${designBrief.product_promise}`,
+    ...(designBrief.risk_flags?.length ? [`- Risks: ${designBrief.risk_flags.join('; ')}`] : []),
     '',
     'Project-specific Design DNA (stable for this project, deliberately different across products):',
-    JSON.stringify(designDna, null, 2),
+    `- Composition candidates: ${designDna.compositionCandidates.map((candidate, index) => `(${index + 1}) ${candidate}`).join(' ')}`,
+    `- Selected composition: ${designDna.selectedComposition}`,
+    `- Typography pair: ${designDna.typographyPair}`,
+    `- Palette character: ${designDna.paletteCharacter}`,
+    `- Shape language: ${designDna.shapeLanguage}`,
+    `- Density rhythm: ${designDna.densityRhythm}`,
+    `- Motion signature: ${designDna.motionSignature}`,
     'Sketch the three composition candidates mentally, select the one that best serves the core journey, then implement one coherent direction. The selected composition is the default, not an excuse to ignore a clearly better candidate. Do not collapse the result into a centered hero followed by equal cards.',
     '',
     'Platform intelligence:',
