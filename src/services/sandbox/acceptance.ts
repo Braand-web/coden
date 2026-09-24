@@ -80,6 +80,7 @@ export const ACCEPTANCE_CONTRACT = [
   '{"action":"select","target":field label,"value":option label}, {"action":"press","key":"Enter"}, {"action":"navigate","path":"/route"},',
   '{"action":"reload"}, {"action":"expect_text","text":visible text}, {"action":"expect_no_text","text":text that must be gone}.',
   'Each scenario starts on "/" with empty storage and must contain at least one expect_text. Use the exact labels the interface will show, in the user language.',
+  'The app seeds realistic sample items on a first visit, so never assume an empty list at the start: create your own uniquely named item (e.g. "Test Coden 1") and act on that one.',
   'Cover the core journey (create/complete/remove the main object, or submit the main form) and persistence when data is created (reload, then expect it again).',
   'Never test external services, payments, email delivery or authentication with real credentials.',
 ].join('\n');
