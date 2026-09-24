@@ -90,7 +90,7 @@
 .cpc-cta {
   min-height: 44px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: var(--surface-soft);
   color: var(--foreground);
   font: inherit;
@@ -100,8 +100,8 @@
   transition: transform var(--transition-control), background-color var(--transition-control), box-shadow var(--transition-control), opacity var(--transition-control);
 }
 .cpc-cta:hover:not(:disabled) { transform: translateY(-1px); background: var(--surface-hover); }
-.cpc-cta.is-primary { border-color: transparent; background: var(--accent); color: var(--text-on-accent); box-shadow: 0 12px 28px -12px color-mix(in srgb, var(--accent) 80%, transparent); }
-.cpc-cta.is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000); }
+.cpc-cta.is-primary { border-color: transparent; background: var(--accent); color: var(--text-on-accent); box-shadow: var(--shadow-accent); }
+.cpc-cta.is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--foreground)); }
 .cpc-cta:disabled { opacity: .6; cursor: default; }
 .cpc-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

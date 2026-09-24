@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
+import { CodenLogoMark } from './components/brand/coden-logo';
 import { isLocalPreviewEnabled } from './local-preview';
 import { ensureSettingsPanel, openBillingFromUrl, openSettings } from './settings-panel';
 import {
@@ -136,7 +137,7 @@ function builderUrl(projectId?: string) {
 }
 
 function CodenMark({ size = 28 }: { size?: number }) {
-  return <img className="coden-dashboard-mark" src="/favicon.svg" width={size} height={size} alt="" aria-hidden="true" />;
+  return <CodenLogoMark className="coden-dashboard-mark" width={size} height={size} />;
 }
 
 function relativeTime(value?: string) {
@@ -259,7 +260,7 @@ function Sidebar({
           ) : (
             <button type="button" className="coden-dashboard-upgrade-card" onClick={() => openUpgrade(profile)} title="Passer à Pro">
               <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
-              <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Plus de crédits, publication</small></span>
+              <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Crédits et publication</small></span>
               <ArrowRight className="coden-dashboard-upgrade-arrow" size={15} aria-hidden="true" />
             </button>
           ))}

@@ -120,7 +120,7 @@ body.coden-react-surface-home { padding-top: 76px; }
 .coden-react-marketing-header[data-header-state="scrolled"] { top: 8px; max-width: min(var(--shell-max), calc(100% - 32px)); min-height: 58px; padding: 8px 10px 8px 14px; border-color: var(--border); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--sidebar) 92%, transparent); box-shadow: 0 14px 40px color-mix(in srgb, var(--foreground) 18%, transparent); backdrop-filter: blur(16px) saturate(125%); -webkit-backdrop-filter: blur(16px) saturate(125%); }
 .coden-react-brand { display: inline-flex; align-items: center; gap: 9px; flex: 0 0 auto; color: var(--foreground); font-weight: 700; letter-spacing: -.02em; }
 .coden-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--foreground); font-weight: 700; letter-spacing: -.02em; text-decoration: none; }
-.coden-logo-mark { --logo-bg: var(--accent); --logo-fg: var(--text-on-accent); display: block; flex: 0 0 auto; width: 32px; height: 32px; }
+.coden-logo-mark { display: block; flex: 0 0 auto; width: 32px; height: 32px; }
 .coden-react-brand .coden-logo-mark { width: 30px; height: 30px; }
 .coden-react-brand-mark { display: none; }
 .coden-react-nav { display: flex; align-items: center; gap: 4px; margin-inline: auto; }

@@ -1,7 +1,7 @@
 {
   "name": "Coden",
   "short_name": "Coden",
-  "description": "AI app builder with database, preview, deploy and SEO-ready output.",
+  "description": "De l’idée à l’application web : décrivez-la, Coden la construit, la vérifie et la publie.",
   "icons": [
     {
       "src": "/favicon-192x192.png",
@@ -21,6 +21,6 @@
   ],
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff"
+  "background_color": "#3A83F7",
+  "theme_color": "#3A83F7"
 }

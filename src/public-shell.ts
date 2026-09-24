@@ -1,3 +1,4 @@
+import { codenLogoSvg } from './lib/coden-logo';
 import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV } from './config/public-routes';
 import { applySignedInLinks, hasStoredSession } from './lib/stored-session';
 import { trackFunnelEvent } from './conversion-events';
@@ -15,22 +16,9 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: stri
 }
 
 function logoMark() {
-  const svg = document.createElementNS(svgNamespace, 'svg');
-  svg.setAttribute('viewBox', '0 0 32 32');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.classList.add('coden-public-logo');
-  const parts = [
-    ['rect', { width: '32', height: '32', rx: '8', fill: 'var(--accent)' }],
-    ['path', { d: 'M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z', fill: 'var(--background)' }],
-    ['path', { d: 'M7 16.5V24.5L11.5 22V14L7 16.5Z', fill: 'var(--background)' }],
-    ['path', { d: 'M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z', fill: 'var(--background)' }],
-  ] as const;
-  parts.forEach(([tag, attributes]) => {
-    const child = document.createElementNS(svgNamespace, tag);
-    Object.entries(attributes).forEach(([name, value]) => child.setAttribute(name, value));
-    svg.appendChild(child);
-  });
-  return svg;
+  const holder = document.createElement('span');
+  holder.innerHTML = codenLogoSvg({ size: 30, className: 'coden-public-logo' });
+  return holder.firstElementChild as SVGSVGElement;
 }
 
 function themeIcon(kind: 'dark' | 'light') {

@@ -23,8 +23,11 @@ body.coden-public-menu-open { overflow: hidden; }
 .coden-public-nav a:hover, .coden-public-nav a[aria-current='page'], .coden-public-signin:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--foreground); }
 .coden-public-nav a:active, .coden-public-signin:active { transform: scale(.98); }
 .coden-public-actions { display: flex; align-items: center; gap: 4px; }
-.coden-public-cta { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--foreground); color: var(--background) !important; font-size: 14px; font-weight: 600; transition: transform 180ms var(--ease-standard), opacity 180ms var(--ease-standard); }
-.coden-public-cta:hover { opacity: .88; }
+/* The primary action: accent fill, --text-on-accent, --radius-control, as everywhere in the product. */
+.coden-public-cta { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; border-radius: var(--radius-control); background: var(--accent); color: var(--text-on-accent) !important; font-size: 14px; font-weight: 650; box-shadow: var(--shadow-accent); transition: transform 180ms var(--ease-standard), background-color 180ms var(--ease-standard); }
+.coden-public-cta:hover { background: color-mix(in srgb, var(--accent) 86%, var(--foreground)); }
+/* Over the electric-blue hero the blue button keeps a light edge. */
+html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in srgb, #fff 45%, transparent), var(--shadow-accent); }
 .coden-public-cta:active { transform: scale(.98); }
 .coden-public-menu-trigger { width: 44px; height: 44px; display: none; place-items: center; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); cursor: pointer; }
 .coden-public-menu-icon { width: 18px; height: 14px; position: relative; display: block; }

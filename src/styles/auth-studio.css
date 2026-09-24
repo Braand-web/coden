@@ -103,7 +103,7 @@ html[data-theme="dark"] .auth-studio .auth-sphere { --sphere-ring: rgba(255, 255
   color: var(--foreground);
   text-decoration: none;
 }
-.auth-studio .auth-brand .coden-logo-mark { --logo-bg: var(--accent); --logo-fg: var(--text-on-accent); }
+.auth-studio .auth-brand .coden-logo-mark { width: 32px; height: 32px; }
 .auth-studio .auth-wordmark { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
 .auth-studio .theme-toggle {
   grid-column: 3;
@@ -129,7 +129,7 @@ html[data-theme="dark"] .auth-studio .auth-sphere { --sphere-ring: rgba(255, 255
   margin: auto 0 0;
   padding: 32px;
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  border-radius: 28px;
+  border-radius: var(--radius-xl);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   box-shadow: 0 1px 0 color-mix(in srgb, #fff 40%, transparent) inset, 0 30px 80px -30px color-mix(in srgb, #0a2a78 45%, transparent);
   backdrop-filter: blur(22px) saturate(140%);
@@ -155,7 +155,7 @@ html[data-theme="dark"] .auth-studio .auth-card {
   margin-bottom: 18px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--surface-soft);
 }
 .auth-studio .tabs[hidden] { display: none; }
@@ -186,7 +186,7 @@ html[data-theme="dark"] .auth-studio .tab-btn.active { background: var(--control
   width: 100%;
   min-height: var(--auth-control-height);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--foreground);
   font: inherit;
@@ -213,7 +213,7 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
   min-height: var(--auth-control-height);
   padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   background: var(--input);
   color: var(--foreground);
   font: inherit;
@@ -223,7 +223,7 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
 }
 .auth-studio .input::placeholder { color: var(--text-disabled); }
 .auth-studio .input:hover { border-color: var(--border-strong); }
-.auth-studio .input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.auth-studio .input:focus { border-color: var(--accent); box-shadow: var(--ring); }
 .auth-studio .input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent); }
 .auth-studio .password-control { position: relative; }
 .auth-studio .password-control .input { padding-right: 88px; }
@@ -262,7 +262,7 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
   min-height: var(--auth-control-height);
   margin-top: 4px;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -272,7 +272,7 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
   box-shadow: 0 14px 30px -14px color-mix(in srgb, var(--accent) 85%, transparent);
   transition: transform var(--transition-control), background-color var(--transition-control), box-shadow var(--transition-control), opacity var(--transition-control);
 }
-.auth-studio .btn-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000); transform: translateY(-1px); }
+.auth-studio .btn-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--foreground)); transform: translateY(-1px); }
 .auth-studio .btn-submit:active:not(:disabled) { transform: scale(.99); }
 .auth-studio .btn-submit:disabled { opacity: .7; cursor: default; }
 

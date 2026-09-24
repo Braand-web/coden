@@ -9,6 +9,7 @@
  * open, close on Escape, and give focus back where it was.
  */
 import { renderPlanChooser } from './plan-chooser';
+import { codenLogoSvg } from '../lib/coden-logo';
 import {
   ONBOARDING_STEPS,
   ONBOARDING_VERSION,
@@ -39,7 +40,7 @@ const ICONS: Record<string, string> = {
 const icon = (name: string) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.sparkle}</svg>`;
 const CLOSE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 const BACK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>';
-const MARK_SVG = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M9 21.5V14l7-4.5 7 4.5v7.5h-4.4V17h-5.2v4.5z" fill="#fff"/></svg>';
+const MARK_SVG = codenLogoSvg({ size: 28 });
 
 type Overlay = { root: HTMLElement; dialog: HTMLElement; close: () => void };
 
