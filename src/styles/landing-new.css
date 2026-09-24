@@ -49,6 +49,56 @@ html[data-lp-reveal="on"] [data-lp-reveal] {
   transition-delay: var(--lp-delay, 0ms);
 }
 html[data-lp-reveal="on"] [data-lp-reveal].is-visible { opacity: 1; filter: none; transform: none; }
+html[data-lp-reveal="on"] [data-lp-reveal="left"] { transform: translateX(-48px); }
+html[data-lp-reveal="on"] [data-lp-reveal="right"] { transform: translateX(48px); }
+html[data-lp-reveal="on"] [data-lp-reveal="scale"] { transform: translateY(32px) scale(.94); }
+html[data-lp-reveal="on"] [data-lp-reveal].is-visible { transform: none; }
+/* On a phone the blocks fill the width: a sideways entrance would push past the edge. */
+@media (max-width: 720px) {
+  html[data-lp-reveal="on"] [data-lp-reveal="left"]:not(.is-visible),
+  html[data-lp-reveal="on"] [data-lp-reveal="right"]:not(.is-visible) { transform: translateY(24px); }
+}
+
+/* Section titles rise word by word, just after their block starts to arrive. */
+html[data-lp-reveal="on"] [data-lp-reveal] .lp-word,
+html[data-lp-reveal="on"] h2[data-lp-reveal] .lp-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(.45em);
+  transition: opacity 700ms var(--ease-standard), transform 700ms var(--ease-standard);
+  transition-delay: calc(var(--lp-delay, 0ms) + 120ms + var(--i, 0) * 45ms);
+}
+html[data-lp-reveal="on"] [data-lp-reveal].is-visible .lp-word { opacity: 1; transform: none; }
+.lp-word { display: inline-block; }
+
+/* ---------------------------------------------------------------------------
+ * Scroll
+ *
+ * A reading bar along the top of the window, and depth in the hero: the
+ * copy drifts up faster than the page and fades, the light behind lags, the
+ * sphere grows as it is passed. --lp-hero-p runs 0 → 1 across the hero and
+ * is written by installScrollMotion() — without it every value is at rest.
+ * ------------------------------------------------------------------------- */
+.lp-scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 101;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #4FD2FF));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .lp-scroll-progress { display: none; } }
+
+.lp-hero { --lp-hero-p: 0; }
+.lp-hero-title { translate: 0 calc(var(--lp-hero-p) * -90px); opacity: calc(1 - var(--lp-hero-p) * .9); }
+.lp-hero-subtitle { translate: 0 calc(var(--lp-hero-p) * -60px); opacity: calc(1 - var(--lp-hero-p) * .9); }
+.lp-hero-ambient { translate: 0 calc(var(--lp-hero-p) * 120px); }
+.lp-hero-sphere { scale: calc(1 + var(--lp-hero-p) * .18); }
 
 /* ---------------------------------------------------------------------------
  * Hero
@@ -185,7 +235,7 @@ html[data-theme="dark"] .lp-hero-sphere {
 
 /* Hero entrance: title, subtitle, composer, note, one after the other. */
 @media (prefers-reduced-motion: no-preference) {
-  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-sphere) { animation: lp-rise 1000ms var(--ease-standard) both; }
+  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-sphere) { animation: lp-rise 1000ms var(--ease-standard) backwards; }
   .lp-hero-subtitle { animation-delay: 90ms !important; }
   .lp-composer { animation-delay: 180ms !important; }
   .lp-hero-note { animation-delay: 270ms !important; }
@@ -719,7 +769,7 @@ html[data-theme="dark"] .lp-finale-light { opacity: .9; }
 .lp-finale .coden-public-footer-frame::before { display: none; }
 body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top: 0; }
 
-.lp-launch { display: grid; justify-items: center; width: var(--lp-width); margin: 0 auto; padding: 96px 0 80px; text-align: center; }
+.lp-launch { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; width: var(--lp-width); margin: 0 auto; padding: 96px 0 80px; text-align: center; }
 .lp-launch-kicker { margin: 0; color: var(--text-muted); font-size: 16px; line-height: 24px; }
 /* One line, like the hero: the question runs about 16 times its font size. */
 .lp-launch h2 { max-width: 100%; margin: 12px 0 0; color: var(--text-strong); font-size: min(52px, calc((100vw - 48px) / 17)); font-weight: 600; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
@@ -744,7 +794,8 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
 @media (max-width: 640px) {
   body[data-coden-surface="landing-new"] { --lp-width: calc(100% - 32px); --lp-section-gap: 48px; }
   .lp-hero { padding: 136px 0 64px; }
-  .lp-hero-title { font-size: calc((100vw - 32px) / 13.2); }
+  /* Sized for Geist; with the fallback font (display=optional) it may wrap rather than run off the screen. */
+  .lp-hero-title { font-size: calc((100vw - 32px) / 13.2); white-space: normal; text-wrap: balance; }
   .lp-hero-subtitle { max-width: 320px; margin-top: 16px; font-size: 16px; line-height: 24px; }
   .lp-composer { margin-top: 32px; }
   .lp-heading { margin-bottom: 32px; }
@@ -766,7 +817,8 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
   .lp-pricing-controls { margin-bottom: 32px; }
   .lp-finale { margin-top: 32px; }
   .lp-launch { padding: 64px 0 48px; }
-  .lp-launch h2 { font-size: calc((100vw - 32px) / 17); }
+  /* Sized for Geist; with the fallback font (display=optional) it may wrap rather than run off the screen. */
+  .lp-launch h2 { font-size: calc((100vw - 32px) / 17); white-space: normal; text-wrap: balance; }
   .lp-launch-kicker { font-size: 14px; }
   .lp-launch-composer { margin-top: 32px; }
   .lp-segmented button { padding: 0 16px; }
@@ -778,6 +830,7 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
 @media (prefers-reduced-motion: reduce) {
   html:has(body[data-coden-surface="landing-new"]) { scroll-behavior: auto; }
   html[data-lp-reveal="on"] [data-lp-reveal] { opacity: 1; filter: none; transform: none; transition: none; }
+  html[data-lp-reveal="on"] [data-lp-reveal] .lp-word { opacity: 1; transform: none; transition: none; }
   .lp-caret, .lp-mini-selected, .lp-mini-cursor, .lp-publish-steps li.is-running i, .lp-composer-host.is-filled .coden-prompt-input > div:last-of-type { animation: none; }
   .lp-card, .lp-example, .lp-button, .lp-faq-list summary span, .lp-plan, .lp-segmented button, .lp-segmented-thumb, .lp-select-highlight, .lp-select-chevron { transition: none; }
   .lp-select-menu { animation: none; }

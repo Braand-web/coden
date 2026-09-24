@@ -33,29 +33,95 @@ function onceVisible(node: Element, callback: () => void, threshold = .35) {
 }
 
 /*
- * Sections fade in as they arrive.
+ * Sections arrive as they scroll into view.
  *
  * The page only hides them after this has installed the observer, so a
  * failed script leaves a fully visible page. Siblings of the same grid are
  * staggered by 80ms, which is what makes a row of cards read as one gesture.
+ * `data-lp-reveal` may name a direction ("left", "right", "scale"); section
+ * titles also rise word by word.
+ *
+ * Once an element has arrived its attribute is dropped: the reveal's long
+ * transition would otherwise stay on it and make every hover lift take 900ms.
  */
+const REVEAL_MS = 900;
+
+function splitWords(heading: HTMLElement) {
+  if (heading.childElementCount || heading.dataset.lpWords) return;
+  const words = (heading.textContent || '').trim().split(/ +/);
+  heading.dataset.lpWords = 'on';
+  heading.textContent = '';
+  words.forEach((word, index) => {
+    if (index) heading.append(' ');
+    const span = document.createElement('span');
+    span.className = 'lp-word';
+    span.style.setProperty('--i', String(index));
+    span.textContent = word;
+    heading.append(span);
+  });
+}
+
 function installReveal() {
   const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-lp-reveal]'));
   if (!nodes.length || reducedMotion() || !('IntersectionObserver' in window)) return;
+  const delays = new Map<Element, number>();
   nodes.forEach(node => {
     const siblings = Array.from(node.parentElement?.children || []).filter(child => child.hasAttribute('data-lp-reveal'));
     const index = siblings.indexOf(node);
+    delays.set(node, Math.max(0, index) * 80);
     if (index > 0) node.style.setProperty('--lp-delay', `${index * 80}ms`);
+    node.querySelectorAll<HTMLElement>('h2').forEach(splitWords);
+    if (node.matches('h2')) splitWords(node);
   });
   document.documentElement.dataset.lpReveal = 'on';
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (!entry.isIntersecting) return;
-      entry.target.classList.add('is-visible');
-      observer.unobserve(entry.target);
+      const node = entry.target as HTMLElement;
+      node.classList.add('is-visible');
+      observer.unobserve(node);
+      const words = node.querySelectorAll('.lp-word').length;
+      window.setTimeout(() => {
+        node.removeAttribute('data-lp-reveal');
+        node.style.removeProperty('--lp-delay');
+      }, (delays.get(node) || 0) + REVEAL_MS + words * 45 + 200);
     });
   }, { threshold: 0, rootMargin: '0px 0px -10% 0px' });
   nodes.forEach(node => observer.observe(node));
+}
+
+/*
+ * What scrolling moves, besides the page.
+ *
+ * A reading bar along the top, and depth in the hero: the title drifts up
+ * faster than the page while the light behind it lags. One passive listener,
+ * batched to a frame. It writes on the hero and the bar only: a variable on
+ * <html> would restyle the whole document on every frame.
+ */
+function installScrollMotion() {
+  if (reducedMotion()) return;
+  const bar = document.querySelector<HTMLElement>('.lp-scroll-progress');
+  const hero = document.querySelector<HTMLElement>('.lp-hero');
+  let queued = false;
+  const update = () => {
+    queued = false;
+    const root = document.documentElement;
+    const max = root.scrollHeight - window.innerHeight;
+    const y = window.scrollY;
+    if (bar) bar.style.transform = `scaleX(${max > 0 ? Math.min(1, y / max).toFixed(4) : 0})`;
+    if (hero) {
+      const progress = Math.min(1, Math.max(0, y / Math.max(1, hero.offsetHeight)));
+      hero.style.setProperty('--lp-hero-p', progress.toFixed(4));
+    }
+  };
+  const queue = () => {
+    if (queued) return;
+    queued = true;
+    window.requestAnimationFrame(update);
+  };
+  window.addEventListener('scroll', queue, { passive: true });
+  window.addEventListener('resize', queue, { passive: true });
+  update();
 }
 
 /*
@@ -494,8 +560,9 @@ function init() {
   setupPublishChecks();
   setupPricing();
   const sphere = document.querySelector<HTMLCanvasElement>('.lp-hero-sphere');
-  if (sphere) mountDotSphere(sphere);
+  if (sphere) mountDotSphere(sphere, { scrollSpin: .0016 });
   installReveal();
+  installScrollMotion();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
