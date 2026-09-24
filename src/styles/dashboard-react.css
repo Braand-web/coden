@@ -1452,3 +1452,35 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
     transition: none;
   }
 }
+
+/*
+ * Dark: the workspace floats on electric blue (dashboard-ambient-dark.svg),
+ * so the sidebar that sits directly on it reads in white, not in the grey
+ * meant for a dark surface. A slow light drifts across it.
+ */
+html[data-theme="dark"] .coden-dashboard-sidebar {
+  --text-muted: color-mix(in srgb, var(--foreground) 80%, transparent);
+  --border-subtle: color-mix(in srgb, var(--foreground) 22%, transparent);
+  --surface-soft: color-mix(in srgb, var(--foreground) 14%, transparent);
+}
+html[data-theme="dark"] .coden-dashboard-sidebar .coden-dashboard-new-project {
+  color: color-mix(in srgb, var(--accent) 72%, var(--background));
+  background: var(--foreground);
+  border-color: transparent;
+}
+html[data-theme="dark"] .coden-dashboard-sidebar .coden-dashboard-new-project:hover {
+  background: color-mix(in srgb, var(--foreground) 90%, var(--accent));
+}
+html[data-theme="dark"] body:has(#coden-dashboard-react-root)::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background: url('/dashboard-ambient-dark-glow.svg') center / 100% 100% no-repeat;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="dark"] body:has(#coden-dashboard-react-root)::before { animation: coden-dashboard-light 24s ease-in-out infinite alternate; }
+}
+@keyframes coden-dashboard-light { to { transform: translate(8%, 6%) rotate(8deg); } }
+html[data-theme="dark"] #coden-dashboard-react-root { position: relative; z-index: 1; }
