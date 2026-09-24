@@ -184,14 +184,28 @@ export function adjustForRefusal(payload: Record<string, any>, status: number, m
     delete payload.reasoning;
     return true;
   }
-  const affordable = status === 402 ? Number(/can only afford (\d+)/i.exec(message)?.[1]) : NaN;
-  if (Number.isFinite(affordable) && affordable >= 256 && affordable < Number(payload.max_tokens)) {
-    payload.max_tokens = affordable;
-    if (payload.reasoning?.max_tokens) payload.reasoning = { max_tokens: maxReasoningBudget(affordable) };
-    console.warn('[coden:openrouter_max_tokens_reduced]', { model: payload.model, max_tokens: affordable });
-    return true;
-  }
-  return false;
+  if (status !== 402) return false;
+  const requested = Number(payload.max_tokens);
+  if (!Number.isFinite(requested)) return false;
+  /*
+   * Full power asks for the model's whole output ceiling — 128k tokens on the
+   * largest models — and OpenRouter reserves credit for all of it up front.
+   * A balance that would cover the actual answer many times over can still
+   * refuse that reservation. The refusal usually names what it can afford;
+   * when it only says "fewer max_tokens", a quarter of the request (at most
+   * 16k, which no single answer here needs more than) is asked instead.
+   * Only a refusal about the size of the request is adjusted: an account
+   * with nothing left has nothing to recover.
+   */
+  const named = Number(/can only afford (\d+)/i.exec(message)?.[1]);
+  const affordable = Number.isFinite(named)
+    ? named
+    : /fewer max_tokens|max_tokens|more credits, or fewer/i.test(message) ? Math.min(16_000, Math.floor(requested / 4)) : NaN;
+  if (!Number.isFinite(affordable) || affordable < 256 || affordable >= requested) return false;
+  payload.max_tokens = affordable;
+  if (payload.reasoning?.max_tokens) payload.reasoning = { max_tokens: maxReasoningBudget(affordable) };
+  console.warn('[coden:openrouter_max_tokens_reduced]', { model: payload.model, from: requested, max_tokens: affordable });
+  return true;
 }
 
 /** The readable text of a reasoning delta, whichever shape the provider used. */
@@ -338,7 +352,7 @@ export class OpenRouterService {
 
     try {
       let response: Response | undefined;
-      let adjusted = false;
+      let adjusted = 0;
       for (let attempt = 1; ; attempt += 1) {
         armIdleTimeout();
         try {
@@ -352,8 +366,10 @@ export class OpenRouterService {
             const errMsg = await this.readProviderError(response);
             // Two refusals the same request can recover from at once, before
             // anything is shown: see `adjustForRefusal`.
-            if (!adjusted && adjustForRefusal(payload, response.status, errMsg)) {
-              adjusted = true;
+            // Twice at most: a reasoning refusal and a size refusal can
+            // follow one another on the same request.
+            if (adjusted < 2 && adjustForRefusal(payload, response.status, errMsg)) {
+              adjusted += 1;
               attempt -= 1;
               continue;
             }

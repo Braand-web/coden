@@ -820,6 +820,8 @@ export async function runMultiAgentPipeline(input: {
   input.signal?.throwIfAborted();
   if (input.route !== 'small_edit') {
     activity('Coden prépare le plan…', 'Coden is preparing the plan…');
+    // Redacted before it leaves the server, like the coder's reasoning.
+    const planningThoughts = input.onChatEvent ? createStreamingRedactor(delta => input.onChatEvent?.({ type: 'reasoning_delta', delta })) : null;
     // Before the sandbox exists, deliberately: planning needs no filesystem,
     // and paying the sandbox's cost for a plan that turns out unusable would
     // be the exact waste this ordering avoids.
@@ -843,7 +845,9 @@ export async function runMultiAgentPipeline(input: {
       allowFallback: input.selectedModel === undefined,
       withAcceptance: quality.acceptance,
       signal: input.signal,
+      onReasoning: planningThoughts ? delta => planningThoughts.push(delta) : undefined,
     });
+    planningThoughts?.end();
     spent.costUsd += plan.costUsd;
     input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
     input.onChatEvent?.({ type:'text_end' });

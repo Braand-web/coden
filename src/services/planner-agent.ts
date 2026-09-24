@@ -193,6 +193,12 @@ export type PlannerAgentInput = {
   /** Ask for acceptance scenarios alongside the file plan. */
   withAcceptance?: boolean;
   signal?: AbortSignal;
+  /**
+   * The planner's reasoning as it is written, for display only. Planning is
+   * the longest single wait before the first file; with this the user watches
+   * it think instead of a static status line.
+   */
+  onReasoning?: (delta: string) => void;
 };
 
 export type PlannerAgentResult = BuildPlan & {
@@ -208,10 +214,27 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<Planner
   const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,preferStructuredOutput:true,effort:input.effort}));
   const runtimeConfig = runtimeFor(modelId);
 
-  const result = await input.gateway.chat(modelId, [
+  const planningMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userMessage },
-  ], { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
+  ];
+  const buffered = () => input.gateway.chat(modelId, planningMessages, { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
+  /*
+   * Streamed when someone is watching. A stream that has shown reasoning can
+   * no longer hand over to another model, so a failure there falls back to
+   * the buffered call, which still can: the display never costs the plan.
+   */
+  let result: Awaited<ReturnType<typeof buffered>>;
+  if (input.onReasoning && typeof input.gateway.streamingCompletion === 'function') {
+    try {
+      result = await input.gateway.streamingCompletion(modelId, planningMessages, { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor, onReasoningChunk: input.onReasoning });
+    } catch (error) {
+      if (input.signal?.aborted) throw error;
+      result = await buffered();
+    }
+  } else {
+    result = await buffered();
+  }
 
   let repairCostUsd = 0;
   const parsed = await parseOrRepairStructuredObject(result.text, isBuildPlan, async invalidText => {

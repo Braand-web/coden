@@ -95,6 +95,15 @@ describe('buildOpenRouterRequest — every model × every level', () => {
     expect(adjustForRefusal({ model: 'm', max_tokens: 1000 }, 500, 'upstream')).toBe(false);
   });
 
+  it('asks for less when a credit refusal names no number, and never retries an empty account', () => {
+    const unnamed: any = { model: 'm', max_tokens: 128_000, reasoning: { max_tokens: 100_000 } };
+    expect(adjustForRefusal(unnamed, 402, 'This request requires more credits, or fewer max_tokens.')).toBe(true);
+    expect(unnamed.max_tokens).toBe(16_000);
+    expect(unnamed.reasoning.max_tokens).toBeLessThan(16_000);
+    expect(adjustForRefusal({ model: 'm', max_tokens: 128_000 }, 402, 'Insufficient credits. Add more using https://openrouter.ai/credits')).toBe(false);
+    expect(adjustForRefusal({ model: 'm', max_tokens: 128_000 }, 402, 'You requested up to 128000 tokens, but can only afford 12.')).toBe(false);
+  });
+
   it('sends the fallback chain as `models`, without the primary twice', () => {
     const body: any = buildOpenRouterRequest(liveEntry(MODEL_REGISTRY[0].id, 0), 'medium', messages, { fallbackModels: [MODEL_REGISTRY[0].id, 'b/one', 'b/one', 'c/two'] });
     expect(body.models).toEqual([MODEL_REGISTRY[0].id, 'b/one', 'c/two']);
