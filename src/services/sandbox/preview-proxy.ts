@@ -20,6 +20,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import http from 'node:http';
+import https from 'node:https';
 import type { Duplex } from 'node:stream';
 
 /** Hop-by-hop headers. Forwarding these breaks keep-alive and upgrades. */
@@ -43,7 +44,26 @@ function forwardableHeaders(headers: IncomingMessage['headers'], host: string): 
   return out;
 }
 
-export type ProxyTarget = { port: number };
+/**
+ * A dev server on this host's loopback port, or one in an isolated VM reached
+ * at its HTTPS origin. Either way the browser only ever sees Coden's URL.
+ */
+export type ProxyTarget = { port: number } | { origin: string };
+
+function upstreamFor(target: ProxyTarget) {
+  if ('origin' in target) {
+    const url = new URL(target.origin);
+    const secure = url.protocol === 'https:';
+    return {
+      client: secure ? https : http,
+      host: url.hostname,
+      port: Number(url.port) || (secure ? 443 : 80),
+      hostHeader: url.host,
+      servername: url.hostname,
+    };
+  }
+  return { client: http, host: '127.0.0.1', port: target.port, hostHeader: `127.0.0.1:${target.port}`, servername: undefined };
+}
 
 /**
  * Proxy one HTTP request to the project's dev server.
@@ -60,13 +80,15 @@ export function proxyHttp(
   onError?: (error: Error) => void,
 ): void {
   const url = stripBase(req.url || '/', basePath);
-  const upstream = http.request(
+  const up = upstreamFor(target);
+  const upstream = up.client.request(
     {
-      host: '127.0.0.1',
-      port: target.port,
+      host: up.host,
+      port: up.port,
+      servername: up.servername,
       method: req.method,
       path: url,
-      headers: forwardableHeaders(req.headers, `127.0.0.1:${target.port}`),
+      headers: forwardableHeaders(req.headers, up.hostHeader),
     },
     upstreamRes => {
       const headers: Record<string, string | string[]> = {};
@@ -133,12 +155,14 @@ export function proxyUpgrade(
   basePath: string,
 ): void {
   const url = stripBase(req.url || '/', basePath);
-  const upstream = http.request({
-    host: '127.0.0.1',
-    port: target.port,
+  const up = upstreamFor(target);
+  const upstream = up.client.request({
+    host: up.host,
+    port: up.port,
+    servername: up.servername,
     method: req.method,
     path: url,
-    headers: { ...forwardableHeaders(req.headers, `127.0.0.1:${target.port}`), connection: 'Upgrade', upgrade: String(req.headers.upgrade || 'websocket') },
+    headers: { ...forwardableHeaders(req.headers, up.hostHeader), connection: 'Upgrade', upgrade: String(req.headers.upgrade || 'websocket') },
   });
 
   upstream.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {

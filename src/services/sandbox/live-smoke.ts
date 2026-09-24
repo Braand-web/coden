@@ -36,7 +36,8 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
     fail('PREVIEW_NOT_RUNNING'); return report;
   }
   // The address comes only from this project's registered process, never user input.
-  const origin = `http://127.0.0.1:${state.port}`;
+  // A VM-hosted server has its own HTTPS origin; a local one lives on loopback.
+  const origin = state.origin || `http://127.0.0.1:${state.port}`;
   const url = new URL(state.basePath || '/', origin);
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let timeout: ReturnType<typeof setTimeout> | undefined;

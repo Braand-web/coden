@@ -585,7 +585,18 @@ export async function runMultiAgentPipeline(input: {
   const deadlineSignal = AbortSignal.timeout(Math.max(1, runDeadline - Date.now()));
   input = { ...input, signal: input.signal ? AbortSignal.any([input.signal, deadlineSignal]) : deadlineSignal };
   // Reject an incompatible manual selection before planning or starting a process.
-  const selection = selectModel({ task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, requestedModel: input.selectedModel, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } });
+  const selectionRequest = { task: taskKindForRoute(input.route), plan: input.userPlan, credits: input.credits, complexity: input.complexity, needs: { tools: true, vision: Boolean(input.visionInputs?.length) } };
+  let selection: ReturnType<typeof selectModel>;
+  try {
+    selection = selectModel({ ...selectionRequest, requestedModel: input.selectedModel });
+  } catch (error: any) {
+    // A pinned model that cannot do this request (e.g. read the attached
+    // images) is replaced by a compatible one for this run, not a failure.
+    if (!input.selectedModel || error?.diagnosticCode !== 'MODEL_CAPABILITY_UNAVAILABLE') throw error;
+    selection = selectModel(selectionRequest);
+    console.info('[coden:pinned_model_substituted]', { from: input.selectedModel, to: selection.modelId, reason: 'capability' });
+    input = { ...input, selectedModel: undefined };
+  }
   const modelId = selection.modelId;
   const autoMode = input.selectedModel === undefined;
   /*

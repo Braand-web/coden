@@ -57,7 +57,17 @@ export function scanGeneratedSecurity(files: AgentGeneratedFile[], options: { pr
   const frontendSource = files.filter(isFrontendFile).map(file => `--- ${normalizePath(file.path)} ---\n${file.content || ''}`).join('\n\n');
   const edgeSource = files.filter(isEdgeFunctionFile).map(file => `--- ${normalizePath(file.path)} ---\n${file.content || ''}`).join('\n\n');
 
-  if (containsSecret(source) || /service[_-]?role|SUPABASE_SERVICE_ROLE|sbp_[a-z0-9]|secret\s+eyJ/i.test(source)) {
+  /*
+   * A secret is a value, or a privileged name in code the browser receives.
+   *
+   * `service_role` anywhere in the project used to fail the build, and it is
+   * everywhere a Supabase app is correct: `grant … to service_role` in a
+   * migration, `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')` in an edge
+   * function. Every app with a backend failed this check, so every such build
+   * ended "needs fix" for doing the secure thing. A real key anywhere still
+   * fails; the privileged role only fails where the browser would get it.
+   */
+  if (containsSecret(source) || /sbp_[a-z0-9]{20,}|secret\s+eyJ/i.test(source) || /service[_-]?role|SUPABASE_SERVICE_ROLE/i.test(frontendSource)) {
     findings.push(fail('security_no_frontend_secrets', 'Potential secret, service role key, or provider credential found in generated files.'));
   } else {
     findings.push(pass('security_no_frontend_secrets', 'No frontend secrets or service role keys detected.'));
@@ -145,11 +155,13 @@ export function scanGeneratedSecurity(files: AgentGeneratedFile[], options: { pr
       ? pass('security_ai_no_frontend_provider_call', 'No direct AI provider SDK call or provider key is present in frontend files.')
       : fail('security_ai_no_frontend_provider_call', 'AI provider SDK calls and provider keys must stay out of frontend files.'));
 
+    // A connector that reads no key is not leaking one; a hard-coded key is
+    // already caught above as a secret. This is advice, not a blocker.
     findings.push(/Deno\.env\.get|process\.env/i.test(edgeSource) || !hasAiEdgeConnector
       ? (hasAiEdgeConnector
           ? pass('security_ai_secrets_server_env', 'AI provider secrets are read from server environment only.')
           : warn('security_ai_secrets_server_env', 'AI provider secrets should be read only from the server connector.'))
-      : fail('security_ai_secrets_server_env', 'AI connector must read provider secrets from server environment variables.'));
+      : warn('security_ai_secrets_server_env', 'AI connector should read provider secrets from server environment variables.'));
 
     if (frontendOwnStreamClient) {
       findings.push(/AbortController|signal|abort\(/i.test(frontendSource)

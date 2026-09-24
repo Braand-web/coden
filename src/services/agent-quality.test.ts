@@ -46,7 +46,13 @@ describe('quality policy follows the budget', () => {
     const policy = resolveQualityPolicy({ route: 'new_project', credits: 30, effort: 'Medium', plan: 'pro' });
     expect(policy.tier).toBe('standard');
     expect(policy.designReview).toBe(true);
-    expect(policy.maxSpecialists).toBe(3);
+    // Straight to the plan: no specialist pre-analysis at the default level.
+    expect(policy.specialists).toBe(false);
+  });
+
+  it('does not make every enterprise run premium: the chosen level decides', () => {
+    expect(resolveQualityPolicy({ route: 'new_project', credits: 1_000_000, effort: 'Medium', plan: 'enterprise' }).tier).toBe('standard');
+    expect(resolveQualityPolicy({ route: 'new_project', credits: 1_000_000, effort: 'High', plan: 'enterprise' }).tier).toBe('premium');
   });
 
   it('gives the full treatment to high effort with a real balance', () => {

@@ -25,7 +25,7 @@ assert.ok(generateStart > 0, 'the generate route must be findable');
 const route = server.slice(generateStart, server.indexOf('\napp.post(', generateStart + 100));
 
 const sandboxLaunch = route.indexOf('livePreview = await applyProjectEdit(');
-const needsFixBranch = route.indexOf('if (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary)) {');
+const needsFixBranch = route.indexOf('if (!onlyRuntimeUnavailable && (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary))) {');
 const happyPathSave = route.indexOf('await saveProject(updatedProject, finalFiles);');
 
 assert.ok(sandboxLaunch > 0, 'the route must launch the sandbox');

@@ -57,7 +57,9 @@ export function needsRestart(changedPaths: readonly string[]): boolean {
 }
 
 /** True when a dependency tree is already present. */
-async function hasDependencies(sandbox: { hasFile(path: string): Promise<boolean> }): Promise<boolean> {
+async function hasDependencies(sandbox: { hasFile(path: string): Promise<boolean>; hasDependencies?(): Promise<boolean> }): Promise<boolean> {
+  // The sandbox knows where its code runs (host or VM), so it answers first.
+  if (sandbox.hasDependencies) return sandbox.hasDependencies();
   return (await sandbox.hasFile('node_modules/.package-lock.json')) || (await sandbox.hasFile('node_modules/.bin'));
 }
 

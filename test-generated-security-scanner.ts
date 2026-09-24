@@ -60,4 +60,23 @@ as $$ begin return; end; $$;
   assert.equal(result.checks.find(check => check.key === 'security_no_public_security_definer')?.status, 'fail');
 }
 
+/*
+ * Live build 2026-09-24 ("Terrain Onze"): a migration granting to
+ * service_role and an edge function reading SUPABASE_SERVICE_ROLE_KEY from
+ * its environment failed the build as a leaked secret. Both are correct.
+ */
+{
+  const result = scanGeneratedSecurity([
+    { path: 'supabase/migrations/002_roles.sql', content: 'grant select on public.players to service_role;' },
+    { path: 'supabase/functions/admin/index.ts', content: "const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');" },
+    { path: 'src/App.tsx', content: 'export default function App() { return <main />; }' },
+  ]);
+  assert.notEqual(result.checks.find(check => check.key === 'security_no_frontend_secrets')?.status, 'fail', 'server-side service_role is not a leak');
+
+  const leaked = scanGeneratedSecurity([
+    { path: 'src/lib/client.ts', content: "const key = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;" },
+  ]);
+  assert.equal(leaked.checks.find(check => check.key === 'security_no_frontend_secrets')?.status, 'fail', 'the privileged role in browser code still fails');
+}
+
 console.log('generated security scanner tests passed');

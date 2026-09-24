@@ -5100,14 +5100,18 @@ function requiredModelCapabilitiesForTask(
   prompt: string,
   decision: IntentDecision,
   complexity: AgentTaskComplexity,
-  files: GeneratedFile[] = []
+  files: GeneratedFile[] = [],
+  /** Images actually attached to this request. The only thing that needs vision. */
+  hasImages = false,
 ): RoutingContext['requiredCapabilities'] {
   const text = normalizePromptIntentText(prompt);
   const mutatesCode = ['build', 'edit', 'debug_fix'].includes(decision.intent);
   const touchesDesign = /\b(ui|ux|design|style|layout|landing|hero|component|composant|dashboard|animation|responsive|mobile)\b/i.test(text);
   const touchesBackend = /\b(api|backend|server|database|supabase|postgres|auth|login|stripe|billing|webhook|rls|storage|realtime)\b/i.test(text);
   const touchesSecurity = /\b(security|securite|sécurité|auth|rls|policy|policies|stripe|webhook|secret|service role|permission|role)\b/i.test(text);
-  const needsVision = /\b(image|screenshot|capture|figma|maquette|mockup|wireframe|visuel|photo|screen)\b/i.test(text);
+  // Vision is needed to read an image, not to build an app that shows photos:
+  // inferred from words, it refused a pinned text model for "une galerie photo".
+  const needsVision = hasImages;
   return {
     reasoning: decision.intent !== 'conversation' || complexity !== 'simple',
     code: mutatesCode,
@@ -5229,7 +5233,9 @@ async function resolveAgentProviderModel(input: {
   files?: GeneratedFile[];
   userCredits?: number;
   plan?: string;
-}): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number; reasoningLevel?: ReasoningLevel }> {
+  /** Whether images are attached to this request. */
+  hasImages?: boolean;
+}): Promise<{ model: AllowedModelId; autoRouted: boolean; complexity: AgentTaskComplexity; mode: RoutingContext['mode']; plan: RoutingContext['plan']; credits: number; reasoningLevel?: ReasoningLevel; substitutedFrom?: string }> {
   // Manual choices are still subject to the exact same access, credit and
   // capability contract as Auto. The old early return skipped this policy and
   // allowed a hidden mismatch between what Coden promised and what the model
@@ -5244,26 +5250,60 @@ async function resolveAgentProviderModel(input: {
     : CODEN_UNMETERED_USAGE_BUDGET;
   const complexity = inferAgentTaskComplexity(input.prompt, input.decision, input.files || []);
   const task = taskKindForAgentDecision(input.decision);
-  const requiredCapabilities = requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || []);
+  const requiredCapabilities = requiredModelCapabilitiesForTask(input.prompt, input.decision, complexity, input.files || [], Boolean(input.hasImages));
 
   if (input.modelId && input.modelId !== 'auto') {
-    const model = await modelRouter.selectModel({
-      plan: accessPlan,
-      mode: 'Custom',
-      userCredits: accessBudget,
-      task,
-      taskComplexity: complexity,
-      interactive: true,
-      requiredCapabilities,
-    }, normalizeProviderModelForBackend(input.modelId));
-    return {
-      model,
-      autoRouted: false,
-      complexity,
-      mode: 'Custom',
-      plan: accessPlan,
-      credits: accessBudget,
-    };
+    try {
+      const model = await modelRouter.selectModel({
+        plan: accessPlan,
+        mode: 'Custom',
+        userCredits: accessBudget,
+        task,
+        taskComplexity: complexity,
+        interactive: true,
+        requiredCapabilities,
+      }, normalizeProviderModelForBackend(input.modelId));
+      return {
+        model,
+        autoRouted: false,
+        complexity,
+        mode: 'Custom',
+        plan: accessPlan,
+        credits: accessBudget,
+      };
+    } catch (error: any) {
+      /*
+       * A chosen model that cannot do this one request is not a failed run.
+       *
+       * The run used to end on MODEL_CAPABILITY_UNAVAILABLE — twice in a row
+       * on 2026-09-24 for a model pinned in the composer. Plan and credit
+       * refusals still stand (the user has to know those); a capability the
+       * chosen model lacks is answered by the compatible model Auto would
+       * pick, and the substitution is reported rather than hidden.
+       */
+      if (!['MODEL_CAPABILITY_UNAVAILABLE', 'MODEL_DEFERRED_UNAVAILABLE'].includes(String(error?.diagnosticCode || ''))) throw error;
+      const substitute = await modelRouter.selectModel({
+        plan: accessPlan,
+        mode: routingModeForPolicy(input.decision.selectedModelPolicy),
+        userCredits: accessBudget,
+        task,
+        taskComplexity: complexity,
+        interactive: true,
+        requiredCapabilities,
+      });
+      validateAllowedModel(substitute);
+      console.info('[coden:pinned_model_substituted]', { from: String(input.modelId), to: substitute, reason: error?.diagnosticCode });
+      return {
+        model: substitute,
+        autoRouted: true,
+        complexity,
+        mode: 'Custom',
+        plan: accessPlan,
+        credits: accessBudget,
+        reasoningLevel: affordableReasoning(autoReasoningLevel(task, complexity), substitute, accessBudget),
+        substitutedFrom: String(input.modelId),
+      };
+    }
   }
 
   const mode = routingModeForPolicy(input.decision.selectedModelPolicy);
@@ -5417,6 +5457,7 @@ async function createAgentTextResponse(input: {
     files,
     userCredits: input.userCredits,
     plan: input.plan,
+    hasImages: Boolean(input.visionInputs?.length),
   });
   const selectedModel = routing.model;
   validateAllowedModel(selectedModel);
@@ -6782,6 +6823,8 @@ async function generateFilesWithAi(input: {
   signal?: AbortSignal;
   allowModelFallback?: boolean;
   onEvent?: (event: { type: 'model_fallback'; from: AllowedModelId; to: AllowedModelId; reason: string }) => void;
+  /** Each file path as the model reaches it in its answer, for live progress. */
+  onFileStarted?: (path: string) => void;
 }): Promise<{ files: GeneratedFile[]; summary: string; appName: string; model: string; cost_usd: number }> {
   const hasLiveKey = hasLiveAiProvider();
   if (!hasLiveKey) {
@@ -6797,6 +6840,7 @@ async function generateFilesWithAi(input: {
       files: input.existingFiles,
       userCredits: input.userCredits,
       plan: input.plan,
+      hasImages: Boolean(input.visionInputs?.length),
     })).model
     : input.modelId && input.modelId !== 'auto'
       ? normalizeProviderModelForBackend(input.modelId)
@@ -7086,6 +7130,21 @@ async function generateFilesWithAi(input: {
         onFallback: input.allowModelFallback
           ? event => input.onEvent?.({ type: 'model_fallback', ...event })
           : undefined,
+        // The artifact is JSON and stays private, but which files it has
+        // reached is progress worth showing: minutes of silence read as a hang.
+        onProgress: input.onFileStarted ? (() => {
+          const announced = new Set<string>();
+          let scanned = 0;
+          return (accumulated: string) => {
+            const window = accumulated.slice(Math.max(0, scanned - 300));
+            scanned = accumulated.length;
+            for (const match of window.matchAll(/"path"\s*:\s*"([^"\n]{1,200})"/g)) {
+              if (announced.has(match[1])) continue;
+              announced.add(match[1]);
+              input.onFileStarted?.(match[1]);
+            }
+          };
+        })() : undefined,
         // A malformed artifact is equivalent to an unavailable generator for
         // Auto. Validate before accepting the result so the gateway can try
         // its one compatible fallback without creating a second project/run.
@@ -13639,6 +13698,7 @@ ${resolvedMission}` : resolvedMission;
       decision,
       files: existingFiles,
       userCredits: walletForRouting,
+      hasImages: visionInputs.length > 0,
     });
   } catch (error: any) {
     /*
@@ -14044,7 +14104,13 @@ ${resolvedMission}` : resolvedMission;
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
       ? deriveProjectName(prompt)
       : project.name;
+    // Say what is happening and show each file as it is written, instead of
+    // a thinking line that stays still for minutes.
+    eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden écrit l’application…' : 'Coden is writing the application…' });
     const generation = await generateFilesWithAi({
+      onFileStarted: eventStream
+        ? path => eventStream.chat({ type: 'files_touched', action: existingFiles.some(file => file.path === path) ? 'edit' : 'create', paths: [path] })
+        : undefined,
       projectName: generationProjectName,
       prompt: executionPlan ? `${executionPlan}\n\nBuild request:\n${skillAwarePrompt}` : skillAwarePrompt,
       project,
@@ -14488,7 +14554,19 @@ ${resolvedMission}` : resolvedMission;
       }
     }
 
-    if (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary)) {
+    /*
+     * No runtime is not a defect in the app.
+     *
+     * Where generated code may not execute, the runtime check cannot run, and
+     * it was counted as a blocking failure: every build on such a deployment
+     * ended "La génération nécessite une correction", however clean the app.
+     * When that is the only thing standing, the app is delivered as generated
+     * and statically checked — preview_status stays unverified, so nothing
+     * claims a verification that did not happen. Real findings still block.
+     */
+    const onlyRuntimeUnavailable = runnerSkipped
+      && (reliabilitySummary.blocking || []).every(item => item.key === 'strict_runtime_verification');
+    if (!onlyRuntimeUnavailable && (runnerSkipped || shouldDeliverRecoverableDraft(reliabilitySummary))) {
       const generatedProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
         ? sanitizeSuggestedProjectName(generation.appName, prompt)
         : project.name;
@@ -16879,9 +16957,11 @@ app.use((req, res, next) => {
 // The current ProjectSandbox is a host-process compatibility runner, not a
 // container/VM boundary. Never enable it in production unless the deployment
 // explicitly declares that an external isolation boundary is in place.
-const LIVE_SANDBOX_ENABLED = process.env.CODEN_LIVE_SANDBOX === '1' && (
+// With an E2B key the sandbox runs in isolated microVMs: the live preview is
+// on without further flags, because the boundary it needs is in place.
+const LIVE_SANDBOX_ENABLED = remoteSandboxConfigured() || (process.env.CODEN_LIVE_SANDBOX === '1' && (
   process.env.NODE_ENV !== 'production' || process.env.CODEN_SANDBOX_ISOLATION === 'container'
-);
+));
 
 function requireLiveSandbox(res: any): boolean {
   if (LIVE_SANDBOX_ENABLED) return true;
@@ -16933,7 +17013,8 @@ app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
   // URL outside its own base, which it answers with a redirect back to the
   // base -- and the browser and the proxy then chase each other until Chrome
   // gives up with ERR_TOO_MANY_REDIRECTS.
-  proxyHttp(req, res, { port: status.port }, status.basePath ? '' : `/preview/${token}`, error => {
+  // A VM-hosted dev server is reached at its HTTPS origin; a local one on its port.
+  proxyHttp(req, res, status.origin ? { origin: status.origin } : { port: status.port }, status.basePath ? '' : `/preview/${token}`, error => {
     // A port that refuses the connection while the state still reads "running"
     // is the loop that made this permanent: the status kept saying running, so
     // the client kept reattaching instead of restarting. Recording it here is
@@ -17014,6 +17095,7 @@ import { repairNarration, writingFileNarration } from './src/services/agent-narr
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER, STARTERS } from './src/services/sandbox/starters.ts';
 import { ProjectSandbox, hostSandboxExecutionAllowed } from './src/services/sandbox/project-sandbox.ts';
+import { prepareRemoteTemplate, remoteSandboxConfigured } from './src/services/sandbox/remote-executor.ts';
 import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
@@ -18099,6 +18181,12 @@ const httpServer = app.listen(port, () => {
       console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
     });
   }, reapDelayMs).unref();
+  // And periodically: no run lives past the generation ceiling (an hour), so
+  // one still "running" well beyond it is a dead process, not slow work.
+  setInterval(() => {
+    const cutoff = new Date(Date.now() - 75 * 60_000).toISOString();
+    void reapInterruptedAgentRuns({ createdBefore: cutoff }).catch(() => undefined);
+  }, 10 * 60_000).unref();
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
@@ -18107,7 +18195,7 @@ const httpServer = app.listen(port, () => {
   if (CODEN_AGENT_FLAGS.multiAgentPipeline && !hostSandboxExecutionAllowed()) {
     console.warn('[coden:pipeline_sandbox_unavailable]', {
       effect: 'builds use the generation path without a live sandbox (no install, dev server or browser checks)',
-      enable: 'run the sandbox behind an isolation boundary and set CODEN_SANDBOX_ISOLATION=container',
+      enable: 'set E2B_API_KEY (isolated microVMs), or run the host sandbox behind an isolation boundary and set CODEN_SANDBOX_ISOLATION=container',
     });
   }
   // Every slug checked against the live OpenRouter catalogue: a missing one is
@@ -18116,7 +18204,23 @@ const httpServer = app.listen(port, () => {
     console.info('[coden:model_catalog_validated]', { models: MODEL_REGISTRY.length, missing: missing.length });
   }).catch(() => undefined);
   // The first new project after a deploy should not pay a cold install.
-  setTimeout(() => {
+  // VM mode: build (or reuse) the E2B image with every scaffold's
+  // dependencies, so the first project does not wait for a full install.
+  if (remoteSandboxConfigured()) {
+    const merged: { dependencies: Record<string, string>; devDependencies: Record<string, string> } = { dependencies: {}, devDependencies: {} };
+    for (const starter of Object.values(STARTERS)) {
+      const manifest = (starter as any).files?.find((file: any) => file.path === 'package.json')?.content;
+      try {
+        const parsed = JSON.parse(manifest || '{}');
+        Object.assign(merged.dependencies, parsed.dependencies || {});
+        Object.assign(merged.devDependencies, parsed.devDependencies || {});
+      } catch { /* a scaffold without a manifest adds nothing */ }
+    }
+    void prepareRemoteTemplate(merged);
+  }
+  // Local installs only: in VM mode each warm-up would start a paid VM, and
+  // its node_modules would never reach a project's VM anyway.
+  if (!remoteSandboxConfigured()) setTimeout(() => {
     void warmScaffoldDependencies(Object.values(STARTERS), id => new ProjectSandbox(id)).catch(() => undefined);
   }, 10_000).unref();
 
@@ -18264,7 +18368,8 @@ if (LIVE_SANDBOX_ENABLED) {
       return;
     }
     sandbox!.lastUsedAt = Date.now();
-    proxyUpgrade(req, socket, head, { port }, sandbox!.status().basePath ? '' : `/preview/${token}`);
+    const origin = sandbox!.status().origin;
+    proxyUpgrade(req, socket, head, origin ? { origin } : { port }, sandbox!.status().basePath ? '' : `/preview/${token}`);
   });
 
   // Idle dev servers stop on their own; their files stay, so coming back to a
