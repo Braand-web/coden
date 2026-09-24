@@ -73,6 +73,11 @@ function AutoChoiceLine({ choices }: { choices: AutoChoice[] }) {
   const current = choices.at(-1);
   if (!current) return null;
   const level = REASONING_LEVEL_LABELS[current.reasoningLevel] || current.reasoningLevel;
+  // The chosen model refused the request mid-run and Coden carried on with a
+  // compatible one: said once, quietly, instead of stopping on an error.
+  if (current.reason === 'substitution') {
+    return <p className="coden-agent-auto-choice">Relais · {current.label} · le modèle choisi a refusé cette étape</p>;
+  }
   const escalated = choices.length > 1;
   return <p className="coden-agent-auto-choice" title={escalated ? choices.map(choice => choice.label).join(' → ') : undefined}>
     Auto · {current.label} · raisonnement {level.toLowerCase()}{escalated ? ' · renforcé' : ''}

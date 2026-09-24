@@ -338,6 +338,11 @@ async function readAllFiles(sandbox: ProjectSandbox): Promise<MultiAgentPipeline
  * this is that adapter, given its own name and callable from a module rather
  * than duplicated inline a second time.
  */
+/** Failures that belong to the model, not to the request: another model can do the work. */
+export function isModelRefusal(diagnosticCode: string): boolean {
+  return /^(?:MODEL_(?:UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)|PROVIDER_(?:UNSUPPORTED_RUNTIME_CONFIG|BAD_REQUEST|QUOTA_OR_BILLING))$/.test(diagnosticCode);
+}
+
 function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity {
   return complexity === 'simple' ? 'complex' : 'extreme';
 }
@@ -364,7 +369,13 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    * loop behaves exactly as before.
    */
   harness?: CodenAgentHarness;
-  harnessTurn?: { turnId: string; role: HarnessAgentRole } }): RepairTurn {
+  harnessTurn?: { turnId: string; role: HarnessAgentRole };
+  /**
+   * A compatible model to carry on with when the pinned one refuses the work
+   * itself (a runtime option, a capability, its route or quota), rather than
+   * failing the run. Absent, or returning null, and the error propagates.
+   */
+  substitute?: (failed: AllowedModelId, diagnosticCode: string) => AllowedModelId | null }): RepairTurn {
   const levelFor = () => input.current?.reasoningLevel ?? reasoningLevelForEffort(normalizeAgentEffort(input.effort));
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
@@ -404,7 +415,6 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         return message.reasoning_details ? { ...message, reasoning_details: undefined } : message;
       });
     const modelId = input.current?.modelId ?? input.modelId;
-    const runtimeConfig = runtimeFor(modelId);
     // Reasoning is redacted like any other text before it leaves the server.
     const reasoning = input.onChatEvent ? createStreamingRedactor(delta => input.onChatEvent?.({ type: 'reasoning_delta', delta })) : null;
     let toolCalls = 0;
@@ -444,7 +454,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         return result;
       },
     ]));
-    const loop = await runLlmToolLoop({
+    const runRound = (modelId: AllowedModelId, carried: ChatMessage[]) => runLlmToolLoop({
       gateway: input.gateway,
       modelId,
       messages: [
@@ -462,7 +472,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       ],
       handlers,
       runtimeConfig: {
-        ...runtimeConfig,
+        ...runtimeFor(modelId),
         tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
         toolChoice: 'auto',
       } as any,
@@ -505,6 +515,28 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // Provider failures propagate. The pipeline catch persists already-written
       // files before returning an error, rather than validating a swallowed error.
     });
+    let loop: Awaited<ReturnType<typeof runRound>>;
+    try {
+      loop = await runRound(modelId, carried);
+    } catch (error: any) {
+      /*
+       * A pinned model that refuses the work itself is not the user's error.
+       *
+       * The run stopped on "Ce modèle ne convient pas à cette demande — Utiliser
+       * Auto", after minutes of work, for a refusal the user can do nothing
+       * about but switch model and start again. The files this round wrote are
+       * on disk; the round is run again once on a compatible model, from the
+       * same instruction, and the switch is announced.
+       */
+      const code = String(error?.diagnosticCode || '');
+      const replacement = !input.allowFallback && isModelRefusal(code) && !input.signal?.aborted
+        ? input.substitute?.(modelId, code) ?? null
+        : null;
+      if (!replacement || replacement === modelId) throw error;
+      console.warn('[coden:pinned_model_substituted]', { from: modelId, to: replacement, reason: code });
+      if (input.current) input.current.modelId = replacement;
+      loop = await runRound(replacement, carried.map(message => message.reasoning_details ? { ...message, reasoning_details: undefined } : message));
+    }
     if (loop) {
       // This round's part only: the carried prefix is already recorded.
       rounds.push(carryOverTranscript(loop.messages.slice(1 + carried.length), loop.result?.text));
@@ -1055,6 +1087,21 @@ export async function runMultiAgentPipeline(input: {
       allowFallback: input.selectedModel === undefined,
       effort: input.effort,
       current,
+      substitute: failed => {
+        let replacement: AllowedModelId | null = null;
+        try { replacement = selectModel(selectionRequest).modelId; } catch { return null; }
+        if (!replacement || replacement === failed) return null;
+        // The run now continues on Auto's choice, at Auto's level.
+        current.reasoningLevel = selectModel(selectionRequest).reasoningLevel;
+        input.onChatEvent?.({
+          type: 'model_selected',
+          modelId: replacement,
+          label: MODEL_REGISTRY.find(model => model.id === replacement)?.label || replacement,
+          reasoningLevel: current.reasoningLevel,
+          reason: 'substitution',
+        });
+        return replacement;
+      },
       onSpend: roundSpend => {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
