@@ -425,4 +425,23 @@ assert.equal(
   'a Tailwind app with no motion-reduce variant still misses its reduced-motion fallback',
 );
 
+// A restaurant booking site is not an admin panel because it offers to
+// "Choisir une table": the dashboard gate failed it in production.
+{
+  const restaurantChecks = auditGeneratedFunctionality({
+    files: [{ path: 'src/App.tsx', language: 'tsx', content: 'export default function App(){ return <main><h1>Réserver</h1><button onClick={() => pick(2)}>Choisir une table</button><p>success error loading</p></main>; }' }],
+    previewHtml: '<main><h1>Réserver</h1><button>Choisir une table</button></main>',
+    platformType: 'restaurant',
+    hasExistingFiles: false,
+  });
+  assert.equal(restaurantChecks.find(check => check.key === 'functionality_operational_core_loop'), undefined, 'a restaurant is not held to the dashboard gate');
+  const adminChecks = auditGeneratedFunctionality({
+    files: [{ path: 'src/App.tsx', language: 'tsx', content: 'export default function App(){ return <main><h1>Admin</h1><table /></main>; }' }],
+    previewHtml: '<main><h1>Admin</h1></main>',
+    platformType: 'admin_panel',
+    hasExistingFiles: false,
+  });
+  assert.ok(adminChecks.find(check => check.key === 'functionality_operational_core_loop'), 'an admin panel still is');
+}
+
 console.log('test-design-quality-auditor passed');

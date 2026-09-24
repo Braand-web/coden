@@ -462,7 +462,10 @@ function auditCoreProductScenarios(bundle: SourceBundle, platform: GeneratedAppT
   }
 
   const operationalPlatform = ['saas_dashboard', 'analytics_dashboard', 'admin_panel', 'crm_erp', 'fintech_billing'].includes(platform);
-  if (operationalPlatform || OPERATIONAL_APP_RE.test(source)) {
+  // The words are a fallback for an app nobody classified. A restaurant with
+  // "Choisir une table" is not an admin panel, and holding it to a dashboard's
+  // metrics and bulk actions failed runs whose every journey had passed.
+  if (operationalPlatform || (platform === 'generic_web_app' && OPERATIONAL_APP_RE.test(source))) {
     const hasMetrics = /\b(metric|kpi|revenue|balance|usage|count|total|chart|progress|trend)\b/i.test(source);
     const hasDataOps = /\b(search|filter|sort|table|status|segment|bulk|export|detail|drawer|modal)\b/i.test(source);
     const hasActionFeedback = /\b(loading|empty|error|success|saved|toast|disabled|pending)\b/i.test(source);

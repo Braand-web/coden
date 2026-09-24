@@ -111,10 +111,23 @@ function extractLinks(source: string): VisualControl[] {
       body,
       disabled: /\bdisabled\b|aria-disabled=["']true["']/i.test(attrs),
       hasHandler: /\bonClick=/i.test(attrs),
-      hasSafeDestination: Boolean(href && href !== '#' && !/^javascript:void\(0\)$/i.test(href)),
+      hasSafeDestination: Boolean(href && href !== '#' && !/^javascript:void\(0\)$/i.test(href)) || hasExpressionHref(attrs),
     });
   }
   return controls;
+}
+
+/*
+ * `href={`tel:${phone}`}`, `href={mapsUrl}`, `href={`mailto:${email}`}`.
+ *
+ * Only quoted hrefs were read, so every link whose destination is computed —
+ * which is how a generated app links to its own data — was reported as a
+ * dead control, and the run was failed for links that worked.
+ */
+function hasExpressionHref(attrs: string): boolean {
+  const match = /\bhref=\{([\s\S]*?)\}(?=\s|$|\/?>)/.exec(attrs) || /\bhref=\{([^}]*)\}/.exec(attrs);
+  const expression = String(match?.[1] || '').trim();
+  return Boolean(expression) && !/^(['"`])#?\1$|^(['"`])(?:#|javascript:void\(0\))\2$/.test(expression);
 }
 
 function extractInputs(source: string): VisualControl[] {

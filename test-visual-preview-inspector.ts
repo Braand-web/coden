@@ -102,3 +102,37 @@ assert.equal(switchableUiChecks.find(check => check.key === 'visual_tabs_are_swi
 assert.equal(switchableUiChecks.find(check => check.key === 'visual_modal_can_open_and_close')?.status, 'pass');
 
 console.log('test-visual-preview-inspector passed');
+
+/*
+ * Production, a restaurant booking site: three working links — a phone number,
+ * directions and an email, each with a computed href — were reported as dead
+ * controls, and two runs whose every user journey passed were failed for it.
+ */
+{
+  const restaurant = `
+export default function App() {
+  return <footer>
+    <a className="hover:text-accent" href={\`tel:\${RESTAURANT_DATA.phone.replaceAll(' ', '')}\`}>{RESTAURANT_DATA.phone}</a>
+    <a className="btn" href={\`https://www.google.com/maps/search/?api=1&query=\${encodeURIComponent(RESTAURANT_DATA.address)}\`} target="_blank" rel="noreferrer">Itinéraire</a>
+    <a className="btn" href={\`mailto:\${RESTAURANT_DATA.email}\`}>Nous écrire</a>
+    <a href={mapsUrl}>Plan</a>
+  </footer>;
+}`;
+  const checks = inspectVisualPreview({
+    platformType: 'restaurant',
+    previewHtml: '<!doctype html><html><body><footer><a>01 23 45 67 89</a><a>Itinéraire</a><a>Nous écrire</a></footer></body></html>',
+    files: [{ path: 'src/App.tsx', language: 'tsx', content: restaurant }],
+  });
+  const dead = checks.find(check => check.key === 'visual_no_dead_primary_controls');
+  assert.equal(dead?.status, 'pass', dead?.message);
+
+  const placeholder = inspectVisualPreview({
+    platformType: 'restaurant',
+    previewHtml: '<!doctype html><html><body><a>Réserver</a></body></html>',
+    files: [{ path: 'src/App.tsx', language: 'tsx', content: 'export default function App(){ return <nav><a href={"#"}>Réserver</a></nav>; }' }],
+  });
+  assert.notEqual(placeholder.find(check => check.key === 'visual_no_dead_primary_controls')?.status, 'pass', 'an href={"#"} placeholder is still a dead link');
+}
+
+console.log('test-visual-preview-inspector computed hrefs passed');
+

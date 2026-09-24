@@ -2885,7 +2885,8 @@ function showRuntimeRecovery(
    * and an unrecognised one is not known to be one.
    */
   const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE) ?? {
-    title: 'La génération est interrompue',
+    // A built app with checks still open is not an interrupted generation.
+    title: /^VERIFICATION_INCOMPLETE$/i.test(String(diagnostic || '')) ? 'Vérification à compléter' : 'La génération est interrompue',
     body: publicRuntimeErrorMessage(diagnostic, UI_LOCALE),
     canRetry: true,
     shouldOfferAuto: false,

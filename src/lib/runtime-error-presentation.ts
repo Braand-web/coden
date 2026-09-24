@@ -135,6 +135,11 @@ export function publicRuntimeErrorMessage(value: unknown, locale: RuntimeErrorLo
   const fr = locale === 'fr';
   const code = normalizeRuntimeDiagnosticCode(value);
 
+  if (/^VERIFICATION_INCOMPLETE$/.test(code)) {
+    return fr
+      ? 'L’application est construite et enregistrée, mais certaines vérifications automatiques n’ont pas abouti. Demandez à Coden de les corriger pour terminer.'
+      : 'The application is built and saved, but some automatic checks did not pass. Ask Coden to fix them to finish.';
+  }
   if (/^CREDITS_REQUIRED$/.test(code)) {
     return fr
       ? 'Votre solde de crédits est insuffisant pour cette action. Ajoutez des crédits puis relancez la demande.'
