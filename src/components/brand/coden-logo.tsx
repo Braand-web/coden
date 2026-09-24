@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import { CODEN_LOGO_GLYPH, CODEN_LOGO_GLYPH_FILL, CODEN_LOGO_TILE_FILL, CODEN_LOGO_TILE_RADIUS } from "../../lib/coden-logo";
 
 type CodenLogoMarkProps = React.SVGProps<SVGSVGElement> & {
   decorative?: boolean;
@@ -18,10 +19,8 @@ export function CodenLogoMark({ className, decorative = true, ...props }: CodenL
       aria-label={decorative ? undefined : "Logo Coden"}
       focusable="false"
     >
-      <rect width="32" height="32" rx="8" fill="var(--logo-bg, var(--foreground))" />
-      <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--logo-fg, var(--background))" />
-      <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--logo-fg, var(--background))" />
-      <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--logo-fg, var(--background))" />
+      <rect width="32" height="32" rx={CODEN_LOGO_TILE_RADIUS} fill={CODEN_LOGO_TILE_FILL} />
+      {CODEN_LOGO_GLYPH.map((d) => <path key={d} d={d} fill={CODEN_LOGO_GLYPH_FILL} />)}
     </svg>
   );
 }

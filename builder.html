@@ -19,15 +19,15 @@
   <meta property="og:title" content="Coden — Builder Workspace" />
   <meta property="og:description" content="Your private Coden builder workspace." />
   <meta property="og:url" content="https://coden.fun/builder.html" />
-  <meta property="og:image" content="https://coden.fun/og-coden.svg" />
+  <meta property="og:image" content="https://coden.fun/og-coden.png" />
   <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
-  <meta property="og:image:type" content="image/svg+xml" />
+  <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Coden — Builder Workspace" />
   <meta name="twitter:description" content="Your private Coden builder workspace." />
-  <meta name="twitter:image" content="https://coden.fun/og-coden.svg" />
+  <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
   <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
@@ -746,8 +746,7 @@
       width: 24px;
       height: 24px;
       flex: 0 0 auto;
-      border-radius: 7px;
-      box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 18%, transparent) inset;
+      border-radius: 25%;
     }
 
     .project-mini-name {
@@ -833,17 +832,17 @@
       background: color-mix(in srgb, var(--foreground) 6%, transparent);
     }
 
+    /* The product's segmented control (auth tabs, billing toggle): the chosen
+       segment is a raised surface, not a cyan glow found nowhere else. */
     .brand-topbar .sub-nav-tab.active,
     .brand-topbar .builder-more-trigger.active,
     .brand-topbar .builder-more-wrapper.open .builder-more-trigger {
-      color: var(--accent);
+      color: var(--foreground);
       background: var(--surface);
-      border-color: color-mix(in srgb, var(--syntax-cyan) 58%, transparent);
-      box-shadow:
-        0 0 0 1px color-mix(in srgb, var(--syntax-cyan) 22%, transparent),
-        0 0 22px color-mix(in srgb, var(--syntax-cyan) 28%, transparent),
-        0 1px 0 color-mix(in srgb, var(--foreground) 16%, transparent) inset;
+      border-color: var(--border);
+      box-shadow: var(--shadow-sm);
     }
+    .brand-topbar .sub-nav-tab.active svg { color: var(--accent); }
 
     .brand-topbar .builder-more-trigger {
       width: 30px;
@@ -1000,12 +999,14 @@
       height: 14px;
     }
 
+    /* Publier is the Builder's primary action: the product's primary button. */
     .brand-topbar .btn-publish {
       padding: 0 16px;
       border-color: transparent;
-      background: var(--surface);
-      color: var(--foreground);
-      box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 30%, transparent);
+      border-radius: var(--radius-control);
+      background: var(--accent);
+      color: var(--text-on-accent);
+      box-shadow: var(--shadow-accent);
     }
 
     .brand-topbar .btn-publish:hover {
@@ -1984,9 +1985,9 @@
     .brand-center .sub-nav-tab.active,
     .brand-center .builder-more-trigger.active,
     .brand-center .builder-more-wrapper.open .builder-more-trigger {background: var(--surface);
-      border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border) 18%);
+      border: 1px solid var(--border);
       color: var(--foreground);
-      box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent), 0 8px 24px color-mix(in srgb, var(--accent) 32%, transparent);
+      box-shadow: var(--shadow-sm);
     }
 
     .sub-nav-tab:hover:not(.active) {
@@ -4098,23 +4099,15 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-control);
       box-shadow: var(--shadow-sm);
       transition: filter 140ms var(--ease), transform 140ms var(--ease), box-shadow 160ms var(--ease);
     }
     .brand-topbar .btn-publish:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
     .brand-topbar .btn-publish:active { transform: scale(0.98); }
-    .brand-topbar .btn-upgrade { border-radius: var(--radius-sm); }
+    .brand-topbar .btn-upgrade { border-radius: var(--radius-control); }
 
-    .brand-topbar .project-mini-trigger .brand-logo {
-      border: 1px solid var(--border);
-      transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
-    }
-    .brand-topbar .project-mini-trigger:hover .brand-logo {
-      border-color: var(--border-strong);
-      box-shadow: var(--shadow-sm);
-    }
-
+    /* The mark is drawn the same everywhere: no border of its own here. */
     .brand-topbar .btn-publish svg { opacity: .9; }
 
     /* 4 ── Composer (chat) : élévation propre + anneau au focus */
@@ -4330,11 +4323,11 @@
     <header class="brand-topbar lovable-builder-topbar" aria-label="Coden builder toolbar">
       <div class="brand-left lovable-topbar-left" id="builder-topbar-left">
         <button class="lovable-icon-btn project-mini-trigger" id="project-combo-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Menu du projet">
-          <svg width="18" height="18" viewBox="0 0 32 32" fill="none" class="brand-logo" aria-hidden="true">
-            <rect width="32" height="32" rx="8" fill="var(--surface-soft, var(--foreground))"/>
-            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--foreground)"/>
-            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--foreground)"/>
-            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--foreground)"/>
+          <svg width="18" height="18" viewBox="0 0 32 32" fill="none" class="brand-logo coden-logo-mark" data-coden-logo="mark" aria-hidden="true">
+            <rect width="32" height="32" rx="8" fill="var(--brand, #3A83F7)"/>
+            <path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--on-brand, #FFFFFF)"/>
+            <path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--on-brand, #FFFFFF)"/>
+            <path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--on-brand, #FFFFFF)"/>
           </svg>
           <span id="project-name" class="project-mini-name">Projet sans titre</span>
         </button>

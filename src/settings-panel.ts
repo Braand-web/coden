@@ -1369,7 +1369,7 @@ function installSettingsStyle() {
 
     .settings-footer button {
       height: 36px;
-      border-radius: 9px;
+      border-radius: var(--radius-control);
       padding: 0 15px;
     }
 

@@ -221,7 +221,9 @@ void fetch('/api/billing/plans', { headers: { Accept: 'application/json' } })
     updateAllCards();
   })
   .catch(() => {
-    if (status) status.textContent = 'Catalogue temporairement indisponible. Le montant sera confirmé avant paiement.';
+    // The prices on screen already come from the versioned catalogue in the
+    // bundle (priceFor); an unreachable route changes nothing a visitor sees.
+    if (status) status.textContent = '';
   });
 
 updateAllCards();

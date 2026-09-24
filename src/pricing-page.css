@@ -13,17 +13,17 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 
 .pricing-page-hero { max-width: 760px; margin: 0 auto; text-align: center; }
 .pricing-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--text-muted); font: 500 12px/16px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
-.pricing-eyebrow span { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--syntax-cyan) 12%, transparent); }
+.pricing-eyebrow span { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent); }
 .pricing-page-hero h1 { max-width: 680px; margin: 24px auto 0; color: var(--foreground); font-family: var(--font-sans); font-size: 48px; font-weight: 700; letter-spacing: -.055em; line-height: 1; text-wrap: balance; }
 .pricing-page-hero h1 span { color: var(--accent); }
 .pricing-page-lede { max-width: 640px; margin: 24px auto 0; color: var(--text-muted); font-size: 18px; line-height: 28px; text-wrap: pretty; }
 .pricing-hero-proof { display: inline-flex; align-items: center; gap: 12px; margin-top: 24px; color: var(--text-muted); font-size: 14px; }
 .pricing-hero-proof i { width: 4px; height: 4px; border-radius: 999px; background: var(--border-strong); }
-.pricing-interval { display: inline-flex; gap: 4px; margin-top: 40px; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.pricing-interval button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); font: 600 14px/20px var(--font-sans); cursor: pointer; transition: color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
+.pricing-interval { display: inline-flex; gap: 4px; margin-top: 40px; padding: 4px; border: 1px solid var(--border); border-radius: 9999px; background: var(--surface-soft); }
+.pricing-interval button { min-height: 36px; padding: 6px 16px; border: 0; border-radius: 9999px; background: transparent; color: var(--text-muted); font: 600 14px/20px var(--font-sans); cursor: pointer; transition: color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .pricing-interval button:hover { color: var(--foreground); }
 .pricing-interval button:active { transform: scale(.98); }
-.pricing-interval button.is-selected { background: var(--border-strong); color: var(--foreground); }
+.pricing-interval button.is-selected { background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-sm); }
 .pricing-interval strong { margin-left: 4px; color: var(--accent); font-weight: 700; }
 .pricing-data-status { min-height: 20px; margin: 16px 0 0; color: var(--text-muted); font-size: 12px; line-height: 16px; }
 
@@ -31,8 +31,8 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-plan-card { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 32px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1), border-color 220ms cubic-bezier(0.32, 0.72, 0, 1), background-color 220ms cubic-bezier(0.32, 0.72, 0, 1); }
 .pricing-plan-card:hover { transform: translateY(-4px); border-color: var(--border-strong); background: var(--surface-hover); }
 .pricing-plan-card:focus-within { border-color: var(--accent); }
-.pricing-plan-featured { border-color: color-mix(in srgb, var(--syntax-cyan) 72%, transparent); background: var(--surface-soft); box-shadow: 0 0 0 1px color-mix(in srgb, var(--syntax-cyan) 24%, transparent); }
-.pricing-plan-badge { position: absolute; top: -12px; left: 24px; padding: 4px 12px; border: 1px solid color-mix(in srgb, var(--syntax-cyan) 50%, transparent); border-radius: 999px; background: var(--surface); color: var(--accent); font: 600 12px/16px var(--font-sans); }
+.pricing-plan-featured { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); background: radial-gradient(120% 70% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%), var(--surface); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), 0 24px 60px -28px color-mix(in srgb, var(--accent) 55%, transparent); }
+.pricing-plan-badge { position: absolute; top: -12px; left: 24px; padding: 3px 10px; border: 0; border-radius: 999px; background: var(--accent); color: var(--text-on-accent); font: 700 11px/16px var(--font-sans); }
 .pricing-plan-heading > p:first-child { margin: 0; color: var(--accent); font: 500 12px/16px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .pricing-plan-heading h2 { margin: 12px 0 0; color: var(--foreground); font: 700 24px/32px var(--font-sans); letter-spacing: -.04em; text-wrap: balance; }
 .pricing-plan-copy { min-height: 72px; margin: 12px 0 0; color: var(--text-muted); font-size: 14px; line-height: 24px; text-wrap: pretty; }
@@ -45,8 +45,8 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-price-note { min-height: 16px; margin: 4px 0 0; }
 .pricing-feature-list { display: grid; gap: 12px; margin: 24px 0 0; padding: 24px 0 0; border-top: 1px solid var(--border); list-style: none; }
 .pricing-feature-list li { position: relative; padding-left: 24px; color: var(--text-muted); font-size: 14px; line-height: 20px; text-wrap: pretty; }
-.pricing-feature-list li::before { content: ""; position: absolute; top: 6px; left: 0; width: 10px; height: 10px; border: 1px solid var(--accent); border-radius: 999px; background: color-mix(in srgb, var(--syntax-cyan) 16%, transparent); }
-.pricing-plan-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 32px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); font: 700 16px/24px var(--font-sans); text-align: center; text-decoration: none; transition: transform var(--transition-control), background-color var(--transition-control), border-color var(--transition-control); }
+.pricing-feature-list li::before { content: ""; position: absolute; top: 6px; left: 0; width: 10px; height: 10px; border: 1px solid var(--accent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.pricing-plan-action { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin-top: 32px; padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--foreground); font: 700 16px/24px var(--font-sans); text-align: center; text-decoration: none; transition: transform var(--transition-control), background-color var(--transition-control), border-color var(--transition-control); }
 .pricing-plan-action:hover { transform: translateY(-2px); border-color: var(--border-strong); }
 .pricing-plan-action:active { transform: scale(.98); }
 .pricing-plan-action-primary { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }

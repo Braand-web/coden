@@ -19,8 +19,7 @@ body {
 
 :where(button, a, input, textarea, select, summary):focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 4px var(--accent);
+  outline-offset: 2px;
 }
 
 :where(input, select, textarea) { min-height: 44px; }
@@ -39,6 +38,7 @@ body {
 
 :where(.btn-primary, .btn-solid, .btn-create-top, .btn-promo-upgrade, .btn-deploy, .pricing-btn.primary, .card-cta, .checkout-submit, .btn-submit, .submit-btn.active) {
   min-height: 44px;
+  border-radius: var(--radius-control);
   color: var(--text-on-accent) !important;
   background: var(--accent) !important;
   border-color: var(--accent) !important;
@@ -56,6 +56,6 @@ body {
 :where(input, textarea, select):focus,
 :where(.input-wrapper, .search-wrapper):focus-within {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px var(--accent) !important;
+  box-shadow: var(--ring) !important;
   outline: none;
 }

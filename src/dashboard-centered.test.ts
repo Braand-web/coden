@@ -24,7 +24,8 @@ describe('Coden projects dashboard surface contract', () => {
 
   it('keeps one consistent Coden brand and accessible project controls', () => {
     expect(html).toContain('href="/favicon.svg"');
-    expect(reactDashboard).toContain('src="/favicon.svg"');
+    // The mark is the shared component (src/lib/coden-logo.ts), not a copy.
+    expect(reactDashboard).toContain('<CodenLogoMark');
     expect(reactDashboard).toContain('Mes projets');
     expect(reactDashboard).toContain('Nouveau projet');
     expect(reactDashboard).toContain('Rechercher un projet');

@@ -15,6 +15,18 @@
      viewport edge. 1180px is what .landing-page-shell and
      .pricing-page-main already use, so the chrome lines up with the page. */
   --shell-max: 1180px;
+  /* The brand mark's own colours: theme-independent (see src/lib/coden-logo.ts). */
+  --brand: #3A83F7;
+  --on-brand: #FFFFFF;
+  /*
+   * Component geometry, one value per role. Every button and field uses
+   * --radius-control; cards --radius-lg; dialogs and panels --radius-xl.
+   */
+  --radius-control: var(--radius-md);
+  --control-height: 40px;
+  --control-height-lg: 44px;
+  --ring: 0 0 0 3px var(--focus-ring);
+  --shadow-accent: 0 12px 28px -12px color-mix(in srgb, var(--accent) 75%, transparent);
   --ease-standard: cubic-bezier(.32, .72, 0, 1);
   --transition-micro: 120ms var(--ease-standard);
   --transition-control: 180ms var(--ease-standard);
@@ -111,6 +123,11 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* The brand mark keeps a faint light edge in the dark theme, where it can
+   sit on the electric-blue ambient of the same hue. */
+.coden-logo-mark { border-radius: 25%; }
+:root[data-theme="dark"] .coden-logo-mark { box-shadow: 0 0 0 1px rgba(255, 255, 255, .28); }
 
 :where(button, input, textarea, select, summary) {
   font: inherit;
