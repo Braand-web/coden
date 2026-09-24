@@ -1598,7 +1598,16 @@ async function resolveAgentHarnessThread(threadId: string) {
  * are: the work stopped where the process did, and the files written before
  * that point were already saved.
  */
-async function reapInterruptedAgentRuns() {
+/**
+ * Close runs whose process is gone.
+ *
+ * `createdBefore` limits it to runs started before this instance booted.
+ * Deployments overlap and the previous instance drains its runs before it
+ * exits, so at boot those runs are alive on the other instance: reaping every
+ * `running` row then marked live builds RUN_INTERRUPTED. The boot pass waits
+ * for the drain window, and never touches a run this instance started.
+ */
+async function reapInterruptedAgentRuns(options: { createdBefore?: string } = {}) {
   const client = getSupabase();
   if (!client) return { runs: 0, turns: 0 };
   const finishedAt = new Date().toISOString();
@@ -1615,6 +1624,7 @@ async function reapInterruptedAgentRuns() {
       completed_at: finishedAt,
     })
     .in('status', ['running', 'queued'])
+    .lt('created_at', options.createdBefore || new Date().toISOString())
     .select('id');
   if (runUpdate.error) {
     if (!isMissingAgentV2TableError(runUpdate.error)) throw runUpdate.error;
@@ -1628,6 +1638,7 @@ async function reapInterruptedAgentRuns() {
     // `waiting_for_user` is deliberately left alone: it is a run that asked a
     // question and is resumable by answering it, not one that died mid-flight.
     .in('status', ['queued', 'running', 'verifying'])
+    .lt('created_at', options.createdBefore || new Date().toISOString())
     .select('id');
   if (turnUpdate.error) {
     if (!isMissingAgentHarnessSchemaError(turnUpdate.error)) throw turnUpdate.error;
@@ -1640,6 +1651,7 @@ async function reapInterruptedAgentRuns() {
     .from('agent_items')
     .update({ status: 'failed', updated_at: finishedAt, completed_at: finishedAt })
     .in('status', ['pending', 'running'])
+    .lt('created_at', options.createdBefore || new Date().toISOString())
     .select('id');
   if (itemUpdate.error && !isMissingAgentHarnessSchemaError(itemUpdate.error)) throw itemUpdate.error;
 
@@ -1748,6 +1760,12 @@ type AgentDecisionInput = {
 };
 
 type IntentDecision = {
+  /**
+   * The request with the conversation resolved, as the router restated it —
+   * "Crée une ville 3D de Paris…" where the user typed "oui vas-y". The build
+   * runs on this; the user's own words stay beside it.
+   */
+  resolvedPrompt?: string;
   intent: AgentIntent;
   confidence: number;
   requestedMode: AgentRequestedMode;
@@ -4542,6 +4560,7 @@ function buildDecisionFromAi(raw: any, fallback: IntentDecision): IntentDecision
     nextAction: nextActionByIntent[intent],
     selectedModelPolicy: policy,
     routingSource: 'ai',
+    resolvedPrompt: String(raw.normalized_prompt || '').trim().slice(0, 4_000) || undefined,
     modelObjective: validatedModelDecision.objective,
     requiredCapabilities: validatedModelDecision.requiredCapabilities,
     reason: raw.reason.trim().slice(0, 240),
@@ -4766,7 +4785,9 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
         requestedMode: normalizeRequestedMode(input.requestedMode),
         hasFiles: input.hasFiles,
         hasLastPlan: Boolean(input.lastPlan),
-        recentHistory: input.recentHistory || [],
+        // The router needs the last exchanges, not the whole session: what
+        // Coden just asked or proposed is what a short reply answers.
+        recentHistory: (input.recentHistory || []).slice(-8).map(turn => ({ role: turn.role, content: String(turn.content || '').slice(0, 2_000) })),
         localUnderstanding: fallback.intentUnderstanding || null,
         fallbackIntent: fallback.intent,
       }),
@@ -13019,13 +13040,22 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const sessionContext = conversation.sessionContext;
   let initialDecision: IntentDecision;
   try {
+    /*
+     * The model decides what the message asks for, with the conversation.
+     *
+     * This was `localOnly: true`, so every Builder turn was routed by keyword
+     * rules and the model router — with its history-reading rules — never ran
+     * anywhere. "une ville avec des humains" answering Coden's own question
+     * read as small talk; "oui vas-y" after a proposal read as small talk. The
+     * router is one short call on the cheapest model; the keyword decision is
+     * still the fallback when it fails or is slow.
+     */
     initialDecision = await resolveAgentDecision({
       prompt: agentPrompt,
       requestedMode,
       hasFiles: existingFiles.length > 0,
       lastPlan,
       recentHistory,
-      localOnly: true,
     });
   } catch (error: any) {
     const diagnostic = diagnoseProviderError(error);
@@ -13189,11 +13219,22 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
         eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
       }
+      /*
+       * The mission is the request with the conversation resolved.
+       *
+       * "oui vas-y" or "une ville avec des humains" is an answer, not a
+       * mission: built on literally, the planner had nothing to plan. When the
+       * router restated it, the build runs on the restatement, and the user's
+       * own words are kept beside it so nothing they said is lost.
+       */
+      const resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
+        ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")`
+        : agentPrompt;
       const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
 
 ---
 
-${agentPrompt}` : agentPrompt;
+${resolvedMission}` : resolvedMission;
 
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
@@ -13718,6 +13759,8 @@ ${agentPrompt}` : agentPrompt;
     }
     let agentText: any;
     let content = '';
+    // Whether the answer already reached the reader token by token.
+    let streamedAny = false;
     try {
       /*
        * Say what is happening, and stream the answer as it is written.
@@ -13733,7 +13776,6 @@ ${agentPrompt}` : agentPrompt;
        * accident — the answer was simply withheld until it was complete.
        */
       eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden réfléchit…' : 'Coden is thinking…' });
-      let streamedAny = false;
       agentText = await createAgentTextResponse({
         project,
         // The user's own words. The deep-reasoning and senior-agent blocks
@@ -13859,6 +13901,12 @@ ${agentPrompt}` : agentPrompt;
       text: content,
       model: agentText.model,
       assistant_source: agentText.model === 'router' ? 'system' : 'model',
+      /*
+       * Said once. Without this flag `finish` re-sent the whole answer as a
+       * text delta after it had already streamed, and every reply on this
+       * path appeared twice, paragraph after identical paragraph.
+       */
+      assistant_streamed: streamedAny,
       reliability,
       files: reliability.should_mutate_files ? existingFiles : undefined,
       preview: reliability.should_touch_preview
@@ -17996,9 +18044,18 @@ const httpServer = app.listen(port, () => {
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
-  void reapInterruptedAgentRuns().catch((error: any) => {
-    console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
-  });
+  /*
+   * After the previous instance has drained (railway.json drainingSeconds +
+   * overlapSeconds), whatever it left running is orphaned; runs this instance
+   * starts are never touched.
+   */
+  const bootedAt = new Date().toISOString();
+  const reapDelayMs = Math.max(0, Number(process.env.CODEN_REAP_DELAY_MS ?? 16 * 60_000));
+  setTimeout(() => {
+    void reapInterruptedAgentRuns({ createdBefore: bootedAt }).catch((error: any) => {
+      console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+    });
+  }, reapDelayMs).unref();
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
@@ -18163,12 +18220,38 @@ if (LIVE_SANDBOX_ENABLED) {
   // project restarts over an existing node_modules instead of reinstalling it.
   sandboxRegistry.startSweeper();
 
-  // A child that outlives the server holds a port and a few hundred megabytes
-  // for nothing. Two signals, because Railway sends SIGTERM and a local Ctrl-C
-  // sends SIGINT.
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => {
-      void sandboxRegistry.stopAll().finally(() => process.exit(0));
-    });
-  }
+}
+
+/*
+ * A deploy must not kill the builds it interrupts.
+ *
+ * On SIGTERM the process exited at once, so every run in flight during a
+ * deploy ended as RUN_INTERRUPTED — a user's build lost to a push they never
+ * saw. Railway now overlaps deployments and gives the old one time to drain
+ * (railway.json: overlapSeconds, drainingSeconds): new requests go to the new
+ * instance, and this one finishes the runs it already has before it exits.
+ * A child that outlives the server holds a port and memory for nothing, so the
+ * sandboxes still stop on the way out.
+ */
+const SHUTDOWN_DRAIN_MS = Math.max(0, Number(process.env.CODEN_SHUTDOWN_DRAIN_MS || 14 * 60_000));
+let shuttingDown = false;
+function inFlightRuns() {
+  return activeHarnessTurnControllers.size + activeAgentRunControllers.size;
+}
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    const startedAt = Date.now();
+    console.info('[coden:shutdown_draining]', { signal, runs: inFlightRuns(), max_ms: SHUTDOWN_DRAIN_MS });
+    const finish = () => {
+      console.info('[coden:shutdown_exit]', { runs_left: inFlightRuns(), waited_ms: Date.now() - startedAt });
+      const stop = LIVE_SANDBOX_ENABLED ? sandboxRegistry.stopAll() : Promise.resolve();
+      void stop.catch(() => undefined).finally(() => process.exit(0));
+    };
+    if (signal === 'SIGINT' || !inFlightRuns()) return finish();
+    const timer = setInterval(() => {
+      if (!inFlightRuns() || Date.now() - startedAt >= SHUTDOWN_DRAIN_MS) { clearInterval(timer); finish(); }
+    }, 1_000);
+  });
 }

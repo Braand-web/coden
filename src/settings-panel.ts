@@ -2204,6 +2204,8 @@ function formatCredits(value: unknown) {
   if (value === null || value === undefined || value === '') return '--';
   const number = Number(value);
   if (!Number.isFinite(number)) return String(value);
+  // Unmetered and test-unlimited accounts carry a sentinel, not a balance.
+  if (number >= 1_000_000_000) return 'Illimité';
   return Number.isInteger(number) ? String(number) : number.toFixed(1);
 }
 
@@ -2266,7 +2268,7 @@ function renderBillingSettings() {
       ? 'Solde momentanément indisponible'
       : billingWallet?.mode === 'shadow'
       ? 'Accès ouvert · V2 en validation'
-      : `${formatCredits(billingWallet?.balance)} crédits`;
+      : formatCredits(billingWallet?.balance) === 'Illimité' ? 'Crédits illimités' : `${formatCredits(billingWallet?.balance)} crédits`;
   }
   const currentPlan = document.querySelector<HTMLElement>('#tab-facturation [data-settings-billing-plan]');
   if (currentPlan) currentPlan.textContent = billingWalletUnavailable

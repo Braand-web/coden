@@ -2651,7 +2651,6 @@ function classifyPromptUiContext(value: string, mode: ChatMode): PromptUiContext
   if (!normalized) return 'chat_simple';
   if (activeWorkshop !== 'chat') return 'project_mission';
   const bareAction = /^(cr[ée]e|creer|g[ée]n[èe]re|genere|create|build|make|ajoute|modifie|corrige|ameliore|am[ée]liore|refais|implemente|impl[ée]mente|applique|fais)(\s+(app|site|application|ca|ça|tout|cela))?$/i;
-  if (bareAction.test(normalized)) return 'clarification_only';
   const legacyIntent = isQuickConversationPrompt(value, mode)
     ? 'conversation'
     : mode === 'plan'
@@ -2678,10 +2677,24 @@ function classifyPromptUiContext(value: string, mode: ChatMode): PromptUiContext
       userVisibleReason: 'Local builder gate',
     },
   });
+  if (contract.mode === 'critical_action') return 'critical_action';
+  /*
+   * In a project, the server decides — with the conversation in hand.
+   *
+   * This page used to decide by keywords whether a message was chat or work,
+   * and chat went to /api/assistant/chat, where a second keyword pass decided
+   * again. Neither saw the conversation the way the model does, so the answer
+   * to Coden's own question — "une ville avec des humains" after "que veux-tu
+   * créer ?", "oui vas-y" after a proposal — was filed as small talk, answered
+   * with a promise, and never built. /generate asks the model, with the
+   * history and the session memory, and still answers a real question as a
+   * question.
+   */
+  if (currentProjectId) return 'project_mission';
+  if (bareAction.test(normalized)) return 'clarification_only';
   if (contract.mode === 'chat' || contract.mode === 'discuss_first') return 'chat_simple';
   if (contract.mode === 'clarify' || contract.mode === 'blocked') return 'clarification_only';
   if (contract.mode === 'plan' || contract.mode === 'verify') return 'planning_only';
-  if (contract.mode === 'critical_action') return 'critical_action';
   return 'project_mission';
 }
 
@@ -3254,7 +3267,15 @@ const PLAN_LABELS: Record<string, string> = {
 
 let creditCounterInFlight: Promise<void> | null = null;
 
+/**
+ * An unmetered or test-unlimited account carries a sentinel balance
+ * (Number.MAX_SAFE_INTEGER, or a billion): it is a state, not a number, and
+ * printing it showed "9 007 199 254 740 991 crédits".
+ */
+const UNLIMITED_BALANCE_THRESHOLD = 1_000_000_000;
+
 function formatCredits(value: number): string {
+  if (Number(value) >= UNLIMITED_BALANCE_THRESHOLD) return 'Illimité';
   return Number(value || 0).toLocaleString('fr-FR', { maximumFractionDigits: value < 100 ? 1 : 0 });
 }
 
