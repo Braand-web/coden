@@ -29,6 +29,8 @@ try {
   assert.deepEqual(names, [
     'list_files', 'read_file', 'search_files', 'write_file', 'edit_file',
     'delete_file', 'install_package', 'run_command', 'get_logs', 'restart_server',
+    // The public web, for current docs and unfamiliar errors.
+    'web_search', 'fetch_url',
     // The only tool that ends the run instead of returning to the model.
     'request_decision',
   ]);

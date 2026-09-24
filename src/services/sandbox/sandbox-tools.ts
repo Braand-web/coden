@@ -20,6 +20,7 @@ import type { ProjectSandbox } from './project-sandbox.ts';
 import { decideCommand } from './command-policy.ts';
 import { needsRestart } from './launch.ts';
 import { DecisionRequiredError, isDecisionRequiredError, readDecisionRequest } from '../agent-decision.ts';
+import { agentWebProvider } from '../agent-web.ts';
 
 export type ToolResult =
   | { ok: true; [key: string]: unknown }
@@ -104,6 +105,16 @@ export const SANDBOX_TOOL_SCHEMAS = [
     name: 'restart_server',
     description: 'Restart the dev server. Only needed after a dependency or build-config change; an edit to a component is hot-reloaded already.',
     parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'web_search',
+    description: 'Search the web. Use it when you need something your own knowledge may have wrong or out of date: the current API of a library or service, how to configure a provider, an error message you do not recognise. Not for things you already know well. Returns links and excerpts; read a page with fetch_url.',
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'A precise query, e.g. "react-router v7 createBrowserRouter loader".' } }, required: ['query'] },
+  },
+  {
+    name: 'fetch_url',
+    description: 'Read one public web page as text — official documentation, a changelog, an issue thread. Prefer official docs. Only public http(s) pages.',
+    parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
   },
   {
     /*
@@ -327,6 +338,18 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       const request = readDecisionRequest(args);
       if (!request) return fail('A decision needs at least one question with options. Choose a sensible default and continue.');
       throw new DecisionRequiredError(request.questions, request.reason);
+    },
+
+    async web_search(args) {
+      const provider = agentWebProvider();
+      if (!provider) return fail('Web search is not available here.', 'Continue with what you know and say what you could not check.');
+      return provider.search(String(args.query || '')) as Promise<ToolResult>;
+    },
+
+    async fetch_url(args) {
+      const provider = agentWebProvider();
+      if (!provider) return fail('Reading web pages is not available here.');
+      return provider.fetch(String(args.url || '')) as Promise<ToolResult>;
     },
 
     async restart_server() {

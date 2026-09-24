@@ -191,6 +191,7 @@ import {
 } from './src/services/agent-runtime-v2.ts';
 import { inspectVisualPreview } from './src/services/visual-preview-inspector.ts';
 import { scanGeneratedSecurity } from './src/services/generated-security-scanner.ts';
+import { createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
 import {
   WebResearchGateway,
   researchToPromptContext,
@@ -1025,6 +1026,28 @@ const STRICT_VERIFICATION_ENABLED = process.env.CODEN_STRICT_VERIFICATION !== '0
 const projectRunner = new HybridProjectRunner({ executeScripts: process.env.AGENT_RUNNER_EXECUTE_SCRIPTS === '1' });
 const webResearchGateway = new WebResearchGateway(process.env);
 const falMediaGateway = new FalMediaGateway(process.env);
+
+/*
+ * The agent's web tools (`web_search`, `fetch_url`): a configured search API
+ * when there is one, OpenRouter's own web search otherwise — so the agent can
+ * look things up with nothing more than the key Coden already has.
+ */
+setAgentWebProvider(createAgentWebProvider({
+  research: webResearchGateway,
+  modelSearch: async (query: string) => {
+    const modelId = selectModelForAgent('summarizer', { interactive: true }).modelId;
+    const runtime = buildAIModelRuntimeConfig({ modelId, task: 'summary', allowTools: false, preferStructuredOutput: false, reasoningLevel: 'low', timeoutMs: 40_000 });
+    const result = await providerGateway.chat(modelId, [
+      { role: 'system', content: 'You are a web research assistant for a software agent. Search the web and answer with the most relevant, current facts for the query: official documentation first. List each source as "- Title — URL: two or three sentences of what it says". No preamble.' },
+      { role: 'user', content: query },
+    ], {
+      maxAttempts: 1,
+      timeoutMs: 40_000,
+      runtimeConfig: { ...buildProviderRequestConfig(runtime), webSearch: { maxResults: 5 } },
+    });
+    return result.text;
+  },
+}));
 
 const modelRouter = new ModelRouter();
 const costEstimator = new CostEstimatorService();
@@ -5635,6 +5658,19 @@ async function createAgentTextResponse(input: {
     structuredOutput: runtimeOptions.runtime.responseFormat.type !== 'text',
     toolCalling: runtimeOptions.runtime.tools.length > 0,
   });
+  /*
+   * An answer about something current — a price, a release, the docs of a
+   * service, a page the user linked — is written with the web in hand: the
+   * provider searches and the model answers from the sources. The research
+   * gateway was built for this and never called, so every such answer came
+   * from training data alone.
+   */
+  if (!input.finalizer && !researchContext && shouldUseWebResearch({ prompt, intent: decision.intent })) {
+    const withWeb = <T extends Record<string, any> | undefined>(config: T) => (config ? { ...config, webSearch: { maxResults: 5 } } : config);
+    runtimeOptions.providerConfig = withWeb(runtimeOptions.providerConfig) as typeof runtimeOptions.providerConfig;
+    const forModel = runtimeOptions.runtimeConfigForModel;
+    if (forModel) runtimeOptions.runtimeConfigForModel = ((modelId: any) => withWeb(forModel(modelId))) as typeof forModel;
+  }
 
   try {
     const messages = buildAgentTextMessages({ project, prompt, files, decision, researchContext, executionContract, visionInputs: input.visionInputs, finalizer: input.finalizer, history: input.history, sessionContext: input.sessionContext });

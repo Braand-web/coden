@@ -315,6 +315,7 @@ export class OpenRouterService {
       responseFormat: runtimeConfig?.responseFormat,
       fallbackModels: runtimeConfig?.fallbackModels,
       adapter: runtimeConfig?.adapter,
+      webSearch: runtimeConfig?.webSearch,
       stream: true,
     });
   }
