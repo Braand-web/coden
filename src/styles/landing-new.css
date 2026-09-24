@@ -79,7 +79,60 @@ html[data-lp-reveal="on"] [data-lp-reveal].is-visible { opacity: 1; filter: none
   mask-image: linear-gradient(to bottom, var(--foreground) 0%, var(--foreground) 45%, transparent 100%);
   pointer-events: none;
 }
-html[data-theme="dark"] .lp-hero-ambient { background-image: url('/dashboard-ambient-dark.svg'); opacity: .42; }
+/*
+ * Dark: the hero is an electric-blue stage, lit from the top left and grained
+ * (see public/dashboard-ambient-dark.svg). It used to be translucent blues at
+ * 42% over near-black, which read as navy on black. It stays solid under the
+ * composer and fades into the page only at its foot.
+ */
+html[data-theme="dark"] .lp-hero-ambient {
+  background-image: url('/dashboard-ambient-dark.svg');
+  opacity: 1;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .6) 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, rgba(0, 0, 0, .6) 78%, transparent 100%);
+}
+html[data-theme="dark"] .lp-hero-subtitle { color: rgba(255, 255, 255, .86); }
+html[data-theme="dark"] .lp-hero-note { color: rgba(255, 255, 255, .74); }
+html[data-theme="dark"] .lp-composer-host .coden-prompt-input > div:last-of-type {
+  border-color: rgba(255, 255, 255, .22) !important;
+  background: color-mix(in srgb, #0b1220 82%, transparent) !important;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgba(4, 22, 70, .45), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+}
+html[data-theme="dark"] .lp-composer-host .coden-prompt-input .coden-prompt-fade { background: transparent; }
+
+/*
+ * The sphere of rings rising from the foot of the hero, turning slowly: the
+ * one moving thing on the first screen, behind everything and never under
+ * the text. White on the blue stage, the accent on the light page.
+ */
+.lp-hero-sphere {
+  --sphere-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+  --sphere-dot: var(--accent);
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  /* Only its top rises into view, under the composer, like a planet at dawn. */
+  top: calc(100% - 190px);
+  width: min(820px, 96vw);
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  opacity: .55;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, transparent 26%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, transparent 26%);
+  pointer-events: none;
+}
+html[data-theme="dark"] .lp-hero-sphere {
+  --sphere-ring: rgba(255, 255, 255, .55);
+  --sphere-dot: #ffffff;
+  opacity: .5;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lp-hero-sphere { animation: lp-sphere-in 1800ms var(--ease-standard) both, lp-sphere-float 9s ease-in-out 1800ms infinite alternate; }
+}
+@keyframes lp-sphere-in { from { opacity: 0; transform: translate(-50%, 6%) scale(.96); } }
+@keyframes lp-sphere-float { to { transform: translate(-50%, -2.5%); } }
+@media (max-width: 720px) { .lp-hero-sphere { top: calc(100% - 120px); width: 100vw; } }
 
 /* One line at every width: the sentence runs about 12.2 times its font size
    in Geist at this tracking, so the size follows the column with room to
@@ -132,7 +185,7 @@ html[data-theme="dark"] .lp-hero-ambient { background-image: url('/dashboard-amb
 
 /* Hero entrance: title, subtitle, composer, note, one after the other. */
 @media (prefers-reduced-motion: no-preference) {
-  .lp-hero > :not(.lp-hero-ambient) { animation: lp-rise 1000ms var(--ease-standard) both; }
+  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-sphere) { animation: lp-rise 1000ms var(--ease-standard) both; }
   .lp-hero-subtitle { animation-delay: 90ms !important; }
   .lp-composer { animation-delay: 180ms !important; }
   .lp-hero-note { animation-delay: 270ms !important; }
@@ -367,7 +420,8 @@ html[data-theme="dark"] .lp-verify {
 .lp-aurora span:nth-child(2) { top: 12%; right: 0; width: 46vw; height: 46vw; max-width: 700px; max-height: 700px; background: radial-gradient(circle, color-mix(in srgb, var(--lp-hue-2) 62%, transparent), transparent 70%); animation: lp-drift-b 26s var(--ease-standard) infinite alternate; }
 .lp-aurora span:nth-child(3) { bottom: 0; left: 26%; width: 44vw; height: 44vw; max-width: 660px; max-height: 660px; background: radial-gradient(circle, color-mix(in srgb, var(--lp-hue-3) 70%, transparent), transparent 70%); animation: lp-drift-c 30s var(--ease-standard) infinite alternate; }
 .lp-aurora span:nth-child(4) { top: 38%; left: 44%; width: 26vw; height: 26vw; max-width: 380px; max-height: 380px; background: radial-gradient(circle, color-mix(in srgb, var(--accent-soft) 80%, transparent), transparent 68%); animation: lp-drift-d 18s var(--ease-standard) infinite alternate; }
-html[data-theme="dark"] .lp-aurora span { opacity: .5; }
+html[data-theme="dark"] .lp-aurora span { opacity: .78; }
+html[data-theme="dark"] .lp-aurora { background: linear-gradient(180deg, transparent, color-mix(in srgb, #1463f3 22%, var(--background)) 30%, color-mix(in srgb, #2f7bff 16%, var(--background)) 70%, transparent); }
 @keyframes lp-drift-a { to { transform: translate(18vw, 10%) scale(1.15); } }
 @keyframes lp-drift-b { to { transform: translate(-16vw, 18%) scale(.9); } }
 @keyframes lp-drift-c { to { transform: translate(-14vw, -22%) scale(1.2); } }
@@ -660,7 +714,7 @@ html[data-theme="dark"] .lp-select-highlight { background: var(--control); }
   mask-image: linear-gradient(to bottom, transparent 0%, var(--foreground) 30%);
   pointer-events: none;
 }
-html[data-theme="dark"] .lp-finale-light { opacity: .55; }
+html[data-theme="dark"] .lp-finale-light { opacity: .9; }
 .lp-finale .coden-public-footer-frame { padding-top: 32px; }
 .lp-finale .coden-public-footer-frame::before { display: none; }
 body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top: 0; }

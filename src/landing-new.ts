@@ -2,6 +2,7 @@ import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
 import { mountPublicShell } from './public-shell';
 import { hasStoredSession } from './lib/stored-session';
+import { mountDotSphere } from './lib/dot-sphere';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
@@ -492,6 +493,8 @@ function init() {
   setupTyping();
   setupPublishChecks();
   setupPricing();
+  const sphere = document.querySelector<HTMLCanvasElement>('.lp-hero-sphere');
+  if (sphere) mountDotSphere(sphere);
   installReveal();
 }
 
