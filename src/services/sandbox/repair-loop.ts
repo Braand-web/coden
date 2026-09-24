@@ -58,7 +58,7 @@ export type RepairOutcome = {
   rounds: RepairRound[];
   finalReport: ValidationReport;
   /** Why the loop stopped, in terms a caller can report to a user. */
-  stoppedBecause: 'fixed' | 'no_progress' | 'round_limit' | 'no_errors';
+  stoppedBecause: 'fixed' | 'no_progress' | 'round_limit' | 'no_errors' | 'time_budget';
 };
 
 /**
@@ -122,6 +122,8 @@ const DEFAULT_MAX_ROUNDS = 8;
  * shared deadline arrives, whichever comes first.
  */
 const DEFAULT_MAX_STALLED_ROUNDS = 3;
+/** Less than this left on the clock and a new round could not finish its checks. */
+const MIN_ROUND_MS = 45_000;
 const DEFAULT_MAX_TOOL_CALLS = 40;
 
 function countErrors(report: ValidationReport): number {
@@ -151,6 +153,13 @@ export async function runCoderLoop(input: {
   /** Validation already run by the caller, so the first round costs nothing extra. */
   initialReport?: ValidationReport;
   signal?: AbortSignal;
+  /**
+   * The run's shared wall-clock deadline (epoch ms). No new round starts
+   * once too little of it is left for a round to write anything and be
+   * checked; the run then delivers what it has, with what is still open,
+   * instead of being cut off in the middle of a call.
+   */
+  deadline?: number;
   beforeRound?: (round: number) => Promise<string | undefined>;
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
@@ -197,6 +206,7 @@ export async function runCoderLoop(input: {
 
   for (let round = 1; round <= maxRounds; round += 1) {
     input.signal?.throwIfAborted();
+    if (round > 1 && Number.isFinite(input.deadline) && (input.deadline as number) - Date.now() < MIN_ROUND_MS) return finish('time_budget');
     const steering = await input.beforeRound?.(round);
     if (steering) steeringHistory.push(steering);
     const errorsBefore = countErrors(report);

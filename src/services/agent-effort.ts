@@ -161,8 +161,11 @@ export function effortCostMultiplier(effort: unknown): number {
  * than a broken one.
  */
 const ROUTE_BUDGET_SCALE: Record<AgentEffort, { rounds: number; toolCalls: number; deadline: number }> = {
-  None: { rounds: 0.7, toolCalls: 0.5, deadline: 0.5 },
-  Low: { rounds: 0.7, toolCalls: 0.5, deadline: 0.5 },
+  // Less effort is fewer rounds and fewer calls, not less time for the ones
+  // it does make: halving the clock cut a Low build off at 5.5 minutes with
+  // the app written and a few errors from done.
+  None: { rounds: 0.7, toolCalls: 0.5, deadline: 1 },
+  Low: { rounds: 0.7, toolCalls: 0.5, deadline: 1 },
   Medium: { rounds: 1, toolCalls: 1, deadline: 1 },
   High: { rounds: 1.5, toolCalls: 2, deadline: 2 },
   // Ultra widens the clock more than the rounds: what it buys is depth per

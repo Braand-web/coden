@@ -65,7 +65,7 @@ export type WorkspaceEvent =
   | { type: 'sandbox_failed'; stage: 'install' | 'start'; message: string; logs: string[] }
   | { type: 'repair_round_started'; round: number; errors: number }
   | { type: 'repair_round_finished'; round: number; errorsBefore: number; errorsAfter: number; filesTouched: string[] }
-  | { type: 'repair_finished'; ok: boolean; rounds: number; reason: 'fixed' | 'no_progress' | 'round_limit' | 'no_errors' };
+  | { type: 'repair_finished'; ok: boolean; rounds: number; reason: 'fixed' | 'no_progress' | 'round_limit' | 'no_errors' | 'time_budget' };
 
 type AgentEnvelopeBase = {
   runId: string;
