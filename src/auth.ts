@@ -13,7 +13,8 @@ import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
-import './styles/auth-premium.css';
+import './styles/auth-studio.css';
+import { mountDotSphere } from './lib/dot-sphere';
 import './styles/coden-horizon-system.css';
 
 type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
@@ -46,7 +47,10 @@ const socialButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[
 initCodenMotion();
 initCodenNavigationTransitions();
 initThemeController();
-document.body.classList.add('auth-premium-ready');
+document.body.classList.add('auth-studio-ready');
+// The dotted sphere rising behind the card, as on the landing hero.
+const authSphere = document.querySelector<HTMLCanvasElement>('.auth-sphere');
+if (authSphere) mountDotSphere(authSphere, { speed: 0.00006 });
 
 const searchParams = new URLSearchParams(window.location.search);
 const requestedMode = searchParams.get('mode');

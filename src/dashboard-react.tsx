@@ -19,6 +19,7 @@ import {
   Plus,
   Search,
   Settings,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
@@ -39,6 +40,7 @@ import {
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
+import { maybeOpenOnboarding } from './lib/onboarding-launcher';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
@@ -149,6 +151,18 @@ function relativeTime(value?: string) {
   return `il y a ${days} j`;
 }
 
+/** The Upgrade modal is its own chunk: most visits never open it. */
+function openUpgrade(profile?: ProfileResponse | null) {
+  void import('./components/upgrade-flows').then(({ openPricingModal }) => openPricingModal({
+    currentPlan: profile?.plan?.key,
+    email: profile?.user?.email,
+  }));
+}
+
+function isPaidPlan(key?: string) {
+  return /^(pro|business|enterprise)$/i.test(String(key || ''));
+}
+
 /** One answer to "whose account is this", so the sidebar and the cards agree. */
 function accountDisplayName(profile?: ProfileResponse | null) {
   return profile?.user?.name || profile?.user?.full_name || profile?.user?.email?.split('@')[0] || 'Compte';
@@ -233,6 +247,22 @@ function Sidebar({
         </nav>
 
         <div className="coden-dashboard-sidebar-bottom">
+          {/*
+            * Upgrade, one click from anywhere in the workspace. Waits for the
+            * profile so a paying account never sees "Passer à Pro" flash by.
+            */}
+          {profile && (isPaidPlan(profile.plan?.key) ? (
+            <button type="button" className="coden-dashboard-upgrade-card is-plan" onClick={() => openUpgrade(profile)} title="Voir les formules">
+              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
+              <span className="coden-dashboard-upgrade-copy"><strong>Forfait {profile.plan?.label || profile.plan?.key}</strong><small>Voir les formules</small></span>
+            </button>
+          ) : (
+            <button type="button" className="coden-dashboard-upgrade-card" onClick={() => openUpgrade(profile)} title="Passer à Pro">
+              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
+              <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Plus de crédits, publication</small></span>
+              <ArrowRight className="coden-dashboard-upgrade-arrow" size={15} aria-hidden="true" />
+            </button>
+          ))}
           <div className="coden-dashboard-account-wrap" ref={accountMenuRef}>
             {accountOpen && (
               <div className="coden-dashboard-account-menu" role="menu">
@@ -537,6 +567,14 @@ function DashboardHome() {
   useEffect(() => {
     if (!isLocal) openBillingFromUrl();
   }, []);
+
+  // The welcome onboarding, once, for a new account (see onboarding-state.ts).
+  const onboardingChecked = useRef(false);
+  useEffect(() => {
+    if (!profile || onboardingChecked.current) return;
+    onboardingChecked.current = true;
+    void maybeOpenOnboarding({ currentPlan: profile.plan?.key, email: profile.user?.email, localPreview: isLocal });
+  }, [profile]);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };

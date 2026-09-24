@@ -3536,7 +3536,9 @@ function bindConnectorsButton() {
   });
   if (connectorsBridgeBound) return;
   connectorsBridgeBound = true;
-  document.addEventListener('coden:open-connectors', () => {
+  document.addEventListener('coden:open-connectors', event => {
+    const detail = (event as CustomEvent<{ handled?: boolean } | undefined>).detail;
+    if (detail) detail.handled = true;
     openConnectorsPanel({ projectId: currentProjectId || undefined });
   });
   document.addEventListener('coden:open-settings', event => {
