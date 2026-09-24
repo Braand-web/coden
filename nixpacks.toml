@@ -22,4 +22,8 @@ cmds = [
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm run start"
+# Node itself, not `npm run start`: npm exits on SIGTERM without passing it
+# on, so the server never saw the signal, never drained, and every deploy
+# killed the builds in flight (the container stops when its main process
+# does). Started directly, Node receives SIGTERM and finishes its runs first.
+cmd = "node --import tsx server.ts"

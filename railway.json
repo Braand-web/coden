@@ -8,7 +8,7 @@
     "buildCommand": "npm install --include=dev --no-audit --no-fund && npx playwright install --with-deps chromium && npm run build"
   },
   "deploy": {
-    "startCommand": "npm run start",
+    "startCommand": "node --import tsx server.ts",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
