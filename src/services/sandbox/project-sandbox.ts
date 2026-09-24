@@ -472,6 +472,14 @@ export class ProjectSandbox {
         this.log('system', 'Dependencies restored from the install cache.');
         return { ok: true, output: 'Dependencies restored from the install cache.', durationMs: Date.now() - startedAt };
       }
+      // A VM starts with the image's tree; when it already is this project's,
+      // the install would change nothing and cost half a minute.
+      if (this.remote && await this.remote.imageSatisfiesDependencies(this.env, options.signal)) {
+        this.remote.installedManifest = manifestHash(await this.readProjectFile('package.json').catch(() => ''));
+        this.state = 'idle';
+        this.log('system', 'Dependencies already present in the sandbox image.');
+        return { ok: true, output: 'Dependencies already present in the sandbox image.', durationMs: Date.now() - startedAt };
+      }
       const useCi = await this.hasFile('package-lock.json');
       // Generated package lifecycle hooks are untrusted code. They must not
       // execute while dependencies are installed in the host process.

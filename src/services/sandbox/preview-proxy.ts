@@ -44,6 +44,28 @@ function forwardableHeaders(headers: IncomingMessage['headers'], host: string): 
   return out;
 }
 
+/*
+ * The builder embeds the preview in `sandbox="allow-scripts allow-forms"`,
+ * without `allow-same-origin`: the generated app is served from Coden's own
+ * origin, and must not reach the builder's storage and session. The frame's
+ * document therefore has an opaque origin, `null`, and every module script it
+ * loads — each one a CORS request, even to the URL it came from — is
+ * cross-origin.
+ *
+ * Vite 6 only answers CORS for localhost origins. Behind this proxy it sent
+ * no `Access-Control-Allow-Origin`, the browser refused `@vite/client` and
+ * `src/main.tsx`, and the preview was a white page: the HTML arrived, not one
+ * script ran. `Cross-Origin-Resource-Policy: same-origin` did the same to
+ * every no-cors load (images, and Vite's reconnect ping).
+ *
+ * Opening both is safe here: the path carries a signed, expiring grant, and
+ * a credential-less `*` exposes nothing that URL does not already expose.
+ */
+const SANDBOXED_FRAME_CORS: Record<string, string> = {
+  'access-control-allow-origin': '*',
+  'cross-origin-resource-policy': 'cross-origin',
+};
+
 /**
  * A dev server on this host's loopback port, or one in an isolated VM reached
  * at its HTTPS origin. Either way the browser only ever sees Coden's URL.
@@ -79,6 +101,19 @@ export function proxyHttp(
   basePath: string,
   onError?: (error: Error) => void,
 ): void {
+  // A preflight from the sandboxed frame is answered here: the dev server's
+  // own CORS policy does not accept the frame's `null` origin.
+  if (req.method === 'OPTIONS' && req.headers['access-control-request-method']) {
+    req.resume();
+    res.writeHead(204, {
+      ...SANDBOXED_FRAME_CORS,
+      'access-control-allow-methods': 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS',
+      'access-control-allow-headers': String(req.headers['access-control-request-headers'] || '*'),
+      'access-control-max-age': '600',
+    });
+    res.end();
+    return;
+  }
   const url = stripBase(req.url || '/', basePath);
   const up = upstreamFor(target);
   const upstream = up.client.request(
@@ -118,8 +153,11 @@ export function proxyHttp(
       // cannot embed a document with the default unsafe-none policy: Chromium
       // replaces an otherwise healthy HTTP 200 app with its refused frame page.
       headers['cross-origin-embedder-policy'] = 'credentialless';
-      headers['cross-origin-resource-policy'] = 'same-origin';
       headers['content-security-policy'] = "frame-ancestors 'self'";
+      for (const name of Object.keys(headers)) {
+        if (/^access-control-allow-/i.test(name) || /^cross-origin-resource-policy$/i.test(name)) delete headers[name];
+      }
+      Object.assign(headers, SANDBOXED_FRAME_CORS);
       res.removeHeader('X-Frame-Options');
       res.writeHead(upstreamRes.statusCode || 502, headers);
       upstreamRes.pipe(res);
@@ -229,18 +267,19 @@ export function previewErrorDocument(title: string, message: string, detail = ''
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escape(title)}</title>
 <style>
+  /* Literal colours: this document stands alone, none of the app's tokens exist here. */
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
     font:14px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    background:var(--background); color:var(--foreground); }
-  @media (prefers-color-scheme: light) { body { background:var(--surface); color:var(--foreground); } }
+    background:#0f1115; color:#e8eaed; }
+  @media (prefers-color-scheme: light) { body { background:#f6f7f9; color:#1f2328; } }
   .card { max-width:34rem; text-align:center; }
   h1 { margin:0 0 .5rem; font-size:1.05rem; font-weight:600; }
   p { margin:0; opacity:.72; }
   code { display:block; margin-top:1rem; padding:.6rem .75rem; border-radius:8px;
-    background:color-mix(in srgb, var(--surface-hover) 14%, transparent); font-size:12px; text-align:left;
+    background:rgba(127,127,127,.14); font-size:12px; text-align:left;
     word-break:break-word; opacity:.8; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--danger);
+  .dot { width:8px; height:8px; border-radius:50%; background:#e5534b;
     display:inline-block; margin-right:.5rem; vertical-align:middle; }
 </style></head><body><div class="card">
 <h1><span class="dot"></span>${escape(title)}</h1>
