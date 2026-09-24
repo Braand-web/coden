@@ -7,6 +7,7 @@ import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV, type PublicLo
 import { CodenBrand } from "./brand/coden-logo";
 import { Button, IconButton } from "./ui/primitives";
 import { focusFirst, setInertExcept, trapFocus } from "../lib/focus-management";
+import { hasStoredSession } from "../lib/stored-session";
 
 
 export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
@@ -17,6 +18,8 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
     return document.documentElement.dataset.lang === "en" || document.documentElement.lang.toLowerCase().startsWith("en") ? "en" : "fr";
   });
   const reduced = useReducedMotion();
+  // Signed in: "Mes projets" instead of the sign-in and sign-up offers.
+  const [signedIn] = React.useState(() => hasStoredSession());
   const headerRef = React.useRef<HTMLElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
@@ -90,8 +93,12 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
       {links.map(link => <a key={link.href} href={link.href} aria-current={pathname === link.match ? "page" : undefined}>{link.label}</a>)}
     </nav>
       <div className="coden-react-header-actions">
-      <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="navbar" href="/auth.html">{labels.signIn}</a>
-      <a className="coden-react-cta sign-in-btn" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">{labels.cta}</a>
+      {signedIn
+        ? <a className="coden-react-cta sign-in-btn" href="/dashboard.html">{locale === "fr" ? "Mes projets" : "My projects"}</a>
+        : <>
+          <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="navbar" href="/auth.html">{labels.signIn}</a>
+          <a className="coden-react-cta sign-in-btn" data-conversion-event="start_building_click" data-conversion-place="navbar" href="/auth.html?mode=signup&redirect=%2Fdashboard.html">{labels.cta}</a>
+        </>}
       <IconButton
         ref={triggerRef}
         id="landing-nav-toggle"
@@ -109,8 +116,12 @@ export function MarketingHeader({ signInLabel }: { signInLabel?: string }) {
         <motion.div className="coden-react-mobile-backdrop" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : .18, ease: EASE_DRAWER }} onMouseDown={() => closeMenu(true)} />
         <motion.div ref={menuRef} id="landing-nav-menu-mobile" className="coden-react-mobile-nav" role="dialog" aria-modal="true" aria-label={locale === "fr" ? "Navigation mobile" : "Mobile navigation"} tabIndex={-1} initial={reduced ? { opacity: 1 } : { opacity: 0, y: -6, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: .985 }} transition={{ duration: reduced ? 0 : .24, ease: EASE_DRAWER }}>
           {links.map(link => <a key={link.href} href={link.href} aria-current={pathname === link.match ? "page" : undefined} onClick={() => closeMenu(false)}>{link.label}</a>)}
-          <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="mobile_nav" href="/auth.html" onClick={() => closeMenu(false)}>{labels.signIn}</a>
-          <a className="coden-react-cta" data-conversion-event="start_building_click" data-conversion-place="mobile_nav" href="/auth.html?mode=signup&redirect=%2Fdashboard.html" onClick={() => closeMenu(false)}>{labels.cta}</a>
+          {signedIn
+            ? <a className="coden-react-cta" href="/dashboard.html" onClick={() => closeMenu(false)}>{locale === "fr" ? "Mes projets" : "My projects"}</a>
+            : <>
+              <a className="coden-react-signin" data-conversion-event="sign_in_click" data-conversion-place="mobile_nav" href="/auth.html" onClick={() => closeMenu(false)}>{labels.signIn}</a>
+              <a className="coden-react-cta" data-conversion-event="start_building_click" data-conversion-place="mobile_nav" href="/auth.html?mode=signup&redirect=%2Fdashboard.html" onClick={() => closeMenu(false)}>{labels.cta}</a>
+            </>}
         </motion.div>
       </> : null}
     </AnimatePresence>
