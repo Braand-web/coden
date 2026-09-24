@@ -31,6 +31,10 @@ export interface AgentHarnessStore {
   updateItem(itemId: string, patch: Partial<HarnessItem>): Promise<HarnessItem>;
   appendEvent(input: Omit<HarnessEvent, 'id' | 'sequence' | 'createdAt'>): Promise<HarnessEvent>;
   listEvents(threadId: string, afterSequence?: number, limit?: number): Promise<HarnessEvent[]>;
+  /** The thread sequence of the turn's first event, so a replay need not read the whole thread. */
+  firstSequenceForTurn?(threadId: string, turnId: string): Promise<number | null>;
+  /** When the turn last recorded anything — the evidence that its process is alive. */
+  lastEventAtForTurn?(threadId: string, turnId: string): Promise<string | null>;
   addInstruction(input: Omit<HarnessInstruction, 'id' | 'createdAt' | 'status'>): Promise<HarnessInstruction>;
   listPendingInstructions(turnId: string): Promise<HarnessInstruction[]>;
   updateInstruction(instructionId: string, patch: Partial<HarnessInstruction>): Promise<HarnessInstruction>;
@@ -190,6 +194,16 @@ export class InMemoryAgentHarnessStore implements AgentHarnessStore {
       this.threads.set(thread.id, { ...thread, nextSequence: thread.nextSequence + 1, updatedAt: event.createdAt });
       return clone(event);
     });
+  }
+
+  async firstSequenceForTurn(threadId: string, turnId: string) {
+    const first = (this.events.get(threadId) || []).find(event => event.turnId === turnId);
+    return first ? Number(first.sequence) : null;
+  }
+
+  async lastEventAtForTurn(threadId: string, turnId: string) {
+    const events = (this.events.get(threadId) || []).filter(event => event.turnId === turnId);
+    return events.length ? events[events.length - 1].createdAt : null;
   }
 
   async listEvents(threadId: string, afterSequence = 0, limit = 500) {

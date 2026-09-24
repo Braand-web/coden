@@ -15,6 +15,8 @@ export type AgentEventStreamOptions = {
 };
 
 const TERMINAL_EVENTS = new Set(['run_finished', 'run_failed', 'run_cancelled']);
+/** A live run records something at least this often, heartbeats included. */
+export const LIVENESS_PERSIST_MS = 30_000;
 
 /**
  * A stored envelope back into the envelopes the client originally received.
@@ -84,6 +86,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
    * finished to the client before its record is.
    */
   const persistQueue: AgentEnvelope[] = [];
+  let lastPersistQueuedAt = Date.now();
   let persisting: Promise<void> = Promise.resolve();
   let persistRunning = false;
   const persistOne = async (envelope: AgentEnvelope) => {
@@ -137,8 +140,17 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     const nextSequence = ++seq;
     const timestamp = Date.now();
     const envelope = { runId, messageId, seq: nextSequence, timestamp, ts: timestamp, channel, type: payload.type, payload } as AgentEnvelope;
-    // A heartbeat keeps this connection alive; a replay sends its own.
-    if (options.persist && payload.type !== 'heartbeat') { persistQueue.push(envelope); pump(); }
+    /*
+     * A heartbeat keeps this connection alive; a replay sends its own. One is
+     * still recorded when nothing else has been for a while: that is how a
+     * page coming back tells a run that is quietly installing from a run whose
+     * process is gone (see the stream replay's liveness check).
+     */
+    if (options.persist && (payload.type !== 'heartbeat' || timestamp - lastPersistQueuedAt >= LIVENESS_PERSIST_MS)) {
+      lastPersistQueuedAt = timestamp;
+      persistQueue.push(envelope);
+      pump();
+    }
     // From the terminal event on, everything waits its turn behind it: the
     // client drops any envelope older than the last it saw, so a heartbeat
     // written ahead of a deferred run_finished would swallow the ending.

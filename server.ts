@@ -1454,10 +1454,19 @@ class HarnessRunActiveError extends Error {
   }
 }
 
-function isOrphanedHarnessTurn(turn: { id: string; startedAt?: string | null; createdAt: string }) {
+async function isOrphanedHarnessTurn(harness: CodenAgentHarness, turn: { id: string; threadId: string; startedAt?: string | null; createdAt: string }) {
   if (activeHarnessTurnControllers.has(turn.id)) return false;
   const startedAt = Date.parse(turn.startedAt || turn.createdAt);
   if (!Number.isFinite(startedAt)) return false;
+  /*
+   * "Started before this process booted" no longer means "dead": a deploy
+   * now drains, and the previous instance is still finishing that run —
+   * failing it here, the moment the user typed again, killed exactly the work
+   * the drain exists to save. A live run records something at least every
+   * thirty seconds, so the run's own last event is the evidence.
+   */
+  const lastEventAt = await harness.store.lastEventAtForTurn?.(turn.threadId, turn.id).catch(() => null);
+  if (lastEventAt) return Date.now() - Date.parse(lastEventAt) > RUN_SILENCE_LIMIT_MS;
   if (startedAt < PROCESS_BOOTED_AT) return true;
   return Date.now() - startedAt > ORPHANED_TURN_CEILING_MS;
 }
@@ -1503,7 +1512,7 @@ async function prepareAgentHarnessContext(input: {
         clientMessageId: input.clientMessageId,
       });
       if (activeTurn && !['completed','failed','cancelled','blocked'].includes(activeTurn.status)) {
-        if (isOrphanedHarnessTurn(activeTurn)) {
+        if (await isOrphanedHarnessTurn(harness, activeTurn)) {
           await harness.transitionTurn(activeTurn.id,'failed',{diagnostic_code:'RUN_INTERRUPTED',recoverable:true});
         } else if (activeTurn.idempotencyKey !== expectedKey) {
           throw new HarnessRunActiveError();
@@ -15155,6 +15164,11 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/approvals', asy
   });
 });
 
+/** How long one replay request follows a run before the page reconnects. */
+const STREAM_REPLAY_WINDOW_MS = 10 * 60_000;
+/** Silence after which a run no instance is holding is treated as lost. */
+const RUN_SILENCE_LIMIT_MS = 120_000;
+
 app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -15169,9 +15183,18 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
   }
 
   let afterEnvelope = Math.max(0, Number.parseInt(String(req.headers['last-event-id'] || req.query?.after || '0'), 10) || 0);
-  let harnessCursor = 0;
+  /*
+   * From the turn's own first event, not the thread's: a thread that has seen
+   * twenty runs holds thousands of rows, and a page coming back to the one in
+   * flight had to page through all of them before its first envelope.
+   */
+  const firstSequence = await resolved.harness.store.firstSequenceForTurn?.(resolved.thread.id, turn.id).catch(() => null);
+  let harnessCursor = firstSequence ? Math.max(0, firstSequence - 1) : 0;
   let disconnected = false;
   let terminalEnvelopeSeen = false;
+  let lastActivityAt = Date.parse(turn.updatedAt || turn.createdAt) || Date.now();
+  let highestSequence = afterEnvelope;
+  let messageId = '';
   const startedAt = Date.now();
   res.status(200).set({
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -15181,30 +15204,101 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
   });
   res.flushHeaders();
   req.once('close', () => { disconnected = true; });
+  const writeEnvelope = async (envelope: any) => {
+    if (!res.write(`id: ${envelope.seq}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
+      await new Promise<void>(resolve => res.once('drain', resolve));
+    }
+  };
 
-  while (!disconnected && !terminalEnvelopeSeen && Date.now() - startedAt < 5 * 60_000) {
+  while (!disconnected && !terminalEnvelopeSeen && Date.now() - startedAt < STREAM_REPLAY_WINDOW_MS) {
     const events = await resolved.harness.store.listEvents(resolved.thread.id, harnessCursor, 500);
     for (const event of events) {
       harnessCursor = Math.max(harnessCursor, Number(event.sequence || 0));
-      if (event.turnId !== turn.id || event.type !== 'public.stream') continue;
+      if (event.turnId !== turn.id) continue;
+      lastActivityAt = Math.max(lastActivityAt, Date.parse(event.createdAt) || 0);
+      if (event.type !== 'public.stream') continue;
       for (const envelope of expandPersistedEnvelope(event.payload)) {
         const sequence = Number(envelope?.seq || 0);
-        if (!Number.isSafeInteger(sequence) || sequence <= afterEnvelope || envelope?.runId !== turn.id) continue;
+        if (!Number.isSafeInteger(sequence) || envelope?.runId !== turn.id) continue;
+        highestSequence = Math.max(highestSequence, sequence);
+        messageId = String(envelope?.messageId || messageId);
+        if (sequence <= afterEnvelope) continue;
         afterEnvelope = sequence;
-        if (!res.write(`id: ${sequence}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
-          await new Promise<void>(resolve => res.once('drain', resolve));
-        }
+        await writeEnvelope(envelope);
         const type = String(envelope?.payload?.type || '');
         if (type === 'run_finished' || type === 'run_failed' || type === 'run_cancelled') terminalEnvelopeSeen = true;
       }
     }
     if (terminalEnvelopeSeen || disconnected) break;
+    // Still paging through the record: the run's latest activity is not known yet.
+    if (events.length >= 500) { await new Promise(resolve => setTimeout(resolve, 20)); continue; }
     const latestTurn = await resolved.harness.store.getTurn(turn.id);
     if (latestTurn && ['completed', 'failed', 'cancelled', 'blocked'].includes(latestTurn.status) && !events.length) break;
+    /*
+     * A run nobody is running any more.
+     *
+     * A live run records something at least every thirty seconds — a delta, a
+     * tool call, or a heartbeat when it is quietly installing. One that has
+     * been silent for two minutes, and that this instance is not holding, lost
+     * its process (a crash, a deploy that did not drain). Waiting on it showed
+     * a spinner for as long as the page stayed open. It is closed here as
+     * interrupted, with the files it wrote kept, and the page is told so.
+     */
+    if (latestTurn && ['queued', 'running', 'verifying'].includes(latestTurn.status)
+      && !activeHarnessTurnControllers.has(turn.id)
+      && Date.now() - lastActivityAt > RUN_SILENCE_LIMIT_MS) {
+      await resolved.harness.transitionTurn(turn.id, 'failed', { diagnostic_code: 'RUN_INTERRUPTED', reason: 'process_lost' }).catch(error => {
+        console.warn('[coden:silent_run_close_failed]', { turn: turn.id, message: redactSecrets(String(error), '[redacted]') });
+      });
+      console.info('[coden:silent_run_closed]', { turn: turn.id, silent_ms: Date.now() - lastActivityAt });
+      const french = isLikelyFrenchPrompt(turn.prompt || '');
+      const message = french
+        ? 'Le travail a été interrompu : le serveur a redémarré pendant la génération. Les fichiers déjà écrits sont conservés — envoyez « continue » pour reprendre là où Coden s’est arrêté.'
+        : 'The work was interrupted: the server restarted during the generation. Files already written are kept — send “continue” to pick up where Coden stopped.';
+      const base = { runId: turn.id, messageId: messageId || turn.id, timestamp: Date.now(), ts: Date.now() };
+      await writeEnvelope({ ...base, seq: highestSequence + 1, channel: 'workspace', type: 'result', payload: { type: 'result', result: {
+        success: false, recoverable: true, diagnostic_code: 'RUN_INTERRUPTED', suggested_action: 'retry', error: message, message,
+        runId: turn.id, turnId: turn.id, threadId: resolved.thread.id, status_code: 409,
+      } } });
+      await writeEnvelope({ ...base, seq: highestSequence + 2, channel: 'chat', type: 'run_failed', payload: { type: 'run_failed', message, diagnosticCode: 'RUN_INTERRUPTED', recoverable: true } });
+      terminalEnvelopeSeen = true;
+      break;
+    }
     res.write(': heartbeat\n\n');
-    await new Promise(resolve => setTimeout(resolve, events.length ? 50 : 500));
+    await new Promise(resolve => setTimeout(resolve, events.length ? 50 : 400));
   }
   if (!disconnected && !res.writableEnded) res.end();
+});
+
+/**
+ * The run in flight on this project, if there is one.
+ *
+ * Leaving the page used to lose the run from view: the page came back to the
+ * conversation as it stood before the request, with no sign the work was
+ * still going, and the next message raced it. The builder asks this on load
+ * and, when a run is live, attaches to its stream and replays it.
+ */
+app.get('/api/projects/:id/agent/active-turn', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const store = (getPersistentAgentHarness() || inMemoryAgentHarness).store;
+  try {
+    const threads = await store.listThreads(project.id, userId, 5);
+    for (const thread of threads) {
+      if (!thread.activeTurnId) continue;
+      const turn = await store.getTurn(thread.activeTurnId);
+      if (!turn || turn.userId !== userId || !['queued', 'running', 'verifying'].includes(turn.status)) continue;
+      return res.json({ success: true, active_turn: {
+        thread_id: thread.id, turn_id: turn.id, status: turn.status, prompt: turn.prompt,
+        requested_mode: turn.requestedMode, created_at: turn.createdAt,
+      } });
+    }
+    return res.json({ success: true, active_turn: null });
+  } catch (error) {
+    if (!isMissingAgentHarnessSchemaError(error)) throw error;
+    return res.json({ success: true, active_turn: null });
+  }
 });
 
 app.post('/api/projects/:id/agent/threads/:threadId/turns/:turnId/instructions', async (req: any, res: any) => {

@@ -103,4 +103,16 @@ console.log('sandbox gate checks passed');
   assert.match(nixpacks, /\[start\]\s*(?:#.*\n\s*)*cmd = "node /, 'the Nixpacks start command runs Node directly');
   assert.ok(railway.deploy.drainingSeconds >= 600, 'the old instance gets time to finish its runs');
 }
+{
+  // Leaving the page never stopped the run; the page coming back lost it.
+  const builderLive = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
+  assert.match(builderLive, /restoreHarnessApprovalState\(\)\.then\(\(\) => resumeActiveRun\(\)\)/, 'the builder looks for a live run when a project loads');
+  assert.match(builderLive, /\/agent\/active-turn/, 'it asks the server which run is live');
+  assert.match(builderLive, /__codenAttach/, 'and follows it instead of sending a new request');
+  assert.match(builderLive, /if \(!isRecoveryRetry && !attach\) appendMessage\('user'/, 'without repeating the request already in the conversation');
+  assert.match(server, /app\.get\('\/api\/projects\/:id\/agent\/active-turn'/, 'the server names the live run');
+  assert.match(server, /RUN_SILENCE_LIMIT_MS/, 'a run silent for too long, held by no instance, is closed as interrupted');
+  assert.match(server, /firstSequenceForTurn/, 'a replay starts at the turn, not at the start of the thread');
+  assert.match(server, /const lastEventAt = await harness\.store\.lastEventAtForTurn\?\.\(turn\.threadId, turn\.id\)/, 'a run still draining on the previous instance is judged by its own activity, not by when this instance booted');
+}
 console.log('session analysis regression checks passed');

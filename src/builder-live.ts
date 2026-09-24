@@ -2276,6 +2276,32 @@ async function refreshHarnessApprovals(fallbackCard: HTMLElement | null = null) 
   }
 }
 
+/**
+ * Pick up a run that kept going while the page was away.
+ *
+ * Leaving the builder — another page, a closed tab, a reload — never stopped
+ * the run on the server, but the page came back to the conversation as it
+ * stood before the request: no reply, no progress, a composer ready to start a
+ * second run that the server then refused. The run is asked for here and, when
+ * one is live, followed exactly as if the page had never left: everything it
+ * streamed so far is replayed, then it continues live, and its result lands in
+ * files, preview and chat through the same path as any other run.
+ */
+async function resumeActiveRun() {
+  const projectId = currentProjectId;
+  if (!projectId || isGenerating) return;
+  type ActiveTurn = { thread_id?: string; turn_id?: string; prompt?: string; requested_mode?: string };
+  let active: ActiveTurn | null = null;
+  try {
+    active = (await apiFetch<{ active_turn?: ActiveTurn | null }>(`/api/projects/${encodeURIComponent(projectId)}/agent/active-turn`))?.active_turn || null;
+  } catch {
+    return;
+  }
+  if (!active?.thread_id || !active.turn_id || isGenerating || projectId !== currentProjectId) return;
+  const mode = normalizeAgentMode(active.requested_mode) as ChatMode;
+  await generateFromPrompt(String(active.prompt || '…'), mode, false, { __codenAttach: { threadId: active.thread_id, turnId: active.turn_id } });
+}
+
 async function restoreHarnessApprovalState() {
   if (!currentProjectId || !conversationApi) return;
   try {
@@ -3035,6 +3061,7 @@ async function requestProjectGeneration(
   requestBody: Record<string, unknown>,
   signal?: AbortSignal,
   card?: HTMLElement | null,
+  attach?: { threadId: string; turnId: string },
 ): Promise<any> {
   let lastSequence = 0;
   let streamRunId = '';
@@ -3070,6 +3097,47 @@ async function requestProjectGeneration(
       : response.json();
   };
 
+  /*
+   * Follow the run through its durable record until it ends.
+   *
+   * The run lives on the server, not in this request: a dropped connection,
+   * a closed tab or a page that went elsewhere and came back all land here,
+   * and the record replays whatever was missed before following it live.
+   * Only a run of failures that makes no progress at all gives up.
+   */
+  const followTurn = async (initialError: unknown) => {
+    let lastError: unknown = initialError;
+    let fruitless = 0;
+    for (let attempt = 0; fruitless < 8 && !signal?.aborted; attempt += 1) {
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, Math.min(3_000, 400 * fruitless + 300)));
+      const before = lastSequence;
+      try {
+        await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/stream`, {
+          headers: { Accept: 'text/event-stream', 'Last-Event-ID': String(lastSequence) },
+          signal,
+        }, response => readGenerationStream(response, true));
+        if (authoritativeResult) return authoritativeResult;
+      } catch (replayError) {
+        lastError = replayError;
+        if (!(replayError instanceof AgentStreamInterruptedError)) throw replayError;
+        lastSequence = Math.max(lastSequence, replayError.lastSequence);
+      }
+      if (authoritativeResult) return authoritativeResult;
+      fruitless = lastSequence > before ? 0 : fruitless + 1;
+    }
+    if (authoritativeResult) return authoritativeResult;
+    throw lastError;
+  };
+
+  if (attach) {
+    activeHarnessThreadId = attach.threadId;
+    activeHarnessTurnId = attach.turnId;
+    lastAgentRunId = attach.turnId;
+    streamRunId = attach.turnId;
+    startHarnessApprovalPolling(card || null);
+    return followTurn(new AgentStreamInterruptedError(0, attach.turnId));
+  }
+
   try {
     const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/generate`, {
       method: 'POST',
@@ -3083,23 +3151,7 @@ async function requestProjectGeneration(
     if (!(initialError instanceof AgentStreamInterruptedError) || signal?.aborted || !activeHarnessThreadId || !activeHarnessTurnId) throw initialError;
     lastSequence = Math.max(lastSequence, initialError.lastSequence);
     streamRunId ||= initialError.runId || activeHarnessTurnId;
-    let lastError: unknown = initialError;
-    for (let attempt = 0; attempt < 8 && !signal?.aborted; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, Math.min(3_000, 400 * (attempt + 1))));
-      try {
-        await apiFetch<any>(`/api/projects/${encodeURIComponent(projectId)}/agent/threads/${encodeURIComponent(activeHarnessThreadId)}/turns/${encodeURIComponent(activeHarnessTurnId)}/stream`, {
-          headers: { Accept: 'text/event-stream', 'Last-Event-ID': String(lastSequence) },
-          signal,
-        }, response => readGenerationStream(response, true));
-        if (authoritativeResult) return authoritativeResult;
-      } catch (replayError) {
-        lastError = replayError;
-        if (!(replayError instanceof AgentStreamInterruptedError)) throw replayError;
-        lastSequence = Math.max(lastSequence, replayError.lastSequence);
-      }
-    }
-    if (authoritativeResult) return authoritativeResult;
-    throw lastError;
+    return followTurn(initialError);
   }
 }
 
@@ -5631,7 +5683,7 @@ async function loadProject() {
     ensureConversationApi()?.clear();
     if (scroll) delete scroll.dataset.restored;
     restoreMessages(payload);
-    void restoreHarnessApprovalState();
+    void restoreHarnessApprovalState().then(() => resumeActiveRun());
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
     if (!restoredStreamParts) await restoreLatestStreamPartsFromRunHistory(payload);
     const activeTab = payload.workspace_state?.active_tab || userWorkspaceState?.builder_active_tab;
@@ -6118,14 +6170,19 @@ function applyInitialBuilderLayout() {
 async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLastPlan = false, extra: Record<string, unknown> = {}, displayText = prompt) {
   const safePrompt = repairTextEncoding(redactSecrets(prompt)).trim();
   const safeDisplayText = repairTextEncoding(redactSecrets(displayText));
-  const { __codenRetry, ...requestExtra } = extra;
+  const { __codenRetry, __codenAttach, ...requestExtra } = extra;
   const isRecoveryRetry = Boolean(__codenRetry);
+  // A run already under way on the server (the page was left and came back):
+  // nothing is sent, the run's stream is followed from its first event.
+  const attach = __codenAttach && typeof __codenAttach === 'object'
+    ? __codenAttach as { threadId: string; turnId: string }
+    : undefined;
   if (isGenerating || !safePrompt) return;
   // First send from the resting landing: drop the composer to the bottom and open
   // the conversation BEFORE rendering the message (state 1 -> state 2).
   if (currentBuilderLayout() === 'chat-rest') setBuilderLayout('chat');
   const speaksFrench = isLikelyFrenchText(safePrompt);
-  const promptUiContext = extra.confirmedCriticalAction ? 'project_mission' : classifyPromptUiContext(safePrompt, requestedMode);
+  const promptUiContext = extra.confirmedCriticalAction || attach ? 'project_mission' : classifyPromptUiContext(safePrompt, requestedMode);
   const handoff = getInitialBuilderHandoff();
   const effectiveExtra = {
     ...requestExtra,
@@ -6133,7 +6190,8 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     ...(requestExtra.importContext === undefined && handoff.importContext ? { importContext: handoff.importContext } : {}),
   };
   clearInlineBlocks();
-  if (!isRecoveryRetry) appendMessage('user', safeDisplayText);
+  // An attached run's request is already in the restored conversation.
+  if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText);
 
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
@@ -6177,7 +6235,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   // credits are known-empty client-side, in which case show the upgrade prompt and
   // do not reveal/run.
   const revealsWorkspace = Boolean(currentBuilderLayout() && currentBuilderLayout() !== 'workspace');
-  if (revealsWorkspace && lastWalletBalance === 0) {
+  if (revealsWorkspace && lastWalletBalance === 0 && !attach) {
     showCreditsModal();
     return;
   }
@@ -6603,7 +6661,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     stopHarnessApprovalPolling();
     harnessApprovalMessageIds.clear();
     startLiveRun(status, { mode: requestedMode, model: selectedModel(), intent: safePrompt });
-    let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal, status);
+    let payload: any = await requestProjectGeneration(currentProjectId, requestBody, activeAbort?.signal, status, attach);
     if (payload?.runId) lastAgentRunId = String(payload.runId);
     if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
     if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
