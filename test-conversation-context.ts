@@ -40,3 +40,27 @@ console.log('conversation context tests passed');
   assert.match(server, /sessionContext: canPersistConversation \? renderSessionContext\(await loadSessionMemory\(project\.id\)\) : undefined/, 'a project chat knows what was built');
 }
 console.log('session memory wiring tests passed');
+
+/*
+ * Live test, 2026-09-23: "une ville avec des humains" answering Coden's own
+ * question was treated as small talk, "oui vas y" too, every reply appeared
+ * twice, and a build died with a deploy.
+ */
+{
+  const generate = server.slice(server.indexOf("app.post('/api/projects/:id/generate'"));
+  const decisionCall = generate.slice(generate.indexOf('initialDecision = await resolveAgentDecision({'), generate.indexOf('initialDecision = await resolveAgentDecision({') + 400);
+  assert.doesNotMatch(decisionCall, /localOnly: true/, 'the Builder asks the model router, which reads the conversation');
+  assert.match(server, /resolvedPrompt: String\(raw\.normalized_prompt/, 'the router\'s restated request is kept');
+  assert.match(generate, /const resolvedMission = decision\.resolvedPrompt/, 'and the build runs on it, not on "oui vas-y"');
+  assert.match(generate, /assistant_streamed: streamedAny,/, 'a streamed answer is not sent a second time');
+
+  const builderLive = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
+  const classifier = builderLive.slice(builderLive.indexOf('function classifyPromptUiContext('), builderLive.indexOf('function showAssistantBubble('));
+  assert.ok(classifier.indexOf("if (currentProjectId) return 'project_mission';") > 0, 'in a project, the page does not pre-route by keywords');
+  assert.ok(classifier.indexOf("if (currentProjectId) return 'project_mission';") < classifier.indexOf("return 'chat_simple'", classifier.indexOf('const contract')), 'before any chat shortcut');
+
+  const router = readFileSync(new URL('./src/services/agent-prompt-stack.ts', import.meta.url), 'utf8');
+  assert.match(router, /If Coden asked what to build or which option, and the user answers/, 'a reply to Coden\'s question is the missing detail');
+  assert.match(router, /If Coden proposed to build or change something and the user agrees/, 'a yes to a proposal starts it');
+}
+console.log('live-test regression checks passed');

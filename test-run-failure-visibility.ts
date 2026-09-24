@@ -64,7 +64,9 @@ assert.doesNotMatch(
 
 // A run whose process is gone is finished at boot, not left spinning.
 assert.match(server, /async function reapInterruptedAgentRuns\(/, 'interrupted runs must be reaped');
-assert.match(server, /void reapInterruptedAgentRuns\(\)/, 'the reaper must actually run at startup');
+assert.match(server, /void reapInterruptedAgentRuns\(\{ createdBefore: bootedAt \}\)/, 'the reaper must actually run after startup, sparing runs another instance is still draining');
+assert.match(server, /\.lt\('created_at', options\.createdBefore/, 'and only runs older than this instance');
+assert.match(server, /process\.once\(signal, \(\) => \{\n\s+if \(shuttingDown\) return;/, 'a deploy drains the runs in flight instead of killing them');
 {
   const reaper = server.slice(server.indexOf('async function reapInterruptedAgentRuns('), server.indexOf('async function ensureAgentHarnessSchema('));
   for (const table of ['agent_runs', 'agent_turns', 'agent_items']) {
