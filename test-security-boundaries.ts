@@ -17,6 +17,13 @@ assert(/isAllowedPublishedUpstreamUrl\(project, candidate\)/.test(server), 'Publ
 assert(/Invalid analytics token/.test(server) && /analyticsTokenForProject/.test(server), 'Analytics collection is not project-bound.');
 assert(/res\.json\(\{\s*success: true,\s*status: 'ok',\s*service: 'coden-saas'/.test(server), 'Public health response is not minimized.');
 assert(/CODEN_BUILD_RUNNER_ISOLATION !== 'container'/.test(buildRunner), 'Production build runner is not fail-closed.');
+{
+  // And in behaviour, not only in text: production refuses a local generated
+  // build unless an isolated worker is declared.
+  const { localBuildAllowed } = await import('./src/services/build-runner.ts');
+  assert(localBuildAllowed({ NODE_ENV: 'production' }) === false, 'Production allows a local generated build.');
+  assert(localBuildAllowed({ NODE_ENV: 'production', CODEN_BUILD_RUNNER_ISOLATION: 'container' }) === true, 'An isolated build worker is not honoured.');
+}
 assert(/SECURE_SANDBOX_REQUIRED/.test(sandbox), 'Production host-process sandbox is not fail-closed.');
 assert(/analytics_token/.test(analytics), 'Generated analytics beacon does not carry its project-bound token.');
 

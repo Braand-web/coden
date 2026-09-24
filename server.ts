@@ -1449,6 +1449,8 @@ type PublishStatus = {
   badge_required: boolean;
   checks: Array<{ key: string; label: string; status: 'pass' | 'warn' | 'fail'; detail: string }>;
   can_publish: boolean;
+  /** Whether this account may connect a custom domain (paid subscription). */
+  can_add_domain: boolean;
   has_unpublished_changes: boolean;
 };
 
@@ -3400,7 +3402,8 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
     latest_published_at: latestPublishedAt,
     project_updated_at: projectUpdatedAt,
     badge_required: false,
-    can_publish: hostingConfigured && entitlement.canPublish && previewReady && hasFiles && !securityBlocking.length,
+    can_publish: hostingConfigured && previewReady && hasFiles && !securityBlocking.length,
+    can_add_domain: entitlement.canAddDomain,
     has_unpublished_changes: hasUnpublishedChanges,
     checks: [
       {
@@ -3413,11 +3416,11 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
       },
       {
         key: 'billing',
-        label: 'Abonnement',
-        status: entitlement.canPublish ? 'pass' : 'fail',
-        detail: entitlement.canPublish
-          ? `Abonnement ${entitlement.plan} actif (${entitlement.creditTier} crédits par mois).`
-          : 'Un abonnement payant actif est requis pour publier ou republier ce site.',
+        label: 'Offre',
+        status: 'pass',
+        detail: entitlement.canAddDomain
+          ? `Abonnement ${entitlement.plan} actif : publication et domaines personnalisés inclus.`
+          : 'Publication gratuite sur l’adresse Coden. Un abonnement payant permet de connecter votre propre domaine.',
       },
       {
         key: 'files',
@@ -3459,7 +3462,7 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
         key: 'badge',
         label: 'Signature Coden',
         status: 'pass',
-        detail: 'Aucune signature Coden requise avec un abonnement de publication actif.',
+        detail: 'Aucune signature Coden n’est ajoutée à votre application.',
       },
     ],
   };
@@ -16477,9 +16480,21 @@ async function loadPublicationUsage(organizationId: string): Promise<Publication
   };
 }
 
+/*
+ * The publication policy, as the owner set it (2026-09-24):
+ *
+ *   - every user may publish an app on the Coden domain (<slug>.coden.fun),
+ *     with or without a subscription, and it stays online;
+ *   - a custom domain is for paying subscribers: adding one requires an
+ *     active paid subscription, and when that subscription lapses past its
+ *     grace period the custom domain is detached — the app itself stays up
+ *     on its Coden address.
+ *
+ * So only the custom-domain operation is gated here.
+ */
 async function requirePublicationEntitlement(
   project: GeneratedProject,
-  operation: 'publish' | 'domain',
+  operation: 'domain',
   requestedDomain = '',
   requestedType = 'custom',
 ): Promise<PublicationEntitlement> {
@@ -16487,12 +16502,9 @@ async function requirePublicationEntitlement(
     requireSupabase('Publication entitlement'),
     project.organization_id,
   );
-  const allowed = operation === 'publish' ? entitlement.canPublish : entitlement.canAddDomain;
-  if (!allowed) {
+  if (!entitlement.canAddDomain) {
     throw createPublicError(
-      operation === 'publish'
-        ? 'Un abonnement payant actif est requis pour publier ce site.'
-        : 'Un abonnement payant actif est requis pour ajouter un domaine personnalisé.',
+      'Un abonnement payant actif est requis pour connecter un domaine personnalisé. Votre application reste publiable gratuitement sur son adresse Coden.',
       402,
       'PAID_SUBSCRIPTION_REQUIRED',
       'choose_paid_plan',
@@ -16500,19 +16512,6 @@ async function requirePublicationEntitlement(
   }
 
   const usage = await loadPublicationUsage(project.organization_id);
-  if (
-    operation === 'publish'
-    && entitlement.publishedSites !== null
-    && !usage.publishedProjectIds.has(project.id)
-    && usage.publishedProjectIds.size >= entitlement.publishedSites
-  ) {
-    throw createPublicError(
-      `Votre offre autorise ${entitlement.publishedSites} site${entitlement.publishedSites > 1 ? 's' : ''} publié${entitlement.publishedSites > 1 ? 's' : ''}. Mettez votre abonnement à niveau pour en publier un autre.`,
-      409,
-      'PUBLISHED_SITE_LIMIT_REACHED',
-      'upgrade_plan',
-    );
-  }
   const normalizedDomain = sanitizeDomainInput(requestedDomain);
   const isExistingCustomDomain = normalizedDomain ? usage.customDomains.has(normalizedDomain) : false;
   if (
@@ -16540,10 +16539,34 @@ async function canServePublishedProject(project: GeneratedProject): Promise<bool
   return entitlement.canServeExisting;
 }
 
+/** The custom domains a project has connected (Coden subdomains excluded). */
+async function customDomainsForProject(client: any, projectId: string): Promise<string[]> {
+  const [domainResult, deploymentDomainResult] = await Promise.all([
+    client.from('domains').select('domain,type,status').eq('project_id', projectId).neq('status', 'removed'),
+    client.from('deployment_domains').select('hostname,domain_type,status').eq('project_id', projectId).neq('status', 'removed'),
+  ]);
+  if (domainResult.error) throw new Error(`Custom-domain lookup failed: ${domainResult.error.message}`);
+  const domains = new Set<string>();
+  for (const row of (domainResult.data || []) as any[]) {
+    if (String(row.type || 'custom') === 'custom' && row.domain) domains.add(sanitizeDomainInput(String(row.domain)));
+  }
+  if (!deploymentDomainResult.error) {
+    for (const row of (deploymentDomainResult.data || []) as any[]) {
+      if (String(row.domain_type || 'custom') === 'custom' && row.hostname) domains.add(sanitizeDomainInput(String(row.hostname)));
+    }
+  }
+  return [...domains].filter(Boolean);
+}
+
 /**
- * Enforce the same entitlement on Vercel's direct URL as on Coden's proxy.
- * Projects stay intact: expiry pauses hosting after seven days, and a renewed
- * subscription resumes the existing provider project without deleting data.
+ * Keep hosting in line with the publication policy (see
+ * requirePublicationEntitlement).
+ *
+ * The Coden address is free and never paused. What a lapsed subscription
+ * loses, after its seven-day grace, is the custom domain: it is detached
+ * from the provider project, the app stays online on <slug>.coden.fun, and a
+ * renewed subscription attaches it again. Projects paused under the previous
+ * rule — which took the whole site down — are brought back online.
  */
 async function reconcilePublishedSiteEntitlements(): Promise<void> {
   const client = getSupabase();
@@ -16569,6 +16592,7 @@ async function reconcilePublishedSiteEntitlements(): Promise<void> {
 
   const suspensions = new Map(((suspensionResult.data || []) as any[]).map(row => [String(row.project_id), row]));
   const entitlementByOrganization = new Map<string, PublicationEntitlement>();
+  const now = () => new Date().toISOString();
   for (const projectRow of (projectResult.data || []) as any[]) {
     const organizationId = String(projectRow.organization_id || '');
     const projectId = String(projectRow.id || '');
@@ -16580,47 +16604,42 @@ async function reconcilePublishedSiteEntitlements(): Promise<void> {
     }
     const vercelProject = vercelProjectNameForSlug(String(projectRow.slug || projectId));
     const previous = suspensions.get(projectId);
+    const domainsDetached = previous?.status === 'paused' && previous?.reason === 'custom_domains_detached';
+    const record = (fields: Record<string, unknown>) => Promise.resolve(client.from('publication_entitlement_suspensions').upsert({
+      account_id: organizationId,
+      organization_id: organizationId,
+      project_id: projectId,
+      vercel_project: vercelProject,
+      updated_at: now(),
+      ...fields,
+    }, { onConflict: 'project_id' })).then(({ error }: any) => { if (error) throw error; });
     try {
+      // A whole site paused under the previous rule comes back: the Coden
+      // address is free.
+      if (previous?.status === 'paused' && !domainsDetached) {
+        const result = await unpauseVercelProject(vercelProject);
+        await record({ status: result === 'missing' ? 'missing' : 'active', reason: 'coden_domain_free', resumed_at: result === 'missing' ? null : now(), last_error: null });
+      }
+
       if (entitlement.canServeExisting) {
-        if (previous && previous.status !== 'active') {
-          const result = await unpauseVercelProject(vercelProject);
-          await client.from('publication_entitlement_suspensions').update({
-            status: result === 'missing' ? 'missing' : 'active',
-            resumed_at: result === 'missing' ? null : new Date().toISOString(),
-            last_error: null,
-            updated_at: new Date().toISOString(),
-          }).eq('project_id', projectId);
+        if (domainsDetached) {
+          for (const domain of await customDomainsForProject(client, projectId)) {
+            await attachVercelCustomDomain(vercelProject, domain);
+          }
+          await record({ status: 'active', reason: 'subscription_renewed', resumed_at: now(), last_error: null });
         }
         continue;
       }
 
-      const result = await pauseVercelProject(vercelProject);
-      const { error: persistError } = await client.from('publication_entitlement_suspensions').upsert({
-        account_id: organizationId,
-        organization_id: organizationId,
-        project_id: projectId,
-        vercel_project: vercelProject,
-        status: result === 'missing' ? 'missing' : 'paused',
-        reason: 'subscription_inactive_after_grace',
-        paused_at: result === 'missing' ? null : new Date().toISOString(),
-        resumed_at: null,
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'project_id' });
-      if (persistError) throw persistError;
+      if (domainsDetached) continue;
+      const domains = await customDomainsForProject(client, projectId);
+      if (!domains.length) continue;
+      for (const domain of domains) await removeVercelCustomDomain(vercelProject, domain);
+      await record({ status: 'paused', reason: 'custom_domains_detached', paused_at: now(), resumed_at: null, last_error: null });
     } catch (error: any) {
       const message = redactSecrets(error?.message || String(error), '[redacted]').slice(0, 1_000);
       console.warn('[coden:publication_entitlement_project_failed]', { project_id: projectId, message });
-      await Promise.resolve(client.from('publication_entitlement_suspensions').upsert({
-        account_id: organizationId,
-        organization_id: organizationId,
-        project_id: projectId,
-        vercel_project: vercelProject,
-        status: 'error',
-        reason: 'subscription_inactive_after_grace',
-        last_error: message,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'project_id' })).catch(() => null);
+      await record({ status: 'error', reason: 'custom_domain_reconciliation', last_error: message }).catch(() => null);
     }
   }
 }
@@ -16965,9 +16984,8 @@ app.use('/p/:slug', async (req: any, res: any, next: any) => {
   try {
     const project = await loadPublicProjectBySlug(req.params.slug);
     if (!project) return res.status(404).send('Published app not found.');
-    if (!(await canServePublishedProject(project))) {
-      return res.status(402).send('This app is temporarily offline.');
-    }
+    // The Coden address is free and stays online; only a custom domain
+    // depends on the subscription (below, in the custom-domain route).
     const deployment = await getLatestPublishedDeployment(project.id);
     if (!deployment || !isPublishedDeploymentReady(deployment)) return res.status(404).send('Published app not found.');
     return proxyPublishedDeployment(project, deployment, req, res, `/p/${encodeURIComponent(req.params.slug)}`);
@@ -17715,7 +17733,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     const project = await loadProjectForPublish(projectId, auth.userId, req);
     publishProjectRecord = project;
     if (!requireProjectCapability(req, res, 'deploy', project)) return;
-    await requirePublicationEntitlement(project, 'publish');
+    // Publishing on the Coden domain is open to every user (see
+    // requirePublicationEntitlement); only a custom domain is paid.
     const context = await createPublishContext(project);
     const publishStatus = buildPublishStatus(context);
     if (!publishStatus.can_publish) {
@@ -17993,7 +18012,6 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   const auth = getRequiredAuth(req);
   const project = await loadProjectForPublish(req.params.id, auth.userId, req);
   if (!requireProjectCapability(req, res, 'deploy', project)) return;
-  await requirePublicationEntitlement(project, 'publish');
   if (req.body?.confirmed !== true && req.body?.approvalGranted !== true) {
     return res.status(409).json({ success: false, requires_confirmation: true, error: 'Explicit confirmation is required before rollback.' });
   }

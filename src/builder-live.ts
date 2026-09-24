@@ -228,6 +228,8 @@ type PublishStatusPayload = {
   badge_required: boolean;
   checks: PublishCheck[];
   can_publish: boolean;
+  /** A custom domain is for paying subscribers; the Coden address is free. */
+  can_add_domain?: boolean;
   has_unpublished_changes: boolean;
 };
 
@@ -4089,7 +4091,24 @@ function domainRecordRows(domain: DomainRow) {
   `;
 }
 
-function renderDomainSection() {
+function renderDomainSection(canAddDomain = true) {
+  /*
+   * The Coden address is free for everyone; a custom domain is a paid
+   * feature. Without a subscription the form used to be offered anyway and
+   * failed on submit — the section now says so first and points to the plans.
+   */
+  if (!canAddDomain && !domainRows.length) {
+    return `
+      <div class="cdn-pub__section">
+        <div class="cdn-pub__section-head">
+          <strong>Domaine personnalisé</strong>
+          <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
+        </div>
+        <p class="cdn-dom__hint">Votre application est publiée gratuitement sur son adresse Coden. Pour la servir sur votre propre domaine (app.votremarque.com), passez à un abonnement payant.</p>
+        <button type="button" class="cdn-pub__secondary" data-publish-action="see-plans">Voir les offres</button>
+      </div>
+    `;
+  }
   const rows = domainRows.map(domain => {
     const state = String(domain.state || (domain.status === 'active' ? 'active' : 'dns_verification'));
     const label = domain.state_label || DOMAIN_STATE_TEXT[state] || state;
@@ -4223,7 +4242,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       : status.state === 'changes_unpublished'
         ? 'Des changements vérifiés sont prêts à remplacer la version publique.'
         : status.state === 'ready_to_publish'
-          ? 'La preview vérifiée est prête à être mise en ligne.'
+          ? 'Prête à être mise en ligne sur son adresse Coden.'
           : 'Terminez les contrôles bloquants avant de publier.';
 
   const securityRows = checks.map(check => {
@@ -4251,7 +4270,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       </div>
     `
     : publishPanelMode === 'domain'
-      ? renderDomainSection()
+      ? renderDomainSection(status?.can_add_domain !== false)
       : publishPanelMode === 'confirm' && status
         ? `
           <div class="cdn-pub__confirm">
