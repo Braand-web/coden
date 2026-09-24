@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RemoteExecutor, remoteEnv, remoteSandboxConfigured, setRemoteSandboxFactory, shellQuote, type RemoteSandboxClient } from './remote-executor';
+import { RemoteExecutor, imageTreeCheck, remoteEnv, remoteSandboxConfigured, setRemoteSandboxFactory, shellQuote, type RemoteSandboxClient } from './remote-executor';
 
 /** An in-memory VM: files, commands and a dev server that prints its URL. */
 function fakeVm(options: { failCommand?: RegExp; devOutput?: string } = {}) {
@@ -115,7 +116,8 @@ describe('remote executor (E2B microVM)', () => {
   });
 
   it('is what ProjectSandbox uses when E2B is configured, and the host never runs the command', async () => {
-    const vm = fakeVm();
+    // The image's tree is not this project's: the install runs, in the VM.
+    const vm = fakeVm({ failCommand: /^node -e / });
     const previous = setRemoteSandboxFactory(async () => vm.client);
     const saved = { key: process.env.E2B_API_KEY, env: process.env.NODE_ENV, root: process.env.CODEN_SANDBOX_ROOT };
     process.env.E2B_API_KEY = 'e2b_test';
@@ -130,9 +132,21 @@ describe('remote executor (E2B microVM)', () => {
       const install = await sandbox.install({ timeoutMs: 1000 });
       expect(install.ok).toBe(true);
       expect(await sandbox.hasDependencies()).toBe(true);
-      expect(vm.commands[0].cmd).toMatch(/^npm install/);
+      expect(vm.commands.map(command => command.cmd.split(' ').slice(0, 2).join(' '))).toEqual(expect.arrayContaining(['node -e', 'npm install']));
       await sandbox.destroy();
       expect(vm.killed).toBe(true);
+
+      // Same project on a VM whose image tree already is its own: no install.
+      const warm = fakeVm();
+      setRemoteSandboxFactory(async () => warm.client);
+      const second = new ProjectSandbox('remote-project-warm');
+      await second.writeFiles([{ path: 'package.json', content: '{"name":"y"}' }]);
+      const skipped = await second.install({ timeoutMs: 1000 });
+      expect(skipped.ok).toBe(true);
+      expect(skipped.output).toMatch(/already present/);
+      expect(await second.hasDependencies()).toBe(true);
+      expect(warm.commands.some(command => /^npm /.test(command.cmd))).toBe(false);
+      await second.destroy();
     } finally {
       setRemoteSandboxFactory(previous);
       if (saved.key === undefined) delete process.env.E2B_API_KEY; else process.env.E2B_API_KEY = saved.key;
@@ -196,5 +210,58 @@ describe('remote executor VM lifetime', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('dependencies already in the VM image', () => {
+  let root = '';
+  afterEach(async () => { if (root) await rm(root, { recursive: true, force: true }); root = ''; });
+
+  async function layout(project: Record<string, string>, installed: Record<string, string>) {
+    root = await mkdtemp(path.join(os.tmpdir(), 'coden-image-'));
+    const image = path.join(root, 'image');
+    const app = path.join(root, 'app');
+    await mkdir(image, { recursive: true });
+    await writeFile(path.join(image, 'package.json'), JSON.stringify({ dependencies: { react: '18.3.1', clsx: '^2.1.0' }, devDependencies: { vite: '6.2.0' } }));
+    await writeFile(path.join(image, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/react': { version: '18.3.1' }, 'node_modules/clsx': { version: '2.1.1' }, 'node_modules/vite': { version: '6.2.0' } } }));
+    await mkdir(app, { recursive: true });
+    await writeFile(path.join(app, 'package.json'), JSON.stringify({ dependencies: project }));
+    for (const [name, version] of Object.entries(installed)) {
+      await mkdir(path.join(app, 'node_modules', name), { recursive: true });
+      await writeFile(path.join(app, 'node_modules', name, 'package.json'), JSON.stringify({ name, version }));
+    }
+    return { image, app };
+  }
+  const satisfied = (image: string, app: string) => {
+    try { execFileSync(process.execPath, ['-e', imageTreeCheck(image)], { cwd: app, stdio: 'ignore' }); return true; } catch { return false; }
+  };
+
+  it('skips the install when every dependency is the image\'s own', async () => {
+    const { image, app } = await layout({ react: '18.3.1', clsx: '^2.1.0' }, { react: '18.3.1', clsx: '2.1.1' });
+    expect(satisfied(image, app)).toBe(true);
+  });
+
+  it('installs when a package is new, at another version, or not from the registry', async () => {
+    let dirs = await layout({ react: '18.3.1', recharts: '2.15.0' }, { react: '18.3.1' });
+    expect(satisfied(dirs.image, dirs.app)).toBe(false);
+    await rm(root, { recursive: true, force: true });
+    dirs = await layout({ react: '19.0.0' }, { react: '18.3.1' });
+    expect(satisfied(dirs.image, dirs.app)).toBe(false);
+    await rm(root, { recursive: true, force: true });
+    dirs = await layout({ clsx: '^2.0.0' }, { clsx: '2.1.1' });
+    expect(satisfied(dirs.image, dirs.app)).toBe(false);
+    await rm(root, { recursive: true, force: true });
+    dirs = await layout({ react: 'github:facebook/react' }, { react: '18.3.1' });
+    expect(satisfied(dirs.image, dirs.app)).toBe(false);
+  });
+
+  it('asks the VM, and a failing check means install', async () => {
+    const ok = fakeVm();
+    const executor = new RemoteExecutor('p1', await projectDir({ 'package.json': '{}' }), async () => ok.client);
+    expect(await executor.imageSatisfiesDependencies()).toBe(true);
+    expect(ok.commands.some(command => /^node -e /.test(command.cmd))).toBe(true);
+    const failing = fakeVm({ failCommand: /^node -e / });
+    const other = new RemoteExecutor('p2', dir, async () => failing.client);
+    expect(await other.imageSatisfiesDependencies()).toBe(false);
   });
 });

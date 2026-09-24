@@ -76,6 +76,7 @@ export function remoteSandboxConfigured(env: Record<string, string | undefined> 
 export const CODEN_TEMPLATE_NAME = 'coden-vite-node22';
 const PREINSTALLED_DEPS = '/opt/coden-deps';
 let templateReady: Promise<string | undefined> | null = null;
+const STILL_BUILDING = Symbol('still-building');
 
 export function prepareRemoteTemplate(manifest: Record<string, unknown>): Promise<string | undefined> {
   if (process.env.CODEN_E2B_TEMPLATE) return Promise.resolve(process.env.CODEN_E2B_TEMPLATE);
@@ -107,10 +108,17 @@ export function prepareRemoteTemplate(manifest: Record<string, unknown>): Promis
   return templateReady;
 }
 
+/*
+ * How long a new VM waits for the image build started at boot. A deploy that
+ * changes the image rebuilds it, which takes minutes, and every preview
+ * started meanwhile used to wait for the whole build. The previous build of
+ * the same name still serves; only a first-ever build is worth waiting for.
+ */
+const TEMPLATE_WAIT_MS = 3_000;
+
 /** The E2B SDK, loaded only when a VM is actually needed. */
 export const e2bFactory: RemoteSandboxFactory = async options => {
   const { Sandbox } = await import('e2b');
-  const template = options.template ?? await (templateReady ?? Promise.resolve(undefined));
   const opts = {
     apiKey: process.env.E2B_API_KEY,
     timeoutMs: options.timeoutMs,
@@ -118,7 +126,23 @@ export const e2bFactory: RemoteSandboxFactory = async options => {
     envs: options.envs,
     allowInternetAccess: true,
   };
-  const sandbox = template ? await Sandbox.create(template, opts) : await Sandbox.create(opts);
+  const building = templateReady;
+  let template = options.template;
+  let sandbox: Awaited<ReturnType<typeof Sandbox.create>> | null = null;
+  if (!template && building) {
+    const settled = await Promise.race([
+      building,
+      new Promise<symbol>(resolve => { setTimeout(() => resolve(STILL_BUILDING), TEMPLATE_WAIT_MS).unref?.(); }),
+    ]);
+    if (settled === STILL_BUILDING) {
+      // The image's earlier build, while the new one is made.
+      sandbox = await Sandbox.create(CODEN_TEMPLATE_NAME, opts).catch(() => null);
+      if (!sandbox) template = await building;
+    } else {
+      template = settled as string | undefined;
+    }
+  }
+  sandbox ??= template ? await Sandbox.create(template, opts) : await Sandbox.create(opts);
   // Start from the preinstalled tree when the image has one.
   await sandbox.commands.run(
     `mkdir -p ${APP_DIR} && if [ -d ${PREINSTALLED_DEPS}/node_modules ] && [ ! -d ${APP_DIR}/node_modules ]; then cp -r ${PREINSTALLED_DEPS}/node_modules ${APP_DIR}/; fi`
@@ -128,6 +152,39 @@ export const e2bFactory: RemoteSandboxFactory = async options => {
   ).catch(() => undefined);
   return sandbox as unknown as RemoteSandboxClient;
 };
+
+/*
+ * Whether the tree the VM copied from its image already is the project's.
+ *
+ * Most projects keep the scaffold's dependencies, pinned to the versions the
+ * image was built with, so `npm install` found nothing to change — after
+ * re-resolving every package's metadata, which took most of the half minute
+ * before a first preview. Each dependency must be installed at its exact
+ * version, or, for a range, at the version the image resolved for that same
+ * range. Anything else (a new package, another version, a git or file
+ * specifier) and the ordinary install runs.
+ */
+export function imageTreeCheck(depsDir = PREINSTALLED_DEPS): string {
+  return `
+const fs = require('fs');
+const read = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
+const pkg = read('package.json');
+if (!pkg) process.exit(1);
+const image = read(${JSON.stringify(`${depsDir}/package.json`)}) || {};
+const lock = read(${JSON.stringify(`${depsDir}/package-lock.json`)}) || {};
+const imageSpecs = { ...image.dependencies, ...image.devDependencies };
+const exact = /^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/;
+for (const [name, spec] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
+  if (!/^(?:@[a-z0-9._-]+\\/)?[a-z0-9._-]+$/i.test(name)) process.exit(1);
+  const installed = (read('node_modules/' + name + '/package.json') || {}).version;
+  if (!installed) process.exit(1);
+  if (exact.test(String(spec))) { if (installed !== spec) process.exit(1); continue; }
+  const resolved = ((lock.packages || {})['node_modules/' + name] || {}).version;
+  if (imageSpecs[name] !== spec || installed !== resolved) process.exit(1);
+}
+process.exit(0);
+`;
+}
 
 let activeFactory: RemoteSandboxFactory = e2bFactory;
 /** Swap the VM provider (tests use an in-memory stand-in). Returns the previous one. */
@@ -300,6 +357,16 @@ export class RemoteExecutor {
     }
   }
 
+  /** True when the VM's dependency tree already satisfies package.json; see imageTreeCheck. */
+  async imageSatisfiesDependencies(env: Record<string, string> = {}, signal?: AbortSignal): Promise<boolean> {
+    try {
+      const result = await this.run('node', ['-e', imageTreeCheck()], { env, timeoutMs: 30_000, signal });
+      return result.code === 0;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Start the dev server in the VM and resolve with its public origin once it
    * reports its URL. The caller probes the origin before calling it ready.
@@ -371,7 +438,6 @@ export class RemoteExecutor {
     this.releaseTimer = null;
   }
 
-  /** Release the VM now. Its files are the host's; nothing is lost. */
   /**
    * Push the VM's expiry forward, at most once a minute. False when the VM
    * no longer exists, in which case it is forgotten so the next use creates
@@ -411,6 +477,7 @@ export class RemoteExecutor {
     this.lastExtendedAt = 0;
   }
 
+  /** Release the VM now. Its files are the host's; nothing is lost. */
   async destroy(): Promise<void> {
     this.cancelRelease();
     const client = this.client;

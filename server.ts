@@ -16971,6 +16971,10 @@ async function proxyPublishedDeployment(project: GeneratedProject, deployment: a
       return res.send(upstream.ok ? rewritePublishedHtmlForProxy(html, project, deployment, proxyBasePath) : html);
     }
 
+    // The page above is sandboxed (opaque origin), so its own module scripts
+    // are CORS requests from `null`: without this they are refused and the
+    // published app is a white page. Public files, sent without credentials.
+    res.setHeader('Access-Control-Allow-Origin', '*');
     const body = Buffer.from(await upstream.arrayBuffer());
     return res.send(body);
   }
@@ -17257,9 +17261,10 @@ function requireLiveSandbox(res: any): boolean {
 }
 
 app.all(/^\/preview\/([^/]+)(\/.*)?$/, (req: any, res: any) => {
-  // Error documents must also be embeddable inside the isolated Builder.
+  // Error documents must also be embeddable inside the isolated Builder. The
+  // frame is sandboxed (opaque origin), so same-origin CORP would refuse it.
   res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   if (!LIVE_SANDBOX_ENABLED) return res.status(503).json({ error: 'live_sandbox_disabled' });
   const token = req.params[0];
   const grant = readPreviewToken(token);

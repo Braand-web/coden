@@ -86,7 +86,11 @@ try {
   assert.equal(page.headers.get('x-frame-options'), null, 'X-Frame-Options must not reach the browser');
   assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'self'", 'only the Builder origin may embed the preview');
   assert.equal(page.headers.get('cross-origin-embedder-policy'), 'credentialless', 'preview documents must match the isolated Builder COEP');
-  assert.equal(page.headers.get('cross-origin-resource-policy'), 'same-origin');
+  // The builder's frame is sandboxed: its origin is `null`, so every module
+  // it loads is cross-origin. same-origin CORP and the dev server's
+  // localhost-only CORS left it a white page.
+  assert.equal(page.headers.get('cross-origin-resource-policy'), 'cross-origin', 'the sandboxed frame must be able to load its own assets');
+  assert.equal(asset.headers.get('access-control-allow-origin'), '*', 'module scripts from the null-origin frame need CORS');
   assert.equal(asset.headers.get('cross-origin-embedder-policy'), 'credentialless', 'assets preserve the embedding policy too');
   assert.equal(page.headers.get('x-dev-server'), 'yes', 'other headers still pass through');
 
