@@ -424,6 +424,13 @@ function persistedMessage(message: CodenConversationMessage): CodenConversationM
   return copy;
 }
 
+/** Clarifying questions are plain replies now; one saved as a card is shown as its question. */
+function withoutClarificationCard(message: CodenConversationMessage): CodenConversationMessage {
+  const block = message.block as { type?: string; title?: string; body?: string } | undefined;
+  if (block?.type !== 'confirmation' || !/^clarification (?:necessaire|nécessaire|needed)$/i.test(String(block.title || '').trim())) return message;
+  return { ...message, block: undefined, content: String(block.body || message.content || '') };
+}
+
 function restorePersistedMessages(storageKey: string): CodenConversationMessage[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -433,7 +440,7 @@ function restorePersistedMessages(storageKey: string): CodenConversationMessage[
     return parsed
       .filter((message): message is CodenConversationMessage => Boolean(message && typeof message.id === 'string' && typeof message.role === 'string' && typeof message.content === 'string'))
       .slice(-MAX_PERSISTED_MESSAGES)
-      .map((message) => ({ ...message, actions: [] }));
+      .map((message) => withoutClarificationCard({ ...message, actions: [] }));
   } catch {
     return [];
   }

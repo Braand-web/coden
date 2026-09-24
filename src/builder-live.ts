@@ -6906,16 +6906,9 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       scheduleJournal(true);
     }
 
-    if (responsePayload.intent?.intent === 'clarification_required') {
-      setMessageBlock(target, {
-        type: 'confirmation',
-        title: speaksFrench ? 'Clarification necessaire' : 'Clarification needed',
-        body: finalText,
-        state: 'approval-requested',
-        approveLabel: speaksFrench ? 'Repondre' : 'Answer',
-        rejectLabel: speaksFrench ? 'Annuler' : 'Cancel',
-      });
-    }
+    // A clarifying question stays an ordinary reply, answered in the composer.
+    // It used to be wrapped in a "Décision requise / Clarification nécessaire"
+    // card that added two headings and nothing the question did not say.
 
     if (Array.isArray(responsePayload.errors) && responsePayload.errors.length) showFixBugBox(responsePayload.errors);
     if (generationTouchesPreview && !previewHtml && !liveUrl) setEmptyPreviewState('idle', 'Preview non vérifiée');
