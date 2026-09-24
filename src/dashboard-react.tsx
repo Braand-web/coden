@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { isLocalPreviewEnabled } from './local-preview';
-import { ensureSettingsPanel, openSettings } from './settings-panel';
+import { ensureSettingsPanel, openBillingFromUrl, openSettings } from './settings-panel';
 import {
   formatCreateProjectFlowStatus,
   startCreateProjectFlow,
@@ -531,6 +531,12 @@ function DashboardHome() {
   useEffect(() => {
     try { window.localStorage.setItem('coden-dashboard-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* storage can be unavailable */ }
   }, [sidebarCollapsed]);
+
+  // An offer chosen on the landing or the pricing page, or the return from
+  // Saspay: open Billing on it instead of dropping it.
+  useEffect(() => {
+    if (!isLocal) openBillingFromUrl();
+  }, []);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && sidebarOpen) setSidebarOpen(false); };
