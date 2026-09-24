@@ -58,7 +58,8 @@ const DEFAULT_INSTALL_TIMEOUT_MS = 180_000;
 const DEFAULT_START_TIMEOUT_MS = 90_000;
 const MAX_LOG_LINES = 400;
 
-function hostSandboxExecutionAllowed(): boolean {
+/** Whether generated code may run here at all. The pipeline needs it; the legacy path does not. */
+export function hostSandboxExecutionAllowed(): boolean {
   return process.env.NODE_ENV !== 'production' || process.env.CODEN_SANDBOX_ISOLATION === 'container';
 }
 

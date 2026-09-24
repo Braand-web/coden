@@ -64,3 +64,16 @@ console.log('session memory wiring tests passed');
   assert.match(router, /If Coden proposed to build or change something and the user agrees/, 'a yes to a proposal starts it');
 }
 console.log('live-test regression checks passed');
+
+/*
+ * Live test, 2026-09-24: "je veux une app de prise de rendez-vous premium"
+ * failed in 2 s with SECURE_SANDBOX_REQUIRED. The pipeline ran where the
+ * sandbox may not execute code, and the failure was recorded as an
+ * interruption. No production build had succeeded since 2026-09-13.
+ */
+{
+  assert.match(server, /if \(CODEN_AGENT_FLAGS\.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed\(\)\) \{/, 'the pipeline only runs where its sandbox can');
+  assert.match(server, /\[coden:pipeline_sandbox_unavailable\]/, 'and the deployment says at boot which path it runs');
+  assert.match(server, /await updateAgentRunStatus\(pipelineRunId, 'failed', \{\n\s+diagnostic_code: failureCode,/, 'a failed build records its real cause on its run');
+}
+console.log('sandbox gate checks passed');

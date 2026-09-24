@@ -13105,7 +13105,30 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * intents fall through completely unaffected, flag or no flag.
    */
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
-  if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute) {
+  /*
+   * The mission is the request with the conversation resolved.
+   *
+   * "oui vas-y" or "une ville avec des humains" is an answer, not a
+   * mission: built on literally, the planner had nothing to plan. When the
+   * router restated it, the build runs on the restatement, and the user's
+   * own words are kept beside it so nothing they said is lost.
+   */
+  const resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
+    ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")`
+    : agentPrompt;
+  /*
+   * The pipeline only where it can run.
+   *
+   * It installs, starts and tests the app in a sandbox, and in production the
+   * sandbox refuses to execute generated code without an isolation boundary
+   * (CODEN_SANDBOX_ISOLATION=container). The pipeline flag defaulted to on
+   * regardless, so every production build died on its first command —
+   * SECURE_SANDBOX_REQUIRED, reported as AGENT_EXECUTION_FAILED or
+   * RUN_INTERRUPTED — and not one build succeeded from 2026-09-13 on. Without
+   * an executable sandbox the request takes the generation path that needs
+   * none, and the boundary itself stays exactly where it is.
+   */
+  if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed()) {
     if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
     const billingAccountId = project.organization_id || userId;
     const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
@@ -13219,17 +13242,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
         eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
       }
-      /*
-       * The mission is the request with the conversation resolved.
-       *
-       * "oui vas-y" or "une ville avec des humains" is an answer, not a
-       * mission: built on literally, the planner had nothing to plan. When the
-       * router restated it, the build runs on the restatement, and the user's
-       * own words are kept beside it so nothing they said is lost.
-       */
-      const resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
-        ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")`
-        : agentPrompt;
       const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
 
 ---
@@ -13517,6 +13529,18 @@ ${resolvedMission}` : resolvedMission;
         projectId: project.id,
         failure: { code: failureCode, message: interrupted ? 'generation interrupted' : String(error?.message || '') },
       });
+      /*
+       * The run's own row says how it ended, with the real cause.
+       *
+       * It was left `running`, and the boot reaper later stamped it
+       * RUN_INTERRUPTED — which is why twelve days of builds failing on
+       * SECURE_SANDBOX_REQUIRED read as interruptions in the ledger.
+       */
+      await updateAgentRunStatus(pipelineRunId, 'failed', {
+        diagnostic_code: failureCode,
+        suggested_action: 'retry',
+        public_payload: { failure: redactSecrets(String(error?.message || '')).slice(0, 500) },
+      }).catch(() => undefined);
       // Partial files are retained by onSnapshot; surface the failure for recovery.
       if (interrupted) {
         return respondJson(499,{ success: false, diagnostic_code:'RUN_INTERRUPTED', error: frenchActivity ? 'Génération interrompue.' : 'Generation interrupted.' });
@@ -14010,7 +14034,11 @@ ${resolvedMission}` : resolvedMission;
         throw error;
       }
     }
-    const steeredAgentPrompt = promptWithPendingAgentInstructions(agentPrompt, agentRunId);
+    // The same resolved mission as the pipeline, plus what this session already did.
+    const steeredAgentPrompt = promptWithPendingAgentInstructions(
+      sessionContext ? `${resolvedMission}\n\n${sessionContext}` : resolvedMission,
+      agentRunId,
+    );
     const basePrompt = req.body?.useLastPlan && lastPlan ? `${lastPlan}\n\nUser confirmed build: ${steeredAgentPrompt}` : steeredAgentPrompt;
     const skillAwarePrompt = `${basePrompt}\n\n[CODEN SELECTED SKILLS]\n${renderCodenSkillPlan(skillPlan)}\nUse only these selected policies. Do not load or imitate unselected skills.`;
     const generationProjectName = isAutomaticallyDerivedProjectName(project.name, project.prompt || prompt)
@@ -14479,6 +14507,13 @@ ${resolvedMission}` : resolvedMission;
         console.warn('[coden:needs_fix_draft_save_failed]', { project_id: project.id, message: redactSecrets(error?.message || String(error), '[redacted]') });
       });
       const diff = diffFiles(existingFiles, finalFiles);
+      void recordSessionRun(project, userId, {
+        at: new Date().toISOString(),
+        request: prompt,
+        outcome: 'needs_fix',
+        files: [...diff.created, ...diff.modified, ...diff.deleted.map((path: string) => `${path} (deleted)`)],
+        summary: decision.userVisibleReason,
+      });
       await createProjectVersion(recoverableProject, finalFiles, prompt, {
         ...diff,
         verification: verificationSummary,
@@ -14669,6 +14704,14 @@ ${resolvedMission}` : resolvedMission;
      */
     const diff = diffFiles(existingFiles, finalFiles);
     await createProjectVersion(updatedProject, finalFiles, prompt, { ...diff, verification: verificationSummary, reliability: reliabilitySummary, agent_run_id: agentRunId || null });
+    // The session remembers this build too, whichever path produced it.
+    void recordSessionRun(project, userId, {
+      at: new Date().toISOString(),
+      request: prompt,
+      outcome: 'verified',
+      files: [...diff.created, ...diff.modified, ...diff.deleted.map((path: string) => `${path} (deleted)`)],
+      summary: decision.userVisibleReason,
+    });
     if (autoFix) await saveProjectPatch(updatedProject, autoFix);
     await upsertAgentMemory(updatedProject, userId, summarizeAgentMemory({
       projectName: updatedProject.name,
@@ -16970,7 +17013,7 @@ import { renderProjectArchitecture } from './src/services/project-architecture.t
 import { repairNarration, writingFileNarration } from './src/services/agent-narration.ts';
 import { launchProjectPreview, applyProjectEdit } from './src/services/sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, STARTER_ENTRY_PATH, STARTER_ENTRY_PLACEHOLDER, STARTERS } from './src/services/sandbox/starters.ts';
-import { ProjectSandbox } from './src/services/sandbox/project-sandbox.ts';
+import { ProjectSandbox, hostSandboxExecutionAllowed } from './src/services/sandbox/project-sandbox.ts';
 import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
@@ -18059,6 +18102,14 @@ const httpServer = app.listen(port, () => {
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
+  // Say at boot which build path this deployment can run, instead of letting
+  // the first user build discover it.
+  if (CODEN_AGENT_FLAGS.multiAgentPipeline && !hostSandboxExecutionAllowed()) {
+    console.warn('[coden:pipeline_sandbox_unavailable]', {
+      effect: 'builds use the generation path without a live sandbox (no install, dev server or browser checks)',
+      enable: 'run the sandbox behind an isolation boundary and set CODEN_SANDBOX_ISOLATION=container',
+    });
+  }
   // Every slug checked against the live OpenRouter catalogue: a missing one is
   // logged and hidden, never called, and never stops the server.
   void validateCatalogModels(MODEL_REGISTRY.map(model => model.id)).then(({ missing }) => {

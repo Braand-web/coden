@@ -134,7 +134,8 @@ try {
   // or the same page inside the builder's iframe would be blank.
   const headers = (await page.goto(previewUrl))!.headers();
   assert.equal(headers['x-frame-options'], undefined);
-  assert.equal(headers['content-security-policy'], undefined);
+  // The proxy sets its own policy: framing by the Builder (same origin) only.
+  assert.equal(headers['content-security-policy'], "frame-ancestors 'self'");
   await page.waitForSelector('#title');
 
   // -- hot module reload, through the proxy, in a real browser -------------

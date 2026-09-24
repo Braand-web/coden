@@ -64,7 +64,7 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
 {
   const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   const branch = server.slice(
-    server.indexOf('if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute)'),
+    server.indexOf('if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed())'),
     server.indexOf('const publicGoal = String(decision.modelObjective?.goal'),
   );
 
