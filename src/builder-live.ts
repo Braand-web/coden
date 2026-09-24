@@ -816,7 +816,8 @@ function syncDesignControls() {
 }
 
 function normalizeWorkshop(value: unknown): StudioWorkshop {
-  return value === 'design' || value === 'decks' || value === 'media' ? value : 'chat';
+  // Coden Design was removed: a workshop saved as 'design' reopens as Chat.
+  return value === 'decks' || value === 'media' ? value : 'chat';
 }
 
 function currentWorkshopConfig() {
@@ -8660,7 +8661,7 @@ function ensureResizableSidebar() {
   });
 }
 
-type MobileBuilderView = 'chat' | 'preview' | 'code' | 'design' | 'more';
+type MobileBuilderView = 'chat' | 'preview' | 'code' | 'more';
 
 function setMobileBuilderView(view: MobileBuilderView) {
   const body = document.querySelector('.workspace-body') as HTMLElement | null;
@@ -8680,11 +8681,6 @@ function setMobileBuilderView(view: MobileBuilderView) {
   if (view === 'code') {
     closeProjectMenu();
     activateBuilderView('code');
-    return;
-  }
-  if (view === 'design') {
-    closeProjectMenu();
-    setActiveWorkshop('design', { focusInput: true });
     return;
   }
   if (view === 'more') {

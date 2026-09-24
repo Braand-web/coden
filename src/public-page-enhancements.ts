@@ -34,8 +34,8 @@ const SHARED_FAQ_ITEMS = [
     answer: 'Provider keys, service-role keys and private tokens should never be exposed in generated frontend code. Server-side secrets stay in backend environments such as Railway, Supabase or secure deployment settings.',
   },
   {
-    question: 'What are Coden Design, Decks and Media?',
-    answer: 'They are beta creative workspaces for interface direction, pitch decks and marketing media. The main assistant stays the same, but the workspace context changes depending on what you want to create.',
+    question: 'What are Coden Decks and Media?',
+    answer: 'They are beta creative workspaces for pitch decks and marketing media. The main assistant stays the same, but the workspace context changes depending on what you want to create.',
   },
 ];
 
