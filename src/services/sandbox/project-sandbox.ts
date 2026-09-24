@@ -34,6 +34,10 @@ import { existsSync } from 'node:fs';
 import { decideCommand } from './command-policy.ts';
 import { resolveInSandbox, sandboxDir } from './paths.ts';
 import { restoreDependencies, saveDependencies } from './dependency-cache.ts';
+import { RemoteExecutor, remoteSandboxConfigured } from './remote-executor.ts';
+import { createHash } from 'node:crypto';
+
+const manifestHash = (manifest: string) => createHash('sha256').update(manifest).digest('hex');
 
 export type SandboxState = 'idle' | 'installing' | 'starting' | 'running' | 'stopped' | 'crashed';
 
@@ -50,6 +54,8 @@ export type SandboxStatus = {
   lastError: string | null;
   /** The prefix the dev server was told to serve under, so the proxy agrees with it. */
   basePath: string | null;
+  /** Where the dev server answers when it runs in a remote VM (https://…); null when local. */
+  origin: string | null;
   startedAt: number | null;
   lastUsedAt: number;
 };
@@ -60,6 +66,8 @@ const MAX_LOG_LINES = 400;
 
 /** Whether generated code may run here at all. The pipeline needs it; the legacy path does not. */
 export function hostSandboxExecutionAllowed(): boolean {
+  // An E2B microVM is the isolation boundary: code runs there, never here.
+  if (remoteSandboxConfigured()) return true;
   return process.env.NODE_ENV !== 'production' || process.env.CODEN_SANDBOX_ISOLATION === 'container';
 }
 
@@ -176,6 +184,9 @@ export class ProjectSandbox {
   private basePath = '';
   private logs: SandboxLog[] = [];
   private env: Record<string, string> = {};
+  /** Set when execution happens in an isolated VM rather than on this host. */
+  private readonly remote: RemoteExecutor | null;
+  private origin: string | null = null;
   /** Serialises install/start/stop so two requests cannot race the process. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -184,6 +195,12 @@ export class ProjectSandbox {
   constructor(projectId: string) {
     this.projectId = projectId;
     this.dir = sandboxDir(projectId);
+    this.remote = remoteSandboxConfigured() ? new RemoteExecutor(projectId, this.dir) : null;
+  }
+
+  /** Whether commands and the dev server run in an isolated VM. */
+  get isRemote(): boolean {
+    return Boolean(this.remote);
   }
 
   // -- state -----------------------------------------------------------
@@ -192,8 +209,9 @@ export class ProjectSandbox {
     return {
       projectId: this.projectId,
       state: this.state,
-      url: this.port ? `http://127.0.0.1:${this.port}` : null,
+      url: this.origin || (this.port ? `http://127.0.0.1:${this.port}` : null),
       basePath: this.basePath || null,
+      origin: this.origin,
       port: this.port,
       pid: this.child?.pid ?? null,
       lastError: this.lastError,
@@ -222,6 +240,7 @@ export class ProjectSandbox {
     if (this.state !== 'running' && this.state !== 'starting') return;
     this.state = 'crashed';
     this.port = null;
+    this.origin = null;
     this.lastError = reason;
     this.log('system', `Preview unreachable: ${reason}`);
   }
@@ -302,6 +321,19 @@ export class ProjectSandbox {
     return found.sort();
   }
 
+  /**
+   * Whether this project's dependencies are installed where its code runs.
+   * Locally that is the host's node_modules; in a VM it is what the VM itself
+   * installed for the current package.json — the host holds no node_modules.
+   */
+  async hasDependencies(): Promise<boolean> {
+    if (this.remote) {
+      const manifest = await this.readProjectFile('package.json').catch(() => '');
+      return Boolean(manifest) && this.remote.installedManifest === manifestHash(manifest);
+    }
+    return (await this.hasFile('node_modules/.package-lock.json')) || (await this.hasFile('node_modules/.bin'));
+  }
+
   async hasFile(relativePath: string): Promise<boolean> {
     try {
       await stat(resolveInSandbox(this.projectId, relativePath));
@@ -352,7 +384,6 @@ export class ProjectSandbox {
     args: readonly string[],
     options: { timeoutMs?: number; allowReview?: boolean; signal?: AbortSignal } = {},
   ): Promise<{ code: number | null; output: string; timedOut: boolean }> {
-    assertHostSandboxExecutionAllowed();
     options.signal?.throwIfAborted();
     const decision = decideCommand(binary, args);
     if (decision.verdict === 'blocked' || (decision.verdict === 'review' && !options.allowReview)) {
@@ -360,6 +391,16 @@ export class ProjectSandbox {
     }
     this.lastUsedAt = Date.now();
     const timeoutMs = options.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS;
+    // Same policy, same result shape — executed in the project's VM.
+    if (this.remote) {
+      return this.remote.run(binary, args, {
+        env: this.env,
+        timeoutMs,
+        signal: options.signal,
+        onOutput: (stream, text) => this.log(stream, text),
+      });
+    }
+    assertHostSandboxExecutionAllowed();
     return new Promise((resolve, reject) => {
       const command = executable(binary,args);
       const child = spawn(command.binary, command.args, {
@@ -410,8 +451,9 @@ export class ProjectSandbox {
       this.state = 'installing';
       this.lastError = null;
       this.log('system', 'Installing dependencies...');
-      // Same manifest as an earlier project: copy its installed tree.
-      if (await restoreDependencies(this.dir)) {
+      // Same manifest as an earlier project: copy its installed tree. Local
+      // only — a VM installs into its own disk, and a host copy would never reach it.
+      if (!this.remote && await restoreDependencies(this.dir)) {
         this.state = 'idle';
         this.log('system', 'Dependencies restored from the install cache.');
         return { ok: true, output: 'Dependencies restored from the install cache.', durationMs: Date.now() - startedAt };
@@ -435,7 +477,8 @@ export class ProjectSandbox {
         } else {
           this.state = 'idle';
           // Kept in the background for the next project with this manifest.
-          void saveDependencies(this.dir).catch(() => undefined);
+          if (!this.remote) void saveDependencies(this.dir).catch(() => undefined);
+          else this.remote.installedManifest = manifestHash(await this.readProjectFile('package.json').catch(() => ''));
         }
         return {
           ok,
@@ -460,8 +503,9 @@ export class ProjectSandbox {
    */
   start(options: { script?: string; timeoutMs?: number; basePath?: string; signal?: AbortSignal } = {}): Promise<SandboxStatus> {
     return this.serialise(async () => {
-      assertHostSandboxExecutionAllowed();
       options.signal?.throwIfAborted();
+      if (this.remote) return this.startRemote(options);
+      assertHostSandboxExecutionAllowed();
       if (this.child && this.state === 'running') return this.status();
       await this.stopProcess();
       const script = options.script || 'dev';
@@ -552,6 +596,48 @@ export class ProjectSandbox {
     });
   }
 
+  /** The dev server in the project's VM, reached at its HTTPS origin. */
+  private async startRemote(options: { script?: string; timeoutMs?: number; basePath?: string; signal?: AbortSignal }): Promise<SandboxStatus> {
+    if (this.state === 'running' && this.origin) return this.status();
+    const timeoutMs = options.timeoutMs ?? DEFAULT_START_TIMEOUT_MS;
+    this.state = 'starting';
+    this.lastError = null;
+    this.port = null;
+    this.origin = null;
+    this.basePath = normaliseBase(options.basePath);
+    this.startedAt = Date.now();
+    this.log('system', `Starting the dev server in the isolated sandbox (npm run ${options.script || 'dev'})...`);
+    try {
+      const { port, origin } = await this.remote!.startServer({
+        script: options.script || 'dev',
+        basePath: this.basePath,
+        env: this.env,
+        timeoutMs,
+        signal: options.signal,
+        onOutput: (stream, text) => this.log(stream, text),
+        onExit: code => {
+          if (this.state !== 'running') return;
+          this.state = code === 0 ? 'stopped' : 'crashed';
+          this.port = null;
+          this.origin = null;
+          if (code !== 0) this.lastError = `The dev server stopped with code ${code ?? 'unknown'}.`;
+        },
+      });
+      await waitForHttp(`${origin}${this.basePath || '/'}`, Math.min(30_000, timeoutMs), options.signal);
+      this.port = port;
+      this.origin = origin;
+      this.state = 'running';
+      this.lastUsedAt = Date.now();
+      this.log('system', 'Preview ready in the isolated sandbox.');
+      return this.status();
+    } catch (error: any) {
+      this.lastError = error?.message || 'The dev server failed to start.';
+      this.state = 'crashed';
+      await this.remote!.stopServer().catch(() => undefined);
+      return this.status();
+    }
+  }
+
   stop(): Promise<SandboxStatus> {
     return this.serialise(async () => {
       await this.stopProcess();
@@ -570,6 +656,12 @@ export class ProjectSandbox {
    * process that already detached itself).
    */
   private async stopProcess(): Promise<void> {
+    if (this.remote) {
+      this.port = null;
+      this.origin = null;
+      await this.remote.stopServer();
+      return;
+    }
     const child = this.child;
     this.child = null;
     this.port = null;
@@ -605,6 +697,7 @@ export class ProjectSandbox {
   /** Stop the server and delete everything this project owns. */
   async destroy(): Promise<void> {
     await this.stop();
+    await this.remote?.destroy();
     await rm(this.dir, {
       recursive: true,
       force: true,

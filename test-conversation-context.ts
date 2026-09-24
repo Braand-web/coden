@@ -77,3 +77,19 @@ console.log('live-test regression checks passed');
   assert.match(server, /await updateAgentRunStatus\(pipelineRunId, 'failed', \{\n\s+diagnostic_code: failureCode,/, 'a failed build records its real cause on its run');
 }
 console.log('sandbox gate checks passed');
+
+/*
+ * Session analysis 2026-09-24 (all generations failing in production).
+ */
+{
+  assert.match(server, /const needsVision = hasImages;/, 'vision is required by attached images, not by words like "photo"');
+  assert.match(server, /\[coden:pinned_model_substituted\]/, 'a pinned model that cannot do the request is substituted, not a failed run');
+  assert.match(server, /const onlyRuntimeUnavailable = runnerSkipped/, 'a missing runtime alone does not fail a clean build');
+  assert.match(server, /onFileStarted: eventStream/, 'the generation path shows each file as it is written');
+  assert.match(server, /75 \* 60_000/, 'runs past the generation ceiling are closed, not left running');
+  const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
+  assert.match(pipeline, /selection = selectModel\(selectionRequest\);/, 'the pipeline substitutes an incompatible pinned model too');
+  const sandbox = readFileSync(new URL('./src/services/sandbox/project-sandbox.ts', import.meta.url), 'utf8');
+  assert.match(sandbox, /if \(remoteSandboxConfigured\(\)\) return true;/, 'an E2B key enables the isolated sandbox');
+}
+console.log('session analysis regression checks passed');

@@ -45,9 +45,19 @@ export function resolveQualityPolicy(input: {
   const credits = typeof input.credits === 'number' && Number.isFinite(input.credits) ? input.credits : undefined;
   const plan = String(input.plan || '').toLowerCase();
   const effort = input.effort || 'Medium';
-  const tier: QualityTier = effort === 'Low' || (credits !== undefined && credits < LEAN_CREDIT_THRESHOLD)
+  /*
+   * The level the user chose decides how much work a run does — not the plan.
+   *
+   * A business or enterprise plan used to make every run premium, and an
+   * unmetered deployment reports every account as enterprise: every build ran
+   * five specialists and a design review before and after the code, adding
+   * half a minute before the first file even at "Moyen". Premium is now what
+   * Élevé and Maximum ask for; the plan still gates what can be afforded.
+   */
+  void plan;
+  const tier: QualityTier = effort === 'None' || effort === 'Low' || (credits !== undefined && credits < LEAN_CREDIT_THRESHOLD)
     ? 'lean'
-    : (effort === 'High' || effort === 'Ultra' || plan === 'business' || plan === 'enterprise') && (credits === undefined || credits >= PREMIUM_CREDIT_THRESHOLD)
+    : (effort === 'High' || effort === 'Ultra') && (credits === undefined || credits >= PREMIUM_CREDIT_THRESHOLD)
       ? 'premium'
       : 'standard';
 
@@ -62,11 +72,13 @@ export function resolveQualityPolicy(input: {
   if (tier === 'premium') {
     return { tier, specialists: true, maxSpecialists: 5, specialistTimeoutMs: 30_000, acceptance: true, explore: true, designReview: true };
   }
+  // Standard starts coding after one plan, as a senior engineer would; the
+  // specialists' pre-analysis is for the levels that ask for more depth.
   return {
     tier,
-    specialists: building,
-    maxSpecialists: 3,
-    specialistTimeoutMs: 20_000,
+    specialists: false,
+    maxSpecialists: 0,
+    specialistTimeoutMs: 0,
     acceptance: true,
     explore: true,
     designReview: building,

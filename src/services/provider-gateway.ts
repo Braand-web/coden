@@ -241,6 +241,12 @@ export class ProviderGateway {
     onChunk?: (accumulated: string) => void;
     /** The model's reasoning as it arrives, for display only. Same rules as `onChunk`. */
     onReasoningChunk?: (delta: string) => void;
+    /**
+     * Progress over the accumulated answer that shows no prose — which files
+     * a project artifact has reached. Unlike `onChunk` it does not pin the
+     * request to its first attempt: repeating a progress line is harmless.
+     */
+    onProgress?: (accumulated: string) => void;
   } = {}): Promise<ChatCompletionResult> {
     const primary = this.requireProviderModel(modelId);
     const candidates = this.candidatesFor(primary, options.allowFallback === true);
@@ -276,6 +282,9 @@ export class ProviderGateway {
         model = event.model || model;
         if (event.type === 'token') {
           text += event.text;
+          if (options.onProgress) {
+            try { options.onProgress(text); } catch { /* display only */ }
+          }
           if (options.onChunk) {
             emittedAnyChunk = true;
             try { options.onChunk(text); } catch { /* progress reporting must never break a run */ }
