@@ -8,7 +8,7 @@ import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
 import type { AgentMessageState, AgentNotice, AutoChoice, DecisionNotice, ReasoningPart } from './agent-parts';
-import type { ConnectionChoice, DecisionAnswer, DecisionQuestion } from '../../lib/agent-chat-protocol';
+import type { ConnectionChoice, DecisionAnswer, DecisionQuestion, SubagentSnapshot } from '../../lib/agent-chat-protocol';
 import { getRuntimeRecoveryPresentation, publicRuntimeErrorMessage } from '../../lib/runtime-error-presentation';
 import '../../styles/agent-message.css';
 
@@ -86,6 +86,41 @@ function AutoChoiceLine({ choices }: { choices: AutoChoice[] }) {
   return <p className="coden-agent-auto-choice" title={escalated ? choices.map(choice => choice.label).join(' → ') : undefined}>
     Auto · {current.label} · raisonnement {level.toLowerCase()}{escalated ? ' · renforcé' : ''}
   </p>;
+}
+
+const SUBAGENT_STATUS: Record<SubagentSnapshot['status'], string> = {
+  queued: 'En attente',
+  running: 'En cours',
+  retrying: 'Relancé sur un modèle plus puissant',
+  done: 'Terminé',
+  failed: 'Échec',
+};
+
+/**
+ * The sub-agents the master is running: role, status, progress, model.
+ * One row each, updated live; the master's own reply follows below.
+ */
+export function SubagentsPanel({ agents }: { agents: SubagentSnapshot[] }) {
+  if (!agents.length) return null;
+  const finished = agents.filter(agent => agent.status === 'done' || agent.status === 'failed').length;
+  return <section className="coden-subagents" aria-label="Sous-agents">
+    <header>
+      <strong>Sous-agents</strong>
+      <span>{finished === agents.length ? `${agents.length} terminé${agents.length > 1 ? 's' : ''}` : `${agents.length - finished} actif${agents.length - finished > 1 ? 's' : ''} sur ${agents.length}`}</span>
+    </header>
+    <ul>
+      {agents.map(agent => <li key={agent.id} data-status={agent.status} title={agent.error || agent.summary || agent.scope.join(', ')}>
+        <span className="coden-subagent-dot" aria-hidden="true" />
+        <span className="coden-subagent-main">
+          <span className="coden-subagent-role">{agent.role}</span>
+          <span className="coden-subagent-meta">{SUBAGENT_STATUS[agent.status]}{agent.model ? ` · ${agent.model}` : ''}{agent.status === 'failed' && agent.error ? ` · ${agent.error}` : ''}</span>
+        </span>
+        <span className="coden-subagent-bar" role="progressbar" aria-label={`Progression de ${agent.role}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(agent.progress * 100)}>
+          <span style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, agent.progress))})` }} />
+        </span>
+      </li>)}
+    </ul>
+  </section>;
 }
 
 export type DecisionAnswersHandler = (decisionId: string, questions: DecisionQuestion[], answers: Record<number, DecisionAnswer>) => void;
@@ -221,6 +256,7 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
   const thinkingLabel = state.activity?.trim() || THINKING_LABEL;
   return <section className="coden-agent-message" aria-busy={streaming} data-status={state.status}>
     {state.autoChoices?.length ? <AutoChoiceLine choices={state.autoChoices} /> : null}
+    {state.subagents?.length ? <SubagentsPanel agents={state.subagents} /> : null}
     {state.parts.map(part => part.type === 'text'
       ? <Response key={part.id} isStreaming={streaming && !part.done}>{part.text}</Response>
       : part.type === 'reasoning'

@@ -238,6 +238,8 @@ import { scanGeneratedSecurity } from './src/services/generated-security-scanner
 import { createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
 import { AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
 import { createMediaHelpers } from './src/services/attachments/media-helpers.ts';
+import { AgentLibraryStore } from './src/services/agent-library/store.ts';
+import { createErrorSummarizer, openRunLibrary, settleRunLibrary, type RunLibrary } from './src/services/agent-library/run-library.ts';
 import { LinkError, previewLink } from './src/services/link-analysis.ts';
 import { asksToExploreSite, classifyAttachment, MAX_VIDEO_BYTES } from './src/lib/attachment-policy.ts';
 import {
@@ -1102,6 +1104,22 @@ function attachmentService(): AttachmentService {
   }
   return attachmentServiceInstance;
 }
+
+/*
+ * The shared library of sub-agents and skills, and the error memory.
+ * Created on first use; without Supabase there is simply no library.
+ */
+let agentLibraryStoreInstance: AgentLibraryStore | null = null;
+function agentLibraryStore(): AgentLibraryStore | null {
+  const client = getSupabase();
+  if (!client) return null;
+  agentLibraryStoreInstance ??= new AgentLibraryStore(client);
+  return agentLibraryStoreInstance;
+}
+const errorSummarizer = createErrorSummarizer(
+  (modelId, messages) => openRouter.chat(modelId, messages, 2, 30_000),
+  'google/gemini-3.8-flash',
+);
 
 /** What the model a turn runs on can read. Auto routes a turn with images to a model that sees them. */
 function mediaSupportFor(selection: string): ModelMediaSupport {
@@ -11919,6 +11937,98 @@ app.get('/api/admin/feature-flags', async (req: any, res) => {
  * the Auto router has measured. Counts and anonymised patterns only — never
  * a user's instructions, memory or contributor hash.
  */
+/*
+ * The shared library (sub-agents, skills) and the error memory, for the admin.
+ * List, search, edit, switch off, delete; the store keeps every version.
+ */
+function adminLibrary(res: any): AgentLibraryStore | null {
+  const store = agentLibraryStore();
+  if (!store) { res.status(503).json({ success: false, error: 'Supabase n’est pas configuré.' }); return null; }
+  return store;
+}
+
+app.get('/api/admin/library', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    const [overview, items] = await Promise.all([
+      store.adminOverview(),
+      store.adminListItems({ kind: String(req.query.kind || ''), status: String(req.query.status || ''), q: String(req.query.q || '').slice(0, 80), versions: req.query.versions === '1' }),
+    ]);
+    res.json({ success: true, overview, items });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
+app.get('/api/admin/library/:id/versions', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  res.json({ success: true, versions: await store.adminVersions(String(req.params.id)).catch(() => []) });
+});
+
+app.patch('/api/admin/library/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    await store.adminUpdateItem(String(req.params.id), req.body || {});
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
+app.delete('/api/admin/library/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    await store.adminDeleteItem(String(req.params.id));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
+app.get('/api/admin/error-memory', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    const memories = await store.adminListMemories({ status: String(req.query.status || ''), q: String(req.query.q || '').slice(0, 80), sort: String(req.query.sort || '') });
+    res.json({ success: true, memories });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
+app.patch('/api/admin/error-memory/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    await store.adminUpdateMemory(String(req.params.id), req.body || {});
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
+app.delete('/api/admin/error-memory/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const store = adminLibrary(res);
+  if (!store) return;
+  try {
+    await store.adminDeleteMemory(String(req.params.id));
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
+  }
+});
+
 app.get('/api/admin/agent-learning', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
   const client = requireSupabase('Admin agent learning');
@@ -12567,7 +12677,11 @@ app.put('/api/users/me/personalization', async (req: any, res) => {
   if (!Object.keys(patch).length) return res.status(400).json({ success: false, error: 'Nothing to update.' });
   try {
     const saved = await saveAgentPreferences(requireSupabase('Personalisation'), userId, patch);
-    if (saved.purged !== undefined) console.info('[coden:agent_sharing_disabled]', { purged_knowledge_rows: saved.purged });
+    if (saved.purged !== undefined) {
+      // Sharing off: what this user contributed to the library and the error memory leaves too.
+      const purgedLibrary = await agentLibraryStore()?.purgeContributor(contributorFor(userId)).catch(() => 0) ?? 0;
+      console.info('[coden:agent_sharing_disabled]', { purged_knowledge_rows: saved.purged, purged_library_rows: purgedLibrary });
+    }
     res.json({ success: true, personalization: { ...saved, maxInstructions: MAX_USER_INSTRUCTIONS } });
   } catch (error: any) {
     if (error instanceof PreferencesValidationError) return res.status(400).json({ success: false, error: error.message });
@@ -14074,6 +14188,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * an executable sandbox the request takes the generation path that needs
    * none, and the boundary itself stays exactly where it is.
    */
+  let runLibrary: RunLibrary | null = null;
   if (CODEN_AGENT_FLAGS.multiAgentPipeline && pipelineRoute && hostSandboxExecutionAllowed()) {
     if (!hasProjectCapability(req, 'build', project)) return respondJson(403, { success: false, diagnostic_code: 'PROJECT_BUILD_FORBIDDEN', error: 'Permission denied.' });
     const billingAccountId = project.organization_id || userId;
@@ -14194,6 +14309,20 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
         eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
       }
+      /*
+       * The shared library, before any code is written: skills and reusable
+       * sub-agents that fit this task, and the error rules for its stack.
+       * The master and every sub-agent it launches read the same block.
+       */
+      const sharingPreferences = await loadAgentPreferences(getSupabase(), userId).catch(() => ({ shareImprovement: true }));
+      runLibrary = await openRunLibrary({
+        store: agentLibraryStore(),
+        requestId,
+        contributor: contributorFor(userId),
+        shareAllowed: sharingPreferences.shareImprovement !== false,
+        task: resolvedMission,
+        files: existingFiles,
+      }).catch(() => null);
       const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
 
 ---
@@ -14218,6 +14347,7 @@ ${resolvedMission}` : resolvedMission;
         effort: requestedEffort,
         selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
         visionInputs,
+        library: runLibrary || undefined,
         userPlan: routingPlan,
         credits: routingCredits,
         onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
@@ -14236,6 +14366,17 @@ ${resolvedMission}` : resolvedMission;
 
       if (outcome.started) {
         const pipelineFiles = outcome.files as GeneratedFile[];
+        // What this run taught the library: promoted only on success, and only for a user who shares.
+        void settleRunLibrary(runLibrary, {
+          ok: Boolean(outcome.ok),
+          cancelled: generationAbortController.signal.aborted && generationAbortController.signal.reason !== 'RUN_DEADLINE_EXCEEDED',
+          files: pipelineFiles,
+          resolved: resolvedDuringRun,
+          prompt,
+          summarize: errorSummarizer,
+        }).then(report => {
+          if (report && (report.promoted || report.versions || report.errors || report.disabled)) console.info('[coden:library_settled]', { request_id: requestId, ...report });
+        }).catch(error => console.warn('[coden:library_settle_failed]', { message: String(error?.message || error).slice(0, 200) }));
         void learnFromPipelineRun({
           userId,
           projectId: project.id,
@@ -14440,6 +14581,14 @@ ${resolvedMission}` : resolvedMission;
         recoverable: true,
       });
     } catch (error: any) {
+      // A run that failed still counts against what it reused; nothing it created is promoted.
+      void settleRunLibrary(runLibrary, {
+        ok: false,
+        cancelled: generationAbortController.signal.aborted && generationAbortController.signal.reason !== 'RUN_DEADLINE_EXCEEDED',
+        files: existingFiles as any,
+        resolved: [],
+        prompt,
+      }).catch(() => undefined);
       await releaseUnifiedUsage(pipelineReservation).catch(releaseError => console.error('[coden:pipeline_release_failed]', {
         requestId,
         message: redactSecrets(String(releaseError), '[redacted]'),

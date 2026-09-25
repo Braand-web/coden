@@ -1,4 +1,4 @@
-import type { ChatEvent, DecisionQuestion, FileAction } from '../../lib/agent-chat-protocol';
+import type { ChatEvent, DecisionQuestion, FileAction, SubagentSnapshot } from '../../lib/agent-chat-protocol';
 import { normalizeDecisionQuestions } from '../../lib/decision-questions';
 export type TextPart = { id: string; type: 'text'; text: string; done: boolean };
 export type ToolPart = { id: string; type: 'tool'; kind: 'read' | 'write'; verb: string; files: string[] };
@@ -16,6 +16,8 @@ export type AgentMessageState = {
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider';
   autoChoices?: AutoChoice[];
+  /** The master's sub-agents, as the last snapshot described them. */
+  subagents?: SubagentSnapshot[];
 };
 export const EMPTY_MESSAGE: AgentMessageState = { parts: [], activity: null, thinking: false, status: 'streaming', notices: [] };
 const VERBS = { read: 'A lu', search: 'A cherché', create: 'A créé', edit: 'A modifié', delete: 'A supprimé' };
@@ -44,6 +46,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
     case 'model_selected':
       next.autoChoices = [...(next.autoChoices || []), { modelId: event.modelId, label: event.label, reasoningLevel: event.reasoningLevel, reason: event.reason }];
       break;
+    case 'subagents': next.subagents = event.agents; next.thinking = true; break;
     case 'text_delta': {
       const last = next.parts.at(-1);
       // The answer begins: the reasoning before it is complete.

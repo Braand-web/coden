@@ -137,3 +137,26 @@ button.coden-tool-line:focus-visible { outline: var(--focus-outline); outline-of
 .coden-connection-logo.is-brand svg { width:22px; height:22px; }
 .coden-connection-logo.is-icon { background:var(--surface); color:var(--text-secondary); }
 .coden-connection-options button { padding-left:10px; }
+
+/* The master's sub-agents, live. */
+.coden-subagents { display:grid; gap:8px; margin:4px 0 8px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.coden-subagents header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-size:12px; }
+.coden-subagents header strong { color:var(--foreground); font-weight:650; }
+.coden-subagents header span { color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.coden-subagents ul { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+.coden-subagents li { display:grid; grid-template-columns:8px minmax(0,1fr) 72px; align-items:center; gap:10px; min-height:32px; }
+.coden-subagent-dot { width:8px; height:8px; border-radius:999px; background:var(--text-muted); }
+.coden-subagents li[data-status="running"] .coden-subagent-dot,
+.coden-subagents li[data-status="retrying"] .coden-subagent-dot { background:var(--accent); animation:coden-subagent-pulse 1.4s ease-in-out infinite; }
+.coden-subagents li[data-status="done"] .coden-subagent-dot { background:var(--success); }
+.coden-subagents li[data-status="failed"] .coden-subagent-dot { background:var(--danger); }
+.coden-subagent-main { display:grid; min-width:0; }
+.coden-subagent-role { overflow:hidden; color:var(--foreground); font-size:12.5px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.coden-subagent-meta { overflow:hidden; color:var(--text-muted); font-size:11.5px; text-overflow:ellipsis; white-space:nowrap; }
+.coden-subagents li[data-status="failed"] .coden-subagent-meta { color:var(--danger); }
+.coden-subagent-bar { position:relative; height:4px; overflow:hidden; border-radius:999px; background:var(--surface-soft); }
+.coden-subagent-bar span { position:absolute; inset:0; border-radius:inherit; background:var(--accent); transform-origin:left center; transition:transform 300ms ease; }
+.coden-subagents li[data-status="done"] .coden-subagent-bar span { background:var(--success); }
+.coden-subagents li[data-status="failed"] .coden-subagent-bar span { background:var(--danger); }
+@keyframes coden-subagent-pulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion: reduce) { .coden-subagent-dot { animation:none !important; } .coden-subagent-bar span { transition:none; } }

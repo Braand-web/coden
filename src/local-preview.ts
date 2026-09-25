@@ -346,7 +346,33 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
     intent: index % 3 ? 'build_app' : 'edit_app', model_id: index % 2 ? 'anthropic/claude-sonnet-5' : 'openai/gpt-6-luna',
     diagnostic_code: index % 8 === 0 ? 'PREVIEW_BROWSER_CHECK_FAILED' : null, duration_ms: 90_000 + index * 2_000, created_at: day(index % 14),
   }));
+  const libraryItem = (id: string, kind: string, name: string, description: string, uses: number, successes: number, status = 'active') => ({
+    id, kind, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, description, version: 1 + (uses % 3), status, is_latest: true, parent_id: null,
+    definition: kind === 'agent'
+      ? { role: name, systemPrompt: 'Exemple de prompt système générique.', tools: ['read_file', 'write_file', 'edit_file'], modelTier: 'design' }
+      : { whenToUse: description, instructions: 'Étapes génériques…', examples: [], dependencies: ['@stripe/stripe-js'] },
+    tags: [], uses, successes, failures: uses - successes, contributors: 3, created_by: 'agent',
+    disabled_reason: status === 'disabled' ? 'Désactivé automatiquement : 1 réussite(s) sur 7 utilisations.' : null,
+    last_used_at: day(uses % 5), created_at: day(20), updated_at: day(1),
+  });
+  const libraryOverview = { agents: 4, skills: 6, disabled: 1, versions: 5, uses: 128, successes: 109, rules: 23, permanentRules: 5, needsReview: 2, recurring: 1, errorsSeen: 214 };
   const payloads: Record<string, Record<string, unknown>> = {
+    library: {
+      overview: libraryOverview,
+      items: [
+        libraryItem('a1', 'agent', 'Expert UI', 'Écrans React, design tokens, responsive', 41, 37),
+        libraryItem('a2', 'agent', 'Expert base de données', 'Schéma Supabase, RLS, requêtes typées', 22, 19),
+        libraryItem('a3', 'agent', 'Testeur', 'Scénarios de bout en bout et tests unitaires', 18, 15),
+        libraryItem('a4', 'agent', 'Revue de sécurité', 'Secrets, RLS, validation des entrées', 7, 1, 'disabled'),
+      ],
+    },
+    'error-memory': {
+      memories: [
+        { id: 'm1', signature: 'build|react-router-dom|…', category: 'build', error_message: "'switch' is not exported from 'react-router-dom'", context: { libraries: { 'react-router-dom': 7 } }, cause: 'API de la v5 utilisée avec la v7', fix: 'Utiliser Routes et Route', rule: 'Avec react-router-dom v7 : ne pas importer Switch, utiliser Routes.', status: 'active', permanent: true, occurrences: 14, confirmations: 12, recurrences_after_rule: 1, contributors: 9, last_seen_at: day(0) },
+        { id: 'm2', signature: 'runtime|@supabase/supabase-js|…', category: 'runtime', error_message: 'supabase.auth.session is not a function', context: { libraries: { '@supabase/supabase-js': 2 } }, cause: 'Méthode retirée en v2', fix: 'Utiliser supabase.auth.getSession()', rule: 'Avec supabase-js v2 : ne pas utiliser auth.session(), utiliser auth.getSession().', status: 'active', permanent: false, occurrences: 5, confirmations: 4, recurrences_after_rule: 0, contributors: 4, last_seen_at: day(2) },
+        { id: 'm3', signature: 'mishandling|-|…', category: 'mishandling', error_message: 'Fichier de routes supprimé par erreur', context: {}, cause: 'Réécriture complète d’un fichier partagé', fix: 'Modifier avec edit_file', rule: 'Ne jamais réécrire un fichier de routes entier : faire des modifications ciblées.', status: 'needs_review', permanent: false, occurrences: 2, confirmations: 1, recurrences_after_rule: 0, contributors: 2, last_seen_at: day(4) },
+      ],
+    },
     overview: {
       metrics: { users: 42, projects: 97, active_today: 6, runs: runs.length, failed_runs: 3, success_rate: 88, previews_ready: 61, publish_success: 18, ai_requests: 240, wallet_credits: 1840 },
       health: [

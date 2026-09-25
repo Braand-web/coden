@@ -1,5 +1,6 @@
 import { apiFetch } from './lib/api';
 import { localConnectorLogo } from './lib/connector-logos';
+import { mountAdminLibrary } from './admin-library';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
@@ -56,6 +57,7 @@ const activeFilters: Record<'users' | 'projects', string> = {
 const SECTION_LABELS: Record<string, string> = {
   overview: 'Vue d’ensemble',
   agent: 'Agent',
+  library: 'Bibliothèque',
   users: 'Utilisateurs',
   projects: 'Projets',
   runs: 'Runs',
@@ -724,7 +726,17 @@ async function loadAdminData() {
   }
 }
 
+/* The library loads on first visit: it is not part of the overview's snapshot. */
+let adminLibrary: ReturnType<typeof mountAdminLibrary> | null = null;
+function ensureAdminLibrary() {
+  const root = qs('#admin-library');
+  if (!root) return;
+  if (!adminLibrary) adminLibrary = mountAdminLibrary(root);
+  void adminLibrary.load();
+}
+
 function activateSection(tab: string) {
+  if (tab === 'library') ensureAdminLibrary();
   document.querySelectorAll<HTMLElement>('[data-admin-tab]').forEach(item => {
     const active = item.dataset.adminTab === tab;
     item.classList.toggle('active', active);
