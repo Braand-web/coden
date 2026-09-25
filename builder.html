@@ -4049,20 +4049,22 @@
         justify-content: center !important;
       }
 
+      /* Icon only on a phone: the label is hidden, the icon stays readable (it was
+         painted transparent, leaving an empty blue pill). */
       .brand-topbar .btn-publish {
         width: 38px !important;
         padding: 0 !important;
-        color: transparent !important;
+        justify-content: center !important;
         position: relative;
       }
 
-      .brand-topbar .btn-publish::after {
-        content: "";
-        width: 15px;
-        height: 15px;
-        border-radius: 50%;
-        background: var(--surface);
+      .brand-topbar .btn-publish > span {
         position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
       }
     }
 

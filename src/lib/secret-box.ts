@@ -33,7 +33,7 @@ export function decryptSecret(sealed: string | undefined, secretsKey: string | u
     decipher.setAuthTag(packed.subarray(12, 28));
     return Buffer.concat([decipher.update(packed.subarray(28)), decipher.final()]).toString('utf8');
   } catch {
-    console.error('[coden:secret_decrypt_failed]', { hint: 'OPENROUTER_API_KEY_ENCRYPTED does not open with CODEN_SECRETS_KEY' });
+    console.error('[coden:secret_decrypt_failed]', { hint: 'A sealed secret does not open with the configured key (CODEN_SECRETS_KEY).' });
     return '';
   }
 }

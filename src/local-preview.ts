@@ -1,4 +1,5 @@
 import './styles/local-preview.css';
+import { resolveCloudState } from './lib/cloud-state';
 
 export const LOCAL_PREVIEW_QUERY_KEY = 'localPreview';
 export const LOCAL_PREVIEW_PROJECT_ID = 'local-preview-project-001';
@@ -159,17 +160,26 @@ const localPreviewFiles = [
 
 const localPreviewHtml = '<!doctype html><html><body style="margin:0;font-family:system-ui;background:#fff;color:#1a1c1f"><main style="max-width:960px;margin:0 auto;padding:48px 24px"><h1 style="font-size:34px;margin:0 0 24px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Projets<br><b style="font-size:24px;color:#3a83f7">12</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Tâches<br><b style="font-size:24px;color:#3a83f7">38</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Équipe<br><b style="font-size:24px;color:#3a83f7">7</b></div></div></main></body></html>';
 
+/*
+ * Shaped like most projects in production: a backend the app needs and that
+ * is not activated yet. A "ready" sample hid exactly the state people meet.
+ */
+const localPreviewNeeds = { needs_database: true, needs_auth: true, needs_storage: false };
 const localPreviewDatabase = {
-  cloud: { status: 'ready', provider: 'coden_cloud', region: 'eu-west', mode: 'shared', schema_name: 'app_pulseboard', resources: [{}, {}], requirements: { needs_auth: true } },
+  backend_status: 'required',
+  cloud: { status: 'required', raw_status: 'planned', state: resolveCloudState({ status: 'planned', needs: localPreviewNeeds }), needs: localPreviewNeeds, provider: 'coden_cloud', region: 'auto', mode: 'dedicated', schema_name: 'app_pulseboard', resources: [], requirements: { needs_auth: true } },
   tables: [{ name: 'contacts' }, { name: 'tasks' }],
   assets: [{ id: 'a1', name: 'logo.svg', mime_type: 'image/svg+xml', size_bytes: 2048 }],
-  secrets: [{ id: 's1', variable: 'RESEND_API_KEY', service: 'Resend', masked_value: 're_••••••••4f2a' }],
+  secrets: [
+    { id: 's1', variable: 'RESEND_API_KEY', service: 'Resend', masked_value: 're_••••••••4f2a', status: 'configured', updated_at: '2026-01-01T09:00:00.000Z' },
+    { id: 's2', variable: 'STRIPE_SECRET_KEY', service: 'Stripe', masked_value: 'sk_t••••••9Qx1', status: 'needs_reentry', updated_at: '2025-12-20T09:00:00.000Z' },
+  ],
   activity: [
     { event_type: 'deploy', message: 'Aperçu reconstruit', created_at: '2026-01-01T09:00:00.000Z' },
     { event_type: 'migration', message: 'Table contacts créée', created_at: '2026-01-01T08:55:00.000Z' },
   ],
   integrations: [],
-  security: { rls_required: true },
+  security: { rls_required: true, secrets_encrypted: true },
   last_sync_at: '2026-01-01T09:00:00.000Z',
 };
 
@@ -430,5 +440,64 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
       ],
     },
   };
+  const emails = ['awa@exemple.ci', 'marc@exemple.fr', 'lea@exemple.fr', 'admin@coden.fun', 'yao@exemple.ci', 'sofia@exemple.es'];
+  const users = Array.from({ length: 34 }, (_, index) => ({
+    id: `lp-user-${index + 1}`, email: index === 7 ? null : emails[index % emails.length].replace('@', `${index > 5 ? index : ''}@`),
+    created_at: day(60 - index), last_sign_in_at: index % 5 === 0 ? day(0) : day(index % 20), is_platform_admin: index === 3,
+    suspended: index === 9, banned_until: index === 9 ? day(-3650) : null, role: 'authenticated',
+    wallet: { balance: 30 + index * 7 }, project_count: index % 6, run_count: (index * 3) % 17,
+  }));
+  payloads.users = { users, availability: { users: true, wallets: true } };
+  payloads.projects = { projects: Array.from({ length: 41 }, (_, index) => ({
+    id: `lp-project-${index + 1}`, name: ['Boutique Awa', 'Pulseboard', 'Agenda Kiné', 'Portfolio Léa', 'CRM Immobilier'][index % 5] + (index > 4 ? ` ${index}` : ''),
+    owner_id: users[index % users.length].id, status: 'draft', preview_status: index % 4 ? 'verified' : 'needs_fix', publish_status: index % 6 === 0 ? 'published' : null,
+    live_url: index % 6 === 0 ? `https://app-${index}.coden.app` : null, file_count: 12 + index, created_at: day(40 - index), updated_at: day(index % 12),
+  })) };
+  const models = ['openai/gpt-6-luna', 'anthropic/claude-sonnet-5', 'moonshotai/kimi-k3', 'google/gemini-3.8-flash'];
+  const byDay = Array.from({ length: 30 }, (_, index) => ({ key: day(29 - index).slice(0, 10), cost_usd: Math.round((0.4 + ((index * 37) % 11) / 5) * 100) / 100, requests: 5 + (index % 9), prompt_tokens: 40_000 + index * 900, completion_tokens: 6_000 + index * 120 }));
+  payloads.live = {
+    live: { active_now: 3, active_today: 11, users_total: users.length, projects_today: 4, projects_week: 19, runs_today: 27, runs_failed_today: 2, running_turns: 1, tokens_today: 482_310, cost_today_usd: 1.87, cost_month_usd: 38.42 },
+    alerts: [{ rule_id: 'r2', scope: 'user', target_id: users[1].id, budget_usd: 10, spent_usd: 11.4, ratio: 1.14, level: 'exceeded' }],
+    recent_errors: runs.filter(run => run.status === 'failed'),
+  };
+  payloads.costs = {
+    days: 30,
+    totals: { cost_usd: 61.2, requests: 402, prompt_tokens: 12_400_000, completion_tokens: 1_950_000, today_usd: 1.87, month_usd: 38.42 },
+    by_day: byDay,
+    by_model: models.map((key, index) => ({ key, cost_usd: [31.4, 18.2, 7.9, 3.7][index], requests: [120, 96, 110, 76][index], prompt_tokens: [5e6, 3.8e6, 2.4e6, 1.2e6][index], completion_tokens: [8e5, 6e5, 3.5e5, 2e5][index] })),
+    by_user: users.slice(0, 12).map((user, index) => ({ key: user.id, email: user.email, cost_usd: Math.round((14 - index) * 83) / 100, requests: 40 - index * 3, prompt_tokens: 900_000 - index * 60_000, completion_tokens: 120_000 - index * 8_000 })),
+    alerts: {
+      available: true,
+      rules: [
+        { id: 'r1', scope: 'global', target_id: null, monthly_budget_usd: 150, enabled: true, created_by: 'admin@coden.fun', created_at: day(20) },
+        { id: 'r2', scope: 'user', target_id: users[1].id, email: users[1].email, monthly_budget_usd: 10, enabled: true, created_by: 'admin@coden.fun', created_at: day(4) },
+      ],
+      triggered: [{ rule_id: 'r2', scope: 'user', target_id: users[1].id, email: users[1].email, budget_usd: 10, spent_usd: 11.4, ratio: 1.14, level: 'exceeded' }],
+    },
+  };
+  payloads['audit-log'] = { available: true, entries: [
+    { id: 'e1', actor_email: 'admin@coden.fun', action: 'user.suspended', target_type: 'user', target_id: users[9].id, detail: { email: users[9].email, reason: 'Abus de génération' }, created_at: day(1) },
+    { id: 'e2', actor_email: 'admin@coden.fun', action: 'cost_alert.created', target_type: 'cost_alert', target_id: 'r2', detail: { scope: 'user', monthly_budget_usd: 10 }, created_at: day(4) },
+    { id: 'e3', actor_email: 'admin@coden.fun', action: 'library.updated', target_type: 'library_item', target_id: 'a2', detail: { fields: ['status'] }, created_at: day(6) },
+    { id: 'e4', actor_email: 'admin@coden.fun', action: 'user.password_reset_sent', target_type: 'user', target_id: users[2].id, detail: { email: users[2].email }, created_at: day(9) },
+  ] };
+  if (section.startsWith('users/')) {
+    const user = users.find(item => item.id === section.slice('users/'.length)) || users[0];
+    return {
+      success: true, local_preview: true,
+      user: { ...user, confirmed_at: user.created_at, provider: 'email' },
+      wallet: { balance: user.wallet.balance },
+      projects: (payloads.projects.projects as any[]).filter(project => project.owner_id === user.id),
+      runs: runs.slice(0, 6).map(run => ({ ...run, user_id: user.id })),
+      costs: { totals: { cost_usd: 4.21, requests: 37, prompt_tokens: 812_000, completion_tokens: 96_000 }, by_model: [{ key: models[0], cost_usd: 3.1, requests: 20 }, { key: models[1], cost_usd: 1.11, requests: 17 }] },
+      ledger: [], audit: [],
+      activity: [
+        { at: day(0), kind: 'login', label: 'Dernière connexion', detail: '' },
+        { at: day(1), kind: 'run', label: 'Run build_app · completed', detail: models[0] },
+        { at: day(3), kind: 'project', label: 'Projet créé · Boutique Awa', detail: 'draft' },
+        { at: day(5), kind: 'run', label: 'Run edit_app · failed', detail: 'PREVIEW_BROWSER_CHECK_FAILED' },
+      ],
+    };
+  }
   return { success: true, local_preview: true, rows: [], users: [], projects: [], deployments: [], domains: [], findings: [], checklist: [], ...(payloads[section] || {}) };
 }

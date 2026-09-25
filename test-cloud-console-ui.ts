@@ -11,7 +11,12 @@ assert.equal((html.match(/id="database-content"/g) || []).length, 1, 'the Cloud 
 assert.ok(!html.includes('Cloud & base de données'), 'the retired monolithic Cloud heading must not be rendered');
 assert.ok(html.includes(':not(#tab-btn-database)'), 'Cloud must remain accessible before the first generated file');
 assert.ok(!builder.includes("panel.innerHTML = `\n    <div style=\"display:grid;gap:14px"), 'the old fallback panel must not return');
-assert.ok(builder.includes("databaseBtn.innerHTML = '<span aria-hidden=\"true\" style=\"font-size:13px;\">☁</span> Cloud'"));
+assert.ok(builder.includes("<span>Cloud</span>';"), 'the Cloud tab label sits in a span, like its siblings, so the phone layout can hide it');
+assert.ok(!builder.includes('Non détecté'), 'no Cloud status may read "Non détecté": each state explains itself');
+assert.ok(!builder.includes('cloud-console-eyebrow'), '"Coden Cloud" appears once, in the console navigation');
+assert.ok(!builder.includes('data-cloud-add-secret'), 'one "Ajouter un secret" button: the page header');
+assert.ok(builder.includes('data-cloud-edit-secret'), 'a secret can be replaced');
+assert.ok(!/window\.confirm\(/.test(builder.slice(builder.indexOf('function cloudConsoleOverview'), builder.indexOf('function renderAnalysisBreakdown'))), 'Cloud destructive actions confirm in a dialog, not window.confirm');
 
 for (const view of ['overview', 'database', 'users', 'storage', 'emails', 'secrets', 'jobs', 'functions', 'logs', 'usage', 'analytics', 'advanced']) {
   assert.match(builder, new RegExp(`id: '${view}'`), `Cloud navigation must include ${view}`);

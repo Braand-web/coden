@@ -5,6 +5,7 @@
  * statistics; errors that came back despite their rule are listed first.
  */
 import { apiFetch } from './lib/api';
+import { confirmDialog, toast } from './lib/ui-feedback';
 
 type Row = Record<string, any>;
 type Tab = 'agent' | 'skill' | 'errors';
@@ -149,8 +150,10 @@ export function mountAdminLibrary(root: HTMLElement) {
       const form = dialog.querySelector('form')!;
       const data = new FormData(form);
       let definition: unknown;
-      try { definition = JSON.parse(String(data.get('definition') || '{}')); } catch { window.alert('La définition n’est pas un JSON valide : rien n’a été enregistré.'); return; }
-      await apiFetch(`/api/admin/library/${row.id}`, { method: 'PATCH', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), status: data.get('status'), definition }) }).catch(failure => window.alert(failure instanceof Error ? failure.message : 'Échec de l’enregistrement.'));
+      try { definition = JSON.parse(String(data.get('definition') || '{}')); } catch { toast('La définition n’est pas un JSON valide : rien n’a été enregistré.', 'error'); return; }
+      await apiFetch(`/api/admin/library/${row.id}`, { method: 'PATCH', body: JSON.stringify({ name: data.get('name'), description: data.get('description'), status: data.get('status'), definition }) })
+        .then(() => toast(`« ${row.name} » est enregistré.`, 'success'))
+        .catch(failure => toast(failure instanceof Error ? failure.message : 'Échec de l’enregistrement.', 'error'));
       await load();
     };
   };
@@ -172,7 +175,9 @@ export function mountAdminLibrary(root: HTMLElement) {
     dialog.onclose = async () => {
       if (dialog.returnValue !== 'save') return;
       const data = new FormData(dialog.querySelector('form')!);
-      await apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'PATCH', body: JSON.stringify({ rule: data.get('rule'), cause: data.get('cause'), fix: data.get('fix'), status: data.get('status'), permanent: data.get('permanent') === 'on', acknowledge: data.get('acknowledge') === 'on' }) }).catch(failure => window.alert(failure instanceof Error ? failure.message : 'Échec de l’enregistrement.'));
+      await apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'PATCH', body: JSON.stringify({ rule: data.get('rule'), cause: data.get('cause'), fix: data.get('fix'), status: data.get('status'), permanent: data.get('permanent') === 'on', acknowledge: data.get('acknowledge') === 'on' }) })
+        .then(() => toast('La règle est enregistrée.', 'success'))
+        .catch(failure => toast(failure instanceof Error ? failure.message : 'Échec de l’enregistrement.', 'error'));
       await load();
     };
   };
@@ -207,9 +212,13 @@ export function mountAdminLibrary(root: HTMLElement) {
       const action = itemButton.dataset.libAction;
       if (action === 'edit') return openItemEditor(row);
       if (action === 'versions') return void showVersions(row);
-      if (action === 'delete' && !window.confirm(`Supprimer définitivement « ${row.name} » v${row.version} ?`)) return;
-      if (action === 'delete') await apiFetch(`/api/admin/library/${row.id}`, { method: 'DELETE' }).catch(() => undefined);
-      else await apiFetch(`/api/admin/library/${row.id}`, { method: 'PATCH', body: JSON.stringify({ status: action === 'enable' ? 'active' : 'disabled' }) }).catch(() => undefined);
+      if (action === 'delete' && !(await confirmDialog({ title: `Supprimer « ${row.name} » v${row.version} ?`, body: 'Cette version disparaît de la bibliothèque partagée ; les agents ne la recevront plus. Action définitive.', confirmLabel: 'Supprimer', danger: true }))) return;
+      const done = action === 'delete' ? 'supprimé' : action === 'enable' ? 'activé' : 'désactivé';
+      await (action === 'delete'
+        ? apiFetch(`/api/admin/library/${row.id}`, { method: 'DELETE' })
+        : apiFetch(`/api/admin/library/${row.id}`, { method: 'PATCH', body: JSON.stringify({ status: action === 'enable' ? 'active' : 'disabled' }) }))
+        .then(() => toast(`« ${row.name} » ${done}.`, 'success'))
+        .catch(failure => toast(failure instanceof Error ? failure.message : 'Action impossible.', 'error'));
       await load();
       return;
     }
@@ -219,9 +228,12 @@ export function mountAdminLibrary(root: HTMLElement) {
       if (!row) return;
       const action = memoryButton.dataset.memAction;
       if (action === 'edit') return openMemoryEditor(row);
-      if (action === 'delete' && !window.confirm('Supprimer cette règle ? L’erreur pourra être réapprise si elle revient.')) return;
-      if (action === 'delete') await apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'DELETE' }).catch(() => undefined);
-      else await apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'PATCH', body: JSON.stringify({ status: action === 'enable' ? 'active' : 'disabled' }) }).catch(() => undefined);
+      if (action === 'delete' && !(await confirmDialog({ title: 'Supprimer cette règle ?', body: 'Les agents ne la recevront plus. L’erreur pourra être réapprise si elle revient.', confirmLabel: 'Supprimer', danger: true }))) return;
+      await (action === 'delete'
+        ? apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'DELETE' })
+        : apiFetch(`/api/admin/error-memory/${row.id}`, { method: 'PATCH', body: JSON.stringify({ status: action === 'enable' ? 'active' : 'disabled' }) }))
+        .then(() => toast(action === 'delete' ? 'Règle supprimée.' : action === 'enable' ? 'Règle activée.' : 'Règle désactivée.', 'success'))
+        .catch(failure => toast(failure instanceof Error ? failure.message : 'Action impossible.', 'error'));
       await load();
     }
   });

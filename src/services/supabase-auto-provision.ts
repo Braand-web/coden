@@ -195,9 +195,9 @@ export async function provisionAppBackend(input: {
   fetchImpl?: typeof fetch;
 }): Promise<ProvisionAppBackendResult> {
   const token = resolveToken(input.config?.token);
-  if (!token || !/^sbp_/.test(token)) {
-    return { ok: false, skipped: true, reason: 'no_management_token' };
-  }
+  if (!token) return { ok: false, skipped: true, reason: 'no_management_token' };
+  // A Supabase personal access token; a project key here is a configuration mistake worth naming.
+  if (!/^sbp_/.test(token)) return { ok: false, skipped: true, reason: 'invalid_token_format' };
 
   let organizationId = input.config?.organizationId || process.env.CODEN_SUPABASE_ORG_ID || '';
   try {
@@ -246,6 +246,48 @@ export async function provisionAppBackend(input: {
     return { ok: true, project, migration, storage };
   } catch (error) {
     return { ok: false, error: redactManagementToken((error as Error).message || 'provision_failed') };
+  }
+}
+
+/** Whether a management token is configured at all — never the token itself. */
+export function provisioningConfigured(explicitToken?: string): { configured: boolean; reason?: string } {
+  const token = resolveToken(explicitToken);
+  if (!token) return { configured: false, reason: 'no_management_token' };
+  if (!/^sbp_/.test(token)) return { configured: false, reason: 'invalid_token_format' };
+  return { configured: true };
+}
+
+/**
+ * One reason code for a failed or skipped provisioning, safe to store and to
+ * show: the Management API's own text can carry identifiers and is kept for
+ * the logs only.
+ */
+export function classifyProvisionFailure(reason: unknown): string {
+  const text = String(reason || '').toLowerCase();
+  if (!text) return 'provider_error';
+  if (/^(no_management_token|invalid_token_format|no_organization_available)$/.test(text)) return text;
+  if (/\b401\b|unauthori[sz]ed|invalid.*token|jwt/.test(text)) return 'invalid_token';
+  if (/\b403\b|forbidden|permission/.test(text)) return 'forbidden';
+  if (/\b402\b|limit|quota|maximum|exceed|payment|billing/.test(text)) return 'quota_reached';
+  if (/\b429\b|rate/.test(text)) return 'rate_limited';
+  if (/timeout|timed out|abort|econn|enotfound|fetch failed/.test(text)) return 'network_error';
+  return 'provider_error';
+}
+
+/**
+ * A read-only check of the configured token, for the admin console: lists the
+ * organizations it can see and creates nothing.
+ */
+export async function checkProvisioningAccess(fetchImpl?: typeof fetch): Promise<{ ok: boolean; reason?: string; organizations?: number; organization_pinned: boolean }> {
+  const configured = provisioningConfigured();
+  const organizationPinned = Boolean(process.env.CODEN_SUPABASE_ORG_ID);
+  if (!configured.configured) return { ok: false, reason: configured.reason, organization_pinned: organizationPinned };
+  try {
+    const orgs = await listOrganizations(resolveToken(), fetchImpl);
+    if (!orgs.length && !organizationPinned) return { ok: false, reason: 'no_organization_available', organizations: 0, organization_pinned: organizationPinned };
+    return { ok: true, organizations: orgs.length, organization_pinned: organizationPinned };
+  } catch (error) {
+    return { ok: false, reason: classifyProvisionFailure((error as Error).message), organization_pinned: organizationPinned };
   }
 }
 

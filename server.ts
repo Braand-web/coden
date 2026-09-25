@@ -5949,12 +5949,6 @@ function maskSecret(value: string) {
   return `${value.slice(0, 4)}••••••${value.slice(-4)}`;
 }
 
-function pseudoEncryptSecret(value: string) {
-  const salt = randomBytes(6).toString('hex');
-  const digest = createHash('sha256').update(`${salt}:${value}`).digest('hex');
-  return `sha256:${salt}:${digest}`;
-}
-
 function modelCreditFloor(modelId: unknown, fallback = 0) {
   return typeof modelId === 'string' && modelId !== 'auto'
     ? MODEL_ACTION_CREDIT_FLOORS[modelId as AllowedModelId] || fallback
@@ -8553,6 +8547,52 @@ async function upsertProjectBackendRequirements(project: GeneratedProject, promp
   }
 }
 
+async function recordBackendRequirementsFromFiles(project: GeneratedProject, needs: { needs_database: boolean; needs_auth: boolean; needs_storage: boolean }) {
+  const client = requireSupabase('Coden Cloud requirement from files');
+  const now = new Date().toISOString();
+  const { error } = await client.from('project_backend_requirements').upsert([{
+    organization_id: project.organization_id,
+    project_id: project.id,
+    needs_database: needs.needs_database,
+    needs_auth: needs.needs_auth,
+    needs_storage: needs.needs_storage,
+    needs_edge_functions: false,
+    needs_secrets: false,
+    detected_from_prompt: false,
+    recommended_mode: 'dedicated',
+    status: 'detected',
+    updated_at: now,
+  }], { onConflict: 'project_id' });
+  if (error && !isMissingCodenCloudTableError(error)) throw error;
+}
+
+/**
+ * Where a provisioning attempt left the project, written down so the console
+ * can say what happened: `provisioning` while it runs, `failed` with a reason
+ * code (never the provider's raw text) when it did not work.
+ */
+async function markCloudProvisioning(project: GeneratedProject, status: 'provisioning' | 'failed', reason?: string) {
+  const client = getSupabase();
+  if (!client) return;
+  try {
+    const existing = await client.from('coden_cloud_projects').select('public_runtime_config').eq('project_id', project.id).maybeSingle();
+    const runtime = { ...(existing.data?.public_runtime_config || {}), backend_status: status, last_error: status === 'failed' ? reason || 'provider_error' : null, last_attempt_at: new Date().toISOString() };
+    await client.from('coden_cloud_projects').upsert([{
+      organization_id: project.organization_id,
+      project_id: project.id,
+      provider: 'coden_cloud',
+      mode: 'dedicated',
+      status,
+      region: 'auto',
+      schema_name: buildCodenCloudSchemaName(project.id),
+      public_runtime_config: runtime,
+      updated_at: new Date().toISOString(),
+    }], { onConflict: 'project_id' });
+  } catch (error: any) {
+    console.warn('[coden:cloud_provision_state_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
+}
+
 async function loadProjectCodenCloud(projectId: string) {
   try {
     const client = requireSupabase('Coden Cloud project view');
@@ -10173,31 +10213,75 @@ async function saveProjectPatch(project: GeneratedProject, patch: any) {
   if (error) throw new Error(`Supabase project patch persistence failed: ${error.message}`);
 }
 
-async function listProjectSecrets(projectId: string) {
+async function loadProjectSecretRows(projectId: string): Promise<StoredSecretRow[]> {
   const client = requireSupabase('Project secrets listing');
-  const { data, error } = await client.from('project_secrets').select('id, project_id, service, variable, masked_value, status, created_at, updated_at').eq('project_id', projectId).order('created_at', { ascending: false });
+  const { data, error } = await client.from('project_secrets').select('id, service, variable, encrypted_value, masked_value, status, created_at, updated_at').eq('project_id', projectId).order('created_at', { ascending: false });
   if (error) throw new Error(`Supabase project secrets listing failed: ${error.message}`);
-  return data || [];
+  return (data || []) as StoredSecretRow[];
 }
 
+/** Names and masks only: the sealed value never leaves the server. */
+async function listProjectSecrets(projectId: string) {
+  return (await loadProjectSecretRows(projectId)).map(publicSecretRow);
+}
+
+/**
+ * The environment an application's server code receives, opened here and
+ * handed straight to the sandbox. Empty on any failure: a missing secret is a
+ * feature that reports itself, never a run that fails.
+ */
+async function loadProjectServerSecrets(projectId: string): Promise<Record<string, string>> {
+  try {
+    if (!getSupabase()) return {};
+    return serverSecretEnv(await loadProjectSecretRows(projectId));
+  } catch (error: any) {
+    console.warn('[coden:project_secrets_env_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 160) });
+    return {};
+  }
+}
+
+/**
+ * One row per variable: saving a name that exists replaces its value instead
+ * of adding a second row the application could not choose between.
+ */
 async function saveProjectSecret(project: GeneratedProject, service: string, variable: string, value: string, status = 'configured') {
+  if (!isValidSecretVariable(variable)) throw new SecretInputError('Nom de variable invalide : majuscules, chiffres et « _ » uniquement (ex. RESEND_API_KEY).');
+  if (status === 'configured' && !value) throw new SecretInputError('La valeur du secret ne peut pas être vide.');
+  if (value.length > 8_000) throw new SecretInputError('La valeur du secret dépasse 8 000 caractères.');
+  const key = projectSecretsKey();
+  if (value && !key) throw new Error('Project secrets encryption key is not configured.');
+  const client = requireSupabase('Project secret persistence');
+  const now = new Date().toISOString();
+  const sealed = value ? { encrypted_value: sealProjectSecret(value, key), masked_value: maskSecretValue(value) } : { encrypted_value: null, masked_value: 'not configured' };
+  const existing = await client.from('project_secrets').select('id, created_at').eq('project_id', project.id).eq('variable', variable).order('created_at', { ascending: true });
+  if (existing.error) throw new Error(`Supabase project secret lookup failed: ${existing.error.message}`);
+  const [keep, ...duplicates] = existing.data || [];
+  if (keep) {
+    const { data, error } = await client.from('project_secrets')
+      .update({ service: normalizeSecretService(service), ...sealed, status, updated_at: now })
+      .eq('id', keep.id).eq('project_id', project.id)
+      .select('id, service, variable, encrypted_value, masked_value, status, created_at, updated_at').single();
+    if (error) throw new Error(`Supabase project secret update failed: ${error.message}`);
+    if (duplicates.length) await client.from('project_secrets').delete().in('id', duplicates.map((row: any) => row.id)).eq('project_id', project.id);
+    return publicSecretRow(data as StoredSecretRow);
+  }
   const row = {
     id: randomUUID(),
     organization_id: project.organization_id,
     project_id: project.id,
-    service,
+    service: normalizeSecretService(service),
     variable,
-    encrypted_value: value ? pseudoEncryptSecret(value) : null,
-    masked_value: value ? maskSecret(value) : 'not configured',
+    ...sealed,
     status,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
-  const client = requireSupabase('Project secret persistence');
   const { error } = await client.from('project_secrets').insert([row]);
   if (error) throw new Error(`Supabase project secret persistence failed: ${error.message}`);
-  return { ...row, encrypted_value: undefined };
+  return publicSecretRow(row);
 }
+
+class SecretInputError extends Error {}
 
 
 
@@ -11660,6 +11744,8 @@ async function adminAuthUsers(client: any, limit = 100) {
         created_at: user.created_at || null,
         last_sign_in_at: user.last_sign_in_at || null,
         confirmed_at: user.confirmed_at || null,
+        banned_until: user.banned_until || null,
+        suspended: Boolean(user.banned_until && Date.parse(user.banned_until) > Date.now()),
         role: user.role || null,
         provider: Array.isArray(user.app_metadata?.providers) ? user.app_metadata.providers.join(', ') : user.app_metadata?.provider || null,
         is_platform_admin: getPlatformAdminEmails().has(normalizeAdminEmail(user.email)) ||
@@ -11757,6 +11843,7 @@ function sanitizeAdminWallet(row: any) {
 
 function buildAdminHealth() {
   const supabaseDiagnostics = getSupabaseRuntimeDiagnostics();
+  const cloudProvisioning = provisioningConfiguredSync();
   const has = (...names: string[]) => names.every(name => Boolean(String(process.env[name] || '').trim()));
   const publishReady = has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') || has('VERCEL_TOKEN');
   const adminCount = getPlatformAdminEmails().size;
@@ -11765,7 +11852,8 @@ function buildAdminHealth() {
     { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'Clé API configurée' : 'Clé fournisseur manquante' },
     { id: 'sandbox', label: 'Sandbox E2B', status: remoteSandboxConfigured() ? 'ok' : 'warning', detail: remoteSandboxConfigured() ? 'MicroVM isolées pour les builds' : 'E2B_API_KEY manquante : builds sans sandbox isolée' },
     { id: 'composio', label: 'Intégrations Composio', status: composioConfigured() ? 'ok' : 'warning', detail: composioConfigured() ? 'Clé API configurée côté serveur' : 'COMPOSIO_API_KEY manquante' },
-    { id: 'coden_cloud', label: 'Coden Cloud', status: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'ok' : 'warning', detail: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'Provisionnement automatique des backends' : 'Jeton de gestion Supabase manquant' },
+    { id: 'coden_cloud', label: 'Coden Cloud', status: cloudProvisioning.configured ? 'ok' : 'warning', detail: cloudProvisioning.configured ? 'Provisionnement automatique des backends (jeton configuré — « Tester » vérifie qu’il est accepté)' : cloudProvisioning.reason === 'invalid_token_format' ? 'Le jeton de gestion ne commence pas par « sbp_ » : ce n’est pas un jeton d’accès Supabase' : 'Jeton de gestion Supabase manquant (CODEN_SUPABASE_MGMT_TOKEN)', testable: cloudProvisioning.configured },
+    { id: 'secrets_key', label: 'Chiffrement des secrets', status: has('CODEN_SECRETS_KEY') ? 'ok' : has('SUPABASE_SERVICE_ROLE_KEY') ? 'warning' : 'error', detail: has('CODEN_SECRETS_KEY') ? 'Clé dédiée CODEN_SECRETS_KEY' : has('SUPABASE_SERVICE_ROLE_KEY') ? 'Clé dérivée de la clé service : définissez CODEN_SECRETS_KEY pour survivre à sa rotation' : 'Aucune clé : les secrets de projet ne peuvent pas être enregistrés' },
     { id: 'publish', label: 'Publication', status: publishReady ? 'ok' : 'warning', detail: has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') ? 'Cloudflare configuré' : has('VERCEL_TOKEN') ? 'Vercel configuré' : 'Aucun hébergeur configuré' },
     { id: 'saspay', label: 'Saspay', status: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'ok' : 'warning', detail: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'Clé de paiement et webhook configurés' : 'Configuration de paiement incomplète' },
     { id: 'admin', label: 'Accès admin', status: 'ok', detail: `${adminCount} e-mail${adminCount > 1 ? 's' : ''} administrateur${adminCount > 1 ? 's' : ''}` },
@@ -12030,6 +12118,7 @@ app.patch('/api/admin/library/:id', async (req: any, res) => {
   if (!store) return;
   try {
     await store.adminUpdateItem(String(req.params.id), req.body || {});
+    await recordAdminAudit(req, 'library.updated', { type: 'library_item', id: String(req.params.id) }, { fields: Object.keys(req.body || {}).slice(0, 12) });
     res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
@@ -12042,6 +12131,7 @@ app.delete('/api/admin/library/:id', async (req: any, res) => {
   if (!store) return;
   try {
     await store.adminDeleteItem(String(req.params.id));
+    await recordAdminAudit(req, 'library.deleted', { type: 'library_item', id: String(req.params.id) }, {});
     res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
@@ -12066,6 +12156,7 @@ app.patch('/api/admin/error-memory/:id', async (req: any, res) => {
   if (!store) return;
   try {
     await store.adminUpdateMemory(String(req.params.id), req.body || {});
+    await recordAdminAudit(req, 'error_memory.updated', { type: 'error_memory', id: String(req.params.id) }, { fields: Object.keys(req.body || {}).slice(0, 12) });
     res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
@@ -12078,6 +12169,7 @@ app.delete('/api/admin/error-memory/:id', async (req: any, res) => {
   if (!store) return;
   try {
     await store.adminDeleteMemory(String(req.params.id));
+    await recordAdminAudit(req, 'error_memory.deleted', { type: 'error_memory', id: String(req.params.id) }, {});
     res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
@@ -12280,6 +12372,266 @@ app.get('/api/admin/provider-usage', async (req: any, res) => {
     availability: { provider_usage: result.available },
     error: result.error,
   });
+});
+
+/*
+ * Admin audit log: who did what, and when.
+ *
+ * Every admin action that changes something (a suspension, a password reset,
+ * a budget, a library edit) is written here with the admin's identity. Best
+ * effort by design: the action has already happened and must not be undone
+ * because its record could not be written — but the failure is logged.
+ */
+async function recordAdminAudit(req: any, action: string, target: { type?: string; id?: string | null }, detail: Record<string, unknown> = {}) {
+  const client = getSupabase();
+  if (!client) return;
+  const auth = getOptionalAuthState(req);
+  const ip = String(req.headers?.['x-forwarded-for'] || req.ip || '').split(',')[0].trim();
+  const { error } = await client.from('admin_audit_log').insert([{
+    actor_id: auth.userId || null,
+    actor_email: auth.email || null,
+    action,
+    target_type: target.type || null,
+    target_id: target.id ? String(target.id).slice(0, 200) : null,
+    detail: redactSecretPayload(detail),
+    ip_hash: ip ? createHash('sha256').update(`coden-audit:${ip}`).digest('hex').slice(0, 16) : null,
+  }]);
+  if (error) console.warn('[coden:admin_audit_failed]', { action, message: String(error.message || '').slice(0, 160) });
+}
+
+function isMissingRelationError(error: any) {
+  return /does not exist|schema cache|relation .* not found|42P01/i.test(String(error?.message || error?.code || ''));
+}
+
+/* Real-time overview: polled by the console every few seconds while it is open. */
+app.get('/api/admin/live', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin live');
+  const now = Date.now();
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const dayAgo = iso(now - 86_400_000);
+  const monthStart = startOfMonthUtc(new Date(now));
+  const [usersResult, projectsDay, projectsWeek, runsDay, usageMonth, turns, failures] = await Promise.all([
+    adminAuthUsers(client, 1000),
+    client.from('projects').select('id', { count: 'exact', head: true }).gte('created_at', dayAgo),
+    client.from('projects').select('id', { count: 'exact', head: true }).gte('created_at', iso(now - 7 * 86_400_000)),
+    client.from('agent_runs').select('id,user_id,status,tokens_in,tokens_out,created_at').gte('created_at', dayAgo).order('created_at', { ascending: false }).limit(2000),
+    client.from('usage_events').select('organization_id,account_id,model,model_used,provider_cost_usd,complete_cost_usd,cost_usd,provider_payload,created_at').gte('created_at', monthStart).limit(10000),
+    client.from('agent_turns').select('id', { count: 'exact', head: true }).in('status', ['running', 'queued', 'in_progress', 'pending']),
+    client.from('agent_runs').select('id,request_id,project_id,user_id,intent,model_id,status,diagnostic_code,suggested_action,created_at').eq('status', 'failed').order('created_at', { ascending: false }).limit(8),
+  ]);
+  const runs: any[] = runsDay.data || [];
+  const recentRunUsers = new Set(runs.filter(run => Date.parse(run.created_at) >= now - 15 * 60_000).map(run => run.user_id).filter(Boolean));
+  const dayUsers = new Set([...runs.map(run => run.user_id).filter(Boolean), ...usersResult.users.filter((user: any) => adminIsRecent(user.last_sign_in_at, 1)).map((user: any) => user.id)]);
+  const costs = aggregateCosts((usageMonth.data || []) as UsageEventRow[], { days: 1, now: new Date(now) });
+  const dayRows = ((usageMonth.data || []) as UsageEventRow[]).filter(row => String(row.created_at || '') >= dayAgo);
+  const dayTokens = dayRows.reduce((sum, row) => { const tokens = eventTokens(row); return sum + tokens.prompt + tokens.completion; }, 0);
+  const runTokens = runs.reduce((sum, run) => sum + Number(run.tokens_in || 0) + Number(run.tokens_out || 0), 0);
+  const rules = await client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled');
+  const alerts = rules.error ? [] : evaluateCostAlerts((rules.data || []) as CostAlertRule[], { total: costs.totals.month_usd, byUser: costs.month_by_user, byModel: costs.month_by_model });
+  res.json({
+    success: true,
+    generated_at: new Date(now).toISOString(),
+    live: {
+      active_now: recentRunUsers.size,
+      active_today: dayUsers.size,
+      users_total: usersResult.users.length,
+      projects_today: projectsDay.count ?? 0,
+      projects_week: projectsWeek.count ?? 0,
+      runs_today: runs.length,
+      runs_failed_today: runs.filter(run => run.status === 'failed').length,
+      running_turns: turns.count ?? 0,
+      tokens_today: Math.max(dayTokens, runTokens),
+      cost_today_usd: costs.totals.today_usd,
+      cost_month_usd: costs.totals.month_usd,
+    },
+    alerts,
+    recent_errors: (failures.data || []).map(sanitizeAdminRun),
+  });
+});
+
+app.get('/api/admin/costs', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin costs');
+  const days = Math.min(90, Math.max(1, Number(req.query?.days || 30) || 30));
+  const now = new Date();
+  const since = new Date(Math.min(now.getTime() - days * 86_400_000, Date.parse(startOfMonthUtc(now)))).toISOString();
+  const [usage, usersResult, rules] = await Promise.all([
+    client.from('usage_events').select('organization_id,account_id,model,model_used,category,provider,provider_cost_usd,complete_cost_usd,cost_usd,provider_payload,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(20000),
+    adminAuthUsers(client, 1000),
+    client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled,created_by,created_at,updated_at').order('created_at', { ascending: true }),
+  ]);
+  if (usage.error) return res.status(500).json({ success: false, error: usage.error.message });
+  const windowStart = new Date(now.getTime() - days * 86_400_000).toISOString();
+  const all = (usage.data || []) as UsageEventRow[];
+  const windowRows = all.filter(row => String(row.created_at || '') >= windowStart);
+  const costs = aggregateCosts(windowRows, { days, now });
+  const monthCosts = aggregateCosts(all.filter(row => String(row.created_at || '') >= startOfMonthUtc(now)), { days: 1, now });
+  const emails = new Map(usersResult.users.map((user: any) => [user.id, user.email]));
+  const label = (bucket: any) => ({ ...bucket, email: emails.get(bucket.key) || null });
+  const ruleRows = rules.error ? [] : (rules.data || []);
+  res.json({
+    success: true,
+    days,
+    totals: { ...costs.totals, month_usd: monthCosts.totals.month_usd, today_usd: monthCosts.totals.today_usd },
+    by_user: costs.by_user.map(label),
+    by_model: costs.by_model,
+    by_day: costs.by_day,
+    alerts: {
+      available: !rules.error,
+      rules: ruleRows.map((rule: any) => ({ ...rule, email: rule.scope === 'user' ? emails.get(rule.target_id) || null : null })),
+      triggered: evaluateCostAlerts(ruleRows as CostAlertRule[], { total: monthCosts.totals.month_usd, byUser: monthCosts.month_by_user, byModel: monthCosts.month_by_model })
+        .map(alert => ({ ...alert, email: alert.scope === 'user' ? emails.get(alert.target_id || '') || null : null })),
+    },
+    source: 'usage_events',
+  });
+});
+
+app.post('/api/admin/cost-alerts', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin cost alerts');
+  const scope = ['global', 'user', 'model'].includes(String(req.body?.scope)) ? String(req.body.scope) : '';
+  const budget = Number(req.body?.monthly_budget_usd);
+  const targetId = scope === 'global' ? null : String(req.body?.target_id || '').trim().slice(0, 200);
+  if (!scope) return res.status(400).json({ success: false, error: 'Portée invalide (global, utilisateur ou modèle).' });
+  if (!Number.isFinite(budget) || budget <= 0 || budget > 1_000_000) return res.status(400).json({ success: false, error: 'Le budget mensuel doit être un montant positif en dollars.' });
+  if (scope !== 'global' && !targetId) return res.status(400).json({ success: false, error: scope === 'user' ? 'Choisissez un utilisateur.' : 'Choisissez un modèle.' });
+  const now = new Date().toISOString();
+  const existing = await client.from('admin_cost_alerts').select('id').eq('scope', scope).filter('target_id', targetId === null ? 'is' : 'eq', targetId === null ? null : targetId).maybeSingle();
+  if (existing.error && isMissingRelationError(existing.error)) return res.status(503).json({ success: false, error: 'La table des alertes n’existe pas encore : appliquez la migration admin.' });
+  const row = { scope, target_id: targetId, monthly_budget_usd: budget, enabled: req.body?.enabled !== false, created_by: getOptionalAuthState(req).email || null, updated_at: now };
+  const result = existing.data?.id
+    ? await client.from('admin_cost_alerts').update(row).eq('id', existing.data.id).select('*').single()
+    : await client.from('admin_cost_alerts').insert([{ ...row, created_at: now }]).select('*').single();
+  if (result.error) return res.status(500).json({ success: false, error: result.error.message });
+  await recordAdminAudit(req, existing.data?.id ? 'cost_alert.updated' : 'cost_alert.created', { type: 'cost_alert', id: result.data?.id }, { scope, target_id: targetId, monthly_budget_usd: budget });
+  res.json({ success: true, rule: result.data });
+});
+
+app.delete('/api/admin/cost-alerts/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin cost alerts');
+  const { data, error } = await client.from('admin_cost_alerts').delete().eq('id', String(req.params.id)).select('id,scope,target_id,monthly_budget_usd').maybeSingle();
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  if (!data) return res.status(404).json({ success: false, error: 'Alerte introuvable.' });
+  await recordAdminAudit(req, 'cost_alert.deleted', { type: 'cost_alert', id: data.id }, data);
+  res.json({ success: true });
+});
+
+/* One account: identity, status, activity, spend and what admins did to it. */
+app.get('/api/admin/users/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin user detail');
+  const userId = String(req.params.id || '');
+  const found = await (client.auth as any).admin.getUserById(userId).catch((error: any) => ({ data: null, error }));
+  if (found.error || !found.data?.user) return res.status(404).json({ success: false, error: 'Utilisateur introuvable.' });
+  const user = found.data.user;
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
+  const [projects, runs, usage, ledger, audit, wallet] = await Promise.all([
+    client.from('projects').select('id,name,status,preview_status,created_at,updated_at').eq('owner_id', userId).order('updated_at', { ascending: false }).limit(50),
+    client.from('agent_runs').select('id,request_id,project_id,intent,model_id,status,diagnostic_code,duration_ms,tokens_in,tokens_out,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(40),
+    client.from('usage_events').select('model,model_used,category,provider_cost_usd,complete_cost_usd,cost_usd,provider_payload,created_at').eq('organization_id', userId).gte('created_at', since).limit(5000),
+    client.from('credit_ledger_entries').select('*').eq('organization_id', userId).order('created_at', { ascending: false }).limit(30),
+    client.from('admin_audit_log').select('id,actor_email,action,detail,created_at').eq('target_type', 'user').eq('target_id', userId).order('created_at', { ascending: false }).limit(30),
+    client.from('credit_wallets').select('*').eq('organization_id', userId).maybeSingle(),
+  ]);
+  const costs = aggregateCosts((usage.data || []) as UsageEventRow[], { days: 30 });
+  const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : NaN;
+  const activity = [
+    ...(runs.data || []).map((run: any) => ({ at: run.created_at, kind: 'run', label: `Run ${run.intent || ''} · ${run.status}`.trim(), detail: run.diagnostic_code || run.model_id || '' })),
+    ...(projects.data || []).map((project: any) => ({ at: project.created_at, kind: 'project', label: `Projet créé · ${project.name || project.id}`, detail: project.status || '' })),
+    ...(audit.data || []).map((entry: any) => ({ at: entry.created_at, kind: 'admin', label: `Action admin · ${entry.action}`, detail: entry.actor_email || '' })),
+    ...(user.last_sign_in_at ? [{ at: user.last_sign_in_at, kind: 'login', label: 'Dernière connexion', detail: '' }] : []),
+  ].filter(item => item.at).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 60);
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      email: user.email || null,
+      created_at: user.created_at || null,
+      last_sign_in_at: user.last_sign_in_at || null,
+      confirmed_at: user.confirmed_at || user.email_confirmed_at || null,
+      provider: user.app_metadata?.provider || null,
+      is_platform_admin: getPlatformAdminEmails().has(normalizeAdminEmail(user.email)) || user.app_metadata?.role === 'platform_admin' || (Array.isArray(user.app_metadata?.roles) && user.app_metadata.roles.includes('platform_admin')),
+      suspended: Number.isFinite(bannedUntil) && bannedUntil > Date.now(),
+      banned_until: user.banned_until || null,
+    },
+    wallet: wallet.data ? sanitizeAdminWallet(wallet.data) : null,
+    projects: (projects.data || []).map(sanitizeAdminProject),
+    runs: (runs.data || []).map(sanitizeAdminRun),
+    costs: { totals: costs.totals, by_model: costs.by_model },
+    ledger: (ledger.data || []).map((row: any) => ({ id: row.id, amount: row.amount ?? row.credits ?? row.delta ?? null, reason: row.reason || row.entry_type || row.kind || null, category: row.category || null, created_at: row.created_at })),
+    audit: audit.error ? [] : audit.data || [],
+    activity,
+  });
+});
+
+async function adminTargetUser(req: any, res: any) {
+  const client = requireSupabase('Admin user action');
+  const userId = String(req.params.id || '');
+  const found = await (client.auth as any).admin.getUserById(userId).catch((error: any) => ({ data: null, error }));
+  if (found.error || !found.data?.user) { res.status(404).json({ success: false, error: 'Utilisateur introuvable.' }); return null; }
+  return { client, user: found.data.user };
+}
+
+app.post('/api/admin/users/:id/suspend', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const target = await adminTargetUser(req, res);
+  if (!target) return;
+  const { client, user } = target;
+  if (user.id === getOptionalAuthState(req).userId) return res.status(400).json({ success: false, error: 'Vous ne pouvez pas suspendre votre propre compte.' });
+  if (getPlatformAdminEmails().has(normalizeAdminEmail(user.email)) || user.app_metadata?.role === 'platform_admin') return res.status(400).json({ success: false, error: 'Un administrateur de la plateforme ne peut pas être suspendu depuis la console.' });
+  const reason = String(req.body?.reason || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300);
+  const { error } = await (client.auth as any).admin.updateUserById(user.id, { ban_duration: '876000h' });
+  if (error) return res.status(500).json({ success: false, error: error.message || 'Suspension impossible.' });
+  await recordAdminAudit(req, 'user.suspended', { type: 'user', id: user.id }, { email: user.email || null, reason });
+  res.json({ success: true, suspended: true });
+});
+
+app.post('/api/admin/users/:id/unsuspend', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const target = await adminTargetUser(req, res);
+  if (!target) return;
+  const { client, user } = target;
+  const { error } = await (client.auth as any).admin.updateUserById(user.id, { ban_duration: 'none' });
+  if (error) return res.status(500).json({ success: false, error: error.message || 'Réactivation impossible.' });
+  await recordAdminAudit(req, 'user.unsuspended', { type: 'user', id: user.id }, { email: user.email || null });
+  res.json({ success: true, suspended: false });
+});
+
+/* Sends the person the standard reset e-mail; no password is ever set or seen by an admin. */
+app.post('/api/admin/users/:id/reset-password', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const target = await adminTargetUser(req, res);
+  if (!target) return;
+  const { user } = target;
+  if (!user.email) return res.status(400).json({ success: false, error: 'Ce compte n’a pas d’adresse e-mail.' });
+  const authClient = getSupabaseAuthClient();
+  if (!authClient) return res.status(503).json({ success: false, error: 'Le service d’authentification n’est pas configuré.' });
+  const { error } = await authClient.auth.resetPasswordForEmail(user.email, { redirectTo: `${getCodenPublicOrigin()}/auth.html?mode=reset-password` });
+  if (error) return res.status(502).json({ success: false, error: error.message || 'L’e-mail de réinitialisation n’a pas pu être envoyé.' });
+  await recordAdminAudit(req, 'user.password_reset_sent', { type: 'user', id: user.id }, { email: user.email });
+  res.json({ success: true });
+});
+
+app.get('/api/admin/audit-log', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin audit log');
+  const limit = Math.min(1000, Math.max(1, Number(req.query?.limit || 500) || 500));
+  const { data, error } = await client.from('admin_audit_log').select('id,actor_id,actor_email,action,target_type,target_id,detail,created_at').order('created_at', { ascending: false }).limit(limit);
+  if (error) {
+    if (isMissingRelationError(error)) return res.json({ success: true, entries: [], available: false });
+    return res.status(500).json({ success: false, error: error.message });
+  }
+  res.json({ success: true, entries: data || [], available: true });
+});
+
+/* Read-only check that Coden Cloud can create backends: lists organizations, creates nothing. */
+app.post('/api/admin/cloud/provisioning-check', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const result = await checkProvisioningAccess();
+  await recordAdminAudit(req, 'cloud.provisioning_checked', { type: 'platform', id: 'coden_cloud' }, { ok: result.ok, reason: result.reason || null });
+  res.json({ success: true, ...result, message: result.ok ? `Jeton accepté : ${result.organizations} organisation${result.organizations === 1 ? '' : 's'} Supabase accessible${result.organizations === 1 ? '' : 's'}.` : provisionReasonText(result.reason) });
 });
 
 app.get('/api/admin/agent-observability', async (req: any, res) => {
@@ -12630,18 +12982,28 @@ app.post('/api/projects/:id/cloud/provision', async (req: any, res: any) => {
   if (!requireProjectCapability(req, res, 'build', project)) return;
   const existing = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
   if (existing.VITE_SUPABASE_URL) return res.json({ success: true, status: 'ready', already: true });
+  if (!enforceRateLimit(`cloud-provision:${project.id}`, 3, 10 * 60_000)) {
+    return res.status(429).json({ success: false, status: 'rate_limited', error: 'Trop de tentatives d’activation. Réessayez dans quelques minutes.' });
+  }
+  const { provisionAppBackend, classifyProvisionFailure } = await import('./src/services/supabase-auto-provision');
+  await markCloudProvisioning(project, 'provisioning');
   try {
-    const { provisionAppBackend } = await import('./src/services/supabase-auto-provision');
-    const result = await provisionAppBackend({ appName: project.name || `coden-${project.slug}`, files: [] });
+    const files = await loadProjectFiles(project.id).catch(() => [] as GeneratedFile[]);
+    const result = await provisionAppBackend({ appName: project.name || `coden-${project.slug}`, files });
     if (!result.ok || !result.project) {
-      return res.status(503).json({ success: false, status: 'unavailable', error: 'Coden Cloud ne peut pas créer de backend pour le moment.', reason: result.reason || result.error || 'unavailable' });
+      const reason = classifyProvisionFailure(result.reason || result.error);
+      console.warn('[coden:supabase_on_demand_provision_skipped]', { project_id: project.id, reason, detail: redactSecrets(String(result.error || ''), '[redacted]').slice(0, 200) });
+      await markCloudProvisioning(project, 'failed', reason);
+      return res.status(503).json({ success: false, status: 'failed', reason, error: provisionReasonText(reason) });
     }
     const stored = await saveProvisionedBackend({ client: getSupabase(), projectId: project.id, organizationId: project.organization_id, provisioned: result.project });
     console.log('[coden:supabase_on_demand_provisioned]', { project_id: project.id, supabase_ref: result.project.ref, persisted: stored });
     res.json({ success: true, status: 'ready' });
   } catch (error: any) {
-    console.warn('[coden:supabase_on_demand_provision_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
-    res.status(502).json({ success: false, status: 'failed', error: 'Le provisionnement de Coden Cloud a échoué.' });
+    const reason = classifyProvisionFailure(error?.message);
+    console.warn('[coden:supabase_on_demand_provision_failed]', { project_id: project.id, reason, message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    await markCloudProvisioning(project, 'failed', reason);
+    res.status(502).json({ success: false, status: 'failed', reason, error: provisionReasonText(reason) });
   }
 });
 
@@ -13036,8 +13398,19 @@ app.post('/api/projects', async (req: any, res: any) => {
     // this app, when a management token is configured. Best-effort: never
     // blocks project creation; result is returned to the caller for display.
     let supabaseProvision: any = null;
-    try {
-      const { provisionAppBackend, publicProvisionedProject } = await import('./src/services/supabase-auto-provision');
+    /*
+     * Only for an application that needs a backend. Every project used to get
+     * its own Supabase project, a landing page included — a quota spent on
+     * nothing, and the reason a real need could find the organization full.
+     * The rest can activate Coden Cloud from the console, or will when a
+     * later request asks for data, accounts or files.
+     */
+    const needsBackendAtCreation = Boolean(codenCloud && hasBackendNeed(codenCloud.requirement as any));
+    if (!needsBackendAtCreation) {
+      supabaseProvision = { status: 'skipped', reason: 'not_needed' };
+    } else try {
+      const { provisionAppBackend, publicProvisionedProject, classifyProvisionFailure } = await import('./src/services/supabase-auto-provision');
+      await markCloudProvisioning(project, 'provisioning');
       const result = await provisionAppBackend({
         appName: project.name || `coden-${project.slug}`,
         files,
@@ -13071,11 +13444,15 @@ app.post('/api/projects', async (req: any, res: any) => {
           persisted: stored,
         });
       } else {
-        supabaseProvision = { status: 'skipped', reason: result.reason || result.error || 'unknown' };
+        const reason = classifyProvisionFailure(result.reason || result.error);
+        console.warn('[coden:supabase_auto_provision_skipped]', { project_id: project.id, reason, detail: redactSecrets(String(result.error || ''), '[redacted]').slice(0, 200) });
+        await markCloudProvisioning(project, 'failed', reason);
+        supabaseProvision = { status: 'skipped', reason };
       }
     } catch (error: any) {
-      console.warn('[coden:supabase_auto_provision_failed]', { message: error?.message || String(error) });
-      supabaseProvision = { status: 'error', reason: error?.message || 'provision_failed' };
+      console.warn('[coden:supabase_auto_provision_failed]', { project_id: project.id, message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+      await markCloudProvisioning(project, 'failed', 'provider_error');
+      supabaseProvision = { status: 'error', reason: 'provider_error' };
     }
 
     await upsertUserWorkspaceState(userId, {
@@ -13924,6 +14301,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }) : null;
   // Set by the multi-agent branch; settled by respondJson on the way out.
   let pipelineRunId = '';
+  let pipelineTokens: { prompt: number; completion: number } | null = null;
   const respondJson = async (status: number, payload: any) => {
     // The real application must be visible before the model writes its recap.
     // This URL comes from the verified sandbox, not from model-authored prose.
@@ -14005,6 +14383,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           effective_model: payload.model || null,
           real_cost_usd: Number(payload.real_cost_usd || 0) || null,
           diagnostic_code: payload.diagnostic_code || null,
+          ...(pipelineTokens ? { tokens_in: pipelineTokens.prompt || null, tokens_out: pipelineTokens.completion || null } : {}),
         });
       } catch (error) {
         console.warn('[coden:pipeline_run_status_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
@@ -14332,6 +14711,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         client: getSupabase(),
         projectId: project.id,
       });
+      const serverSecretsPromise = loadProjectServerSecrets(project.id);
       routingPromise.catch(() => undefined);
       backendEnvPromise.catch(() => undefined);
 
@@ -14366,6 +14746,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
        * localStorage stand-in beside a client they never call.
        */
       const backendEnv = await backendEnvPromise;
+      const serverSecrets = await serverSecretsPromise;
       const [routingPlan, routingCredits] = await routingPromise;
 
       /*
@@ -14424,6 +14805,7 @@ ${resolvedMission}` : resolvedMission;
         // Settled decisions, then what already happened in this session.
         memoryContext: [projectMemory, sessionContext, sharedKnowledge].filter(Boolean).join('\n\n') || undefined,
         backendEnv,
+        serverSecrets,
         route: pipelineRoute,
         onErrorsResolved: problems => { resolvedDuringRun.push(...problems); },
         existingFiles,
@@ -14449,6 +14831,7 @@ ${resolvedMission}` : resolvedMission;
           ? { harness: harnessContext.harness, threadId: harnessContext.thread.id, turnId: harnessContext.turn.id }
           : undefined,
       });
+      pipelineTokens = 'tokens' in outcome ? outcome.tokens : null;
 
       if (outcome.started) {
         const pipelineFiles = outcome.files as GeneratedFile[];
@@ -14530,6 +14913,8 @@ ${resolvedMission}` : resolvedMission;
                 action: pipelineCost.action,
                 charged_credits: pipelineCost.finalCredits,
                 real_cost_usd: pipelineCompleteCostUsd,
+                prompt_tokens: outcome.tokens?.prompt || 0,
+                completion_tokens: outcome.tokens?.completion || 0,
               },
             });
             await settleUnifiedUsage({
@@ -14553,7 +14938,7 @@ ${resolvedMission}` : resolvedMission;
                 allocatedPlatformCostUsd: 0.0001,
                 completeCostUsd: pipelineCompleteCostUsd,
                 idempotencyKey: `pipeline:${requestId}:failed-usage`,
-                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false },
+                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false, prompt_tokens: outcome.tokens?.prompt || 0, completion_tokens: outcome.tokens?.completion || 0 },
               });
             }
             await releaseUnifiedUsage(pipelineReservation);
@@ -15093,7 +15478,7 @@ ${resolvedMission}` : resolvedMission;
             allocatedPlatformCostUsd: 0.0001,
             completeCostUsd: textCompleteCostUsd,
             idempotencyKey: `text:${requestId}:usage`,
-            providerPayload: { action: cost.action, charged_credits: chargedCredits },
+            providerPayload: { action: cost.action, charged_credits: chargedCredits, prompt_tokens: Number((agentText as any).usage?.prompt_tokens || 0), completion_tokens: Number((agentText as any).usage?.completion_tokens || 0) },
           });
           await settleUnifiedUsage({ reservation: textReservation, usageEventId, creditsCharged: chargedCredits, completeCostUsd: textCompleteCostUsd });
           textReservation = null;
@@ -15131,6 +15516,8 @@ ${resolvedMission}` : resolvedMission;
       updateAgentRunStatus(agentRunId, 'completed', {
         real_cost_usd: Number(agentText.cost_usd || costRealCostUsd || 0) || null,
         effective_model: agentText.model || null,
+        tokens_in: Number((agentText as any).usage?.prompt_tokens || 0) || null,
+        tokens_out: Number((agentText as any).usage?.completion_tokens || 0) || null,
       }),
     ]);
     return respondJson(200, {
@@ -16924,22 +17311,52 @@ app.get('/api/projects/:id/database', async (req: any, res: any) => {
   const secrets = await listProjectSecrets(project.id);
   const client = requireSupabase('Project database view');
   const { data: integrations = [] } = await client.from('project_integrations').select('*').eq('project_id', project.id).order('updated_at', { ascending: false });
-  const { data: assets = [] } = await client.from('project_assets').select('id, name, url, kind, mime_type, size_bytes, status, storage_path, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  const { data: assetRows = [] } = await client.from('project_assets').select('id, name, url, kind, mime_type, size_bytes, status, storage_path, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  const assets = await withSignedAssetUrls(client, assetRows || []);
   const { data: activity = [] } = await client.from('agent_events').select('event_type, message, created_at').eq('project_id', project.id).order('created_at', { ascending: false }).limit(8);
-  const codenCloud = await loadProjectCodenCloud(project.id);
+  let codenCloud = await loadProjectCodenCloud(project.id);
   const generatedTables = parseGeneratedSchemaTables(schemaFile?.content || '');
   const tables = generatedTables.length
     ? generatedTables.map(table => ({ ...table, rows: null, source: 'supabase/schema.sql' }))
     : [];
+  /*
+   * The need for a backend, read from what was built as well as from the
+   * first prompt. A project whose files use a database, sign-in or storage
+   * gets its requirement recorded now, so the console and the next run agree.
+   */
+  const fileNeeds = detectBackendNeedsFromFiles(files);
+  if (!codenCloud.requirements && hasBackendNeed(fileNeeds)) {
+    await recordBackendRequirementsFromFiles(project, fileNeeds).catch((error: any) => {
+      console.warn('[coden:cloud_requirement_from_files_skipped]', { message: String(error?.message || error).slice(0, 160) });
+    });
+    codenCloud = await loadProjectCodenCloud(project.id);
+  }
+  const needs = {
+    needs_database: Boolean(codenCloud.requirements?.needs_database || fileNeeds.needs_database),
+    needs_auth: Boolean(codenCloud.requirements?.needs_auth || fileNeeds.needs_auth),
+    needs_storage: Boolean(codenCloud.requirements?.needs_storage || fileNeeds.needs_storage),
+  };
+  const backendEnv = await loadProjectBackendEnv({ client, projectId: project.id });
+  const { provisioningConfigured } = await import('./src/services/supabase-auto-provision');
+  const cloudState = resolveCloudState({
+    status: codenCloud.project?.status || null,
+    hasSupabaseUrl: Boolean(backendEnv.VITE_SUPABASE_URL),
+    needs,
+    lastError: codenCloud.project?.public_runtime_config?.last_error || null,
+    provisioningAvailable: provisioningConfigured().configured,
+  });
   res.json({
     success: true,
     database: {
       project_id: project.id,
-      backend_status: codenCloud.project?.status || (schemaFile ? 'schema_generated' : 'waiting_for_schema'),
+      backend_status: cloudState.state,
       mode: codenCloud.project?.mode || codenCloud.requirements?.recommended_mode || 'shared_supabase_project',
       cloud: {
         provider: codenCloud.project?.provider || 'coden_cloud',
-        status: codenCloud.project?.status || (codenCloud.requirements ? 'detected' : 'not_detected'),
+        status: cloudState.state,
+        raw_status: codenCloud.project?.status || null,
+        state: cloudState,
+        needs,
         mode: codenCloud.project?.mode || codenCloud.requirements?.recommended_mode || 'shared',
         region: codenCloud.project?.region || 'auto',
         schema_name: codenCloud.project?.schema_name || (codenCloud.requirements ? buildCodenCloudSchemaName(project.id) : null),
@@ -16955,9 +17372,9 @@ app.get('/api/projects/:id/database', async (req: any, res: any) => {
       secrets,
       integrations,
       assets,
-      storage: { bucket: 'project-assets', assets_count: assets.length },
+      storage: { bucket: 'project-assets', assets_count: assets.length, private: true },
       activity,
-      security: { rls_required: true, secrets_masked: true, service_role_server_only: true },
+      security: { rls_required: cloudState.state === 'connected' || needs.needs_database, secrets_masked: true, secrets_encrypted: true, service_role_server_only: true },
     },
   });
 });
@@ -16975,6 +17392,7 @@ app.get('/api/projects/:id/database/secrets', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
   const secrets = await listProjectSecrets(project.id);
   res.json({ success: true, secrets });
 });
@@ -17054,8 +17472,41 @@ app.post('/api/projects/:id/database/secrets', async (req: any, res: any) => {
   if (!enforceRateLimit(`secret:${userId}`, 20, 60_000)) {
     return res.status(429).json({ success: false, error: 'Too many secret updates.' });
   }
-  const row = await saveProjectSecret(project, String(req.body?.service || 'Custom'), String(req.body?.variable || 'CUSTOM_API_KEY'), String(req.body?.value || ''), 'configured');
-  res.json({ success: true, secret: row });
+  try {
+    const row = await saveProjectSecret(project, String(req.body?.service || 'Custom'), String(req.body?.variable || '').trim(), String(req.body?.value || ''), 'configured');
+    res.json({ success: true, secret: row });
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message });
+    console.warn('[coden:project_secret_save_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'Le secret n’a pas pu être enregistré. Réessayez.' });
+  }
+});
+
+/* Replace a secret's value (and optionally its name). The old value is never sent back. */
+app.patch('/api/projects/:id/database/secrets/:secretId', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'secrets', project)) return;
+  if (!enforceRateLimit(`secret:${userId}`, 20, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Too many secret updates.' });
+  }
+  const client = requireSupabase('Project secret update');
+  const current = await client.from('project_secrets').select('id, service, variable').eq('id', req.params.secretId).eq('project_id', project.id).maybeSingle();
+  if (current.error) return res.status(500).json({ success: false, error: current.error.message });
+  if (!current.data) return res.status(404).json({ success: false, error: 'Secret introuvable.' });
+  const variable = String(req.body?.variable || current.data.variable).trim();
+  try {
+    const row = await saveProjectSecret(project, String(req.body?.service || current.data.service || 'Custom'), variable, String(req.body?.value || ''), 'configured');
+    if (variable !== current.data.variable) {
+      await client.from('project_secrets').delete().eq('id', current.data.id).eq('project_id', project.id);
+    }
+    res.json({ success: true, secret: row });
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message });
+    console.warn('[coden:project_secret_update_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'Le secret n’a pas pu être modifié. Réessayez.' });
+  }
 });
 
 app.post('/api/projects/:id/external-keys', async (req: any, res: any) => {
@@ -17065,8 +17516,14 @@ app.post('/api/projects/:id/external-keys', async (req: any, res: any) => {
   if (!requireProjectCapability(req, res, 'secrets', project)) return;
   const keys = Array.isArray(req.body?.keys) ? req.body.keys : [];
   const saved = [];
-  for (const item of keys) {
-    saved.push(await saveProjectSecret(project, String(item.service || 'Custom'), String(item.variable || 'CUSTOM_API_KEY'), String(item.value || ''), item.skip ? 'skipped' : 'configured'));
+  try {
+    for (const item of keys.slice(0, 40)) {
+      saved.push(await saveProjectSecret(project, String(item.service || 'Custom'), String(item.variable || 'CUSTOM_API_KEY').trim(), String(item.value || ''), item.skip || !item.value ? 'skipped' : 'configured'));
+    }
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message, secrets: saved });
+    console.warn('[coden:project_secret_save_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    return res.status(500).json({ success: false, error: 'Les clés n’ont pas pu être enregistrées.', secrets: saved });
   }
   res.json({ success: true, secrets: saved });
 });
@@ -17262,6 +17719,19 @@ app.post('/api/projects/:id/users', async (req: any, res: any) => {
   return res.status(409).json({ success: false, error: 'Project Auth is not provisioned with an isolated service role.', diagnostic_code: 'PROJECT_AUTH_NOT_PROVISIONED' });
 });
 
+/**
+ * The bucket is private: a file is read through a link signed for an hour,
+ * issued to someone who may view the project, instead of a public URL that
+ * would outlive every permission.
+ */
+async function withSignedAssetUrls(client: any, rows: any[]) {
+  const paths = rows.map(row => String(row?.storage_path || '')).filter(Boolean);
+  if (!paths.length) return rows;
+  const signed = await client.storage.from('project-assets').createSignedUrls(paths, 3600).catch(() => ({ data: null }));
+  const byPath = new Map<string, string>((signed?.data || []).filter((item: any) => item?.signedUrl).map((item: any) => [String(item.path), String(item.signedUrl)]));
+  return rows.map(row => row?.storage_path ? { ...row, url: byPath.get(String(row.storage_path)) || null } : row);
+}
+
 app.get('/api/projects/:id/assets', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -17270,7 +17740,7 @@ app.get('/api/projects/:id/assets', async (req: any, res: any) => {
   const client = requireSupabase('Project asset listing');
   const { data, error } = await client.from('project_assets').select('id,name,url,kind,mime_type,size_bytes,status,storage_path,created_at').eq('project_id', project.id).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, assets: data || [], storage: { bucket: 'project-assets', provider: 'supabase_storage', configured: true } });
+  res.json({ success: true, assets: await withSignedAssetUrls(client, data || []), storage: { bucket: 'project-assets', provider: 'supabase_storage', configured: true, private: true } });
 });
 
 app.delete('/api/projects/:id/assets/:assetId', async (req: any, res: any) => {
@@ -17284,7 +17754,10 @@ app.delete('/api/projects/:id/assets/:assetId', async (req: any, res: any) => {
   if (!existing.data) return res.status(404).json({ success: false, error: 'Asset not found.' });
   if (existing.data.storage_path) {
     const removed = await client.storage.from('project-assets').remove([String(existing.data.storage_path)]);
-    if (removed.error) return res.status(500).json({ success: false, error: removed.error.message });
+    // An object already gone is what deletion wanted; anything else keeps the row so nothing is orphaned.
+    if (removed.error && !/not.?found|does not exist|404/i.test(String(removed.error.message || ''))) {
+      return res.status(500).json({ success: false, error: 'Le fichier n’a pas pu être supprimé du stockage. Réessayez.' });
+    }
   }
   const deleted = await client.from('project_assets').delete().eq('id', req.params.assetId).eq('project_id', project.id);
   if (deleted.error) return res.status(500).json({ success: false, error: deleted.error.message });
@@ -17322,13 +17795,16 @@ app.post('/api/projects/:id/assets', async (req: any, res: any) => {
           upsert: false,
         });
       if (uploadError) {
+        console.warn('[coden:project_asset_upload_failed]', { project_id: project.id, message: String(uploadError.message || '').slice(0, 160) });
         return res.status(500).json({
           success: false,
-          error: 'Project asset storage is not configured. Create the Supabase Storage bucket "project-assets" and retry.',
+          error: /bucket.*not.?found|not.?found.*bucket/i.test(String(uploadError.message || ''))
+            ? 'Le stockage de Coden Cloud n’est pas encore configuré sur cette instance. Réessayez après la prochaine mise à jour.'
+            : 'Le fichier n’a pas pu être importé. Réessayez.',
         });
       }
-      const { data: publicUrl } = client.storage.from('project-assets').getPublicUrl(storagePath);
-      url = publicUrl?.publicUrl || '';
+      // Private bucket: the stored row keeps the path; readers get a signed link.
+      url = '';
       status = 'uploaded';
     }
   } catch (error) {
@@ -18378,6 +18854,10 @@ import { prepareRemoteTemplate, remoteSandboxConfigured } from './src/services/s
 import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
+import { describeServerSecrets, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
+import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
+import { aggregateCosts, eventTokens, evaluateCostAlerts, startOfMonthUtc, type CostAlertRule, type UsageEventRow } from './src/services/admin-costs.ts';
+import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';

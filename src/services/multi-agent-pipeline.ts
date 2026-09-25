@@ -20,6 +20,7 @@
  */
 
 import { withUserInstructions } from './agent-personalization.ts';
+import { describeServerSecrets } from '../lib/project-secrets.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
@@ -98,6 +99,8 @@ export type MultiAgentPipelineOutcome =
       repairOutcome: RepairOutcome;
       /** Measured provider spend for the whole run, in USD. What the caller bills on. */
       costUsd: number;
+      /** Tokens the provider reported for the run's model calls (planner excluded when it does not report them). */
+      tokens: { prompt: number; completion: number };
     };
 
 /**
@@ -610,6 +613,12 @@ export async function runMultiAgentPipeline(input: {
    * one feature unavailable — never a reason to fail the run.
    */
   backendEnv?: Record<string, string>;
+  /**
+   * The project's secrets, opened on the server, for the application's own
+   * server code (API routes, functions). Given to the sandbox's environment
+   * only: agents are told the names, never the values.
+   */
+  serverSecrets?: Record<string, string>;
   /** Keeps deterministic infrastructure tests independent from model analysis. */
   enableSpecialists?: boolean;
   /**
@@ -747,11 +756,12 @@ export async function runMultiAgentPipeline(input: {
   // Undefined when no backend was provisioned, so nothing tells an agent a
   // database exists when none does — the one failure worse than no backend is
   // an app written against one that is not there.
-  const backendBriefing = describeProjectBackend(input.backendEnv || {});
+  const backendBriefing = [describeProjectBackend(input.backendEnv || {}), describeServerSecrets(Object.keys(input.serverSecrets || {}))].filter(Boolean).join('\n\n') || undefined;
+  const runtimeEnv = { ...(input.serverSecrets || {}), ...(input.backendEnv || {}) };
 
   // The spend counter starts before specialist analysis: those calls are real
   // provider work and must never disappear from billing or observability.
-  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
+  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0, promptTokens: 0, completionTokens: 0 };
 
   /*
    * The sandbox comes up while the agents think.
@@ -784,7 +794,7 @@ export async function runMultiAgentPipeline(input: {
      * yet". The dedicated Supabase project existed; the sandbox was simply
      * never told about it.
      */
-    env: input.backendEnv,
+    env: runtimeEnv,
     signal: input.signal,
     onEvent: event => {
       input.onSandboxEvent?.(event);
@@ -870,6 +880,8 @@ export async function runMultiAgentPipeline(input: {
             signal: input.signal,
           });
           spent.costUsd += result.cost_usd || 0;
+          spent.promptTokens += Number(result.usage?.prompt_tokens || 0);
+          spent.completionTokens += Number(result.usage?.completion_tokens || 0);
           return result.text;
         },
         roles,
@@ -1136,6 +1148,8 @@ export async function runMultiAgentPipeline(input: {
         onSpend: subSpend => {
           spent.toolCalls += subSpend.toolCalls;
           spent.costUsd += subSpend.costUsd;
+          spent.promptTokens += Number(subSpend.promptTokens || 0);
+          spent.completionTokens += Number(subSpend.completionTokens || 0);
           if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: subSpend.toolCalls, costUsd: subSpend.costUsd });
         },
       } : undefined,
@@ -1162,6 +1176,8 @@ export async function runMultiAgentPipeline(input: {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
         spent.costUsd += roundSpend.costUsd;
+        spent.promptTokens += Number((roundSpend as { promptTokens?: number }).promptTokens || 0);
+        spent.completionTokens += Number((roundSpend as { completionTokens?: number }).completionTokens || 0);
         // Written per round rather than once at the end: a run that is
         // cancelled or crashes still leaves what it had already spent.
         if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: roundSpend.toolCalls, repairAttempts: 1, costUsd: roundSpend.costUsd });
@@ -1184,7 +1200,7 @@ export async function runMultiAgentPipeline(input: {
     ensureRuntime: async restartRequired => {
       if (!restartRequired && sandbox.status().state === 'running') return;
       await launchProjectPreview({ projectId: input.projectId, userId: input.userId, files: await readAllFiles(sandbox),
-        reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
+        env: runtimeEnv, reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
     },
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal, {
@@ -1339,6 +1355,7 @@ export async function runMultiAgentPipeline(input: {
      * the six that generated and edited an application were not billed at all.
      */
     costUsd: spent.costUsd,
+    tokens: { prompt: spent.promptTokens, completion: spent.completionTokens },
   };
   } finally {
     releaseRun();
