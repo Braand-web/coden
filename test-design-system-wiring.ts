@@ -46,8 +46,9 @@ const starters = readFileSync(new URL('./src/services/sandbox/starters.ts', impo
   assert.match(planner, /designPolicy\?: string/, 'the planner accepts it');
   assert.match(planner, /buildPlannerSystemPrompt\(input\.designPolicy[,)]/, 'and actually uses it');
 
-  const turn = pipeline.slice(pipeline.indexOf('turn: buildToolLoopTurn({'), pipeline.indexOf('turn: buildToolLoopTurn({') + 800);
-  assert.match(turn, /designPolicy,/, 'and so must the coder');
+  const turn = pipeline.slice(pipeline.indexOf('turn: buildToolLoopTurn({'), pipeline.indexOf('turn: buildToolLoopTurn({') + 1800);
+  // Composed with the backend briefing and the library block since the sub-agent team landed.
+  assert.match(turn, /designPolicy(,|: \[\.\.\.\[designPolicy, backendBriefing\])/, 'and so must the coder');
 }
 
 /*
