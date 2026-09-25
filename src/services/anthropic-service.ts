@@ -270,9 +270,10 @@ function toAnthropicMessage(message: ChatMessage) {
 
 function contentToAnthropicBlocks(content: string | ChatContentPart[]) {
   if (typeof content === 'string') return [{ type: 'text', text: content }];
-  return content.map(part => {
+  // Direct Anthropic reads text and images only; the other parts travel with a textual equivalent.
+  return content.filter(part => part.type === 'text' || part.type === 'image_url').map(part => {
     if (part.type === 'text') return { type: 'text', text: part.text };
-    const url = String(part.image_url?.url || '');
+    const url = String(part.type === 'image_url' ? part.image_url?.url || '' : '');
     const dataMatch = url.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
     if (dataMatch) {
       return { type: 'image', source: { type: 'base64', media_type: dataMatch[1], data: dataMatch[2] } };

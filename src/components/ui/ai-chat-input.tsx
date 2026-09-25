@@ -5,6 +5,9 @@ import { PUBLIC_MODEL_CATALOG, PROVIDER_META, isPlanAtLeast, type CanonicalUserP
 import { useModelAvailability } from "../../lib/model-availability";
 import { providerIconSvg } from "../../model-provider-icons";
 import { AGENT_EFFORT_LABELS, AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT, type AgentEffort } from "../../services/agent-effort";
+import { ACCEPT_ATTRIBUTE, MAX_ATTACHMENTS_PER_MESSAGE } from "../../lib/attachment-policy";
+import type { AttachmentUploader } from "../../lib/attachment-types";
+import { AttachmentTray, useComposerAttachments, type ComposerSubmission } from "./composer-attachments";
 
 // ----------------------------------------------------------------------
 // Transition Physics
@@ -15,9 +18,8 @@ const SMOOTH_HEIGHT_TRANSITION = "max-width 0.4s cubic-bezier(0.175, 0.885, 0.32
 // ----------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------
-interface Attachment {
-  id: string;
-  file: File;
+/** An image opened in the gallery: a composer attachment, by its local preview. */
+interface GalleryImage {
   url: string;
   name: string;
   width?: number;
@@ -211,68 +213,6 @@ const REASONING_UNSUPPORTED_HINT = "Ce modèle ne supporte pas le raisonnement �
 const AUTO_REASONING_HINT = "En mode Auto, Coden choisit le niveau de raisonnement selon la tâche";
 
 // ----------------------------------------------------------------------
-// Attachment Thumbnail
-// ----------------------------------------------------------------------
-function AttachmentThumb({
-  attachment,
-  index,
-  onRemove,
-  onOpen,
-  registerRef,
-}: {
-  attachment: Attachment;
-  index: number;
-  onRemove: (id: string) => void;
-  onOpen: (attachment: Attachment, rect: DOMRect) => void;
-  registerRef: (id: string, el: HTMLButtonElement | null) => void;
-}) {
-  const [isHovered, setIsHovered] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-
-  return (
-    <button
-      ref={(el) => {
-        btnRef.current = el;
-        registerRef(attachment.id, el);
-      }}
-      type="button"
-      onMouseDown={(e) => e.preventDefault()}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (btnRef.current) {
-          onOpen(attachment, btnRef.current.getBoundingClientRect());
-        }
-      }}
-      style={{ animationDelay: `${index * 35}ms`, animationFillMode: "backwards" }}
-      className={cn(
-        "group relative size-12 shrink-0 overflow-hidden rounded-xl border border-border bg-muted outline-none",
-        "transition-transform duration-200 ease-[cubic-bezier(0.175,0.885,0.32,1.275)] hover:scale-[1.04] active:scale-[0.96]",
-        "animate-in fade-in slide-in-from-top-3 zoom-in-90 duration-400"
-      )}
-      aria-label={`Ouvrir l'aperçu de ${attachment.name}`}
-    >
-      <img src={attachment.url} alt={attachment.name} className="size-full object-cover" draggable={false} />
-      <span className={cn("absolute inset-0 flex items-start justify-end bg-var(--foreground)/0 transition-colors duration-200", isHovered && "bg-var(--foreground)/25")}>
-        <span
-          role="button" tabIndex={-1}
-          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          onClick={(e) => { e.stopPropagation(); onRemove(attachment.id); }}
-          className={cn(
-            "m-1 flex size-4 items-center justify-center rounded-full bg-background/90 text-foreground/70 shadow-sm transition-all duration-200 ease-[cubic-bezier(0.175,0.885,0.32,1.275)] hover:bg-background hover:text-foreground hover:scale-110",
-            isHovered ? "opacity-100 scale-100" : "opacity-0 scale-50 pointer-events-none"
-          )}
-          aria-label={`Retirer ${attachment.name}`}
-        >
-          <CloseIcon />
-        </span>
-      </span>
-    </button>
-  );
-}
-
-// ----------------------------------------------------------------------
 // Shared-Element Gallery Modal
 // ----------------------------------------------------------------------
 function AttachmentGalleryModal({
@@ -280,7 +220,7 @@ function AttachmentGalleryModal({
   originRect,
   onClose,
 }: {
-  attachment: Attachment;
+  attachment: GalleryImage;
   originRect: DOMRect;
   onClose: () => void;
 }) {
@@ -376,8 +316,18 @@ function AttachmentGalleryModal({
 export interface PromptInputProps {
   onSubmit?: (
     value: string,
-    meta: { model: string; effort: string; attachments: File[] }
+    meta: {
+      model: string;
+      effort: string;
+      /** Files that stayed in the browser (no uploader): the host sends them later. */
+      attachments: File[];
+    } & Omit<ComposerSubmission, "localFiles">
   ) => void;
+  /**
+   * Sends files as they are chosen and analyses links as they are written.
+   * Omitted (the landing before sign-in): files travel with the message.
+   */
+  uploader?: AttachmentUploader | null;
   placeholder?: string;
   className?: string;
   models?: string[];
@@ -444,7 +394,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       effort: controlledEffort,
       defaultEffort,
       onEffortChange,
-      maxAttachments = 6,
+      maxAttachments = MAX_ATTACHMENTS_PER_MESSAGE,
+      uploader = null,
       collapsedWidth = 320,
       expandedWidth = 480,
       defaultExpanded = false,
@@ -479,8 +430,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     );
     const [isModelSelectOpen, setIsModelSelectOpen] = useState(false);
 
-    const [attachments, setAttachments] = useState<Attachment[]>([]);
-    const [activeAttachment, setActiveAttachment] = useState<{ attachment: Attachment; rect: DOMRect } | null>(null);
+    const [activeAttachment, setActiveAttachment] = useState<{ attachment: GalleryImage; rect: DOMRect } | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragDepth = useRef(0);
 
     // Audio/Voice recording states
     const [isRecording, setIsRecording] = useState(false);
@@ -500,8 +452,10 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
     const isControlled = controlledValue !== undefined;
     const value = isControlled ? controlledValue : localValue;
-    const hasValue = value.trim() !== "" || attachments.length > 0;
-    const hasAttachments = attachments.length > 0;
+    const attachmentState = useComposerAttachments({ uploader, value, maxFiles: maxAttachments });
+    const { files: attachedFiles, links: detectedLinks, errors: attachmentErrors } = attachmentState;
+    const hasValue = value.trim() !== "" || attachedFiles.length > 0;
+    const hasAttachments = attachedFiles.length > 0;
 
     /*
      * The same controlled/uncontrolled resolution the value uses.
@@ -544,7 +498,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const topFadeRef = useRef<HTMLDivElement>(null);
     const bottomFadeRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const thumbRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
 
     // Sync value ref for audio callback closure
     useEffect(() => {
@@ -700,13 +653,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       }
     }, [value, isRecording]);
 
-    // Ensure cleanup of mic/streams on unmount
-    useEffect(() => {
-      return () => {
-        stopRecording();
-        attachments.forEach((a) => URL.revokeObjectURL(a.url));
-      };
-    }, [stopRecording, attachments]);
+    // The microphone stops with the component. (Attachment previews are released by their own hook.)
+    useEffect(() => () => stopRecording(), [stopRecording]);
 
 
     useEffect(() => {
@@ -781,11 +729,17 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const handleSubmit = () => {
       if (value.trim() === "" && !hasAttachments) return;
       if (disabled) return;
+      // A file still on its way would reach the agent missing: the send waits for it.
+      if (attachmentState.uploading) {
+        attachmentState.setErrors(["Patientez : l’envoi des fichiers n’est pas terminé."]);
+        return;
+      }
       setIsSmoothResize(false);
-      onSubmit?.(value, { model: selectedModel, effort: efforts[effortIndex], attachments: attachments.map((a) => a.file) });
+      const { localFiles, ...submission } = attachmentState.takeSubmission();
+      // Files alone are a request too: the agent is asked to look at them.
+      const text = value.trim() === "" ? "Voici des pièces jointes : analyse-les et propose ce que tu peux en faire." : value;
+      onSubmit?.(text, { model: selectedModel, effort: efforts[effortIndex], attachments: localFiles, ...submission });
       handleValueChange("");
-      attachments.forEach((a) => URL.revokeObjectURL(a.url));
-      setAttachments([]);
       setExpanded(defaultExpanded);
       setIsModelSelectOpen(false);
     };
@@ -801,44 +755,80 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       fileInputRef.current?.click();
     };
 
-    const handleFilesChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
-      e.target.value = "";
-
-      if (files.length === 0) return;
-      const room = Math.max(0, maxAttachments - attachments.length);
-      const accepted = files.slice(0, room);
-
+    const acceptFiles = (files: File[]) => {
+      if (!files.length || disabled) return;
       if (!expanded) { setIsSmoothResize(false); setExpanded(true); }
       else { setIsSmoothResize(true); }
-
-      for (const file of accepted) {
-        const url = URL.createObjectURL(file);
-        const img = new Image();
-        img.onload = () => addAttachment(file, url, img.naturalWidth, img.naturalHeight);
-        img.onerror = () => addAttachment(file, url, 800, 600);
-        img.src = url;
-      }
+      attachmentState.addFiles(files);
     };
 
-    const addAttachment = (file: File, url: string, width: number, height: number) => {
-      const id = `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
-      setAttachments((prev) => [...prev, { id, file, url, name: file.name, width, height }]);
+    const handleFilesChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      e.target.value = "";
+      acceptFiles(files);
     };
 
-    const removeAttachment = (id: string) => {
-      setIsSmoothResize(true);
-      setAttachments((prev) => {
-        const target = prev.find((a) => a.id === id);
-        if (target) URL.revokeObjectURL(target.url);
-        return prev.filter((a) => a.id !== id);
-      });
-      thumbRefs.current.delete(id);
+    /* Drag and drop onto the composer, and images pasted with Ctrl+V. */
+    const hasDraggedFiles = (event: React.DragEvent) => Array.from(event.dataTransfer?.types || []).includes("Files");
+    const onDragEnter = (event: React.DragEvent) => {
+      if (!hasDraggedFiles(event)) return;
+      event.preventDefault();
+      dragDepth.current += 1;
+      setIsDragging(true);
     };
+    const onDragOver = (event: React.DragEvent) => {
+      if (!hasDraggedFiles(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    };
+    const onDragLeave = (event: React.DragEvent) => {
+      if (!hasDraggedFiles(event)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (!dragDepth.current) setIsDragging(false);
+    };
+    const onDrop = (event: React.DragEvent) => {
+      if (!hasDraggedFiles(event)) return;
+      event.preventDefault();
+      dragDepth.current = 0;
+      setIsDragging(false);
+      acceptFiles(Array.from(event.dataTransfer.files || []));
+    };
+    const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const pasted = Array.from(event.clipboardData?.files || []);
+      if (!pasted.length) return;
+      event.preventDefault();
+      // A screenshot pasted from the clipboard has no useful name.
+      acceptFiles(pasted.map((file, index) => (file.name && file.name !== "image.png")
+        ? file
+        : new File([file], `capture-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}${index ? `-${index + 1}` : ""}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`, { type: file.type })));
+    };
+
+    /*
+     * A picture for a model that cannot see: said before sending, with the
+     * way out. Auto routes such a message to a multimodal model on its own.
+     */
+    const hasVisuals = attachedFiles.some(item => item.kind === "image" || item.kind === "video") || detectedLinks.length > 0;
+    const blindModel = hasVisuals && !isAutoModel && availability?.get(selectedModel)?.supportsVision === false;
+    const visionAlternative = blindModel
+      ? models.find(id => id !== AUTO_MODEL && /gemini/i.test(id) && availability?.get(id)?.supportsVision !== false && !isModelLockedForPlan(id, plan)) || AUTO_MODEL
+      : null;
+    const visionNotice = blindModel && visionAlternative ? (
+      <>
+        <span>{MODEL_LABELS.get(selectedModel) || selectedModel} ne lit pas les images : Coden lui en transmettra une description.</span>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => handleModelChange(visionAlternative)}>
+          Utiliser {MODEL_LABELS.get(visionAlternative) || "Auto"}
+        </button>
+      </>
+    ) : null;
+    const showTray = attachedFiles.length > 0 || detectedLinks.length > 0 || attachmentErrors.length > 0;
+    const trayHeight = showTray
+      ? (attachedFiles.length || detectedLinks.length ? 64 : 0) + (visionNotice ? 30 : 0) + (attachmentErrors.length ? 34 : 0) + 10
+      : 0;
 
     // Calculate action button states. A run in flight outranks everything:
     // the one thing a user needs from this button then is a way to stop.
     const showStop = isRecording || isBusy;
+    const waitingForUploads = attachmentState.uploading && !showStop;
     const showArrow = hasValue && !showStop;
     const showMic = !hasValue && !showStop;
 
@@ -872,6 +862,11 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             internalContainerRef.current = node;
           }}
           onBlur={handleBlur}
+          onDragEnter={onDragEnter}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          data-dragging={isDragging ? "" : undefined}
           className={cn("coden-prompt-input relative flex flex-col w-full", className)}
           style={{
             maxWidth: expanded ? expandedWidth : collapsedWidth,
@@ -881,7 +876,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={ACCEPT_ATTRIBUTE}
             multiple
             onChange={handleFilesChosen}
             className="hidden"
@@ -889,11 +884,11 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
             aria-hidden="true"
           />
 
-          {/* Independent Attachment Tab (Slides up from behind the prompt input) */}
+          {/* The attachment tray: slides up from behind the prompt input. */}
           <div
-            aria-hidden={!hasAttachments}
+            aria-hidden={!showTray}
             style={{
-              height: hasAttachments && expanded ? 68 : 0,
+              height: showTray && expanded ? trayHeight : 0,
               transition: isSmoothResize
                 ? "height 0.15s ease-out"
                 : "height 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
@@ -906,25 +901,26 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 bottom: -8,
                 left: 20,
                 right: 20,
-                height: 68,
-                transform: hasAttachments && expanded ? "translateY(0)" : "translateY(100%)",
-                opacity: hasAttachments && expanded ? 1 : 0,
+                height: trayHeight + 8,
+                transform: showTray && expanded ? "translateY(0)" : "translateY(100%)",
+                opacity: showTray && expanded ? 1 : 0,
                 transition: isSmoothResize
                   ? "transform 0.15s ease-out, opacity 0.15s ease-out"
                   : "transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease-out",
               }}
-              className="border border-border border-b-0 bg-muted rounded-t-2xl px-2 pt-2 pb-1 flex items-start gap-2 overflow-x-auto prompt-scrollbar"
+              className="border border-border border-b-0 bg-muted rounded-t-2xl px-2 pt-2 pb-2"
             >
-              {attachments.map((attachment, index) => (
-                <AttachmentThumb
-                  key={attachment.id}
-                  attachment={attachment}
-                  index={index}
-                  onRemove={removeAttachment}
-                  onOpen={(a, rect) => setActiveAttachment({ attachment: a, rect })}
-                  registerRef={(id, el) => thumbRefs.current.set(id, el)}
-                />
-              ))}
+              <AttachmentTray
+                files={attachedFiles}
+                links={detectedLinks}
+                errors={attachmentErrors}
+                notice={visionNotice}
+                onRemoveFile={(key) => { setIsSmoothResize(true); attachmentState.removeFile(key); }}
+                onRetryFile={attachmentState.retryFile}
+                onDismissLink={attachmentState.dismissLink}
+                onOpenImage={(item, rect) => item.previewUrl && setActiveAttachment({ attachment: { url: item.previewUrl, name: item.name, width: item.width, height: item.height }, rect })}
+                onDismissErrors={() => attachmentState.setErrors([])}
+              />
             </div>
           </div>
 
@@ -948,9 +944,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               expanded ? "cursor-text" : "cursor-default"
             )}
           >
+            {isDragging ? (
+              <div className="coden-prompt-drop" aria-hidden="true">Déposez vos fichiers ici</div>
+            ) : null}
             <textarea
               ref={textareaRef}
               value={value}
+              onPaste={onPaste}
               onChange={(e) => handleValueChange(e.target.value)}
               onScroll={updateFades}
               onKeyDown={(e) => {
@@ -1113,12 +1113,13 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               </button>
 
               <button
-                type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={attachments.length >= maxAttachments}
+                type="button" onMouseDown={(e) => e.preventDefault()} onClick={openFileChooser} disabled={attachedFiles.length >= maxAttachments}
                 /* The landing's "start from a screenshot" link clicks this by
                    attribute, the same way it clicked the button this replaced. */
                 data-prompt-action="upload"
                 className="ml-auto flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default disabled:opacity-40 disabled:pointer-events-none"
-                aria-label="Joindre des images"
+                aria-label="Joindre des fichiers"
+                title="Joindre des images, vidéos ou fichiers (ou glissez-les ici)"
               >
                 <PlusIcon />
               </button>
@@ -1144,8 +1145,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               type="button"
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onClick={onActionButtonClick}
-              disabled={disabled}
-              aria-label={showArrow ? "Envoyer" : isRecording ? "Arrêter la dictée" : isBusy ? "Arrêter la génération" : "Dicter"}
+              disabled={disabled || waitingForUploads}
+              title={waitingForUploads ? "Envoi des fichiers en cours…" : undefined}
+              aria-label={waitingForUploads ? "Envoi des fichiers en cours" : showArrow ? "Envoyer" : isRecording ? "Arrêter la dictée" : isBusy ? "Arrêter la génération" : "Dicter"}
               style={{ borderRadius: 9999 }}
               className="coden-prompt-submit absolute right-2 bottom-2 z-[10] flex h-8 w-8 items-center justify-center bg-primary text-primary-foreground transition-all duration-300 hover:opacity-90 outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-default disabled:opacity-50"
             >

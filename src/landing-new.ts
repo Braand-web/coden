@@ -7,6 +7,8 @@ import { mountDotSphere } from './lib/dot-sphere';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
+import type { AttachmentUploader } from './lib/attachment-types';
+import { stashPendingFiles } from './lib/pending-files';
 import {
   readPreferredEffort,
   readPreferredModelSelection,
@@ -140,6 +142,12 @@ function setupComposer(hostId: string, statusId: string) {
 
   let value = '';
   let busy = false;
+  /*
+   * Signed in, files go up as they are chosen and links are analysed as they
+   * are written. Signed out, files stay in the browser until the Builder can
+   * send them after sign-in. The API client is loaded only in the first case.
+   */
+  let uploader: AttachmentUploader | null = null;
   const setStatus = (next: CreateProjectFlowStatus) => {
     if (status) status.textContent = formatCreateProjectFlowStatus(next, 'fr');
   };
@@ -158,18 +166,25 @@ function setupComposer(hostId: string, statusId: string) {
       defaultEffort: readPreferredEffort(),
       onModelChange: writePreferredModelSelection,
       onEffortChange: writePreferredEffort,
+      uploader,
       onSubmit: (prompt, meta) => {
         if (busy) return;
         busy = true;
         render();
         setStatus('preparing');
-        void startCreateProjectFlow({
-          prompt,
-          model: meta.model,
-          effort: meta.effort,
-          source: 'landing',
-          theme: document.documentElement.dataset.theme || 'light',
-        }, { onStatus: setStatus }).catch(() => {
+        void (async () => {
+          if (meta.attachments.length) await stashPendingFiles(meta.attachments);
+          await startCreateProjectFlow({
+            prompt,
+            model: meta.model,
+            effort: meta.effort,
+            source: 'landing',
+            theme: document.documentElement.dataset.theme || 'light',
+            attachmentIds: [...meta.attachmentIds, ...meta.linkIds],
+            skippedUrls: meta.skippedUrls,
+            pendingFiles: meta.attachments.length > 0,
+          }, { onStatus: setStatus });
+        })().catch(() => {
           busy = false;
           render();
           if (status) status.textContent = 'Le démarrage a échoué. Votre demande est conservée, vous pouvez réessayer.';
@@ -178,6 +193,12 @@ function setupComposer(hostId: string, statusId: string) {
     });
   };
   render();
+  if (hasStoredSession()) {
+    void import('./lib/attachment-client').then(({ createAttachmentUploader }) => {
+      uploader = createAttachmentUploader();
+      render();
+    }).catch(() => undefined);
+  }
 
   const fill = (brief: string) => {
     value = brief;

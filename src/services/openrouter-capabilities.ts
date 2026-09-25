@@ -113,6 +113,11 @@ export type ModelAvailability = {
   supportsTools: boolean;
   supportsStructuredOutputs: boolean;
   supportsVision: boolean;
+  /** Reads a video as such (otherwise Coden sends its key frames and transcript). */
+  supportsVideo: boolean;
+  supportsAudio: boolean;
+  /** Reads a PDF natively, scanned pages included. */
+  supportsFile: boolean;
   pricing: { inputUsdPerMillion: number; outputUsdPerMillion: number } | null;
 };
 
@@ -149,6 +154,9 @@ export function modelAvailability(
       supportsTools: parameters.has('tools'),
       supportsStructuredOutputs: parameters.has('structured_outputs') || parameters.has('response_format'),
       supportsVision: (live.architecture?.input_modalities || []).includes('image'),
+      supportsVideo: (live.architecture?.input_modalities || []).includes('video'),
+      supportsAudio: (live.architecture?.input_modalities || []).includes('audio'),
+      supportsFile: (live.architecture?.input_modalities || []).includes('file'),
       pricing: Number.isFinite(input) && Number.isFinite(output) ? { inputUsdPerMillion: input, outputUsdPerMillion: output } : null,
     };
   }
@@ -163,6 +171,9 @@ export function modelAvailability(
     supportsTools: true,
     supportsStructuredOutputs: true,
     supportsVision: Boolean(fallback?.supportsVision),
+    supportsVideo: false,
+    supportsAudio: false,
+    supportsFile: false,
     pricing: null,
   };
 }

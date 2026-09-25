@@ -32,6 +32,7 @@ import {
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
 import { PromptInput } from './components/ui/ai-chat-input';
+import { createAttachmentUploader, createPreviewUploader } from './lib/attachment-client';
 import { openIntegrationsModal } from './integrations';
 import {
   readPreferredEffort,
@@ -527,7 +528,10 @@ function DashboardHome() {
     };
   }, [projects.length, visibleProjects.length, projectView, search]);
 
-  const createFromPrompt = async (text: string, meta: { model: string; effort: string }) => {
+  // Files go up as they are chosen; the project they belong to is created on send.
+  const uploader = useMemo(() => (isLocal ? createPreviewUploader() : createAttachmentUploader()), []);
+
+  const createFromPrompt = async (text: string, meta: { model: string; effort: string; attachmentIds?: string[]; linkIds?: string[]; skippedUrls?: string[] }) => {
     const request = text.trim();
     if (!request || creating) return;
     setCreating(true);
@@ -547,6 +551,8 @@ function DashboardHome() {
           source: 'dashboard',
           model: meta.model,
           effort: meta.effort,
+          attachmentIds: [...(meta.attachmentIds || []), ...(meta.linkIds || [])],
+          skippedUrls: meta.skippedUrls || [],
         },
         {
           onStatus: (status: CreateProjectFlowStatus) => {
@@ -645,6 +651,7 @@ function DashboardHome() {
               onModelChange={writePreferredModelSelection}
               onEffortChange={writePreferredEffort}
               onSubmit={(text, meta) => { void createFromPrompt(text, meta); }}
+              uploader={uploader}
               disabled={creating}
               defaultExpanded
               collapsedWidth={560}
