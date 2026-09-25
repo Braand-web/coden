@@ -43,6 +43,30 @@ describe('agent event stream', () => {
     expect(stream.transcript).toBe('Plan');
   });
 
+  it('keeps a compact, ordered copy of the full chat stream for project history', async () => {
+    const response = new ResponseStub();
+    const stream = createAgentEventStream(response as any, 'run');
+    stream.chat({ type: 'run_started', messageId: 'message-1' });
+    stream.chat({ type: 'reasoning_delta', delta: 'Je vérifie ' });
+    stream.chat({ type: 'reasoning_delta', delta: 'le contexte.' });
+    stream.chat({ type: 'text_delta', delta: 'Le scaffold ' });
+    stream.chat({ type: 'text_delta', delta: 'est léger.' });
+    stream.chat({ type: 'files_touched', action: 'read', paths: ['src/App.tsx'] });
+    stream.chat({ type: 'text_delta', delta: 'Voici le résultat.' });
+    await stream.finish({ success: true, assistant_streamed: true }, 200);
+
+    expect(stream.persistedChatEvents).toEqual([
+      { type: 'run_started', messageId: 'message-1' },
+      { type: 'reasoning_delta', delta: 'Je vérifie le contexte.' },
+      { type: 'text_delta', delta: 'Le scaffold est léger.' },
+      { type: 'text_end' },
+      { type: 'files_touched', action: 'read', paths: ['src/App.tsx'] },
+      { type: 'text_delta', delta: 'Voici le résultat.' },
+      { type: 'text_end' },
+      { type: 'run_finished', reason: 'completed' },
+    ]);
+  });
+
   it('folds deltas that queued behind a slow write, and a replay splits them back exactly', async () => {
     const response = new ResponseStub();
     const stored: any[] = [];

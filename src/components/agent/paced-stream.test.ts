@@ -35,6 +35,26 @@ afterEach(() => {
 const settle = () => vi.advanceTimersByTime(5000);
 
 describe('paced streaming', () => {
+  it('restores complete text, reasoning and file steps as a finished chat message', () => {
+    const id = api.addMessage({ id: 'persisted-message-1', role: 'assistant', content: 'Le scaffold est léger et fournit une base complète.' });
+    api.restoreChat(id, [
+      { type: 'run_started', messageId: id },
+      { type: 'reasoning_delta', delta: 'Je vérifie les fichiers avant de répondre.' },
+      { type: 'text_delta', delta: 'Le scaffold est léger et fournit une base complète.' },
+      { type: 'text_end' },
+      { type: 'files_touched', action: 'read', paths: ['src/App.tsx', 'package.json'] },
+    ], 'done', 'Le scaffold est léger et fournit une base complète.', '', 'run-1');
+
+    const message = api.messages()[0];
+    expect(message.id).toBe('persisted-message-1');
+    expect(message.working).toBe(false);
+    expect(message.liveRun?.chat?.status).toBe('done');
+    expect(message.liveRun?.chat?.parts.map(part => part.type)).toEqual(['reasoning', 'text', 'tool']);
+    expect((message.liveRun?.chat?.parts[0] as any).text).toBe('Je vérifie les fichiers avant de répondre.');
+    expect((message.liveRun?.chat?.parts[1] as any).text).toBe('Le scaffold est léger et fournit une base complète.');
+    expect((message.liveRun?.chat?.parts[2] as any).files).toEqual(['src/App.tsx', 'package.json']);
+  });
+
   it('delivers every character it was sent', () => {
     const id = api.addMessage({ role: 'assistant', content: '' });
     api.startLiveRun(id);

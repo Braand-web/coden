@@ -79,4 +79,24 @@ import { readFileSync } from 'node:fs';
   assert.match(body, /const delta = accumulated\.slice\(seen\);/, 'only the new text is sent');
 }
 
+/*
+ * Completed responses must survive a project reload with their original
+ * reasoning and file steps, not just as flattened message text.
+ */
+{
+  const stream = readFileSync(new URL('./src/services/agent-event-stream.ts', import.meta.url), 'utf8');
+  const builder = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
+  const conversation = readFileSync(new URL('./src/builder-conversation-island.tsx', import.meta.url), 'utf8');
+  const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+
+  assert.match(stream, /persistedChatEvents/, 'the stream retains its ordered chat events');
+  assert.match(server, /ai_message_id: streamMessageId/, 'assistant history writes are idempotently keyed to the chat bubble');
+  assert.match(server, /coden_stream:/, 'the rich stream is stored with the assistant response');
+  assert.match(server, /const itemKey = input\.item\?\.ai_message_id/, 'snapshot retries replace the same message instead of duplicating it');
+  assert.match(server, /metadata: redactSecretPayload\(row\?\.metadata \|\| \{\}\)/, 'stream metadata is redacted again when history is read');
+  assert.match(builder, /conversationApi\.restoreChat\(/, 'history loading restores the rich assistant stream');
+  assert.match(conversation, /restoreChat\(id, events/, 'the conversation reducer rebuilds completed messages');
+  assert.match(builder, /assistantMessageId: messageHandleId\(status\)/, 'generation sends the stable assistant message id');
+}
+
 console.log('conversation is alive tests passed');

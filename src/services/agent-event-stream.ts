@@ -48,6 +48,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   let streamFailure: Error | null = null;
   let textBuffer = '';
   let transcript = '';
+  const persistedChatEvents: ChatEvent[] = [];
   let textTimer: ReturnType<typeof setTimeout> | undefined;
   const messageId = options.messageId || runId;
   res.status(200).set({
@@ -137,6 +138,13 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
 
   const send = (channel: AgentEnvelope['channel'], payload: ChatEvent | WorkspaceEvent) => {
     if (finalized) return;
+    if (channel === 'chat' && payload.type !== 'heartbeat') {
+      const event = JSON.parse(JSON.stringify(payload)) as ChatEvent;
+      const previous = persistedChatEvents.at(-1);
+      if (event.type === 'text_delta' && previous?.type === 'text_delta') persistedChatEvents[persistedChatEvents.length - 1] = { ...previous, delta: previous.delta + event.delta };
+      else if (event.type === 'reasoning_delta' && previous?.type === 'reasoning_delta') persistedChatEvents[persistedChatEvents.length - 1] = { ...previous, delta: previous.delta + event.delta };
+      else persistedChatEvents.push(event);
+    }
     const nextSequence = ++seq;
     const timestamp = Date.now();
     const envelope = { runId, messageId, seq: nextSequence, timestamp, ts: timestamp, channel, type: payload.type, payload } as AgentEnvelope;
@@ -220,6 +228,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     drain: () => { flushReasoning(); flushText(); return settled(); },
     get lastSequence() { return seq; },
     get transcript() { return transcript.trim(); },
+    get persistedChatEvents() { return JSON.parse(JSON.stringify(persistedChatEvents)) as ChatEvent[]; },
     async finish(payload: any, status: number) {
       if (finalized || closing) return;
       closing = true;
