@@ -103,6 +103,15 @@ export function buildOpenRouterRequest(
 
   // A modality the model cannot read is refused here, before any cost.
   const modalities = new Set(model.architecture?.input_modalities || ['text']);
+  /*
+   * Except a video: it always travels with its key frames and transcript, so
+   * a model that does not read video gets those instead of a refusal.
+   */
+  if (!modalities.has('video')) {
+    messages = messages.map(message => Array.isArray(message.content) && (message.content as Array<{ type: string }>).some(part => part.type === 'video_url')
+      ? { ...message, content: (message.content as Array<{ type: string }>).filter(part => part.type !== 'video_url') as ChatMessage['content'] }
+      : message);
+  }
   for (const message of messages) {
     if (!Array.isArray(message.content)) continue;
     for (const part of message.content as Array<{ type: string }>) {

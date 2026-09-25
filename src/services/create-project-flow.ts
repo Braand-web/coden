@@ -28,6 +28,12 @@ export type CreateProjectFlowInput = {
   projectName?: string;
   source?: CreateProjectFlowSource;
   workshop?: string;
+  /** Files and links already sent and analysed from the composer, for the first run. */
+  attachmentIds?: string[];
+  /** Links the user dismissed in the composer: not analysed. */
+  skippedUrls?: string[];
+  /** Files kept in the browser (no session yet): the Builder sends them after sign-in. */
+  pendingFiles?: boolean;
 };
 
 type ProjectCreateResponse = {
@@ -90,6 +96,9 @@ export function persistCreateProjectFlow(input: CreateProjectFlowInput) {
     projectName: cleanText(input.projectName) || projectNameFromPrompt(prompt),
     source: input.source || 'landing',
     workshop: input.workshop || '',
+    attachmentIds: Array.isArray(input.attachmentIds) ? input.attachmentIds.slice(0, 20) : [],
+    skippedUrls: Array.isArray(input.skippedUrls) ? input.skippedUrls.slice(0, 20) : [],
+    pendingFiles: Boolean(input.pendingFiles),
     createdAt: Date.now(),
   };
 
@@ -120,6 +129,9 @@ export function readCreateProjectFlow(): CreateProjectFlowInput | null {
       projectName: cleanText(parsed.projectName),
       source: parsed.source || 'landing',
       workshop: parsed.workshop || '',
+      attachmentIds: Array.isArray(parsed.attachmentIds) ? parsed.attachmentIds.map(String).slice(0, 20) : [],
+      skippedUrls: Array.isArray(parsed.skippedUrls) ? parsed.skippedUrls.map(String).slice(0, 20) : [],
+      pendingFiles: Boolean(parsed.pendingFiles),
     };
   } catch {
     return null;

@@ -47,7 +47,10 @@ export function resolveOpenRouterApiKey(env: OpenRouterEnv = process.env, fallba
 
 export type ChatContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+  | { type: 'video_url'; video_url: { url: string } }
+  | { type: 'input_audio'; input_audio: { data: string; format: 'mp3' | 'wav' } }
+  | { type: 'file'; file: { filename: string; file_data: string } };
 
 export type ToolCall = {
   id: string;
@@ -74,17 +77,23 @@ export interface ChatMessage {
 
 export function buildVisionMessageContent(
   text: string,
-  images: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }> = [],
+  images: Array<{ url: string; detail?: 'auto' | 'low' | 'high'; kind?: 'image' | 'video' }> = [],
 ): ChatContentPart[] {
   return [
     { type: 'text', text: String(text || '') },
     ...images
-      .filter(image => /^https?:\/\/|^data:image\//i.test(String(image.url || '')))
-      .slice(0, 8)
-      .map(image => ({
-        type: 'image_url' as const,
-        image_url: { url: image.url, detail: image.detail || 'auto' },
-      })),
+      .filter(image => image.kind === 'video'
+        ? /^https:\/\//i.test(String(image.url || ''))
+        : /^https?:\/\/|^data:image\//i.test(String(image.url || '')))
+      .slice(0, 16)
+      /*
+       * A video goes to the model as a video when the model reads video;
+       * `buildOpenRouterRequest` drops it otherwise, and the key frames sent
+       * beside it carry the same content.
+       */
+      .map(image => image.kind === 'video'
+        ? { type: 'video_url' as const, video_url: { url: image.url } }
+        : { type: 'image_url' as const, image_url: { url: image.url, detail: image.detail || 'auto' } }),
   ];
 }
 

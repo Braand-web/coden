@@ -236,6 +236,10 @@ import {
 import { inspectVisualPreview } from './src/services/visual-preview-inspector.ts';
 import { scanGeneratedSecurity } from './src/services/generated-security-scanner.ts';
 import { createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
+import { AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
+import { createMediaHelpers } from './src/services/attachments/media-helpers.ts';
+import { LinkError, previewLink } from './src/services/link-analysis.ts';
+import { asksToExploreSite, classifyAttachment, MAX_VIDEO_BYTES } from './src/lib/attachment-policy.ts';
 import {
   WebResearchGateway,
   researchToPromptContext,
@@ -1020,6 +1024,8 @@ app.use('/api/admin', requireAuth);
 app.use('/api/assistant', requireAuthWithTemporaryGeneration);
 app.use('/api/projects', requireProjectAuthWithTemporaryGeneration);
 app.use('/api/integrations', requireAuth);
+app.use('/api/attachments', requireAuth);
+app.use('/api/links', requireAuth);
 
 /*
  * The person's own instructions and private memory, for every agent call made
@@ -1080,6 +1086,30 @@ const openRouter = new OpenRouterService({
   appName: String(process.env.OPENROUTER_APP_NAME || 'Coden').trim()
 });
 const providerGateway = new ProviderGateway(openRouter);
+
+/*
+ * Attachments and analysed links (composer → private storage → agent context).
+ * Created on first use: Supabase may be configured after module load in tests.
+ */
+let attachmentServiceInstance: AttachmentService | null = null;
+function attachmentService(): AttachmentService {
+  if (!attachmentServiceInstance) {
+    const client = getSupabase();
+    attachmentServiceInstance = new AttachmentService(
+      client ? supabaseAttachmentBackend(client) : memoryAttachmentBackend(),
+      createMediaHelpers((modelId, messages, retries, timeoutMs) => openRouter.chat(modelId, messages, retries, timeoutMs), AI_ALLOWED_MODELS, openRouterCatalog),
+    );
+  }
+  return attachmentServiceInstance;
+}
+
+/** What the model a turn runs on can read. Auto routes a turn with images to a model that sees them. */
+function mediaSupportFor(selection: string): ModelMediaSupport {
+  if (!selection || selection === 'auto') return { vision: true, video: true };
+  const id = normalizeProviderModelForBackend(selection);
+  const live = modelAvailability(id, MODEL_REGISTRY.find(model => model.id === id) as any);
+  return { vision: live.supportsVision, video: live.supportsVideo };
+}
 const AGENT_V3_ENABLED = isAgentV3Enabled(process.env);
 const AGENT_V2_ENABLED = isAgentV2Enabled(process.env) || AGENT_V3_ENABLED;
 const AGENT_RUNTIME_V2_ENABLED = process.env.CODEN_AGENT_RUNTIME_V2 !== '0';
@@ -6095,6 +6125,8 @@ function buildPublicModelList() {
         available: live.available,
         supports_reasoning: live.supportsReasoning,
         supports_tools: live.supportsTools,
+        supports_vision: live.supportsVision,
+        supports_video: live.supportsVideo,
         context_length: live.contextLength,
         max_completion_tokens: live.maxCompletionTokens,
         pricing: live.pricing,
@@ -10943,6 +10975,133 @@ app.post('/api/ai/route', async (req, res) => {
   }
 });
 
+/*
+ * Composer attachments.
+ *
+ * The body is the file itself (application/octet-stream), streamed and cut
+ * off at the type's limit; the name and the declared type come in headers.
+ * The answer comes once the file is checked and recorded — its reading
+ * (text, OCR, frames, transcription) continues in the background and the
+ * composer polls GET /api/attachments/:id until it is ready.
+ */
+app.post('/api/attachments', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  if (!enforceRateLimit(`attachments:${userId}`, 40, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Trop de fichiers envoyés en une minute. Patientez un instant.' });
+  }
+  let name = '';
+  try { name = decodeURIComponent(String(req.headers['x-file-name'] || '')).trim(); } catch { name = ''; }
+  if (!name) return res.status(400).json({ success: false, error: 'Nom de fichier manquant.' });
+  const reportedMime = String(req.headers['x-file-type'] || '').slice(0, 120);
+  const declared = Number(req.headers['content-length'] || 0);
+  const early = classifyAttachment(name, declared > 0 ? declared : 1, reportedMime);
+  if (!early.ok) return res.status(early.error.includes('pèse') ? 413 : 400).json({ success: false, error: early.error });
+  const limit = early.maxBytes;
+
+  let projectId: string | null = null;
+  const requestedProject = String(req.query?.projectId || '').trim();
+  if (requestedProject) {
+    const project = await loadProject(requestedProject, userId).catch(() => null);
+    if (!project) return res.status(404).json({ success: false, error: 'Projet introuvable.' });
+    if (!requireProjectCapability(req, res, 'view', project)) return;
+    projectId = project.id;
+  }
+
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let tooLarge = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > Math.min(limit, MAX_VIDEO_BYTES)) {
+          tooLarge = true;
+          req.pause();
+          resolve();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => resolve());
+      req.on('error', reject);
+      req.on('aborted', () => reject(new Error('Envoi interrompu.')));
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Envoi interrompu.' });
+  }
+  if (tooLarge) {
+    res.setHeader('Connection', 'close');
+    const refusal = classifyAttachment(name, size, reportedMime);
+    return res.status(413).json({ success: false, error: refusal.ok ? 'Fichier trop volumineux.' : refusal.error });
+  }
+  try {
+    const service = attachmentService();
+    const record = await service.ingestFile({ userId, projectId, name, data: new Uint8Array(Buffer.concat(chunks)), reportedMime });
+    res.status(201).json({ success: true, attachment: await service.toPublic(record) });
+  } catch (error: any) {
+    if (error instanceof AttachmentError) return res.status(error.status).json({ success: false, error: error.message });
+    console.warn('[coden:attachment_upload_failed]', { message: error?.message });
+    res.status(500).json({ success: false, error: 'Le fichier n’a pas pu être enregistré. Réessayez dans un instant.' });
+  }
+});
+
+app.get('/api/attachments/:id', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const service = attachmentService();
+  const record = await service.get(String(req.params.id || ''), userId).catch(() => null);
+  if (!record) return res.status(404).json({ success: false, error: 'Pièce jointe introuvable.' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, attachment: await service.toPublic(record) });
+});
+
+app.delete('/api/attachments/:id', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const removed = await attachmentService().remove(String(req.params.id || ''), userId).catch(() => false);
+  if (!removed) return res.status(404).json({ success: false, error: 'Pièce jointe introuvable.' });
+  res.json({ success: true });
+});
+
+/* The card under the composer: title, favicon, image. The full read is /api/links/analyze. */
+app.post('/api/links/preview', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  if (!enforceRateLimit(`link-preview:${userId}`, 40, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Trop de liens en une minute.' });
+  }
+  try {
+    const preview = await previewLink(String(req.body?.url || ''));
+    res.setHeader('Cache-Control', 'private, max-age=600');
+    res.json({ success: true, preview });
+  } catch (error: any) {
+    res.status(200).json({ success: false, code: error instanceof LinkError ? error.code : 'unreachable', error: error instanceof LinkError ? error.message : 'Le site est injoignable pour le moment.' });
+  }
+});
+
+app.post('/api/links/analyze', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  if (!enforceRateLimit(`link-analyze:${userId}`, 12, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Trop d’analyses de liens en une minute.' });
+  }
+  let projectId: string | null = null;
+  const requestedProject = String(req.body?.projectId || '').trim();
+  if (requestedProject) {
+    const project = await loadProject(requestedProject, userId).catch(() => null);
+    if (project && hasProjectCapability(req, 'view', project)) projectId = project.id;
+  }
+  try {
+    const service = attachmentService();
+    const record = await service.ingestLink({
+      userId,
+      projectId,
+      url: String(req.body?.url || ''),
+      explore: req.body?.explore === true || asksToExploreSite(String(req.body?.message || '')),
+    });
+    res.status(201).json({ success: true, attachment: await service.toPublic(record) });
+  } catch (error: any) {
+    if (error instanceof AttachmentError) return res.status(error.status).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: 'L’analyse du lien n’a pas pu démarrer.' });
+  }
+});
+
 app.post('/api/assistant/attachments', (req: any, res: any) => {
   const requestId = `attachment_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
@@ -13482,7 +13641,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     figmaConfigured: Boolean(process.env.FIGMA_ACCESS_TOKEN || process.env.FIGMA_TOKEN || importContext?.status === 'ready'),
     githubConfigured: Boolean(process.env.GITHUB_TOKEN || process.env.GITHUB_IMPORT_TOKEN || importContext?.status === 'ready'),
   }) || importContext;
-  const visionInputs = Array.isArray(req.body?.visionInputs)
+  let visionInputs: Array<{ url: string; detail?: 'auto' | 'low' | 'high'; kind?: 'image' | 'video' }> = Array.isArray(req.body?.visionInputs)
     ? req.body.visionInputs
       .map((item: any) => ({
         url: String(item?.url || '').trim(),
@@ -13491,7 +13650,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       .filter((item: any) => /^https?:\/\/|^data:image\//i.test(item.url))
       .slice(0, 8)
     : [];
-  const agentPrompt = applyRequestContextToPrompt(prompt, studioContext, preparedImportContext);
+  let agentPrompt = applyRequestContextToPrompt(prompt, studioContext, preparedImportContext);
+  const attachmentIds: string[] = Array.isArray(req.body?.attachmentIds) ? req.body.attachmentIds.map((id: unknown) => String(id)).slice(0, 20) : [];
   if (!requireProjectCapability(req, res, 'view', project)) return;
   if (!enforceRateLimit(`generate:${userId}`, 12, 60_000)) {
     return res.status(429).json({ success: false, error: 'Too many build requests. Please wait a moment.' });
@@ -13766,6 +13926,41 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
   /*
+   * Attachments and links, read before anything decides what to do: the
+   * router, the planner and the coder all work from the same request, with
+   * the files' content, the analysed pages and their images.
+   */
+  let attachmentBlock = '';
+  try {
+    const turnAttachments = await attachmentService().buildTurnContext({
+      userId,
+      projectId: project.id,
+      ids: attachmentIds,
+      prompt,
+      skipUrls: Array.isArray(req.body?.skipUrls) ? req.body.skipUrls.map((url: unknown) => String(url)).slice(0, 20) : [],
+      support: mediaSupportFor(requestedModelSelection),
+      onActivity: label => eventStream?.chat({ type: 'activity', label }),
+    });
+    attachmentBlock = turnAttachments.promptBlock;
+    if (turnAttachments.notices.length) {
+      attachmentBlock += `\n\n## À signaler à l’utilisateur, en une phrase, au début de ta réponse\n${turnAttachments.notices.map(notice => `- ${notice}`).join('\n')}`;
+    }
+    if (attachmentBlock) agentPrompt = `${agentPrompt}${attachmentBlock}`;
+    visionInputs = [...visionInputs, ...turnAttachments.visionInputs].slice(0, 16);
+    if (turnAttachments.current.length || turnAttachments.referenced.length) {
+      console.info('[coden:turn_attachments]', {
+        request_id: requestId,
+        files: turnAttachments.current.filter(item => item.kind !== 'link').length,
+        links: turnAttachments.links.ok.length,
+        failed_links: turnAttachments.links.failed.length,
+        referenced: turnAttachments.referenced.length,
+        vision_inputs: visionInputs.length,
+      });
+    }
+  } catch (error: any) {
+    console.warn('[coden:turn_attachments_failed]', { request_id: requestId, message: error?.message || String(error) });
+  }
+  /*
    * The effort the composer asked for. It widens or narrows the route budget
    * in the pipeline and scales the credit estimate here, so a level that
    * promises more work is priced for more work before the gate runs.
@@ -13865,7 +14060,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * own words are kept beside it so nothing they said is lost.
    */
   const resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
-    ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")`
+    ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")${attachmentBlock}`
     : agentPrompt;
   /*
    * The pipeline only where it can run.

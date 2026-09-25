@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 
-export type ModelAvailabilityInfo = { available: boolean; supportsReasoning: boolean };
+export type ModelAvailabilityInfo = { available: boolean; supportsReasoning: boolean; supportsVision: boolean; supportsVideo: boolean };
 export type ModelAvailabilityMap = ReadonlyMap<string, ModelAvailabilityInfo>;
 
 let pending: Promise<ModelAvailabilityMap> | null = null;
@@ -22,6 +22,9 @@ export function parseModelAvailability(payload: unknown): ModelAvailabilityMap {
     .map(model => [model.id, {
       available: model.available !== false,
       supportsReasoning: model.supports_reasoning !== false,
+      // Unknown (an older server) reads as "can see": the server still describes images to a model that cannot.
+      supportsVision: model.supports_vision !== false,
+      supportsVideo: model.supports_video === true,
     }]));
 }
 
@@ -35,6 +38,13 @@ export function loadModelAvailability(): Promise<ModelAvailabilityMap> {
       return new Map();
     });
   return pending;
+}
+
+/** Seeds the shared answer (a payload already in hand, or a test's). */
+export function primeModelAvailability(payload: unknown): ModelAvailabilityMap {
+  cached = parseModelAvailability(payload);
+  pending = Promise.resolve(cached);
+  return cached;
 }
 
 export function useModelAvailability(): ModelAvailabilityMap | null {

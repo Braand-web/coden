@@ -57,10 +57,10 @@ export function isPrivateAddress(address: string): boolean {
   return true;
 }
 
-type Lookup = (hostname: string) => Promise<Array<{ address: string }>>;
+export type Lookup = (hostname: string) => Promise<Array<{ address: string }>>;
 const defaultLookup: Lookup = hostname => dnsLookup(hostname, { all: true, verbatim: true });
 
-async function assertPublicUrl(raw: string, lookup: Lookup): Promise<URL> {
+export async function assertPublicUrl(raw: string, lookup: Lookup = defaultLookup): Promise<URL> {
   let url: URL;
   try { url = new URL(raw); } catch { throw new Error('Not a valid URL.'); }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Only http and https pages can be read.');

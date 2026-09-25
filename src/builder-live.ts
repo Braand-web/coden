@@ -32,6 +32,9 @@ import { connectToolkit, openIntegrationsModal } from './integrations';
 import type { ConnectionChoiceEventDetail } from './components/agent/agent-message';
 import { redactSecretPayload, redactSecrets } from './services/secret-redaction';
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
+import { createAttachmentUploader, createPreviewUploader, waitUntilRead, type AttachmentUploader } from './lib/attachment-client';
+import { takePendingFiles } from './lib/pending-files';
+import { isLocalPreviewEnabled } from './local-preview';
 import { DEFAULT_AGENT_EFFORT, normalizeAgentEffort } from './services/agent-effort';
 import {
   SELECTED_MODEL_STORAGE_KEY,
@@ -405,7 +408,7 @@ let mediaSettings: MediaSettings = {
 let selectedModelId = 'auto';
 let selectedPreviewDevice: PreviewDevice = 'desktop';
 let currentProjectName = 'Projet sans titre';
-let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; model?: string; effort?: string; shouldAutoRun?: boolean } | null = null;
+let initialBuilderHandoff: { prompt: string; mode: ChatMode; importContext?: Record<string, unknown>; source?: string; model?: string; effort?: string; shouldAutoRun?: boolean; attachmentIds?: string[]; skippedUrls?: string[]; pendingFiles?: boolean } | null = null;
 let initialGenerationStarted = false;
 let analysisPollTimer: number | null = null;
 let analysisRange = '30d';
@@ -1624,6 +1627,10 @@ function getInitialBuilderHandoff() {
     model: pendingFlow?.model,
     effort: pendingFlow?.effort,
     shouldAutoRun: Boolean(pendingFlow?.prompt) || new URLSearchParams(window.location.search).get('run') === 'initial',
+    // What the dashboard or the landing composer attached to the first message.
+    attachmentIds: pendingFlow?.attachmentIds || [],
+    skippedUrls: pendingFlow?.skippedUrls || [],
+    pendingFiles: Boolean(pendingFlow?.pendingFiles),
   };
   clearCreateProjectFlow();
   sessionStorage.removeItem('coden-initial-prompt');
@@ -8601,8 +8608,8 @@ function bindChat() {
    * field is empty. `syncSubmitButtonState` therefore has nothing left to
    * drive and simply re-renders.
    */
-  const send = () => {
-    const value = repairTextEncoding(composerValue).trim();
+  const send = (submitted?: string, attached?: { ids: string[]; skippedUrls: string[]; names: string[] }) => {
+    const value = repairTextEncoding(composerValue).trim() || repairTextEncoding(submitted || '').trim();
     if (!value) return;
     composerValue = '';
     renderComposer();
@@ -8611,7 +8618,13 @@ function bindChat() {
       void sendActiveHarnessInstruction(value);
       return;
     }
-    void generateFromPrompt(value, selectedChatMode, false, { studioContext: studioPromptContextPayload() });
+    const names = attached?.names || [];
+    // The conversation shows what went with the message.
+    const displayText = names.length ? `${value}\n\n📎 ${names.join(' · ')}` : value;
+    void generateFromPrompt(value, selectedChatMode, false, {
+      studioContext: studioPromptContextPayload(),
+      ...attachmentExtra(attached?.ids || [], attached?.skippedUrls || []),
+    }, displayText);
   };
 
   /*
@@ -8650,11 +8663,16 @@ function bindChat() {
       // on submit, so a model picked and never sent is still remembered.
       onModelChange: next => applySelectedModel(next, { persist: true, saveWorkspace: true }),
       onEffortChange: next => applySelectedEffort(next),
-      onSubmit: (_value, meta) => {
+      onSubmit: (submitted, meta) => {
         applySelectedModel(meta.model, { persist: true, saveWorkspace: true });
         applySelectedEffort(meta.effort);
-        send();
+        send(submitted, {
+          ids: [...meta.attachmentIds, ...meta.linkIds],
+          skippedUrls: meta.skippedUrls,
+          names: meta.attachmentNames,
+        });
       },
+      uploader: attachmentUploader(),
       isBusy: isGenerating,
       onStop: () => { void cancelBuild(); },
       defaultExpanded: true,
@@ -8728,11 +8746,56 @@ function maybeStartInitialGeneration() {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
   scheduleWorkspaceSave({ draft_prompt: '', selected_mode: handoff.mode }, true);
-  void generateFromPrompt(prompt, handoff.mode, false, {
-    importContext: handoff.importContext,
-    createFlowSource: handoff.source || new URLSearchParams(window.location.search).get('source') || 'builder',
-    initialRun: true,
-  });
+  void (async () => {
+    // Files chosen on the landing before sign-in are sent now, into this project.
+    const sentLater = handoff.pendingFiles ? await sendPendingFiles() : [];
+    await generateFromPrompt(prompt, handoff.mode, false, {
+      importContext: handoff.importContext,
+      createFlowSource: handoff.source || new URLSearchParams(window.location.search).get('source') || 'builder',
+      initialRun: true,
+      ...attachmentExtra([...(handoff.attachmentIds || []), ...sentLater], handoff.skippedUrls || []),
+    });
+  })();
+}
+
+/*
+ * Attachments: sent as they are chosen (the composer's uploader, tied to this
+ * project), then named in the request so the server reads them into the turn.
+ */
+let builderUploader: AttachmentUploader | null = null;
+function attachmentUploader(): AttachmentUploader {
+  builderUploader ??= isLocalPreviewEnabled()
+    ? createPreviewUploader()
+    : createAttachmentUploader({ projectId: () => currentProjectId || undefined });
+  return builderUploader;
+}
+
+function attachmentExtra(ids: string[], skippedUrls: string[]): Record<string, unknown> {
+  return {
+    ...(ids.length ? { attachmentIds: [...new Set(ids)].slice(0, 20) } : {}),
+    ...(skippedUrls.length ? { skipUrls: skippedUrls.slice(0, 20) } : {}),
+  };
+}
+
+async function sendPendingFiles(): Promise<string[]> {
+  const files = await takePendingFiles().catch(() => [] as File[]);
+  if (!files.length) return [];
+  const notice = showTransientNotice(`Envoi de ${files.length} fichier${files.length > 1 ? 's' : ''} joint${files.length > 1 ? 's' : ''}…`, 0);
+  const ids: string[] = [];
+  try {
+    for (const file of files) {
+      try {
+        const remote = await attachmentUploader().upload(file, () => undefined, new AbortController().signal);
+        ids.push(remote.id);
+        if (remote.status === 'processing') await waitUntilRead(attachmentUploader(), remote.id, 120_000);
+      } catch (error) {
+        appendMessage('system', `« ${file.name} » n’a pas pu être envoyé : ${error instanceof Error ? error.message : 'erreur inconnue'}.`);
+      }
+    }
+  } finally {
+    removeMessage(notice);
+  }
+  return ids;
 }
 
 function ensureResizableSidebar() {
