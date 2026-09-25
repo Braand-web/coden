@@ -19,7 +19,7 @@ import {
   Plus,
   Search,
   Settings,
-  Sparkles,
+  Rocket,
   X,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
@@ -32,6 +32,7 @@ import {
   type CreateProjectFlowStatus,
 } from './services/create-project-flow';
 import { PromptInput } from './components/ui/ai-chat-input';
+import { openIntegrationsModal } from './integrations';
 import {
   readPreferredEffort,
   readPreferredModelSelection,
@@ -254,12 +255,12 @@ function Sidebar({
             */}
           {profile && (isPaidPlan(profile.plan?.key) ? (
             <button type="button" className="coden-dashboard-upgrade-card is-plan" onClick={() => openUpgrade(profile)} title="Voir les formules">
-              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
+              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Rocket size={15} /></span>
               <span className="coden-dashboard-upgrade-copy"><strong>Forfait {profile.plan?.label || profile.plan?.key}</strong><small>Voir les formules</small></span>
             </button>
           ) : (
             <button type="button" className="coden-dashboard-upgrade-card" onClick={() => openUpgrade(profile)} title="Passer à Pro">
-              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
+              <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Rocket size={15} /></span>
               <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Builds et publication</small></span>
               <ArrowRight className="coden-dashboard-upgrade-arrow" size={15} aria-hidden="true" />
             </button>
@@ -612,11 +613,15 @@ function DashboardHome() {
 
         <div className="coden-dashboard-content">
           <section className="coden-dashboard-create" aria-labelledby="dashboard-create-title">
-            <div className="coden-dashboard-tools-badge" aria-label="Connectez tous vos outils">
-              <span className="coden-dashboard-tools-icons" aria-hidden="true"><i className="is-drive">◉</i><i className="is-gmail">●</i><i className="is-slack">✣</i></span>
+            <button type="button" className="coden-dashboard-tools-badge" onClick={() => { void openIntegrationsModal(); }}>
+              <span className="coden-dashboard-tools-icons" aria-hidden="true">
+                <i><img src="/connector-logos/googledrive.svg" alt="" /></i>
+                <i><img src="/connector-logos/gmail.svg" alt="" /></i>
+                <i><img src="/connector-logos/notion.svg" alt="" /></i>
+              </span>
               <span>Connectez tous vos outils</span>
               <ArrowRight size={15} aria-hidden="true" />
-            </div>
+            </button>
             <h1 id="dashboard-create-title">Que voulez-vous créer&nbsp;?</h1>
             {/*
               * The composer is the PromptInput now, on all three surfaces.

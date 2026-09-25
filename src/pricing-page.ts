@@ -2,6 +2,7 @@ import './public-page';
 import './pricing-page.css';
 import { hasStoredSession } from './lib/stored-session';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
+import { enhanceSelect, type SelectMenu } from './lib/select-menu';
 import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
 
 type PricingPlan = {
@@ -141,6 +142,7 @@ function setInterval(next: BillingInterval) {
     button.setAttribute('aria-pressed', String(active));
   });
   updateAllCards();
+  refreshTierMenus();
 }
 
 function renderCapabilities(plan: PricingPlan, selectedCredits = Number(plan.baseCredits || 0)) {
@@ -190,7 +192,15 @@ function syncTierOptions(plan: 'pro' | 'business', definition?: PricingPlan) {
   }));
   const preferred = values.includes(previous) ? previous : Number(definition?.baseCredits || values[0]);
   select.value = String(values.includes(preferred) ? preferred : values[0]);
+  select.dispatchEvent(new Event('change'));
 }
+
+/* The tier dropdowns are the product's menu, each tier with its monthly price. */
+const tierMenus: SelectMenu[] = tiers.map(select => {
+  const plan = select.dataset.pricingTier === 'business' ? 'business' : 'pro';
+  return enhanceSelect(select, { describe: value => `${money(priceFor(plan, Number(value)).monthlyEquivalent, 'XAF')} / mois` });
+});
+const refreshTierMenus = () => tierMenus.forEach(menu => menu.refresh());
 
 intervals.forEach(button => button.addEventListener('click', () => {
   setInterval(button.dataset.pricingInterval === 'annual' ? 'annual' : 'monthly');

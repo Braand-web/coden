@@ -34,7 +34,7 @@
 .coden-site-footer-bottom a { color: var(--text-muted); text-decoration: none; }
 .coden-site-footer-bottom a:hover { color: var(--accent); }
 .coden-site-footer-bottom a:focus-visible,
-.coden-site-footer-bottom button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.coden-site-footer-bottom button:focus-visible { outline: var(--focus-outline); outline-offset: 3px; }
 
 @media (max-width: 760px) {
   .coden-site-footer-bottom { align-items: flex-start; flex-direction: column; }

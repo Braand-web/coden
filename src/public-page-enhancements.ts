@@ -66,8 +66,9 @@ function injectSharedPublicStyles() {
     }
 
     .coden-public-theme-toggle:focus-visible {
-      outline: 0;
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+      outline: var(--focus-outline);
+      outline-offset: 2px;
+      box-shadow: none;
     }
 
     .back-home-link {

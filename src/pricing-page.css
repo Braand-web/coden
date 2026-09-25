@@ -38,7 +38,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-plan-copy { min-height: 72px; margin: 12px 0 0; color: var(--text-muted); font-size: 14px; line-height: 24px; text-wrap: pretty; }
 .pricing-tier-field { display: grid; gap: 8px; margin-top: 24px; color: var(--text-muted); font-size: 12px; line-height: 16px; }
 .pricing-tier-field select { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--foreground); font: 600 14px/20px var(--font-sans); }
-.pricing-tier-field select:focus-visible, .pricing-interval button:focus-visible, .pricing-plan-action:focus-visible, details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.pricing-tier-field select:focus-visible, .pricing-interval button:focus-visible, .pricing-plan-action:focus-visible, details summary:focus-visible { outline: var(--focus-outline); outline-offset: 3px; }
 .pricing-price { display: grid; gap: 4px; margin-top: 24px; }
 .pricing-price strong { color: var(--foreground); font: 700 36px/40px var(--font-sans); letter-spacing: -.055em; }
 .pricing-price span, .pricing-price-note { color: var(--text-muted); font-size: 12px; line-height: 16px; }

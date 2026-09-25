@@ -25,7 +25,7 @@
   transition: background-color var(--transition-control), color var(--transition-control);
 }
 #screen-layout-code .code-icon-button:hover { background: var(--surface-soft); color: var(--foreground); }
-#screen-layout-code .code-icon-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#screen-layout-code .code-icon-button:focus-visible { outline: var(--focus-outline); outline-offset: 1px; }
 #screen-layout-code .code-icon-button svg,
 #screen-layout-code .explorer-filter svg {
   width: 15px;
@@ -127,7 +127,7 @@
   font-weight: 600;
 }
 #screen-layout-code .tree-folder-title:focus-visible,
-#screen-layout-code .tree-file:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#screen-layout-code .tree-file:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
 /* A file sits under its folder's name, not under its chevron. */
 #screen-layout-code .tree-file { padding-left: calc(28px + var(--depth, 0) * 14px); }
 

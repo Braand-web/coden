@@ -1,5 +1,6 @@
 import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
+import { enhanceSelect } from './lib/select-menu';
 import { mountPublicShell } from './public-shell';
 import { hasStoredSession } from './lib/stored-session';
 import { mountDotSphere } from './lib/dot-sphere';
@@ -300,146 +301,6 @@ function placeThumbs(root: ParentNode) {
   });
 }
 
-/*
- * A select, dressed as the product's menus.
- *
- * The native <select> keeps the value — the pricing reads it and listens for
- * its `change` — and this lays a trigger and a listbox over it: arrow keys,
- * Home/End, Enter/Space and Escape as in any listbox, a highlight that travels
- * to the row under the pointer, and each row can carry a line of its own
- * (here, what that tier costs).
- */
-const CHECK_ICON = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-function enhanceSelect(wrapper: HTMLElement, describe: (value: string) => string) {
-  const select = wrapper.querySelector('select');
-  if (!select) return { refresh: () => {} };
-  const id = select.id || `lp-select-${Math.random().toString(36).slice(2)}`;
-  const labelId = select.getAttribute('aria-labelledby') || '';
-
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'lp-select-trigger';
-  trigger.id = `${id}-trigger`;
-  trigger.setAttribute('aria-haspopup', 'listbox');
-  trigger.setAttribute('aria-expanded', 'false');
-  trigger.setAttribute('aria-controls', `${id}-menu`);
-  trigger.setAttribute('aria-labelledby', `${labelId} ${trigger.id}`.trim());
-  const triggerLabel = document.createElement('strong');
-  const triggerMeta = document.createElement('small');
-  trigger.append(triggerLabel, triggerMeta);
-
-  const menu = document.createElement('ul');
-  menu.className = 'lp-select-menu';
-  menu.id = `${id}-menu`;
-  menu.setAttribute('role', 'listbox');
-  menu.tabIndex = -1;
-  if (labelId) menu.setAttribute('aria-labelledby', labelId);
-  menu.hidden = true;
-  const highlight = document.createElement('li');
-  highlight.className = 'lp-select-highlight';
-  highlight.setAttribute('aria-hidden', 'true');
-  highlight.setAttribute('role', 'presentation');
-  menu.appendChild(highlight);
-
-  const options = Array.from(select.options).map((option, index) => {
-    const row = document.createElement('li');
-    row.className = 'lp-select-option';
-    row.id = `${id}-option-${index}`;
-    row.setAttribute('role', 'option');
-    row.dataset.value = option.value;
-    row.innerHTML = `${CHECK_ICON}<span></span><small></small>`;
-    row.querySelector('span')!.textContent = option.textContent || option.value;
-    menu.appendChild(row);
-    return row;
-  });
-
-  select.tabIndex = -1;
-  select.setAttribute('aria-hidden', 'true');
-  wrapper.classList.add('is-enhanced');
-  wrapper.insertBefore(trigger, select);
-  wrapper.appendChild(menu);
-
-  let active = select.selectedIndex;
-  const moveHighlight = (index: number) => {
-    const row = options[index];
-    if (!row) { highlight.style.opacity = '0'; return; }
-    highlight.style.transform = `translateY(${row.offsetTop}px)`;
-    highlight.style.height = `${row.offsetHeight}px`;
-    highlight.style.opacity = '1';
-  };
-  const setActive = (index: number, scroll = true) => {
-    active = Math.max(0, Math.min(options.length - 1, index));
-    menu.setAttribute('aria-activedescendant', options[active].id);
-    moveHighlight(active);
-    if (scroll) options[active].scrollIntoView({ block: 'nearest' });
-  };
-  const isOpen = () => !menu.hidden;
-  const open = () => {
-    if (isOpen()) return;
-    menu.hidden = false;
-    wrapper.classList.add('is-open');
-    trigger.setAttribute('aria-expanded', 'true');
-    // Skip the travel on opening: the highlight starts on the chosen row.
-    highlight.style.transition = 'none';
-    setActive(select.selectedIndex);
-    void highlight.offsetWidth;
-    highlight.style.transition = '';
-    menu.focus({ preventScroll: true });
-  };
-  const close = (returnFocus = true) => {
-    if (!isOpen()) return;
-    menu.hidden = true;
-    wrapper.classList.remove('is-open');
-    trigger.setAttribute('aria-expanded', 'false');
-    if (returnFocus) trigger.focus({ preventScroll: true });
-  };
-  const choose = (index: number) => {
-    if (index !== select.selectedIndex) {
-      select.selectedIndex = index;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    close();
-  };
-
-  trigger.addEventListener('click', () => (isOpen() ? close() : open()));
-  trigger.addEventListener('keydown', event => {
-    if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) { event.preventDefault(); open(); }
-  });
-  menu.addEventListener('keydown', event => {
-    const last = options.length - 1;
-    const moves: Record<string, number> = { ArrowDown: active + 1, ArrowUp: active - 1, Home: 0, End: last, PageDown: active + 5, PageUp: active - 5 };
-    if (event.key in moves) { event.preventDefault(); setActive(moves[event.key]); return; }
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(active); return; }
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-    if (event.key === 'Tab') close(false);
-  });
-  menu.addEventListener('pointermove', event => {
-    const row = (event.target as Element).closest<HTMLLIElement>('.lp-select-option');
-    const index = row ? options.indexOf(row) : -1;
-    if (index >= 0 && index !== active) setActive(index, false);
-  });
-  menu.addEventListener('click', event => {
-    const row = (event.target as Element).closest<HTMLLIElement>('.lp-select-option');
-    if (row) choose(options.indexOf(row));
-  });
-  document.addEventListener('pointerdown', event => {
-    if (isOpen() && !wrapper.contains(event.target as Node)) close(false);
-  });
-
-  const refresh = () => {
-    const current = select.options[select.selectedIndex];
-    triggerLabel.textContent = current?.textContent || '';
-    triggerMeta.textContent = describe(select.value);
-    options.forEach((row, index) => {
-      row.setAttribute('aria-selected', String(index === select.selectedIndex));
-      row.querySelector('small')!.textContent = describe(row.dataset.value || '');
-    });
-  };
-  refresh();
-  return { refresh };
-}
-
 function setupPricing() {
   const section = document.querySelector<HTMLElement>('[data-lp-pricing]');
   if (!section) return;
@@ -482,10 +343,7 @@ function setupPricing() {
 
   const dropdowns = tiers.map(select => {
     const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
-    const wrapper = select.closest<HTMLElement>('[data-lp-select]');
-    return wrapper
-      ? enhanceSelect(wrapper, value => `${formatAmount(priceFor(plan, Number(value), interval).monthlyEquivalent, currency)} / mois`)
-      : { refresh: () => {} };
+    return enhanceSelect(select, { describe: value => `${formatAmount(priceFor(plan, Number(value), interval).monthlyEquivalent, currency)} / mois` });
   });
 
   const setText = (node: Element | null, text: string, animate: boolean) => {

@@ -32,7 +32,7 @@
 .checkout-divider { height: 1px; margin: 6px 0; background: var(--border); }
 .checkout-submit { width: 100%; min-height: 50px; border: 0; border-radius: var(--radius-md, 10px); background: var(--surface); color: var(--foreground); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; transition: transform 160ms ease, background 160ms ease, opacity 160ms ease; }
 .checkout-submit:hover { background: var(--surface); transform: translateY(-1px); }
-.checkout-submit:focus-visible, .checkout-nav-link:focus-visible, .checkout-billing-toggle button:focus-visible { outline: 3px solid color-mix(in srgb, var(--syntax-cyan) 35%, transparent); outline-offset: 3px; }
+.checkout-submit:focus-visible, .checkout-nav-link:focus-visible, .checkout-billing-toggle button:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .checkout-submit:disabled { cursor: wait; opacity: .65; transform: none; }
 .checkout-status { min-height: 22px; margin: 12px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .checkout-sign-in { display: block; margin-top: 16px; color: var(--text-muted); font-size: 12px; text-align: center; }

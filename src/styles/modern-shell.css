@@ -7,7 +7,7 @@ body.coden-modern-shell {
 }
 
 body.coden-modern-shell :where(button, a, input, textarea, select):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-outline);
   outline-offset: 3px;
   box-shadow: none;
 }
@@ -50,8 +50,8 @@ body.coden-modern-shell .input-wrapper:focus-within,
 body.coden-modern-shell input:focus,
 body.coden-modern-shell textarea:focus,
 body.coden-modern-shell select:focus {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--field-focus-border);
+  box-shadow: var(--ring);
 }
 
 body.coden-modern-shell .footer,

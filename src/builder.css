@@ -204,13 +204,6 @@ body {
   box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 8%, transparent);
   display: flex; align-items: center; gap: 8px;
 }
-.btn-upgrade::before {
-  content: "✦";
-  font-size: 14px;
-  color: var(--accent);
-  line-height: 1;
-  margin-top: -1px;
-}
 .btn-upgrade:hover {
   background: var(--surface-hover);
   border-color: var(--accent);

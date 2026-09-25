@@ -170,7 +170,7 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
 .coden-dashboard-mobile-new:focus-visible,
 .coden-dashboard-search:focus-within,
 .coden-dashboard-project-main:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -538,20 +538,32 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   display: grid;
   width: 25px;
   height: 25px;
-  margin-left: -5px;
+  margin-left: -6px;
   place-items: center;
   border: 2px solid var(--surface-soft);
   border-radius: 50%;
-  background: var(--surface);
-  color: var(--accent);
-  font-size: 10px;
+  /* Brand logos are drawn for a light ground, in both themes. */
+  background: white;
   font-style: normal;
 }
 
 .coden-dashboard-tools-icons i:first-child { margin-left: 0; }
-.coden-dashboard-tools-icons .is-drive { color: var(--syntax-green); }
-.coden-dashboard-tools-icons .is-gmail { color: var(--danger); }
-.coden-dashboard-tools-icons .is-slack { color: var(--syntax-orange); }
+.coden-dashboard-tools-icons img { width: 13px; height: 13px; object-fit: contain; }
+
+.coden-dashboard-tools-badge {
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--transition-control), background-color var(--transition-control), transform var(--transition-control);
+}
+
+.coden-dashboard-tools-badge:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.coden-dashboard-tools-badge:hover > svg { color: var(--text-strong); transform: translateX(2px); }
+.coden-dashboard-tools-badge > svg { transition: transform var(--transition-control), color var(--transition-control); }
+.coden-dashboard-tools-badge:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 
 .coden-dashboard-create h1 {
   margin: 18px 0 0;
@@ -977,7 +989,7 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
 }
 
 .coden-dashboard-project-card-link:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: var(--focus-outline);
   outline-offset: 4px;
 }
 
@@ -1546,7 +1558,7 @@ html[data-theme="dark"] #coden-dashboard-react-root { position: relative; z-inde
   box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
-.coden-dashboard-upgrade-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coden-dashboard-upgrade-card:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .coden-dashboard-upgrade-icon {
   display: grid;
   flex: 0 0 auto;

@@ -25,7 +25,14 @@
   --radius-control: var(--radius-md);
   --control-height: 40px;
   --control-height-lg: 44px;
-  --ring: 0 0 0 3px var(--focus-ring);
+  /*
+   * Focus, as the composer draws it: an accent border at 40 % and a 1px ring
+   * at 20 % for fields; a thin translucent outline for keyboard focus on
+   * buttons and links. --focus-ring stays for the composer's own halo.
+   */
+  --ring: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+  --field-focus-border: color-mix(in srgb, var(--accent) 40%, var(--border));
+  --focus-outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   --shadow-accent: 0 12px 28px -12px color-mix(in srgb, var(--accent) 75%, transparent);
   --ease-standard: cubic-bezier(.32, .72, 0, 1);
   --transition-micro: 120ms var(--ease-standard);
@@ -134,9 +141,13 @@ body {
 }
 
 :where(button, a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 4px var(--focus-ring);
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+:where([tabindex="-1"]):focus-visible {
+  outline: none;
 }
 
 :where(button, a, input, textarea, select):disabled,

@@ -1,5 +1,6 @@
 import { apiFetch } from './lib/api';
 import { mountIntegrationsGrid } from './integrations';
+import { enhanceSelect } from './lib/select-menu';
 import { publicBillingCatalog } from './config/billing-v2';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
 import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
@@ -281,10 +282,12 @@ function resolveThemePreference(theme: SettingsPreferences['appearance']['theme'
   return theme;
 }
 
-function applyAppearancePreferences(value = loadSettingsPreferences()) {
-  const theme = resolveThemePreference(value.appearance.theme);
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('coden-theme', theme);
+function applyAppearancePreferences(value = loadSettingsPreferences(), options: { theme?: boolean } = {}) {
+  if (options.theme !== false) {
+    const theme = resolveThemePreference(value.appearance.theme);
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('coden-theme', theme); } catch { /* the theme still applies for this page */ }
+  }
   document.documentElement.dataset.codenDensity = value.appearance.density;
   document.documentElement.dataset.codenMotion = value.appearance.motion;
   document.documentElement.dataset.codenAccent = value.appearance.accent;
@@ -621,8 +624,9 @@ function installSettingsStyle() {
     .settings-field input:focus,
     .settings-field select:focus,
     .settings-field textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-soft, color-mix(in srgb, var(--syntax-cyan) 14%, transparent));
+      outline: none;
+      border-color: var(--field-focus-border);
+      box-shadow: var(--ring);
     }
 
     .settings-row {
@@ -766,7 +770,7 @@ function installSettingsStyle() {
     }
 
     .personalization-share input:focus-visible {
-      outline: 2px solid var(--ring, var(--accent));
+      outline: var(--focus-outline);
       outline-offset: 2px;
     }
 
@@ -1224,8 +1228,15 @@ function installSettingsStyle() {
     }
 
     .settings-search:focus-within {
-      border-color: var(--accent);
+      border-color: var(--field-focus-border);
+      box-shadow: var(--ring);
       background: var(--input);
+    }
+
+    /* The search field sits inside a bordered pill: the pill shows focus, not the input. */
+    .settings-search input:focus {
+      border-color: transparent !important;
+      box-shadow: none !important;
     }
 
     .settings-search svg,
@@ -1619,7 +1630,7 @@ function settingsIcon(name: 'search' | 'general' | 'personalization' | 'account'
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
     general: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21h-4v-.05a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3v-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.06 4.2l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3h4v.05a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21v4h-.05a1.7 1.7 0 0 0-1.55 1Z"></path>',
     account: '<circle cx="12" cy="8" r="4"></circle><path d="M4.5 21a8 8 0 0 1 15 0"></path>',
-    personalization: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3Z"></path><path d="m14 8 3 3"></path><path d="M19 15v4"></path><path d="M17 17h4"></path>',
+    personalization: '<path d="M4 6h9"></path><path d="M17 6h3"></path><circle cx="15" cy="6" r="2"></circle><path d="M4 12h3"></path><path d="M11 12h9"></path><circle cx="9" cy="12" r="2"></circle><path d="M4 18h11"></path><path d="M19 18h1"></path><circle cx="17" cy="18" r="2"></circle>',
     privacy: '<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"></path><rect x="9" y="10" width="6" height="5" rx="1"></rect><path d="M10.5 10V8.8a1.5 1.5 0 0 1 3 0V10"></path>',
     billing: '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h3"></path>',
     usage: '<path d="M4 20V10"></path><path d="M9 20V4"></path><path d="M14 20v-7"></path><path d="M19 20V7"></path><path d="M2 20h20"></path>',
@@ -2003,11 +2014,18 @@ function updateSettingsForm(prefs = loadSettingsPreferences()) {
   setFieldValue('[data-settings-field="role"]', prefs.profile.role);
   setFieldValue('[data-settings-field="webhookUrl"]', prefs.api.webhookUrl);
   setFieldValue('[data-settings-field="webhookEvents"]', prefs.api.webhookEvents);
-  setSegmentActive('theme', prefs.appearance.theme);
+  /*
+   * Opening Settings reflects the theme in use, it does not impose one: the
+   * theme toggle elsewhere in the product may have changed it since these
+   * preferences were saved, and re-applying "Système" here flipped a dark
+   * interface back to light the moment the panel opened.
+   */
+  const actualTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  setSegmentActive('theme', resolveThemePreference(prefs.appearance.theme) === actualTheme ? prefs.appearance.theme : actualTheme);
   setSegmentActive('density', prefs.appearance.density);
   setSegmentActive('motion', prefs.appearance.motion);
   setSegmentActive('accent', prefs.appearance.accent);
-  applyAppearancePreferences(prefs);
+  applyAppearancePreferences(prefs, { theme: false });
 }
 
 function renderAuthSummary(auth: AuthMeResponse | null, prefs = loadSettingsPreferences()) {
@@ -2600,7 +2618,7 @@ function billingPlanMarkup(plan: 'pro' | 'business') {
     <article class="billing-plan-card" data-plan="${plan}">
       <div class="billing-plan-head"><strong>${escapeHtml(catalogPlan?.name || plan)}</strong>${current ? '<span class="settings-mini-badge">Actuel</span>' : ''}</div>
       <select class="billing-tier-select" data-billing-tier="${plan}" aria-label="Crédits mensuels ${escapeHtml(catalogPlan?.name || plan)}">
-        ${tiers.map(tier => `<option value="${tier}"${tier === defaultTier ? ' selected' : ''}>${new Intl.NumberFormat().format(tier)} crédits / mois</option>`).join('')}
+        ${tiers.map(tier => `<option value="${tier}"${tier === defaultTier ? ' selected' : ''}>${new Intl.NumberFormat('fr-FR').format(tier)} crédits</option>`).join('')}
       </select>
       <div class="billing-plan-price" data-billing-price="${plan}"><strong>${formatBillingAmount(price?.monthlyEquivalent, price?.currency)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · paiement annuel' : ''}</span></div>
       <ul class="billing-plan-features">${(catalogPlan?.capabilities || []).slice(0, 5).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
@@ -2635,10 +2653,35 @@ function renderBillingSettings() {
   const plan = billingWallet?.plan === 'business' ? 'business' : 'pro';
   const products = (billingCatalog?.topups || []).filter(product => product.plan === plan);
   if (topupSelect) {
-    topupSelect.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat().format(product.credits)} crédits · ${formatBillingAmount(product.amount, product.currency)}</option>`).join('');
+    topupSelect.innerHTML = products.map(product => `<option value="${escapeHtml(product.id)}">${new Intl.NumberFormat('fr-FR').format(product.credits)} crédits</option>`).join('');
     topupSelect.disabled = !isPaid;
   }
   if (topupButton) topupButton.disabled = !isPaid;
+  enhanceBillingSelects();
+}
+
+/* The same tier menu as the pricing page, the landing and the upgrade modal. */
+function enhanceBillingSelects() {
+  document.querySelectorAll<HTMLSelectElement>('#settings-panel [data-billing-tier]').forEach(select => {
+    const plan = select.dataset.billingTier === 'business' ? 'business' : 'pro';
+    enhanceSelect(select, {
+      className: 'is-compact',
+      describe: value => {
+        const price = billingPrice(plan, Number(value));
+        return price ? `${formatBillingAmount(price.monthlyEquivalent, price.currency)} / mois` : '';
+      },
+    });
+  });
+  const topup = document.querySelector<HTMLSelectElement>('#settings-panel [data-billing-topup-product]');
+  if (topup) {
+    enhanceSelect(topup, {
+      className: 'is-compact',
+      describe: value => {
+        const product = (billingCatalog?.topups || []).find(item => item.id === value);
+        return product ? formatBillingAmount(product.amount, product.currency) : '';
+      },
+    });
+  }
 }
 
 /*

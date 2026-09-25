@@ -3620,7 +3620,7 @@ h1 {
     border: 1px solid var(--border); border-radius: 999px;
     padding: 5px 10px; font-size: 13px; cursor: pointer;
 }
-.lang-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lang-select:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 
 /* --- Reduced motion: disable all landing-v2 animations --- */
 @media (prefers-reduced-motion: reduce) {
@@ -3724,7 +3724,7 @@ h1 {
     background: var(--accent-soft);
     color: var(--foreground);
 }
-.plan-cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.plan-cta:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .plan-cta-primary { background: var(--surface); border-color: transparent; color: var(--foreground); }
 .plan-cta-primary:hover { background: var(--surface); color: var(--foreground); box-shadow: 0 10px 26px -8px var(--accent); }
 
@@ -3806,7 +3806,7 @@ body::before {
     color: var(--foreground);
 }
 .landing-faq .faq-question:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: var(--focus-outline);
     outline-offset: -3px;
     border-radius: 10px;
 }
@@ -3872,7 +3872,7 @@ body::before {
     transition: transform 150ms ease, border-color 150ms ease, background 150ms ease, color 150ms ease;
 }
 .discover-chip:hover { transform: translateY(-1px); color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 36%, var(--border)); }
-.discover-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.discover-chip:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
 .discover-chip.active { background: var(--surface); border-color: transparent; color: var(--foreground); }
 .discover-block { margin-top: 36px; }
 .discover-block:first-of-type { margin-top: 0; }
