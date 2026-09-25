@@ -1,4 +1,6 @@
 import './styles/coden-light-theme.css';
+import { confirmDialog, toast } from './lib/ui-feedback';
+import { resolveCloudState, type CloudStateView } from './lib/cloud-state';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
@@ -5589,6 +5591,23 @@ function setChatMode(mode: ChatMode) {
 
 function activateBuilderView(view: 'preview' | 'code' | 'database' | 'analysis') {
   currentBuilderView = view;
+  /*
+   * On a phone the workspace shows one pane at a time. Opening Cloud (or
+   * Analysis) from the top switcher changed the editor pane while the chat
+   * pane stayed on screen, so the console could not be reached at all.
+   */
+  const workspace = document.querySelector('.workspace-body') as HTMLElement | null;
+  if (workspace && window.matchMedia('(max-width: 760px)').matches) {
+    const mobileView = view === 'code' ? 'code' : 'preview';
+    if (workspace.dataset.mobileView !== mobileView) {
+      workspace.dataset.mobileView = mobileView;
+      document.querySelectorAll<HTMLButtonElement>('[data-mobile-builder-view]').forEach(button => {
+        const active = button.dataset.mobileBuilderView === (view === 'code' || view === 'preview' ? view : '');
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    }
+  }
   const screens: Record<string, string> = {
     preview: 'screen-layout-preview',
     code: 'screen-layout-code',
@@ -5650,7 +5669,10 @@ function ensureDatabaseView() {
   const databaseBtn = document.createElement('button');
   databaseBtn.className = 'sub-nav-tab';
   databaseBtn.id = 'tab-btn-database';
-  databaseBtn.innerHTML = '<span aria-hidden="true" style="font-size:13px;">☁</span> Cloud';
+  databaseBtn.type = 'button';
+  databaseBtn.setAttribute('aria-label', 'Cloud');
+  // Same shape as its siblings (icon + label span), so the phone layout can hide the label as it does theirs.
+  databaseBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 19h11a4.5 4.5 0 0 0 .8-8.9A7 7 0 0 0 4.7 8.7 5.2 5.2 0 0 0 6.5 19Z"></path></svg><span>Cloud</span>';
   const analysis = document.getElementById('tab-btn-analysis');
   tabs.insertBefore(databaseBtn, analysis || null);
   bindBuilderViews();
@@ -7183,13 +7205,12 @@ function dbBadge(kind: DbBadgeKind, label: string): string {
 // pending → provisioning → migrating → ready / failed, + detected/not_detected).
 function dbCloudStatus(rawStatus: string): { kind: DbBadgeKind; label: string } {
   const status = (rawStatus || '').toLowerCase();
-  if (/not[_ ]?detect|not[_ ]?found|waiting_for_schema/.test(status)) return { kind: 'neutral', label: 'Non détecté' };
-  if (/ready|provisioned|active|enabled|connected/.test(status)) return { kind: 'success', label: 'Provisionné' };
-  if (/fail|error/.test(status)) return { kind: 'error', label: 'Échec du provisioning' };
-  if (/provision|migrat|pending|queue|progress/.test(status)) return { kind: 'warning', label: 'Provisioning en cours' };
-  if (/schema_generated/.test(status)) return { kind: 'warning', label: 'Schéma prêt — non provisionné' };
-  if (/detect/.test(status)) return { kind: 'warning', label: 'Détecté (auto)' };
-  return { kind: 'neutral', label: 'Non détecté' };
+  if (/^not_needed$|not[_ ]?detect|not[_ ]?found|waiting_for_schema/.test(status) || !status) return { kind: 'neutral', label: 'Aucun backend requis' };
+  if (/ready|provisioned|active|enabled|connected/.test(status)) return { kind: 'success', label: 'Connecté' };
+  if (/fail|error|unavailable/.test(status)) return { kind: 'error', label: 'Échec de l’activation' };
+  if (/provision|migrat|pending|queue|progress/.test(status)) return { kind: 'warning', label: 'Activation en cours' };
+  if (/required|planned|schema_generated|detect/.test(status)) return { kind: 'warning', label: 'À activer' };
+  return { kind: 'neutral', label: 'Aucun backend requis' };
 }
 
 /*
@@ -7448,7 +7469,7 @@ function endUserRoleLabel(role: string): string {
 
 /** The browser's own picker, behind a button in the product's style. */
 function storageFilePicker(): string {
-  return `<label class="db-file-picker"><input id="db-storage-file" type="file" accept="image/*,application/pdf,text/plain,application/json,video/*,audio/*"><span class="db-action" aria-hidden="true">Choisir un fichier</span><span class="db-file-picker-name" id="db-storage-file-name">Aucun fichier choisi · 4 Mo max</span></label>`;
+  return `<label class="db-file-picker"><input id="db-storage-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,text/plain,text/markdown,text/csv,application/json"><span class="db-action" aria-hidden="true">Choisir un fichier</span><span class="db-file-picker-name" id="db-storage-file-name">Aucun fichier choisi · 4 Mo max</span></label>`;
 }
 
 const CLOUD_CONSOLE_VIEWS: Array<{ id: CloudConsoleView; label: string; group?: string }> = [
@@ -7469,12 +7490,12 @@ const CLOUD_CONSOLE_VIEWS: Array<{ id: CloudConsoleView; label: string; group?: 
 const CLOUD_CONSOLE_COPY: Record<CloudConsoleView, { title: string; description: string; action: string }> = {
   overview: { title: 'Vue d’ensemble', description: 'État réel des services utilisés par cette application.', action: 'Actualiser' },
   database: { title: 'Base de données', description: 'Tables, schémas et données du backend du projet.', action: 'Actualiser' },
-  users: { title: 'Utilisateurs', description: 'Comptes, rôles et accès de l’application générée.', action: 'Inviter' },
-  storage: { title: 'Stockage', description: 'Fichiers et médias stockés pour ce projet.', action: 'Importer' },
-  emails: { title: 'E-mails', description: 'Configuration d’envoi transactionnel et domaine expéditeur.', action: 'Configurer' },
+  users: { title: 'Utilisateurs', description: 'Comptes, rôles et accès de l’application générée.', action: 'Actualiser' },
+  storage: { title: 'Stockage', description: 'Fichiers et médias stockés pour ce projet.', action: 'Actualiser' },
+  emails: { title: 'E-mails', description: 'Configuration d’envoi transactionnel et domaine expéditeur.', action: 'Configurer Resend' },
   secrets: { title: 'Secrets', description: 'Variables sensibles chiffrées et accessibles uniquement côté serveur.', action: 'Ajouter un secret' },
   jobs: { title: 'Tâches planifiées', description: 'Automatisations manuelles et planifiées rattachées au projet.', action: 'Actualiser' },
-  functions: { title: 'Fonctions', description: 'Fonctions backend et routes détectées dans les fichiers du projet.', action: 'Créer une fonction' },
+  functions: { title: 'Fonctions', description: 'Fonctions backend et routes détectées dans les fichiers du projet.', action: 'Créer avec Coden' },
   logs: { title: 'Journaux', description: 'Derniers événements techniques corrélés à ce projet.', action: 'Actualiser' },
   usage: { title: 'Consommation', description: 'Crédits disponibles et consommation mesurée pour ce projet.', action: 'Actualiser' },
   analytics: { title: 'Statistiques', description: 'Trafic réel collecté sur l’application publiée.', action: 'Actualiser' },
@@ -7510,6 +7531,39 @@ function cloudStatus(rawStatus: string) {
   return `<span class="cloud-status" data-tone="${tone}">${escapeHtml(resolved.label)}</span>`;
 }
 
+/** The server's answer when it gave one; otherwise the same rules, applied here. */
+function cloudStateOf(db: any): CloudStateView {
+  const given = db?.cloud?.state;
+  if (given && typeof given === 'object' && given.state) return given as CloudStateView;
+  return resolveCloudState({ status: db?.cloud?.status || db?.backend_status || null, needs: db?.cloud?.needs || db?.cloud?.requirements || null });
+}
+
+function cloudStateBadge(db: any) {
+  const view = cloudStateOf(db);
+  return `<span class="cloud-status" data-tone="${view.tone}">${escapeHtml(view.label)}</span>`;
+}
+
+/**
+ * What the status means and what to do about it, wherever a page depends on
+ * the backend. Nothing is shown once it is connected.
+ */
+function cloudStateBanner(db: any, context = '') {
+  const view = cloudStateOf(db);
+  if (view.state === 'connected') return '';
+  const action = view.action ? `<button type="button" class="cloud-console-action is-primary" data-cloud-provision>${escapeHtml(view.action_label || 'Activer Coden Cloud')}</button>` : '';
+  return `<section class="cloud-state-banner" data-tone="${view.tone}" role="status"><div><strong>${escapeHtml(view.label)}</strong><p>${escapeHtml(context ? `${context} ${view.explanation}` : view.explanation)}</p></div>${action}</section>`;
+}
+
+const CLOUD_EVENT_LABELS: Record<string, string> = {
+  deploy: 'Déploiement', migration: 'Migration', build: 'Génération', ai_gateway: 'Discussion avec l’agent', chat: 'Discussion', preview: 'Aperçu',
+  publish: 'Publication', error: 'Erreur', run_started: 'Exécution démarrée', run_completed: 'Exécution terminée', run_failed: 'Exécution en échec',
+};
+function cloudEventLabel(value: unknown) {
+  const key = String(value || '').trim();
+  if (!key) return 'Événement';
+  return CLOUD_EVENT_LABELS[key] || CLOUD_EVENT_LABELS[key.toLowerCase()] || key.replace(/[_-]+/g, ' ').replace(/^./, char => char.toUpperCase());
+}
+
 function cloudDate(value: unknown) {
   if (!value) return 'Aucun événement';
   try { return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(String(value))); }
@@ -7522,7 +7576,7 @@ function cloudConsoleOverview(db: any) {
   const assets = Array.isArray(db.assets) ? db.assets : [];
   const secrets = Array.isArray(db.secrets) ? db.secrets : [];
   const functions = currentFiles.filter(file => /(^|\/)(functions?|api|workers?)(\/|\.|$)/i.test(file.path));
-  const authNeeded = Boolean(cloud.requirements?.needs_auth);
+  const authNeeded = Boolean(cloud.needs?.needs_auth || cloud.requirements?.needs_auth);
   const provider = dbProviderName(cloud.provider || 'coden_cloud');
   const services: Array<{ id: CloudConsoleView; label: string; detail: string; meta: string }> = [
     { id: 'database', label: 'Base de données', detail: 'Tables, schémas et migrations', meta: `${tables.length} table${tables.length === 1 ? '' : 's'}` },
@@ -7532,9 +7586,9 @@ function cloudConsoleOverview(db: any) {
     { id: 'functions', label: 'Fonctions', detail: 'Routes et logique backend', meta: `${functions.length} détectée${functions.length === 1 ? '' : 's'}` },
     { id: 'secrets', label: 'Secrets', detail: 'Variables chiffrées', meta: `${secrets.length} secret${secrets.length === 1 ? '' : 's'}` },
   ];
-  return `
+  return `${cloudStateBanner(db)}
     <div class="cloud-summary-grid">
-      <article class="cloud-summary-card"><span>Backend</span><strong>${cloudStatus(cloud.status || db.backend_status || '')}</strong><small>${escapeHtml(provider)}</small></article>
+      <article class="cloud-summary-card"><span>Backend</span><strong>${cloudStateBadge(db)}</strong><small>${escapeHtml(provider)}</small></article>
       <article class="cloud-summary-card"><span>Région</span><strong>${escapeHtml(cloud.region && cloud.region !== 'auto' ? cloud.region : 'Auto')}</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></article>
       <article class="cloud-summary-card"><span>Ressources</span><strong>${Number(cloud.resources?.length || 0)}</strong><small>provisionnées</small></article>
       <article class="cloud-summary-card"><span>Dernière activité</span><strong>${cloudDate(db.last_sync_at)}</strong><small>état synchronisé</small></article>
@@ -7554,12 +7608,13 @@ function cloudConsoleOverview(db: any) {
 function cloudConsoleDatabasePage(db: any) {
   const cloud = db.cloud || {};
   const tables = Array.isArray(db.tables) ? db.tables : [];
-  return `
+  const connected = cloudStateOf(db).state === 'connected';
+  return `${cloudStateBanner(db, 'Les tables s’afficheront ici avec leurs lignes réelles.')}
     <div class="cloud-summary-grid">
-      <article class="cloud-summary-card"><span>État</span><strong>${cloudStatus(cloud.status || db.backend_status || '')}</strong><small>${escapeHtml(dbProviderName(cloud.provider))}</small></article>
-      <article class="cloud-summary-card"><span>Tables</span><strong>${tables.length}</strong><small>schéma applicatif</small></article>
-      <article class="cloud-summary-card"><span>RLS</span><strong>${db.security?.rls_required ? 'Requis' : 'Non détecté'}</strong><small>isolation par projet</small></article>
-      <article class="cloud-summary-card"><span>Schéma</span><strong>${escapeHtml(cloud.schema_name || 'Non provisionné')}</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></article>
+      <article class="cloud-summary-card"><span>État</span><strong>${cloudStateBadge(db)}</strong><small>${escapeHtml(dbProviderName(cloud.provider))}</small></article>
+      <article class="cloud-summary-card"><span>Tables</span><strong>${tables.length}</strong><small>${tables.length ? 'déclarées dans le schéma' : 'aucun schéma généré'}</small></article>
+      <article class="cloud-summary-card"><span>Sécurité (RLS)</span><strong>${connected || db.security?.rls_required ? 'Obligatoire' : 'Sans objet'}</strong><small>${connected || db.security?.rls_required ? 'appliquée à chaque table' : 'aucune table à protéger'}</small></article>
+      <article class="cloud-summary-card"><span>Schéma</span><strong class="cloud-summary-code" title="${escapeHtml(cloud.schema_name || '')}">${escapeHtml(connected ? (cloud.schema_name || 'public') : 'Non créé')}</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></article>
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Tables et vues</h2><p>La lecture est limitée aux schémas déclarés par ce projet.</p></div></div>
@@ -7568,12 +7623,11 @@ function cloudConsoleDatabasePage(db: any) {
 }
 
 function cloudConsoleUsersPage(db: any) {
-  const requirements = db.cloud?.requirements;
-  const required = Boolean(requirements?.needs_auth);
-  return `
+  const required = Boolean(db.cloud?.needs?.needs_auth || db.cloud?.requirements?.needs_auth);
+  return `${cloudStateBanner(db, 'Les comptes des utilisateurs de votre application se gèrent ici une fois l’authentification activée.')}
     <div class="cloud-summary-grid">
       <article class="cloud-summary-card"><span>Authentification</span><strong>${required ? 'Requise' : 'Non requise'}</strong><small>d’après l’analyse du projet</small></article>
-      <article class="cloud-summary-card"><span>Fournisseur</span><strong>${required ? escapeHtml(dbProviderName(db.cloud?.provider) + ' Auth') : 'Aucun'}</strong><small>secret serveur uniquement</small></article>
+      <article class="cloud-summary-card"><span>Fournisseur</span><strong>${cloudStateOf(db).state === 'connected' ? 'Supabase Auth' : 'Non activé'}</strong><small>secret serveur uniquement</small></article>
     </div>
     <section class="cloud-panel">
       <div class="cloud-panel-head"><div><h2>Utilisateurs finaux</h2><p>Invitations et contrôles d’accès du backend de cette application.</p></div></div>
@@ -7587,11 +7641,11 @@ function cloudConsoleStoragePage(db: any) {
   const rows = assets.length ? assets.map(asset => `
     <div class="db-row" data-storage-asset="${escapeHtml(String(asset.id || ''))}">
       <span class="db-row-key" title="${escapeHtml(asset.name || '')}">${escapeHtml(asset.name || '(sans nom)')}<small class="db-row-meta">${escapeHtml(asset.mime_type || asset.kind || 'fichier')} · ${formatBytes(Number(asset.size_bytes || 0))}</small></span>
-      <span class="db-file-actions">${asset.url ? `<a href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer">Ouvrir</a>` : ''}<button type="button" class="db-eu-btn db-eu-del" data-storage-delete="${escapeHtml(String(asset.id || ''))}">Supprimer</button></span>
-    </div>`).join('') : '<div class="db-empty">Aucun fichier dans ce projet.</div>';
+      <span class="db-file-actions">${asset.url ? `<a class="cloud-link-button" href="${escapeHtml(asset.url)}" target="_blank" rel="noreferrer noopener">Ouvrir</a>` : ''}<button type="button" class="db-eu-btn db-eu-del" data-storage-delete="${escapeHtml(String(asset.id || ''))}">Supprimer</button></span>
+    </div>`).join('') : '<div class="db-empty">Aucun fichier pour l’instant. Choisissez un fichier ci-dessus (images, PDF, texte, CSV ou JSON, 4 Mo max).</div>';
   return `
     <div class="cloud-summary-grid">
-      <article class="cloud-summary-card"><span>Bucket</span><strong>project-assets</strong><small>privé par défaut</small></article>
+      <article class="cloud-summary-card"><span>Accès</span><strong>Privé</strong><small>liens signés valables 1 h</small></article>
       <article class="cloud-summary-card"><span>Fichiers</span><strong>${assets.length}</strong><small>objets enregistrés</small></article>
       <article class="cloud-summary-card"><span>Taille</span><strong>${formatBytes(size)}</strong><small>stockage mesuré</small></article>
     </div>
@@ -7616,42 +7670,47 @@ function cloudConsoleEmailsPage(db: any) {
     </div>
     <section class="cloud-empty">
       <span class="cloud-empty-icon">${cloudConsoleIcon('emails')}</span>
-      <h2>${configured ? 'Canal email prêt' : 'Connectez votre domaine d’envoi'}</h2>
-      <p>${configured ? 'La clé Resend est enregistrée. Les templates et l’envoi sont pilotés par les fonctions backend de votre application.' : 'Ajoutez une clé Resend pour activer les emails transactionnels. La valeur est chiffrée et ne sera jamais renvoyée au navigateur.'}</p>
-      <button type="button" class="cloud-console-action is-primary" data-cloud-configure-email>${configured ? 'Remplacer la clé' : 'Configurer Resend'}</button>
+      <h2>${configured ? 'Canal e-mail prêt' : 'Connectez votre domaine d’envoi'}</h2>
+      <p>${configured ? 'La clé Resend est enregistrée et chiffrée. Les fonctions de votre application l’utilisent côté serveur via <code>process.env.RESEND_API_KEY</code>.' : 'Ajoutez une clé Resend avec « Configurer Resend » pour activer les e-mails transactionnels. La valeur est chiffrée et ne sera jamais renvoyée au navigateur.'}</p>
     </section>`;
 }
 
 function cloudConsoleSecretsPage(db: any) {
   const secrets: any[] = Array.isArray(db.secrets) ? db.secrets : [];
-  const rows = secrets.length ? secrets.map(secret => `
+  const rows = secrets.length ? secrets.map(secret => {
+    const reentry = secret.status === 'needs_reentry';
+    const skipped = secret.status === 'skipped';
+    const badge = reentry ? '<span class="cloud-status" data-tone="warn">À ressaisir</span>' : skipped ? '<span class="cloud-status" data-tone="neutral">Non renseigné</span>' : '<span class="cloud-status" data-tone="ok">Chiffré</span>';
+    return `
     <div class="cloud-secret-row">
-      <span><strong>${escapeHtml(secret.variable || 'SECRET')}</strong><small>${escapeHtml(secret.service || 'Custom')} · ${escapeHtml(secret.masked_value || '••••••••')}</small></span>
-      <span class="cloud-row-actions"><button type="button" class="cloud-link-button is-danger" data-cloud-delete-secret="${escapeHtml(String(secret.id || ''))}">Supprimer</button></span>
-    </div>`).join('') : '';
-  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Variables sécurisées</h2><p>Les valeurs sont en écriture seule : seuls les noms et les masques sont affichés.</p></div></div>${rows ? `<div class="cloud-secret-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('secrets')}</span><h2>Aucun secret configuré</h2><p>Ajoutez uniquement les clés nécessaires au backend de cette application.</p><button type="button" class="cloud-console-action is-primary" data-cloud-add-secret>Ajouter un secret</button></div>`}</section>`;
+      <span><strong>${escapeHtml(secret.variable || 'SECRET')}</strong><small>${escapeHtml(secret.service || 'Custom')} · ${escapeHtml(skipped ? 'aucune valeur' : secret.masked_value || '••••••••')}${secret.updated_at ? ` · modifié ${escapeHtml(cloudDate(secret.updated_at))}` : ''}</small>${reentry ? '<small class="cloud-secret-hint">Enregistré avant le chiffrement : la valeur n’est plus lisible par le serveur. Remplacez-la pour la rendre utilisable.</small>' : ''}</span>
+      <span class="cloud-row-actions">${badge}<button type="button" class="cloud-link-button" data-cloud-edit-secret="${escapeHtml(String(secret.id || ''))}" data-secret-variable="${escapeHtml(secret.variable || '')}" data-secret-service="${escapeHtml(secret.service || 'Custom')}">${reentry || skipped ? 'Renseigner' : 'Remplacer'}</button><button type="button" class="cloud-link-button is-danger" data-cloud-delete-secret="${escapeHtml(String(secret.id || ''))}" data-secret-variable="${escapeHtml(secret.variable || '')}">Supprimer</button></span>
+    </div>`;
+  }).join('') : '';
+  const usage = '<p class="cloud-panel-foot">Vos fonctions lisent un secret côté serveur avec <code>process.env.NOM_DU_SECRET</code>. Les noms commençant par <code>VITE_</code> ne sont jamais transmis : ils finiraient dans le code du navigateur.</p>';
+  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Variables sécurisées</h2><p>Chiffrées (AES-256-GCM) et en écriture seule : seuls les noms et les masques sont affichés.</p></div></div>${rows ? `<div class="cloud-secret-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('secrets')}</span><h2>Aucun secret configuré</h2><p>Utilisez « Ajouter un secret » en haut de la page pour enregistrer une clé d’API dont le backend a besoin.</p></div>`}${usage}</section>`;
 }
 
 function cloudConsoleFunctionsPage() {
   const functions = currentFiles.filter(file => /(^|\/)(functions?|api|workers?)(\/|\.|$)|(^|\/)(server|worker)\.(ts|js|tsx|jsx)$/i.test(file.path));
   const rows = functions.length ? functions.map(file => `<div class="cloud-function-row"><span><strong>${escapeHtml(file.path.split('/').pop() || file.path)}</strong><small>${escapeHtml(file.path)}</small></span><button type="button" class="cloud-link-button" data-cloud-open-file="${escapeHtml(file.path)}">Ouvrir le code</button></div>`).join('') : '';
-  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Fonctions détectées</h2><p>Inventaire construit depuis les fichiers persistés du projet.</p></div></div>${rows ? `<div class="cloud-function-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('functions')}</span><h2>Aucune fonction backend</h2><p>Demandez à Coden de créer une route API, un webhook ou une fonction planifiée.</p><button type="button" class="cloud-console-action is-primary" data-cloud-create-function>Créer avec Coden</button></div>`}</section>`;
+  return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Fonctions détectées</h2><p>Inventaire construit depuis les fichiers persistés du projet.</p></div></div>${rows ? `<div class="cloud-function-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('functions')}</span><h2>Aucune fonction backend</h2><p>Utilisez « Créer avec Coden » pour demander une route API, un webhook ou une fonction planifiée. Les secrets du projet y sont disponibles via <code>process.env</code>.</p></div>`}</section>`;
 }
 
 function cloudConsoleLogsPage(db: any) {
   const activity: any[] = Array.isArray(db.activity) ? db.activity : [];
-  const rows = activity.length ? activity.map((event, index) => `<div class="cloud-log-row" data-cloud-log data-log-text="${escapeHtml(`${event.event_type || ''} ${event.message || ''}`.toLowerCase())}"><span><strong>${escapeHtml(event.event_type || 'event')}</strong><small>${escapeHtml(event.message || 'Événement sans détail public')}</small></span><span class="cloud-service-meta">${cloudDate(event.created_at)}</span></div>`).join('') : '';
+  const rows = activity.length ? activity.map((event, index) => `<div class="cloud-log-row" data-cloud-log data-log-text="${escapeHtml(`${event.event_type || ''} ${event.message || ''}`.toLowerCase())}"><span><strong>${escapeHtml(cloudEventLabel(event.event_type))}</strong><small>${escapeHtml(event.message || 'Événement sans détail public')}</small></span><span class="cloud-service-meta">${cloudDate(event.created_at)}</span></div>`).join('') : '';
   return `<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Événements récents</h2><p>Journal public expurgé des secrets et données sensibles.</p></div></div><div class="cloud-filters"><input id="cloud-log-search" class="cloud-filter" type="search" placeholder="Rechercher dans les logs" aria-label="Rechercher dans les logs"></div>${rows ? `<div class="cloud-log-list">${rows}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('logs')}</span><h2>Aucun événement enregistré</h2><p>Les prochains événements du projet apparaîtront ici avec leur date réelle.</p></div>`}</section>`;
 }
 
 function cloudConsoleAdvancedPage(db: any) {
   const cloud = db.cloud || {};
-  return `
+  return `${cloudStateBanner(db)}
     <section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Configuration du backend</h2><p>Informations techniques publiques du projet.</p></div></div><div class="cloud-detail-list">
-      <div class="cloud-detail-row"><span><strong>Fournisseur</strong><small>${escapeHtml(dbProviderName(cloud.provider || 'coden_cloud'))}</small></span>${cloudStatus(cloud.status || db.backend_status || '')}</div>
-      <div class="cloud-detail-row"><span><strong>Mode d’isolation</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></span><span class="cloud-service-meta">RLS requise</span></div>
-      <div class="cloud-detail-row"><span><strong>Région</strong><small>${escapeHtml(cloud.region || 'auto')}</small></span><span class="cloud-service-meta">gérée par Coden</span></div>
-      <div class="cloud-detail-row"><span><strong>Schéma</strong><small>${escapeHtml(cloud.schema_name || 'non provisionné')}</small></span><span class="cloud-service-meta">Postgres</span></div>
+      <div class="cloud-detail-row"><span><strong>Fournisseur</strong><small>${escapeHtml(dbProviderName(cloud.provider || 'coden_cloud'))}</small></span>${cloudStateBadge(db)}</div>
+      <div class="cloud-detail-row"><span><strong>Mode d’isolation</strong><small>${escapeHtml(cloudModeLabel(cloud.mode || db.mode))}</small></span><span class="cloud-service-meta">${cloudStateOf(db).state === 'connected' ? 'RLS obligatoire' : 'appliqué à l’activation'}</span></div>
+      <div class="cloud-detail-row"><span><strong>Région</strong><small>${escapeHtml(cloud.region && cloud.region !== 'auto' ? cloud.region : 'Automatique')}</small></span><span class="cloud-service-meta">gérée par Coden</span></div>
+      <div class="cloud-detail-row"><span><strong>Chiffrement des secrets</strong><small>AES-256-GCM, clé conservée côté serveur</small></span><span class="cloud-service-meta">${Array.isArray(db.secrets) ? db.secrets.length : 0} secret${Array.isArray(db.secrets) && db.secrets.length === 1 ? '' : 's'}</span></div>
     </div></section>
     <section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Export du projet</h2><p>Téléchargez une copie des fichiers avant une opération importante.</p></div></div><button type="button" class="cloud-console-action" data-cloud-export>Exporter les fichiers</button></section>`;
 }
@@ -7671,6 +7730,17 @@ function cloudConsolePage(db: any) {
   return cloudConsoleAdvancedPage(db);
 }
 
+/** The views whose header button creates something; every other one refreshes (or exports). */
+const CLOUD_PRIMARY_VIEWS: CloudConsoleView[] = ['secrets', 'emails', 'functions'];
+
+function cloudHeaderActionLabel(db: any) {
+  if (cloudConsoleView === 'emails') {
+    const secrets: any[] = Array.isArray(db.secrets) ? db.secrets : [];
+    return secrets.some(item => /RESEND_API_KEY/i.test(item.variable || '')) ? 'Remplacer la clé' : 'Configurer Resend';
+  }
+  return CLOUD_CONSOLE_COPY[cloudConsoleView].action;
+}
+
 function renderCloudConsole(db: any) {
   const target = document.getElementById('database-content');
   if (!target) return;
@@ -7688,11 +7758,11 @@ function renderCloudConsole(db: any) {
             return `${group}<button type="button" class="cloud-console-nav-item${cloudConsoleView === item.id ? ' is-active' : ''}" data-cloud-view="${item.id}" aria-current="${cloudConsoleView === item.id ? 'page' : 'false'}">${cloudConsoleIcon(item.id)}<span>${escapeHtml(item.label)}</span></button>`;
           }).join('')}
         </nav>
-        <div class="cloud-console-nav-foot">${cloudStatus(db.cloud?.status || db.backend_status || '')}<div>${escapeHtml(dbProviderName(db.cloud?.provider || 'coden_cloud'))}</div></div>
+        <div class="cloud-console-nav-foot"><small>Backend</small>${cloudStateBadge(db)}</div>
       </aside>
       <main class="cloud-console-main" id="cloud-console-main">
         <div class="cloud-console-main-inner">
-          <header class="cloud-console-head"><div><span class="cloud-console-eyebrow">Coden Cloud</span><h1>${escapeHtml(copy.title)}</h1><p>${escapeHtml(copy.description)}</p></div><button type="button" class="cloud-console-action${['secrets', 'emails', 'users', 'storage', 'functions'].includes(cloudConsoleView) ? ' is-primary' : ''}" id="cloud-console-primary">${['secrets', 'emails', 'users', 'storage', 'functions'].includes(cloudConsoleView) ? cloudConsoleIcon('plus') : cloudConsoleIcon('refresh')}<span>${escapeHtml(copy.action)}</span></button></header>
+          <header class="cloud-console-head"><div><h1>${escapeHtml(copy.title)}</h1><p>${escapeHtml(copy.description)}</p></div><button type="button" class="cloud-console-action${CLOUD_PRIMARY_VIEWS.includes(cloudConsoleView) ? ' is-primary' : ''}" id="cloud-console-primary">${CLOUD_PRIMARY_VIEWS.includes(cloudConsoleView) ? cloudConsoleIcon('plus') : cloudConsoleIcon(cloudConsoleView === 'advanced' ? 'arrow' : 'refresh')}<span>${escapeHtml(cloudHeaderActionLabel(db))}</span></button></header>
           <div class="cloud-console-content">${cloudConsolePage(db)}</div>
         </div>
       </main>
@@ -7708,23 +7778,65 @@ function focusBuilderComposerWithPrompt(prompt: string) {
   input.focus();
 }
 
-function showCloudSecretModal(service = 'Custom', variable = 'CUSTOM_API_KEY') {
-  showMiniModal('Ajouter un secret', `
-    <p>La valeur est chiffrée côté serveur et ne sera plus affichée après l’enregistrement.</p>
-    <label class="coden-modal-field">Nom de variable<input data-secret-name type="text" value="${escapeHtml(variable)}" autocomplete="off"></label>
-    <label class="coden-modal-field">Valeur<input data-secret-value type="password" placeholder="Valeur du secret" autocomplete="new-password"></label>
-    <div class="coden-modal-actions"><button data-action="save">Enregistrer</button><button data-action="close">Annuler</button></div>
+type CloudSecretModalOptions = { service?: string; variable?: string; secretId?: string };
+
+/**
+ * Add a secret, or replace the value of one. Stays open on a mistake — a name
+ * in the wrong case, an empty value, a refusal from the server — with the
+ * reason under the field, instead of closing on a notice in the chat.
+ */
+function showCloudSecretModal(options: CloudSecretModalOptions = {}) {
+  const service = options.service || 'Custom';
+  const variable = options.variable || '';
+  const replacing = Boolean(options.secretId);
+  showMiniModal(replacing ? `Remplacer ${variable}` : 'Ajouter un secret', `
+    <p>${replacing ? 'La nouvelle valeur remplace l’ancienne, qui n’est jamais affichée.' : 'La valeur est chiffrée côté serveur et ne sera plus jamais affichée après l’enregistrement.'} Vos fonctions la lisent avec <code>process.env.${escapeHtml(variable || 'NOM')}</code>.</p>
+    <label class="coden-modal-field">Nom de variable<input data-secret-name type="text" value="${escapeHtml(variable)}" placeholder="EX. STRIPE_SECRET_KEY" autocomplete="off" spellcheck="false" ${replacing ? 'readonly' : ''}></label>
+    <label class="coden-modal-field">Valeur<input data-secret-value type="password" placeholder="Collez la valeur du secret" autocomplete="new-password" spellcheck="false"></label>
+    <p class="cloud-form-error" data-secret-error role="alert" hidden></p>
+    <div class="coden-modal-actions"><button data-action="save">${replacing ? 'Remplacer' : 'Enregistrer'}</button><button data-action="close">Annuler</button></div>
   `, async (action, root) => {
     if (action !== 'save') return;
-    const name = (root.querySelector('[data-secret-name]') as HTMLInputElement | null)?.value.trim() || variable;
-    const value = (root.querySelector('[data-secret-value]') as HTMLInputElement | null)?.value || '';
-    if (!/^[A-Z][A-Z0-9_]{1,79}$/.test(name) || !value) {
-      showTransientNotice('Le nom doit être en majuscules et la valeur ne peut pas être vide.');
-      return;
+    const nameInput = root.querySelector<HTMLInputElement>('[data-secret-name]');
+    const name = (nameInput?.value || '').trim().toUpperCase();
+    const value = root.querySelector<HTMLInputElement>('[data-secret-value]')?.value || '';
+    const errorNode = root.querySelector<HTMLElement>('[data-secret-error]');
+    const save = root.querySelector<HTMLButtonElement>('[data-action="save"]');
+    const fail = (message: string) => { if (errorNode) { errorNode.textContent = message; errorNode.hidden = false; } return false; };
+    if (!/^[A-Z][A-Z0-9_]{1,79}$/.test(name)) return fail('Le nom commence par une lettre et ne contient que des majuscules, chiffres et « _ » (ex. RESEND_API_KEY).');
+    if (name.startsWith('VITE_')) return fail('Un nom commençant par VITE_ serait inclus dans le code du navigateur : choisissez un autre nom.');
+    if (!value.trim()) return fail('La valeur ne peut pas être vide.');
+    if (save) { save.disabled = true; save.textContent = 'Enregistrement…'; }
+    try {
+      const base = `/api/projects/${encodeURIComponent(currentProjectId)}/database/secrets`;
+      if (options.secretId) await apiFetch(`${base}/${encodeURIComponent(options.secretId)}`, { method: 'PATCH', body: JSON.stringify({ value }) });
+      else await apiFetch(base, { method: 'POST', body: JSON.stringify({ service, variable: name, value }) });
+      toast(replacing ? `${name} a été remplacé.` : `${name} est enregistré et chiffré.`, 'success');
+      void loadDatabase(true);
+      return true;
+    } catch (error) {
+      if (save) { save.disabled = false; save.textContent = replacing ? 'Remplacer' : 'Enregistrer'; }
+      return fail(error instanceof Error ? error.message : 'Le secret n’a pas pu être enregistré.');
     }
-    await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/database/secrets`, { method: 'POST', body: JSON.stringify({ service, variable: name, value }) });
-    await loadDatabase(true);
   });
+}
+
+/** Coden Cloud on demand, with the button showing that it is working and the result said once. */
+async function provisionCloudFromConsole(button: HTMLButtonElement) {
+  if (!currentProjectId) return;
+  const label = button.textContent || '';
+  button.disabled = true;
+  button.textContent = 'Activation en cours…';
+  try {
+    await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/cloud/provision`, { method: 'POST', body: JSON.stringify({}) });
+    toast('Coden Cloud est activé pour ce projet.', 'success');
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'L’activation de Coden Cloud a échoué.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+    void loadDatabase(true);
+  }
 }
 
 function bindCloudConsole(db: any, _status: { kind: DbBadgeKind; label: string }) {
@@ -7736,22 +7848,33 @@ function bindCloudConsole(db: any, _status: { kind: DbBadgeKind; label: string }
   }));
   const primary = target.querySelector<HTMLButtonElement>('#cloud-console-primary');
   primary?.addEventListener('click', () => {
-    if (cloudConsoleView === 'users') return void (target.querySelector<HTMLInputElement>('#db-enduser-email')?.focus());
-    if (cloudConsoleView === 'storage') return void (target.querySelector<HTMLInputElement>('#db-storage-file')?.click());
-    if (cloudConsoleView === 'emails') return void showCloudSecretModal('Resend', 'RESEND_API_KEY');
+    if (cloudConsoleView === 'emails') {
+      const existing = (Array.isArray(db.secrets) ? db.secrets : []).find((item: any) => /^RESEND_API_KEY$/i.test(item.variable || ''));
+      return void showCloudSecretModal({ service: 'Resend', variable: 'RESEND_API_KEY', secretId: existing?.id });
+    }
     if (cloudConsoleView === 'secrets') return void showCloudSecretModal();
     if (cloudConsoleView === 'functions') return void focusBuilderComposerWithPrompt('Crée une fonction backend sécurisée pour cette application, ajoute ses tests et vérifie son fonctionnement réel.');
     if (cloudConsoleView === 'advanced') return void exportCode();
     void loadDatabase(true);
   });
-  target.querySelectorAll<HTMLElement>('[data-cloud-add-secret]').forEach(button => button.addEventListener('click', () => showCloudSecretModal()));
-  target.querySelectorAll<HTMLElement>('[data-cloud-configure-email]').forEach(button => button.addEventListener('click', () => showCloudSecretModal('Resend', 'RESEND_API_KEY')));
+  target.querySelectorAll<HTMLButtonElement>('[data-cloud-provision]').forEach(button => button.addEventListener('click', () => void provisionCloudFromConsole(button)));
+  target.querySelectorAll<HTMLButtonElement>('[data-cloud-edit-secret]').forEach(button => button.addEventListener('click', () => showCloudSecretModal({
+    secretId: button.dataset.cloudEditSecret || undefined,
+    variable: button.dataset.secretVariable || '',
+    service: button.dataset.secretService || 'Custom',
+  })));
   target.querySelectorAll<HTMLButtonElement>('[data-cloud-delete-secret]').forEach(button => button.addEventListener('click', async () => {
     const id = button.dataset.cloudDeleteSecret || '';
-    if (!id || !window.confirm('Supprimer définitivement ce secret ?')) return;
+    const name = button.dataset.secretVariable || 'ce secret';
+    if (!id) return;
+    const confirmed = await confirmDialog({ title: `Supprimer ${name} ?`, body: `Les fonctions qui lisent ${name} ne le trouveront plus au prochain démarrage de l’application. Cette action est définitive.`, confirmLabel: 'Supprimer', danger: true });
+    if (!confirmed) return;
     button.disabled = true;
-    try { await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/database/secrets/${encodeURIComponent(id)}`, { method: 'DELETE' }); await loadDatabase(true); }
-    catch (error) { button.disabled = false; showTransientNotice(error instanceof Error ? error.message : 'Suppression impossible.'); }
+    try {
+      await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/database/secrets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      toast(`${name} a été supprimé.`, 'success');
+      await loadDatabase(true);
+    } catch (error) { button.disabled = false; toast(error instanceof Error ? error.message : 'Suppression impossible.', 'error'); }
   }));
   target.querySelectorAll<HTMLButtonElement>('[data-cloud-open-file]').forEach(button => button.addEventListener('click', () => {
     const path = button.dataset.cloudOpenFile || '';
@@ -7760,7 +7883,6 @@ function bindCloudConsole(db: any, _status: { kind: DbBadgeKind; label: string }
     selectFile(path);
   }));
   target.querySelector<HTMLElement>('[data-cloud-export]')?.addEventListener('click', () => exportCode());
-  target.querySelectorAll<HTMLElement>('[data-cloud-create-function]').forEach(button => button.addEventListener('click', () => focusBuilderComposerWithPrompt('Crée une fonction backend sécurisée pour cette application, ajoute ses tests et vérifie son fonctionnement réel.')));
   target.querySelector<HTMLInputElement>('#cloud-log-search')?.addEventListener('input', event => {
     const query = (event.target as HTMLInputElement).value.trim().toLowerCase();
     target.querySelectorAll<HTMLElement>('[data-cloud-log]').forEach(row => { row.hidden = Boolean(query && !String(row.dataset.logText || '').includes(query)); });
@@ -7779,18 +7901,22 @@ async function loadCloudConsoleJobs() {
   try {
     const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/workflows`);
     const jobs: any[] = Array.isArray(payload.workflows) ? payload.workflows : [];
-    host.innerHTML = `<div class="cloud-panel-head"><div><h2>Automatisations</h2><p>Exécutions enregistrées dans le planificateur Coden.</p></div></div>${jobs.length ? `<div class="cloud-job-list">${jobs.map(job => `<div class="cloud-job-row"><span><strong>${escapeHtml(job.name || 'Workflow')}</strong><small>${escapeHtml(job.trigger_type || 'manual')} · ${escapeHtml(job.cron || 'à la demande')} · prochaine exécution ${cloudDate(job.next_run_at)}</small></span><span class="cloud-row-actions"><span class="cloud-status" data-tone="${job.status === 'active' ? 'ok' : 'neutral'}">${escapeHtml(job.status || 'inconnu')}</span>${job.status === 'active' ? `<button class="cloud-link-button" data-cloud-job-action="run" data-job-id="${escapeHtml(job.id)}">Exécuter</button><button class="cloud-link-button" data-cloud-job-action="pause" data-job-id="${escapeHtml(job.id)}">Pause</button>` : `<button class="cloud-link-button" data-cloud-job-action="resume" data-job-id="${escapeHtml(job.id)}">Reprendre</button>`}</span></div>`).join('')}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('jobs')}</span><h2>Aucune tâche planifiée</h2><p>Créez une automatisation planifiée depuis Coden. Elle apparaîtra ici avec son prochain passage et son historique.</p><button type="button" class="cloud-console-action is-primary" data-cloud-create-job>Créer avec Coden</button></div>`}`;
+    host.innerHTML = `<div class="cloud-panel-head"><div><h2>Automatisations</h2><p>Exécutions enregistrées dans le planificateur Coden.</p></div></div>${jobs.length ? `<div class="cloud-job-list">${jobs.map(job => `<div class="cloud-job-row"><span><strong>${escapeHtml(job.name || 'Workflow')}</strong><small>${escapeHtml(job.trigger_type === 'schedule' ? 'Planifiée' : job.trigger_type === 'webhook' ? 'Webhook' : 'Manuelle')} · ${escapeHtml(job.cron || 'à la demande')} · prochaine exécution ${job.next_run_at ? cloudDate(job.next_run_at) : 'non planifiée'}</small></span><span class="cloud-row-actions"><span class="cloud-status" data-tone="${job.status === 'active' ? 'ok' : job.status === 'failed' ? 'error' : 'neutral'}">${escapeHtml(({ active: 'Active', paused: 'En pause', failed: 'En échec', disabled: 'Désactivée', draft: 'Brouillon' } as Record<string, string>)[job.status] || job.status || 'Inconnue')}</span>${job.status === 'active' ? `<button class="cloud-link-button" data-cloud-job-action="run" data-job-id="${escapeHtml(job.id)}">Exécuter</button><button class="cloud-link-button" data-cloud-job-action="pause" data-job-id="${escapeHtml(job.id)}">Pause</button>` : `<button class="cloud-link-button" data-cloud-job-action="resume" data-job-id="${escapeHtml(job.id)}">Reprendre</button>`}</span></div>`).join('')}</div>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('jobs')}</span><h2>Aucune tâche planifiée</h2><p>Créez une automatisation planifiée depuis Coden. Elle apparaîtra ici avec son prochain passage et son historique.</p><button type="button" class="cloud-console-action is-primary" data-cloud-create-job>Créer avec Coden</button></div>`}`;
     host.querySelector('[data-cloud-create-job]')?.addEventListener('click', () => focusBuilderComposerWithPrompt('Crée une tâche planifiée fiable pour cette application, avec budget, logs, gestion des erreurs et possibilité de reprise.'));
     host.querySelectorAll<HTMLButtonElement>('[data-cloud-job-action]').forEach(button => button.addEventListener('click', async () => {
       const action = button.dataset.cloudJobAction;
       const id = button.dataset.jobId;
       if (!action || !id) return;
       button.disabled = true;
-      try { await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/workflows/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: { 'idempotency-key': `cloud-${action}-${id}-${Date.now()}` }, body: JSON.stringify({}) }); await loadCloudConsoleJobs(); }
-      catch (error) { button.disabled = false; showTransientNotice(error instanceof Error ? error.message : 'Action impossible.'); }
+      try {
+        await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/workflows/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: { 'idempotency-key': `cloud-${action}-${id}-${Date.now()}` }, body: JSON.stringify({}) });
+        toast(action === 'run' ? 'Exécution lancée.' : action === 'pause' ? 'Tâche mise en pause.' : 'Tâche reprise.', 'success');
+        await loadCloudConsoleJobs();
+      } catch (error) { button.disabled = false; toast(error instanceof Error ? error.message : 'Action impossible.', 'error'); }
     }));
   } catch (error) {
-    host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Jobs indisponibles.')}</div>`;
+    host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Tâches planifiées indisponibles.')} <button type="button" class="cloud-link-button" data-cloud-retry-jobs>Réessayer</button></div>`;
+    host.querySelector('[data-cloud-retry-jobs]')?.addEventListener('click', () => void loadCloudConsoleJobs());
   }
 }
 
@@ -7818,7 +7944,7 @@ async function loadCloudConsoleUsage() {
      */
     const spendable = payload.wallet?.spendable || {};
     const credits = (amount: unknown) => Number(amount || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
-    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Consommé ici</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements enregistrés pour ce projet.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(item.mode || 'Usage')}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
+    host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Consommé ici</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements enregistrés pour ce projet.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(cloudEventLabel(item.mode || 'Usage'))}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Usage indisponible.')}</div>`; }
 }
 
@@ -7828,7 +7954,7 @@ async function loadCloudConsoleAnalytics() {
   try {
     const payload = await apiFetch<AnalysisPayload & { success: boolean }>(`/api/projects/${encodeURIComponent(currentProjectId)}/analysis?range=${encodeURIComponent(analysisRange)}`);
     const metrics = payload.metrics || { visitors: 0, pageviews: 0, views_per_visit: 0, visit_duration_seconds: 0, bounce_rate: 0 };
-    host.innerHTML = `<div class="cloud-toolbar"><span class="cloud-status" data-tone="${payload.current_visitors ? 'ok' : 'neutral'}">${formatCompactNumber(payload.current_visitors || 0)} en direct</span><select id="cloud-analytics-range" class="cloud-filter" aria-label="Période"><option value="24h"${analysisRange === '24h' ? ' selected' : ''}>24 heures</option><option value="7d"${analysisRange === '7d' ? ' selected' : ''}>7 jours</option><option value="30d"${analysisRange === '30d' ? ' selected' : ''}>30 jours</option><option value="90d"${analysisRange === '90d' ? ' selected' : ''}>90 jours</option></select></div><div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Visiteurs</span><strong>${formatCompactNumber(metrics.visitors)}</strong><small>visiteurs uniques</small></article><article class="cloud-summary-card"><span>Pages vues</span><strong>${formatCompactNumber(metrics.pageviews)}</strong><small>pages chargées</small></article><article class="cloud-summary-card"><span>Durée</span><strong>${formatDuration(metrics.visit_duration_seconds)}</strong><small>durée moyenne</small></article><article class="cloud-summary-card"><span>Rebond</span><strong>${formatCompactNumber(metrics.bounce_rate)} %</strong><small>sessions courtes</small></article></div><section class="analysis-chart-card">${renderAnalysisChart(payload.timeseries || [])}</section><div class="analysis-breakdown-grid">${renderAnalysisBreakdown('Sources', (payload.sources || []).map(row => ({ label: row.source || 'Direct', visitors: row.visitors })))}${renderAnalysisBreakdown('Pages', (payload.pages || []).map(row => ({ label: row.page || '/', visitors: row.visitors })))}</div>`;
+    host.innerHTML = `<div class="cloud-toolbar"><span class="cloud-status" data-tone="${payload.current_visitors ? 'ok' : 'neutral'}">${formatCompactNumber(payload.current_visitors || 0)} en direct</span><select id="cloud-analytics-range" class="cloud-filter" aria-label="Période"><option value="24h"${analysisRange === '24h' ? ' selected' : ''}>24 heures</option><option value="7d"${analysisRange === '7d' ? ' selected' : ''}>7 jours</option><option value="30d"${analysisRange === '30d' ? ' selected' : ''}>30 jours</option><option value="90d"${analysisRange === '90d' ? ' selected' : ''}>90 jours</option></select></div><div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Visiteurs</span><strong>${formatCompactNumber(metrics.visitors)}</strong><small>visiteurs uniques</small></article><article class="cloud-summary-card"><span>Pages vues</span><strong>${formatCompactNumber(metrics.pageviews)}</strong><small>pages chargées</small></article><article class="cloud-summary-card"><span>Durée</span><strong>${formatDuration(metrics.visit_duration_seconds)}</strong><small>durée moyenne</small></article><article class="cloud-summary-card"><span>Rebond</span><strong>${formatCompactNumber(metrics.bounce_rate)} %</strong><small>sessions courtes</small></article></div>${metrics.pageviews || (payload.timeseries || []).some((point: any) => Number(point?.visitors || point?.pageviews || 0) > 0) ? `<section class="analysis-chart-card">${renderAnalysisChart(payload.timeseries || [])}</section>` : `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('analytics')}</span><h2>Aucune visite sur la période</h2><p>Les visites de l’application publiée apparaîtront ici. Publiez-la ou élargissez la période.</p></div>`}<div class="analysis-breakdown-grid">${renderAnalysisBreakdown('Sources', (payload.sources || []).map(row => ({ label: row.source || 'Direct', visitors: row.visitors })))}${renderAnalysisBreakdown('Pages', (payload.pages || []).map(row => ({ label: row.page || '/', visitors: row.visitors })))}</div>`;
     host.querySelector<HTMLSelectElement>('#cloud-analytics-range')?.addEventListener('change', event => { analysisRange = (event.target as HTMLSelectElement).value || '30d'; void loadCloudConsoleAnalytics(); });
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Analytics indisponibles.')}</div>`; }
 }
@@ -7889,6 +8015,7 @@ function bindProjectStorageHandlers() {
         method: 'POST',
         body: JSON.stringify({ name: file.name, mime_type: file.type || 'application/octet-stream', size_bytes: file.size, content_base64: contentBase64 }),
       });
+      toast(`« ${file.name} » a été importé.`, 'success');
       await loadDatabase(true);
     } catch (error) {
       storageMsg(error instanceof Error ? error.message : 'Import impossible.', true);
@@ -7898,13 +8025,16 @@ function bindProjectStorageHandlers() {
   document.querySelectorAll<HTMLButtonElement>('[data-storage-delete]').forEach(button => {
     button.addEventListener('click', async () => {
       const assetId = button.getAttribute('data-storage-delete');
-      if (!assetId || !window.confirm('Supprimer définitivement ce fichier ?')) return;
+      const name = button.closest('[data-storage-asset]')?.querySelector('.db-row-key')?.getAttribute('title') || 'ce fichier';
+      if (!assetId) return;
+      if (!(await confirmDialog({ title: `Supprimer « ${name} » ?`, body: 'Le fichier est retiré du stockage du projet. Les liens déjà partagés cesseront de fonctionner.', confirmLabel: 'Supprimer', danger: true }))) return;
       button.disabled = true;
       try {
         await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+        toast(`« ${name} » a été supprimé.`, 'success');
         await loadDatabase(true);
       } catch (error) {
-        storageMsg(error instanceof Error ? error.message : 'Suppression impossible.', true);
+        toast(error instanceof Error ? error.message : 'Suppression impossible.', 'error');
         button.disabled = false;
       }
     });
@@ -8063,7 +8193,7 @@ async function loadProjectEndUsers() {
   try {
     const data = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/users`);
     if (data?.auth_configured === false) {
-      host.innerHTML = `<div class="db-note">${DB_ICON_INFO}<span>Authentification non configurée pour ce projet. Provisionnez le backend (auth) pour gérer les utilisateurs finaux. Aucune donnée n'est simulée ici.</span></div>`;
+      host.innerHTML = `<div class="db-note">${DB_ICON_INFO}<span>L’authentification de cette application n’est pas encore activée : il n’y a donc aucun compte à gérer. ${cloudConsoleDatabase && cloudStateOf(cloudConsoleDatabase).action ? 'Activez Coden Cloud ci-dessus pour que vos utilisateurs puissent s’inscrire, puis invitez-les ici.' : 'Elle s’activera avec le backend du projet.'} Aucune donnée n’est simulée.</span></div>`;
       return;
     }
     if (Array.isArray(data?.roles) && data.roles.length) endUserRoles = data.roles;
@@ -8131,7 +8261,7 @@ async function createEndUser(host: HTMLElement) {
 
 async function resetEndUser(uid: string, email: string) {
   if (!uid) return;
-  if (!window.confirm(`Envoyer une réinitialisation de mot de passe à ${email || 'cet utilisateur'} ?`)) return;
+  if (!(await confirmDialog({ title: 'Réinitialiser le mot de passe ?', body: `${email || 'Cet utilisateur'} recevra un e-mail pour choisir un nouveau mot de passe. Son mot de passe actuel reste valable tant qu’il ne l’a pas changé.`, confirmLabel: 'Envoyer l’e-mail' }))) return;
   try {
     await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/users/${encodeURIComponent(uid)}/reset-password`, {
       method: 'POST',
@@ -8145,7 +8275,7 @@ async function resetEndUser(uid: string, email: string) {
 
 async function banEndUser(uid: string, email: string, ban: boolean) {
   if (!uid) return;
-  if (!window.confirm(`${ban ? 'Bannir' : 'Débannir'} ${email || 'cet utilisateur'} ?`)) return;
+  if (!(await confirmDialog({ title: ban ? `Bannir ${email || 'cet utilisateur'} ?` : `Rétablir ${email || 'cet utilisateur'} ?`, body: ban ? 'Il ne pourra plus se connecter à l’application tant que le bannissement n’est pas levé.' : 'Il pourra de nouveau se connecter à l’application.', confirmLabel: ban ? 'Bannir' : 'Rétablir', danger: ban }))) return;
   try {
     await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/users/${encodeURIComponent(uid)}/ban`, {
       method: 'POST',
@@ -8160,9 +8290,8 @@ async function banEndUser(uid: string, email: string, ban: boolean) {
 async function deleteEndUser(uid: string, email: string) {
   if (!uid) return;
   // Double confirmation, visible and explicit (mirrors the server-side guard).
-  if (!window.confirm(`Supprimer définitivement ${email || 'cet utilisateur'} ? Cette action est irréversible.`)) return;
-  const echoed = window.prompt(`Double confirmation : retapez l'email exact « ${email} » pour confirmer la suppression.`);
-  if (echoed == null) return;
+  if (!(await confirmDialog({ title: `Supprimer ${email || 'cet utilisateur'} ?`, body: 'Le compte et ses accès sont supprimés définitivement. Cette action est irréversible.', confirmLabel: 'Supprimer définitivement', danger: true, typeToConfirm: email || undefined }))) return;
+  const echoed = email;
   try {
     await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/users/${encodeURIComponent(uid)}`, {
       method: 'DELETE',
@@ -8261,7 +8390,7 @@ function renderAnalysisBreakdown(
   const maxVisitors = Math.max(1, ...rows.map(row => row.visitors));
   return `
     <section class="analysis-breakdown-card">
-      <div class="analysis-breakdown-head"><span>${escapeHtml(title)}</span><span>Visitors</span></div>
+      <div class="analysis-breakdown-head"><span>${escapeHtml(title)}</span><span>Visiteurs</span></div>
       ${rows.length ? rows.map(row => `
         <div class="analysis-row">
           <div class="analysis-row-track" style="--row-width:${Math.max(8, (row.visitors / maxVisitors) * 100)}%;">
@@ -8269,7 +8398,7 @@ function renderAnalysisBreakdown(
           </div>
           <strong>${formatCompactNumber(row.visitors)}${row.suffix || ''}</strong>
         </div>
-      `).join('') : '<p style="margin:0;color:var(--text-muted);font-size:12px;">No data yet</p>'}
+      `).join('') : '<p style="margin:0;color:var(--text-muted);font-size:12px;">Pas encore de données</p>'}
     </section>
   `;
 }
@@ -8560,7 +8689,7 @@ function showFixBugBox(errors: any[]) {
   });
 }
 
-function showMiniModal(title: string, html: string, onAction: (action: string, root: HTMLElement) => void | Promise<void>) {
+function showMiniModal(title: string, html: string, onAction: (action: string, root: HTMLElement) => void | boolean | Promise<void | boolean>) {
   document.getElementById('coden-live-modal')?.remove();
   const root = document.createElement('div');
   root.id = 'coden-live-modal';
@@ -8585,7 +8714,8 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
   root.querySelectorAll('button[data-action]').forEach(button => {
     button.addEventListener('click', async () => {
       const action = (button as HTMLElement).dataset.action || 'close';
-      if (action !== 'close') await onAction(action, root);
+      // A handler that answers `false` keeps the dialog open (a validation error to fix, a request that failed).
+      if (action !== 'close' && (await onAction(action, root)) === false) return;
       close();
     });
   });
@@ -8901,6 +9031,8 @@ function bindMobileBuilderShell() {
     button.dataset.codenMobileBuilderBound = 'true';
     button.addEventListener('click', event => {
       event.preventDefault();
+      // The project menu closes on any click outside it; this click opened it and must not reach that listener.
+      event.stopPropagation();
       setMobileBuilderView((button.dataset.mobileBuilderView || 'chat') as MobileBuilderView);
     });
   });

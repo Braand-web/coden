@@ -1,4 +1,5 @@
 import './styles/local-preview.css';
+import { resolveCloudState } from './lib/cloud-state';
 
 export const LOCAL_PREVIEW_QUERY_KEY = 'localPreview';
 export const LOCAL_PREVIEW_PROJECT_ID = 'local-preview-project-001';
@@ -159,17 +160,26 @@ const localPreviewFiles = [
 
 const localPreviewHtml = '<!doctype html><html><body style="margin:0;font-family:system-ui;background:#fff;color:#1a1c1f"><main style="max-width:960px;margin:0 auto;padding:48px 24px"><h1 style="font-size:34px;margin:0 0 24px">Votre activité, en un coup d’œil.</h1><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Projets<br><b style="font-size:24px;color:#3a83f7">12</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Tâches<br><b style="font-size:24px;color:#3a83f7">38</b></div><div style="padding:18px;border:1px solid #e2e2e2;border-radius:12px">Équipe<br><b style="font-size:24px;color:#3a83f7">7</b></div></div></main></body></html>';
 
+/*
+ * Shaped like most projects in production: a backend the app needs and that
+ * is not activated yet. A "ready" sample hid exactly the state people meet.
+ */
+const localPreviewNeeds = { needs_database: true, needs_auth: true, needs_storage: false };
 const localPreviewDatabase = {
-  cloud: { status: 'ready', provider: 'coden_cloud', region: 'eu-west', mode: 'shared', schema_name: 'app_pulseboard', resources: [{}, {}], requirements: { needs_auth: true } },
+  backend_status: 'required',
+  cloud: { status: 'required', raw_status: 'planned', state: resolveCloudState({ status: 'planned', needs: localPreviewNeeds }), needs: localPreviewNeeds, provider: 'coden_cloud', region: 'auto', mode: 'dedicated', schema_name: 'app_pulseboard', resources: [], requirements: { needs_auth: true } },
   tables: [{ name: 'contacts' }, { name: 'tasks' }],
   assets: [{ id: 'a1', name: 'logo.svg', mime_type: 'image/svg+xml', size_bytes: 2048 }],
-  secrets: [{ id: 's1', variable: 'RESEND_API_KEY', service: 'Resend', masked_value: 're_••••••••4f2a' }],
+  secrets: [
+    { id: 's1', variable: 'RESEND_API_KEY', service: 'Resend', masked_value: 're_••••••••4f2a', status: 'configured', updated_at: '2026-01-01T09:00:00.000Z' },
+    { id: 's2', variable: 'STRIPE_SECRET_KEY', service: 'Stripe', masked_value: 'sk_t••••••9Qx1', status: 'needs_reentry', updated_at: '2025-12-20T09:00:00.000Z' },
+  ],
   activity: [
     { event_type: 'deploy', message: 'Aperçu reconstruit', created_at: '2026-01-01T09:00:00.000Z' },
     { event_type: 'migration', message: 'Table contacts créée', created_at: '2026-01-01T08:55:00.000Z' },
   ],
   integrations: [],
-  security: { rls_required: true },
+  security: { rls_required: true, secrets_encrypted: true },
   last_sync_at: '2026-01-01T09:00:00.000Z',
 };
 

@@ -684,6 +684,42 @@ input.cloud-filter { flex: 1 1 240px; }
   .cloud-row-actions { flex-wrap: wrap; }
 }
 
+/* What the backend status means and the one action that moves it forward. */
+.cloud-state-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius-md);
+  background: var(--input);
+}
+.cloud-state-banner[data-tone="warn"] { border-left-color: var(--syntax-orange); }
+.cloud-state-banner[data-tone="error"] { border-left-color: var(--danger); }
+.cloud-state-banner strong { display: block; color: var(--foreground); font-size: 14px; line-height: 20px; }
+.cloud-state-banner p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 20px; max-width: 72ch; }
+.cloud-state-banner .cloud-console-action { flex: 0 0 auto; }
+.cloud-panel-foot { margin: 16px 0 0; color: var(--text-muted); font-size: 12px; line-height: 18px; }
+.cloud-panel-foot code,
+.cloud-empty code,
+.coden-live-modal code { font-family: var(--font-mono); font-size: .92em; }
+.cloud-secret-row small.cloud-secret-hint { display: block; margin-top: 4px; color: var(--syntax-orange); font-size: 12px; line-height: 16px; white-space: normal; overflow: visible; text-overflow: clip; }
+.cloud-form-error { margin: 4px 0 0; color: var(--danger); font-size: 12.5px; line-height: 18px; }
+.cloud-summary-card strong.cloud-summary-code { font-family: var(--font-mono); font-size: 16px; white-space: nowrap; overflow-wrap: normal; text-overflow: ellipsis; }
+.cloud-console-nav-foot { display: grid; gap: 6px; justify-items: start; }
+.cloud-console-nav-foot > small { color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.db-enduser-msg:empty { display: none; }
+.cloud-row-actions .cloud-status { margin-right: 4px; }
+
+@media (max-width: 720px) {
+  .cloud-console-nav-foot { display: none; }
+  .cloud-state-banner { flex-direction: column; align-items: stretch; }
+  .cloud-state-banner .cloud-console-action { align-self: flex-start; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cloud-console *,
   .cloud-console *::before,
