@@ -131,3 +131,9 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-connection-card[data-state="done"] .coden-connection-status { color:var(--success); }
 .coden-connection-later { justify-self:start; padding:0; border:0; background:none; color:var(--text-muted); font:inherit; font-size:12.5px; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .coden-connection-later:hover { color:var(--foreground); }
+.coden-connection-logo { display:grid; place-items:center; width:22px; height:22px; flex:none; overflow:hidden; border-radius:6px; background:white; box-shadow:0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent); }
+.coden-connection-logo img { width:15px; height:15px; object-fit:contain; }
+.coden-connection-logo.is-brand { background:none; box-shadow:none; }
+.coden-connection-logo.is-brand svg { width:22px; height:22px; }
+.coden-connection-logo.is-icon { background:var(--surface); color:var(--text-secondary); }
+.coden-connection-options button { padding-left:10px; }
