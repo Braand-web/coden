@@ -31,7 +31,11 @@ try {
     'delete_file', 'install_package', 'run_command', 'get_logs', 'restart_server',
     // The public web, for current docs and unfamiliar errors.
     'web_search', 'fetch_url',
-    // The only tool that ends the run instead of returning to the model.
+    // Services the user connected through Composio.
+    'list_integration_tools', 'run_integration_tool',
+    // A missing service: the run stops on a connection question.
+    'request_connection',
+    // The other tool that ends the run instead of returning to the model.
     'request_decision',
   ]);
   for (const schema of SANDBOX_TOOL_SCHEMAS) {
@@ -54,6 +58,36 @@ try {
     (error: any) => error?.name === 'DecisionRequiredError',
     'a usable decision must leave the loop rather than answer the model',
   );
+
+  /*
+   * A missing service stops on a question whose buttons connect.
+   *
+   * Without Composio configured the integration tools answer, never throw,
+   * and the connection question keeps only what can work here: Coden Cloud.
+   */
+  assert.equal((await tools.call('list_integration_tools', { toolkit: 'github' }) as any).ok, false);
+  assert.equal((await tools.call('run_integration_tool', { tool: 'GITHUB_STAR_A_REPOSITORY' }) as any).ok, false);
+  await assert.rejects(
+    () => tools.call('request_connection', { need: 'database', reason: 'Les commandes doivent être enregistrées.' }),
+    (error: any) => error?.name === 'DecisionRequiredError'
+      && error.questions?.[0]?.connect?.need === 'database'
+      && error.questions[0].connect.choices.length === error.questions[0].options.length
+      && error.questions[0].connect.choices[0].kind === 'coden_cloud',
+    'a connection question carries one action per option',
+  );
+  const noPayments = await tools.call('request_connection', { need: 'payments' });
+  assert.equal((noPayments as any).ok, false, 'with nothing connectable, the agent is told so instead of showing an empty card');
+
+  const { setAgentIntegrationProvider } = await import('./src/services/agent-integrations.ts');
+  setAgentIntegrationProvider({ connected: async () => ['stripe'], listTools: async () => ({ ok: true, tools: [] }), runTool: async () => ({ ok: true }) });
+  const alreadyConnected = await tools.call('request_connection', { need: 'payments' });
+  assert.equal((alreadyConnected as any).ok, false, 'a connected service is used, not asked for again');
+  await assert.rejects(
+    () => tools.call('request_connection', { need: 'database', service: 'airtable' }),
+    (error: any) => error?.questions?.[0]?.options?.[0] === 'Airtable' && error.questions[0].connect.choices[0].toolkit === 'airtable',
+    'a service the user named is offered first',
+  );
+  setAgentIntegrationProvider(null);
 
   // -- writing and reading ---------------------------------------------
   assert.deepEqual(await tools.call('list_files'), { ok: true, files: [], count: 0 });

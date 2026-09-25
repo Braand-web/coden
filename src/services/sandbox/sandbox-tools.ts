@@ -21,6 +21,8 @@ import { decideCommand } from './command-policy.ts';
 import { needsRestart } from './launch.ts';
 import { DecisionRequiredError, isDecisionRequiredError, readDecisionRequest } from '../agent-decision.ts';
 import { agentWebProvider } from '../agent-web.ts';
+import { agentIntegrationProvider, SERVICE_NEEDS } from '../agent-integrations.ts';
+import { SERVICE_CHOICES, type ServiceNeed } from '../composio.ts';
 
 export type ToolResult =
   | { ok: true; [key: string]: unknown }
@@ -115,6 +117,55 @@ export const SANDBOX_TOOL_SCHEMAS = [
     name: 'fetch_url',
     description: 'Read one public web page as text — official documentation, a changelog, an issue thread. Prefer official docs. Only public http(s) pages.',
     parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+  },
+  {
+    name: 'list_integration_tools',
+    description: 'List the actions available on a service the user has connected (the connected services are named in your instructions, e.g. github, supabase, stripe, notion). Use it before run_integration_tool to find the exact tool name and its parameters. Pass `search` to narrow it (e.g. "create table", "list repositories").',
+    parameters: {
+      type: 'object',
+      properties: {
+        toolkit: { type: 'string', description: 'The connected service, e.g. "supabase".' },
+        search: { type: 'string', description: 'Optional words describing the action you need.' },
+      },
+      required: ['toolkit'],
+    },
+  },
+  {
+    name: 'run_integration_tool',
+    description: 'Run one action on a service the user connected, as the user (their account, their data). Reading is fine whenever it helps the task. Anything that acts on the outside world — sending, posting, paying, deleting, inviting, running SQL — only when the user explicitly asked for that action in their request, and then set user_requested_action to true.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', description: 'Exact tool name from list_integration_tools, e.g. "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER".' },
+        arguments: { type: 'object', description: 'The tool parameters.' },
+        user_requested_action: { type: 'boolean', description: 'True only if the user explicitly asked for this outward action in this request.' },
+      },
+      required: ['tool'],
+    },
+  },
+  {
+    /*
+     * The second tool that stops the run, for one precise case: the app
+     * needs a service it does not have. The user answers with a button —
+     * Coden Cloud, a service to connect through Composio, or another from the
+     * catalogue — and the run resumes on its own once it is connected.
+     */
+    name: 'request_connection',
+    description: [
+      'Stop and ask the user which service to use when the app genuinely needs an external service that is not available yet: a database, user accounts (auth), file storage, payments or e-mail sending.',
+      'Do NOT call it when your instructions say the project already has a live backend (Coden Cloud) that covers the need — use it. Do NOT call it when a matching service is already listed as connected — use it with list_integration_tools. Do NOT call it for something a front-end-only implementation honestly covers.',
+      'The user sees choice buttons (e.g. Coden Cloud / Supabase / another database); the run resumes automatically once they have connected. Call it at most once per need, before writing code that depends on the service.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        need: { type: 'string', enum: ['database', 'auth', 'storage', 'payments', 'email', 'other'], description: 'What the app needs.' },
+        reason: { type: 'string', description: 'One sentence: which feature needs it.' },
+        service: { type: 'string', description: 'Optional: a specific service the user already named (e.g. "airtable"), offered first.' },
+        question: { type: 'string', description: 'Optional: the question in the user language, if not French.' },
+      },
+      required: ['need'],
+    },
   },
   {
     /*
@@ -338,6 +389,45 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       const request = readDecisionRequest(args);
       if (!request) return fail('A decision needs at least one question with options. Choose a sensible default and continue.');
       throw new DecisionRequiredError(request.questions, request.reason);
+    },
+
+    async list_integration_tools(args) {
+      const provider = agentIntegrationProvider();
+      if (!provider) return fail('Connected services are not available here.', 'Continue without them and say what could not be done.');
+      return provider.listTools(String(args.toolkit || ''), args.search ? String(args.search) : undefined) as Promise<ToolResult>;
+    },
+
+    async run_integration_tool(args) {
+      const provider = agentIntegrationProvider();
+      if (!provider) return fail('Connected services are not available here.');
+      const toolArgs = args.arguments && typeof args.arguments === 'object' && !Array.isArray(args.arguments) ? args.arguments as Record<string, unknown> : {};
+      return provider.runTool(String(args.tool || ''), toolArgs, args.user_requested_action === true) as Promise<ToolResult>;
+    },
+
+    /*
+     * Raises, like request_decision, with the connection actions attached to
+     * each option so the card can connect instead of merely answering.
+     */
+    async request_connection(args) {
+      const need = (SERVICE_NEEDS as string[]).includes(String(args.need)) ? String(args.need) as ServiceNeed : 'other';
+      const provider = agentIntegrationProvider();
+      const connected = provider ? await provider.connected().catch(() => [] as string[]) : [];
+      const preset = SERVICE_CHOICES[need];
+      let options = preset.options.filter(option => option.kind === 'coden_cloud' || provider);
+      const named = String(args.service || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 64);
+      if (provider && named && !options.some(option => option.toolkit === named)) {
+        options = [{ label: named.charAt(0).toUpperCase() + named.slice(1), kind: 'toolkit', toolkit: named }, ...options];
+      }
+      const already = options.find(option => option.kind === 'toolkit' && option.toolkit && connected.includes(option.toolkit));
+      if (already) return fail(`${already.label} is already connected.`, `Use it: list_integration_tools with toolkit "${already.toolkit}".`);
+      if (!options.length) return fail('No service can be connected from here.', 'Build the feature with Coden Cloud if the project has it, otherwise say clearly what the user must connect.');
+      const question = String(args.question || '').trim().slice(0, 300) || preset.question;
+      throw new DecisionRequiredError([{
+        q: question,
+        type: 'radio',
+        options: options.map(option => option.label),
+        connect: { need, choices: options.map(option => ({ kind: option.kind, ...(option.toolkit ? { toolkit: option.toolkit } : {}), ...(option.search ? { search: option.search } : {}) })) },
+      }], String(args.reason || `The app needs ${need}.`).slice(0, 300));
     },
 
     async web_search(args) {

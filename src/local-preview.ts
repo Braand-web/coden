@@ -213,6 +213,38 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
   if (path === '/api/users/me/workspace-state') {
     return { handled: true, payload: { success: true, state: localPreviewState, local_preview: true } };
   }
+  if (path === '/api/integrations/status') {
+    return { handled: true, payload: { success: true, configured: true, local_preview: true } };
+  }
+  if (path === '/api/integrations/categories') {
+    return { handled: true, payload: { success: true, configured: true, categories: [{ id: 'developer-tools', name: 'Outils développeur' }, { id: 'databases', name: 'Bases de données' }, { id: 'payments', name: 'Paiements' }, { id: 'productivity', name: 'Productivité' }], local_preview: true } };
+  }
+  if (path.startsWith('/api/integrations/toolkits')) {
+    const toolkit = (slug: string, name: string, description: string, category: string) => ({ slug, name, description, logo: '', categories: [{ id: category, name: category }], toolsCount: 20, noAuth: false, managed: true });
+    return {
+      handled: true,
+      payload: {
+        success: true,
+        configured: true,
+        items: [
+          toolkit('github', 'GitHub', 'Dépôts, issues et pull requests.', 'Outils développeur'),
+          toolkit('supabase', 'Supabase', 'Base Postgres, authentification et stockage.', 'Bases de données'),
+          toolkit('stripe', 'Stripe', 'Paiements, abonnements et factures.', 'Paiements'),
+          toolkit('notion', 'Notion', 'Pages et bases de connaissances.', 'Productivité'),
+          toolkit('gmail', 'Gmail', 'Envoyer et organiser des e-mails.', 'Productivité'),
+          toolkit('slack', 'Slack', 'Messages et notifications d’équipe.', 'Productivité'),
+        ],
+        nextCursor: null,
+        local_preview: true,
+      },
+    };
+  }
+  if (path === '/api/integrations/connections') {
+    return { handled: true, payload: { success: true, configured: true, connections: [{ id: 'ca_preview', toolkit: 'github', status: 'ACTIVE' }], local_preview: true } };
+  }
+  if (path === '/api/users/me/personalization') {
+    return { handled: true, payload: { success: true, personalization: { instructions: '', shareImprovement: true, updatedAt: null, maxInstructions: 4000 }, local_preview: true } };
+  }
   if (path === '/api/auth/me') {
     return { handled: true, payload: { success: true, user: { is_platform_admin: false }, local_preview: true } };
   }

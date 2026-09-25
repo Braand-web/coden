@@ -28,7 +28,8 @@ import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, typ
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
-import { openConnectorsPanel } from './connectors-panel';
+import { connectToolkit, openIntegrationsModal } from './integrations';
+import type { ConnectionChoiceEventDetail } from './components/agent/agent-message';
 import { redactSecretPayload, redactSecrets } from './services/secret-redaction';
 import { clearCreateProjectFlow, readCreateProjectFlow } from './services/create-project-flow';
 import { DEFAULT_AGENT_EFFORT, normalizeAgentEffort } from './services/agent-effort';
@@ -2020,7 +2021,55 @@ function ensureConversationApi() {
     onApprovalDecision: (itemId, approved) => resolveHarnessApproval(itemId, approved),
   });
   bindConversationFeedbackBridge();
+  bindConnectionChoices();
   return conversationApi;
+}
+
+let connectionChoicesBound = false;
+/*
+ * The chat's "Connexion requise" card asks; this connects. A toolkit opens
+ * Composio's page in a popup (opened inside the click, so it is not blocked),
+ * Coden Cloud provisions the project's backend, and "another service" opens
+ * the catalogue. The card then answers the waiting run with what happened.
+ */
+function bindConnectionChoices() {
+  if (connectionChoicesBound) return;
+  connectionChoicesBound = true;
+  window.addEventListener('coden:connection-choice', event => {
+    const detail = (event as CustomEvent<ConnectionChoiceEventDetail>).detail;
+    if (!detail) return;
+    detail.handled = true;
+    void (async () => {
+      const { choice } = detail;
+      if (choice.kind === 'coden_cloud') {
+        if (!currentProjectId) {
+          detail.resolve({ status: 'failed', message: 'Ouvrez un projet pour utiliser Coden Cloud.' });
+          return;
+        }
+        try {
+          await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/cloud/provision`, { method: 'POST', body: '{}' });
+          detail.resolve({ status: 'provisioned' });
+        } catch (error) {
+          detail.resolve({ status: 'failed', message: error instanceof Error ? error.message : 'Coden Cloud n’a pas pu être préparé.' });
+        }
+        return;
+      }
+      if (choice.kind === 'toolkit' && choice.toolkit) {
+        const result = await connectToolkit(choice.toolkit, detail.label);
+        if (result === 'connected') detail.resolve({ status: 'connected', message: `${detail.label} (${choice.toolkit})` });
+        else if (result === 'cancelled') detail.resolve({ status: 'cancelled' });
+        else detail.resolve({ status: 'failed', message: result === 'unavailable' ? 'Les intégrations ne sont pas encore configurées sur ce serveur. Choisissez Coden Cloud ou « Plus tard ».' : `La connexion à ${detail.label} n’a pas abouti.` });
+        return;
+      }
+      const toolkit = await openIntegrationsModal({
+        search: choice.search,
+        resolveOnConnect: true,
+        title: 'Choisir un service',
+        subtitle: 'Connectez le service à utiliser : Coden reprendra automatiquement.',
+      });
+      detail.resolve(toolkit ? { status: 'connected', message: `${toolkit.name} (${toolkit.slug})` } : { status: 'cancelled' });
+    })();
+  });
 }
 
 function bindConversationFeedbackBridge() {
@@ -3531,7 +3580,7 @@ function bindConnectorsButton() {
     button.dataset.codenConnectorsBound = 'true';
     button.addEventListener('click', event => {
       event.preventDefault();
-      openConnectorsPanel({ projectId: currentProjectId || undefined });
+      void openIntegrationsModal();
     });
   });
   if (connectorsBridgeBound) return;
@@ -3539,7 +3588,7 @@ function bindConnectorsButton() {
   document.addEventListener('coden:open-connectors', event => {
     const detail = (event as CustomEvent<{ handled?: boolean } | undefined>).detail;
     if (detail) detail.handled = true;
-    openConnectorsPanel({ projectId: currentProjectId || undefined });
+    void openIntegrationsModal();
   });
   document.addEventListener('coden:open-settings', event => {
     const tab = String((event as CustomEvent).detail?.tab || 'connectors');

@@ -36,6 +36,38 @@ import dotenv from 'dotenv';
 import { buildMetaPrompt } from './src/services/agent-meta-prompter.ts';
 import { buildDependencyGraph, findDependents } from './src/services/agent-ast-parser.ts';
 import { extractArchitectureDecisions, updateProjectMemory, buildMemoryRagContext, selectRelevantMemoryRows } from './src/services/agent-memory-rag.ts';
+import { currentPersonalization, MAX_USER_INSTRUCTIONS, runWithPersonalization, withUserInstructions, type AgentPersonalization } from './src/services/agent-personalization.ts';
+import {
+  contributeKnowledge,
+  contributorFor,
+  loadAgentPreferences,
+  loadUserMemoryBlock,
+  PreferencesValidationError,
+  recordQualitySignal,
+  refreshModelStats,
+  rememberForUser,
+  retrieveKnowledgeContext,
+  saveAgentPreferences,
+} from './src/services/agent-learning-store.ts';
+import { errorFixKnowledge, isPublicPackage, stackFromPackageJson, stackPatternKnowledge, styleMemoryFromFeedback, type UserMemoryRow } from './src/services/agent-learning.ts';
+import { taskKindForRoute } from './src/services/edit-intent.ts';
+import {
+  activeToolkits,
+  ComposioError,
+  composioConfigured,
+  createConnectLink,
+  disconnect as disconnectComposio,
+  executeTool as executeComposioTool,
+  getToolkit as getComposioToolkit,
+  isOutwardTool,
+  listConnections as listComposioConnections,
+  listToolkitCategories,
+  listToolkits as listComposioToolkits,
+  listTools as listComposioTools,
+  normalizeToolkitSlug,
+} from './src/services/composio.ts';
+import { setAgentIntegrationProvider } from './src/services/agent-integrations.ts';
+import { inferProductionBlueprint } from './src/services/production-blueprints.ts';
 import { buildSmartContextInjection } from './src/services/smart-context-injector.ts';
 import { extractDesignTokens, buildDesignTokenContext, designSystemToMemoryRows, designSystemFromMemoryRow } from './src/services/design-token-store.ts';
 import { detectPromptConflict, conflictToPromptContext } from './src/services/conflict-detector.ts';
@@ -975,6 +1007,37 @@ app.use('/api/users/me', requireAuthWithTemporaryGeneration);
 app.use('/api/admin', requireAuth);
 app.use('/api/assistant', requireAuthWithTemporaryGeneration);
 app.use('/api/projects', requireProjectAuthWithTemporaryGeneration);
+app.use('/api/integrations', requireAuth);
+
+/*
+ * The person's own instructions and private memory, for every agent call made
+ * during this request — planner, coder, specialists, repair loop and chat
+ * answers all read them through withUserInstructions(). Loaded once per
+ * request (cached a minute), and a failure only means no personalisation.
+ */
+async function agentPersonalizationMiddleware(req: any, res: any, next: any) {
+  if (req.method !== 'POST') return next();
+  const userId = getOptionalAuthState(req).userId;
+  if (!userId) return next();
+  let value: AgentPersonalization | null = null;
+  try {
+    const client = getSupabase();
+    const [preferences, userMemory, connectedToolkits] = await Promise.all([
+      loadAgentPreferences(client, String(userId)),
+      loadUserMemoryBlock(client, String(userId)),
+      // Never hold a request on Composio: the list is cached, and a slow
+      // answer means the session starts without it rather than late.
+      Promise.race([activeToolkits(String(userId)), new Promise<string[]>(resolve => setTimeout(() => resolve([]), 1500).unref())]),
+    ]);
+    value = { userId: String(userId), instructions: preferences.instructions, shareImprovement: preferences.shareImprovement, userMemory, connectedToolkits };
+  } catch {
+    value = null;
+  }
+  if (!value) return next();
+  return runWithPersonalization(value, () => next());
+}
+app.use('/api/assistant', agentPersonalizationMiddleware);
+app.use('/api/projects', agentPersonalizationMiddleware);
 
 // Runtime data must live in Supabase. The only in-memory state kept here is
 // short-lived rate-limit counters, which are not product data.
@@ -1032,6 +1095,54 @@ const falMediaGateway = new FalMediaGateway(process.env);
  * when there is one, OpenRouter's own web search otherwise — so the agent can
  * look things up with nothing more than the key Coden already has.
  */
+/*
+ * Connected services for the agent's tools. The account is the one whose
+ * request is running (request context), never an argument the model chose.
+ */
+setAgentIntegrationProvider(composioConfigured() ? {
+  async connected() {
+    const userId = currentPersonalization()?.userId;
+    return userId ? activeToolkits(userId) : [];
+  },
+  async listTools(toolkit, search) {
+    const userId = currentPersonalization()?.userId;
+    if (!userId) return { ok: false, error: 'No signed-in user for this run.' };
+    const slug = normalizeToolkitSlug(toolkit);
+    const connected = await activeToolkits(userId);
+    if (!slug || !connected.includes(slug)) {
+      return { ok: false, error: `${toolkit || 'This service'} is not connected.`, hint: connected.length ? `Connected: ${connected.join(', ')}. Otherwise call request_connection.` : 'Call request_connection to ask the user to connect it.' };
+    }
+    try {
+      const tools = await listComposioTools(slug, search);
+      return { ok: true, toolkit: slug, tools: tools.map(tool => ({ tool: tool.slug, description: tool.description, parameters: tool.parameters, outward: isOutwardTool(tool.slug) })) };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message || 'Composio did not answer.').slice(0, 200) };
+    }
+  },
+  async runTool(tool, args, userRequestedAction) {
+    const userId = currentPersonalization()?.userId;
+    if (!userId) return { ok: false, error: 'No signed-in user for this run.' };
+    const slug = String(tool || '').trim().toUpperCase();
+    const connected = await activeToolkits(userId);
+    const toolkit = connected.find(item => slug.startsWith(`${item.toUpperCase().replace(/-/g, '_')}_`));
+    if (!toolkit) return { ok: false, error: `${slug || 'This tool'} does not belong to a connected service.`, hint: connected.length ? `Connected: ${connected.join(', ')}.` : 'Call request_connection first.' };
+    if (isOutwardTool(slug) && !userRequestedAction) {
+      return { ok: false, error: `${slug} acts on the user's real account.`, hint: 'Run it only if the user explicitly asked for this action in their request, with user_requested_action: true. Otherwise describe what you would do.' };
+    }
+    try {
+      const result = await executeComposioTool({ codenUserId: userId, tool: slug, arguments: args });
+      const data = JSON.parse(redactSecrets(JSON.stringify(result.data ?? null)) || 'null');
+      const text = JSON.stringify(data);
+      return result.successful
+        ? { ok: true, tool: slug, data: text.length > 12000 ? `${text.slice(0, 12000)}…` : data }
+        : { ok: false, error: result.error || `${slug} failed.` };
+    } catch (error: any) {
+      return { ok: false, error: String(error?.message || 'Composio did not answer.').slice(0, 200) };
+    }
+  },
+} : null);
+console.info('[coden:composio]', { configured: composioConfigured() });
+
 setAgentWebProvider(createAgentWebProvider({
   research: webResearchGateway,
   modelSearch: async (query: string) => {
@@ -5571,7 +5682,7 @@ function buildAgentTextMessages(input: {
 
   const request = researchContext ? `${prompt}\n\nResearch context:\n${researchContext}` : prompt;
   return [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: withUserInstructions(systemPrompt) },
     ...history.map(turn => ({ role: turn.role, content: turn.content }) as ChatMessage),
     { role: 'user', content: visionInputs?.length ? buildVisionMessageContent(request, visionInputs) : request },
   ];
@@ -7106,7 +7217,7 @@ async function generateFilesWithAi(input: {
             gateway: providerGateway,
             modelId,
             messages: [
-              { role: 'system', content: task.systemContext },
+              { role: 'system', content: withUserInstructions(task.systemContext) },
               { role: 'user', content: task.prompt },
             ],
             runtimeConfig: agentRuntime.providerConfig,
@@ -11887,6 +11998,240 @@ app.patch('/api/users/me/workspace-state', async (req: any, res) => {
   res.json({ success: true, state });
 });
 
+/*
+ * Integrations through Composio.
+ *
+ * The browser sees toolkit metadata, its own connections and a hosted connect
+ * URL — never the Composio API key, which stays in this process. Each Coden
+ * account is its own Composio user (composioUserId), so a connection can only
+ * be listed, used or removed by the account that made it.
+ */
+function sendComposioError(res: any, error: any) {
+  if (error instanceof ComposioError) {
+    const status = error.status === 503 ? 503 : error.status;
+    if (status >= 500) console.warn('[coden:composio_error]', { status, message: redactSecrets(error.message, '[redacted]').slice(0, 200) });
+    return res.status(status).json({ success: false, error: status === 503 && !composioConfigured() ? 'Les intégrations ne sont pas encore configurées sur ce serveur.' : error.message });
+  }
+  console.warn('[coden:composio_error]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+  return res.status(502).json({ success: false, error: 'Le service d’intégrations ne répond pas. Réessayez dans un instant.' });
+}
+
+function integrationCallbackOrigin(req: any): string {
+  const origin = String(req.headers?.origin || '').trim();
+  const host = String(req.headers?.['x-forwarded-host'] || req.headers?.host || '').split(',')[0].trim().toLowerCase();
+  try {
+    const parsed = new URL(origin);
+    if (host && parsed.host.toLowerCase() === host && /^https?:$/.test(parsed.protocol)) return parsed.origin;
+  } catch { /* fall through */ }
+  return getCodenPublicOrigin();
+}
+
+app.get('/api/integrations/status', (_req: any, res: any) => {
+  res.json({ success: true, configured: composioConfigured() });
+});
+
+app.get('/api/integrations/categories', async (_req: any, res: any) => {
+  if (!composioConfigured()) return res.json({ success: true, configured: false, categories: [] });
+  try {
+    res.json({ success: true, configured: true, categories: await listToolkitCategories() });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+app.get('/api/integrations/toolkits', async (req: any, res: any) => {
+  if (!composioConfigured()) return res.json({ success: true, configured: false, items: [], nextCursor: null, total: 0 });
+  try {
+    const result = await listComposioToolkits({
+      search: String(req.query?.search || ''),
+      category: String(req.query?.category || ''),
+      cursor: String(req.query?.cursor || ''),
+      limit: Number(req.query?.limit || 30),
+    });
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    res.json({ success: true, configured: true, ...result });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+app.get('/api/integrations/toolkits/:slug', async (req: any, res: any) => {
+  if (!composioConfigured()) return res.status(503).json({ success: false, configured: false, error: 'Les intégrations ne sont pas encore configurées sur ce serveur.' });
+  try {
+    const toolkit = await getComposioToolkit(String(req.params.slug || ''));
+    if (!toolkit) return res.status(404).json({ success: false, error: 'Intégration introuvable.' });
+    res.json({ success: true, toolkit });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+app.get('/api/integrations/connections', async (req: any, res: any) => {
+  if (!composioConfigured()) return res.json({ success: true, configured: false, connections: [] });
+  try {
+    const userId = getRequiredAuth(req).userId;
+    const connections = await listComposioConnections(userId);
+    // Refreshes what the agent is told at the next request, too.
+    await activeToolkits(userId, { fresh: true });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, configured: true, connections });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+app.post('/api/integrations/connect', async (req: any, res: any) => {
+  if (!composioConfigured()) return res.status(503).json({ success: false, configured: false, error: 'Les intégrations ne sont pas encore configurées sur ce serveur.' });
+  const userId = getRequiredAuth(req).userId;
+  if (!enforceRateLimit(`integrations-connect:${userId}`, 20, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Trop de tentatives de connexion. Patientez un instant.' });
+  }
+  const toolkit = normalizeToolkitSlug(req.body?.toolkit);
+  if (!toolkit) return res.status(400).json({ success: false, error: 'Intégration inconnue.' });
+  try {
+    const callbackUrl = `${integrationCallbackOrigin(req)}/integrations/callback?toolkit=${encodeURIComponent(toolkit)}`;
+    const link = await createConnectLink({ codenUserId: userId, toolkit, callbackUrl });
+    res.json({ success: true, toolkit, redirectUrl: link.redirectUrl, connectionId: link.connectedAccountId, expiresAt: link.expiresAt });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+app.delete('/api/integrations/connections/:id', async (req: any, res: any) => {
+  if (!composioConfigured()) return res.status(503).json({ success: false, configured: false, error: 'Les intégrations ne sont pas encore configurées sur ce serveur.' });
+  try {
+    await disconnectComposio(getRequiredAuth(req).userId, String(req.params.id || ''));
+    res.json({ success: true });
+  } catch (error) { sendComposioError(res, error); }
+});
+
+/*
+ * Where Composio sends the popup back. It tells the window that opened it and
+ * closes; the opener re-reads its connections either way, so a blocked
+ * message or a closed tab still ends with the right status.
+ */
+app.get('/integrations/callback', (req: any, res: any) => {
+  const toolkit = normalizeToolkitSlug(req.query?.toolkit);
+  const raw = String(req.query?.status || req.query?.connection_status || '').toLowerCase();
+  const status = /fail|error|denied|cancel/.test(raw) ? 'failed' : 'done';
+  const message = JSON.stringify({ type: 'coden:integration-callback', toolkit, status });
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Connexion · Coden</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:Canvas;color:CanvasText}p{margin:0;opacity:.8}</style></head><body><p>${status === 'failed' ? 'La connexion n’a pas abouti. Vous pouvez fermer cette fenêtre.' : 'Connexion terminée. Vous pouvez fermer cette fenêtre.'}</p><script>try{if(window.opener){window.opener.postMessage(${message},location.origin)}}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`);
+});
+
+/*
+ * Coden Cloud on demand, for the chat's connection question: the project gets
+ * its dedicated backend now if it does not have one yet.
+ */
+app.post('/api/projects/:id/cloud/provision', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const existing = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
+  if (existing.VITE_SUPABASE_URL) return res.json({ success: true, status: 'ready', already: true });
+  try {
+    const { provisionAppBackend } = await import('./src/services/supabase-auto-provision');
+    const result = await provisionAppBackend({ appName: project.name || `coden-${project.slug}`, files: [] });
+    if (!result.ok || !result.project) {
+      return res.status(503).json({ success: false, status: 'unavailable', error: 'Coden Cloud ne peut pas créer de backend pour le moment.', reason: result.reason || result.error || 'unavailable' });
+    }
+    const stored = await saveProvisionedBackend({ client: getSupabase(), projectId: project.id, organizationId: project.organization_id, provisioned: result.project });
+    console.log('[coden:supabase_on_demand_provisioned]', { project_id: project.id, supabase_ref: result.project.ref, persisted: stored });
+    res.json({ success: true, status: 'ready' });
+  } catch (error: any) {
+    console.warn('[coden:supabase_on_demand_provision_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(502).json({ success: false, status: 'failed', error: 'Le provisionnement de Coden Cloud a échoué.' });
+  }
+});
+
+/*
+ * What one build teaches Coden, recorded after the fact and never on the
+ * run's critical path.
+ *
+ * Signals are content-free (outcome, model, rounds). Knowledge is built from
+ * templates in agent-learning.ts — the fixes that made errors disappear, the
+ * public packages of a stack that verified — and only for people who share.
+ * The private memory (their stack, their language) is theirs alone.
+ */
+async function learnFromPipelineRun(input: {
+  userId: string;
+  projectId: string;
+  taskType: string;
+  route: string;
+  prompt: string;
+  french: boolean;
+  outcome: any;
+  files: GeneratedFile[];
+  resolved: Array<{ message: string; source?: string; missingPackage?: string; file?: string }>;
+  resumed: boolean;
+}) {
+  const client = getSupabase();
+  if (!client) return;
+  try {
+    const rounds = Array.isArray(input.outcome?.repairOutcome?.rounds) ? input.outcome.repairOutcome.rounds : [];
+    const openErrors = (input.outcome?.repairOutcome?.finalReport?.problems || []).filter((problem: any) => problem?.severity === 'error').length;
+    await recordQualitySignal(client, {
+      userId: input.userId,
+      projectId: input.projectId,
+      kind: 'run',
+      taskType: input.taskType,
+      modelId: input.outcome?.modelId || null,
+      success: Boolean(input.outcome?.ok),
+      detail: {
+        route: input.route,
+        rounds: rounds.length,
+        open_errors: openErrors,
+        stopped: String(input.outcome?.repairOutcome?.stoppedBecause || ''),
+        resumed: input.resumed,
+      },
+    });
+    if (input.resumed) {
+      await recordQualitySignal(client, { userId: input.userId, projectId: input.projectId, kind: 'retry', taskType: input.taskType, modelId: input.outcome?.modelId || null, success: Boolean(input.outcome?.ok) });
+    }
+    if (input.resolved.length) {
+      await recordQualitySignal(client, { userId: input.userId, projectId: input.projectId, kind: 'error_fixed', taskType: input.taskType, modelId: input.outcome?.modelId || null, success: true, detail: { count: input.resolved.length } });
+      await contributeKnowledge(client, input.userId, errorFixKnowledge(input.resolved, input.taskType, contributorFor(input.userId)));
+    }
+    const memory: UserMemoryRow[] = [{ key: 'language', kind: 'language', content: input.french ? 'français' : 'anglais', weight: 1 }];
+    if (input.outcome?.ok) {
+      const stack = stackFromPackageJson(input.files.find(file => file.path === 'package.json')?.content);
+      let appKind = 'application';
+      try { appKind = inferProductionBlueprint(input.prompt).type || appKind; } catch { /* keep the generic label */ }
+      const pattern = stackPatternKnowledge(appKind, input.taskType, stack, contributorFor(input.userId));
+      if (pattern) await contributeKnowledge(client, input.userId, [pattern]);
+      for (const name of stack.filter(isPublicPackage).slice(0, 10)) memory.push({ key: `stack:${name}`, kind: 'stack', content: name, weight: 1 });
+    }
+    await rememberForUser(client, input.userId, memory);
+  } catch (error: any) {
+    console.warn('[coden:agent_learning_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+  }
+}
+
+/*
+ * Settings → Personnalisation. The instructions reach the system prompt of
+ * every later session; sharing off stops collection at once and purges what
+ * this person already contributed to the shared knowledge base.
+ */
+app.get('/api/users/me/personalization', async (req: any, res) => {
+  const userId = getRequiredAuth(req).userId;
+  const preferences = await loadAgentPreferences(getSupabase(), userId, { fresh: true });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, personalization: { ...preferences, maxInstructions: MAX_USER_INSTRUCTIONS } });
+});
+
+app.put('/api/users/me/personalization', async (req: any, res) => {
+  const userId = getRequiredAuth(req).userId;
+  const body = req.body || {};
+  const patch: { instructions?: unknown; shareImprovement?: unknown } = {};
+  if (Object.prototype.hasOwnProperty.call(body, 'instructions')) {
+    if (typeof body.instructions !== 'string') return res.status(400).json({ success: false, error: 'instructions must be text.' });
+    patch.instructions = body.instructions;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'shareImprovement')) patch.shareImprovement = body.shareImprovement;
+  if (!Object.keys(patch).length) return res.status(400).json({ success: false, error: 'Nothing to update.' });
+  try {
+    const saved = await saveAgentPreferences(requireSupabase('Personalisation'), userId, patch);
+    if (saved.purged !== undefined) console.info('[coden:agent_sharing_disabled]', { purged_knowledge_rows: saved.purged });
+    res.json({ success: true, personalization: { ...saved, maxInstructions: MAX_USER_INSTRUCTIONS } });
+  } catch (error: any) {
+    if (error instanceof PreferencesValidationError) return res.status(400).json({ success: false, error: error.message });
+    console.warn('[coden:personalization_save_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]') });
+    res.status(500).json({ success: false, error: 'Impossible d’enregistrer la personnalisation pour le moment.' });
+  }
+});
+
 // PATCH /projects/:id/ai-preferences
 app.patch('/api/projects/:id/ai-preferences', async (req: any, res) => {
   const { default_routing_mode, max_credits_per_action, ask_confirm_before_premium, auto_revert_to_auto } = req.body;
@@ -13419,11 +13764,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
        * 2026-09-03. A project that had settled on a router or a state library
        * re-chose one on every request.
        */
+      const learningTaskType = taskKindForRoute(pipelineRoute);
+      // What worked for others on this kind of task (anonymised, see
+      // agent-learning.ts), read alongside the project's own decisions.
+      const sharedKnowledgePromise = retrieveKnowledgeContext(getSupabase(), agentPrompt, { taskType: learningTaskType });
       const projectMemory = await loadProjectMemoryContext({
         client: getSupabase(),
         projectId: project.id,
         prompt: agentPrompt,
       });
+      const sharedKnowledge = await sharedKnowledgePromise;
+      const resolvedDuringRun: Array<{ message: string; source?: string; missingPackage?: string; file?: string }> = [];
 
       /*
        * And which Supabase project this app belongs to.
@@ -13476,9 +13827,10 @@ ${resolvedMission}` : resolvedMission;
         userId,
         prompt: pipelinePrompt,
         // Settled decisions, then what already happened in this session.
-        memoryContext: [projectMemory, sessionContext].filter(Boolean).join('\n\n') || undefined,
+        memoryContext: [projectMemory, sessionContext, sharedKnowledge].filter(Boolean).join('\n\n') || undefined,
         backendEnv,
         route: pipelineRoute,
+        onErrorsResolved: problems => { resolvedDuringRun.push(...problems); },
         existingFiles,
         history: recentHistory,
         approvedPlan: req.body?.useLastPlan ? lastPlan || undefined : undefined,
@@ -13504,6 +13856,18 @@ ${resolvedMission}` : resolvedMission;
 
       if (outcome.started) {
         const pipelineFiles = outcome.files as GeneratedFile[];
+        void learnFromPipelineRun({
+          userId,
+          projectId: project.id,
+          taskType: learningTaskType,
+          route: pipelineRoute,
+          prompt: agentPrompt,
+          french: frenchActivity,
+          outcome,
+          files: pipelineFiles,
+          resolved: resolvedDuringRun,
+          resumed: Boolean(resumeFrom),
+        });
         // The blob path renames the project from a fresh `appName` guess the
         // model invents every run; this pipeline's plan carries no such
         // field, so there is nothing honest to rename to — the name is left
@@ -14692,7 +15056,7 @@ ${resolvedMission}` : resolvedMission;
                     gateway: providerGateway,
                     modelId: generation.model,
                     messages: [
-                      { role: 'system', content: 'You repair a running application. Read the files the errors name, make the smallest change that fixes them, and change nothing else. Install a missing dependency rather than rewriting the import that needs it.' },
+                      { role: 'system', content: withUserInstructions('You repair a running application. Read the files the errors name, make the smallest change that fixes them, and change nothing else. Install a missing dependency rather than rewriting the import that needs it.') },
                       { role: 'user', content: instruction },
                     ],
                     handlers,
@@ -15669,6 +16033,16 @@ app.post('/api/projects/:id/agent/feedback', async (req: any, res: any) => {
     source: String(req.body?.source || 'builder').slice(0, 120),
   });
   await upsertAgentTypedMemory(project, userId, learningSignal.memoryType, learningSignal.summary, learningSignal.payload).catch(() => null);
+  // Coden's learning layer: a content-free signal, and style notes for this person only.
+  void recordQualitySignal(getSupabase(), {
+    userId,
+    projectId: project.id,
+    kind: 'feedback',
+    modelId: (project as any).model_id || null,
+    success: rating === 'positive' || feedback === 'keep' || feedback === 'publish' ? true : rating === 'negative' || feedback === 'reject' ? false : null,
+    detail: { feedback, reasons },
+  });
+  void rememberForUser(getSupabase(), userId, styleMemoryFromFeedback(reasons));
   res.json({ success: true, feedback, rating });
 });
 
@@ -15803,6 +16177,15 @@ app.post('/api/projects/:id/versions/:versionId/rollback', async (req: any, res:
   };
   await saveProject(updatedProject, files);
   await createProjectVersion(updatedProject, files, `Rollback to v${version.version_number}`, { rollback_to: version.id });
+  // The person undid the agent's latest work: a quality signal against the model that produced it.
+  void recordQualitySignal(getSupabase(), {
+    userId,
+    projectId: project.id,
+    kind: 'revert',
+    modelId: (project as any).model_id || null,
+    success: false,
+    detail: { versions_back: Math.max(0, versions.findIndex((item: any) => item.id === version.id)) },
+  });
   res.json({ success: verified, needs_fix: !verified, project: updatedProject, files, preview: { status: verified ? 'verified' : 'needs_fix', html: updatedProject.preview_html }, browser });
 });
 
@@ -18491,6 +18874,9 @@ const httpServer = app.listen(port, () => {
     const cutoff = new Date(Date.now() - 75 * 60_000).toISOString();
     void reapInterruptedAgentRuns({ createdBefore: cutoff }).catch(() => undefined);
   }, 10 * 60_000).unref();
+  // The Auto router's measured success rates, refreshed from shared runs.
+  void refreshModelStats(getSupabase());
+  setInterval(() => { void refreshModelStats(getSupabase()); }, 10 * 60_000).unref();
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });

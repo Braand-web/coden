@@ -31,6 +31,7 @@ import {
   type ModelStrength,
 } from '../config/ai-models.ts';
 import { modelAvailability } from './openrouter-capabilities.ts';
+import { getLearnedModelStats, learnedPreference } from './agent-learning.ts';
 import type { ReasoningLevel } from './openrouter-request.ts';
 
 /** What the platform actually asks a model to do. */
@@ -229,43 +230,50 @@ export function selectModel(request: SelectionRequest): SelectionResult {
         || blendedCost(a) - blendedCost(b))
     : [preferred, ...pool.filter(id => id !== preferred)].filter(id => pool.includes(id));
   const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId] : ordered;
-  for (const modelId of candidates) {
+  const gate = (modelId: AllowedModelId): string | null => {
     const caps = AI_MODEL_CAPABILITIES[modelId];
-
-    if (!planAllows(plan, modelId)) {
-      rejected.push({ modelId, because: `requires the ${AI_MODEL_PLAN_ACCESS[modelId]} plan` });
-      continue;
-    }
-    if (typeof request.credits === 'number' && request.credits < MODEL_ACTION_CREDIT_FLOORS[modelId]) {
-      rejected.push({ modelId, because: `costs ${MODEL_ACTION_CREDIT_FLOORS[modelId]} credits, ${request.credits} available` });
-      continue;
-    }
+    if (!planAllows(plan, modelId)) return `requires the ${AI_MODEL_PLAN_ACCESS[modelId]} plan`;
+    if (typeof request.credits === 'number' && request.credits < MODEL_ACTION_CREDIT_FLOORS[modelId]) return `costs ${MODEL_ACTION_CREDIT_FLOORS[modelId]} credits, ${request.credits} available`;
     // A deferred tier answers minutes later. That is fine for a background
     // job and unacceptable for someone watching a cursor blink.
-    if ((request.interactive || INHERENTLY_INTERACTIVE.has(request.task)) && isDeferredTier(modelId)) {
-      rejected.push({ modelId, because: 'deferred execution tier, not usable interactively' });
+    if ((request.interactive || INHERENTLY_INTERACTIVE.has(request.task)) && isDeferredTier(modelId)) return 'deferred execution tier, not usable interactively';
+    if (!request.requestedModel && STRENGTH_ORDER[caps[dimensionKey]] < requiredStrength) return `${bar.dimension} is ${caps[dimensionKey]}, ${request.task} at ${complexity} needs at least ${strengthName(requiredStrength)}`;
+    if (request.needs?.vision && !caps.supportsVision) return 'no vision support';
+    if (request.needs?.audio && !caps.supportsAudio) return 'no audio support';
+    if (request.needs?.video && !caps.supportsVideo) return 'no video support';
+    if (request.needs?.tools && !caps.supportsToolCalling) return 'no tool calling';
+    if (request.needs?.longContext && !caps.supportsLongContext) return 'no long context support';
+    if (request.needs?.structuredOutput && !caps.supportsStructuredOutput) return 'no structured output';
+    if (request.estimatedInputTokens && request.estimatedInputTokens > caps.maxContextTokens) return `context window ${caps.maxContextTokens} is smaller than the ${request.estimatedInputTokens} tokens required`;
+    return null;
+  };
+  /*
+   * The first model to clear every gate is the default. Its next few eligible
+   * neighbours in the same order are collected too, so measured success rates
+   * (agent-learning.ts) can prefer one of them when the evidence is clear. An
+   * explicitly requested model is never second-guessed.
+   */
+  const eligible: AllowedModelId[] = [];
+  for (const modelId of candidates) {
+    const because = gate(modelId);
+    if (because) {
+      if (!eligible.length) rejected.push({ modelId, because });
       continue;
     }
-    if (!request.requestedModel && STRENGTH_ORDER[caps[dimensionKey]] < requiredStrength) {
-      rejected.push({ modelId, because: `${bar.dimension} is ${caps[dimensionKey]}, ${request.task} at ${complexity} needs at least ${strengthName(requiredStrength)}` });
-      continue;
-    }
-    if (request.needs?.vision && !caps.supportsVision) { rejected.push({ modelId, because: 'no vision support' }); continue; }
-    if (request.needs?.audio && !caps.supportsAudio) { rejected.push({ modelId, because: 'no audio support' }); continue; }
-    if (request.needs?.video && !caps.supportsVideo) { rejected.push({ modelId, because: 'no video support' }); continue; }
-    if (request.needs?.tools && !caps.supportsToolCalling) { rejected.push({ modelId, because: 'no tool calling' }); continue; }
-    if (request.needs?.longContext && !caps.supportsLongContext) { rejected.push({ modelId, because: 'no long context support' }); continue; }
-    if (request.needs?.structuredOutput && !caps.supportsStructuredOutput) { rejected.push({ modelId, because: 'no structured output' }); continue; }
-    if (request.estimatedInputTokens && request.estimatedInputTokens > caps.maxContextTokens) {
-      rejected.push({ modelId, because: `context window ${caps.maxContextTokens} is smaller than the ${request.estimatedInputTokens} tokens required` });
-      continue;
-    }
-
+    eligible.push(modelId);
+    if (request.requestedModel || eligible.length >= 4) break;
+  }
+  if (eligible.length) {
+    const learned = request.requestedModel ? null : learnedPreference(eligible, request.task, getLearnedModelStats());
+    const modelId = (learned?.modelId || eligible[0]) as AllowedModelId;
+    const caps = AI_MODEL_CAPABILITIES[modelId];
     return {
       modelId,
-      reason: strongestFirst
-        ? `strongest eligible model for ${request.task}/${complexity} (${bar.dimension} ${caps[dimensionKey]})`
-        : `fastest model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
+      reason: learned?.learned
+        ? `measured to succeed more often on ${request.task} than ${eligible[0]} (Coden run history)`
+        : strongestFirst
+          ? `strongest eligible model for ${request.task}/${complexity} (${bar.dimension} ${caps[dimensionKey]})`
+          : `fastest model clearing ${request.task}/${complexity} (${bar.dimension} ≥ ${strengthName(requiredStrength)})`,
       rejected,
       estimatedUsdPerMillionBlended: Number(blendedCost(modelId).toFixed(3)),
       reasoningLevel: affordableReasoning(reasoningLevel, modelId, request.credits),
