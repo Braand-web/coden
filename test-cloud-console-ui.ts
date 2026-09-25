@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync('builder.html', 'utf8');
 const builder = readFileSync('src/builder-live.ts', 'utf8');
 const css = readFileSync('src/styles/cloud-console.css', 'utf8');
+const admin = readFileSync('src/admin-live.ts', 'utf8');
 
 assert.equal((html.match(/id="screen-layout-database"/g) || []).length, 1, 'the workspace must contain exactly one Cloud panel');
 assert.equal((html.match(/id="database-content"/g) || []).length, 1, 'the Cloud console must have one render root');
@@ -25,6 +26,9 @@ assert.ok(builder.includes('loadProjectEndUsers()'), 'Users must hydrate from th
 assert.ok(builder.includes('bindProjectStorageHandlers()'), 'Storage must keep real upload and delete actions');
 assert.ok(builder.includes("import './styles/cloud-console.css'"), 'the Cloud design system must be loaded');
 assert.ok(css.includes('.cloud-console-nav-item.is-active'), 'the current Cloud destination needs a visible state');
+assert.ok(builder.includes('class="cloud-console-project-id">ID · ${escapeHtml(currentProjectId)}'), 'Cloud must show the canonical application ID');
+assert.ok(!/\.cloud-console-brand,\s*\.cloud-console-nav-label/.test(css), 'the Cloud project identity must remain visible on mobile');
+assert.ok(admin.includes('aria-label="Identifiant de l’application">ID · ${escapeHtml(project.id)}'), 'Admin must label the canonical application ID in the projects table');
 assert.ok(css.includes('@media (max-width: 720px)'), 'the console must adapt to narrow workspaces');
 assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'Cloud motion must respect user preferences');
 assert.ok(!/linear-gradient|radial-gradient/.test(css), 'the Cloud console must keep the flat Coden visual language');

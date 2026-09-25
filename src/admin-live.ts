@@ -464,7 +464,7 @@ function renderProjects() {
       return true;
     });
   root.innerHTML = table(['Projet', 'Propriétaire', 'Aperçu', 'Publication', 'Fichiers', 'Mis à jour', 'Action'], rows.map(project => [
-    `<strong>${escapeHtml(project.name)}</strong><br><span>${escapeHtml(project.id)}</span>`,
+    `<strong>${escapeHtml(project.name)}</strong><br><span class="admin-mono" aria-label="Identifiant de l’application">ID · ${escapeHtml(project.id)}</span>`,
     escapeHtml(project.owner_id || '--'),
     pill(project.preview_status),
     pill(project.publish_status || (project.live_url ? 'published' : 'draft')),

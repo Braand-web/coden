@@ -7673,7 +7673,7 @@ function renderCloudConsole(db: any) {
   target.innerHTML = `
     <div class="cloud-console">
       <aside class="cloud-console-nav" aria-label="Navigation Coden Cloud">
-        <div class="cloud-console-brand"><span class="cloud-console-brand-icon">${cloudConsoleIcon('cloud')}</span><span><strong>Coden Cloud</strong><small>${escapeHtml(currentProjectName)}</small></span></div>
+        <div class="cloud-console-brand"><span class="cloud-console-brand-icon">${cloudConsoleIcon('cloud')}</span><span class="cloud-console-project-meta"><strong>Coden Cloud</strong><small>${escapeHtml(currentProjectName)}</small><small class="cloud-console-project-id">ID · ${escapeHtml(currentProjectId)}</small></span></div>
         <nav class="cloud-console-nav-scroll">
           ${CLOUD_CONSOLE_VIEWS.map(item => {
             const group = item.group && item.group !== activeGroup ? `<span class="cloud-console-nav-label">${escapeHtml(item.group)}</span>` : '';

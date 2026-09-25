@@ -84,6 +84,18 @@
   line-height: 16px;
 }
 
+.cloud-console-project-meta {
+  min-width: 0;
+}
+
+.cloud-console-brand .cloud-console-project-id {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  overflow-wrap: anywhere;
+}
+
 .cloud-console-nav-scroll {
   display: grid;
   gap: 2px;
@@ -653,9 +665,9 @@ input.cloud-filter { flex: 1 1 240px; }
 @media (max-width: 720px) {
   .cloud-console { display: flex; flex-direction: column; }
   .cloud-console-nav { flex: 0 0 auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .cloud-console-brand,
   .cloud-console-nav-label,
   .cloud-console-nav-foot { display: none; }
+  .cloud-console-brand { min-height: 0; padding: 4px 8px 8px; }
   .cloud-console-nav-scroll { display: flex; overflow-x: auto; padding: 0; }
   .cloud-console-nav-item { width: auto; min-width: max-content; min-height: 36px; padding: 8px 12px; }
   .cloud-console-main-inner { padding: 16px; }
