@@ -10,6 +10,7 @@
 import { apiFetch } from '../lib/api';
 import { BILLING_PLANS, priceFor, publicationLimitsFor, type BillingInterval } from '../config/billing-v2';
 import '../styles/plan-chooser.css';
+import { enhanceSelect, type SelectMenu } from '../lib/select-menu';
 
 type PaidPlan = 'pro' | 'business';
 
@@ -101,6 +102,7 @@ export function renderPlanChooser(host: HTMLElement, options: PlanChooserOptions
     host.querySelectorAll<HTMLButtonElement>('[data-cpc-interval]').forEach(button => {
       button.setAttribute('aria-pressed', String(button.dataset.cpcInterval === interval));
     });
+    menus?.forEach(menu => menu.refresh());
   };
 
   const showError = (message: string) => {
@@ -160,10 +162,17 @@ export function renderPlanChooser(host: HTMLElement, options: PlanChooserOptions
     update();
   };
 
+  /* The same tier menu as the pricing page and the landing, each tier with its price. */
+  const menus: SelectMenu[] = Array.from(host.querySelectorAll<HTMLSelectElement>('[data-cpc-tier]')).map(select => {
+    const plan: PaidPlan = select.closest<HTMLElement>('[data-plan]')?.dataset.plan === 'business' ? 'business' : 'pro';
+    return enhanceSelect(select, { describe: value => `${formatXaf(priceFor(plan, Number(value), interval).monthlyEquivalent)} FCFA / mois` });
+  });
+
   host.addEventListener('click', onClick);
   host.addEventListener('change', onChange);
   update();
   return () => {
+    menus.forEach(menu => menu.close());
     host.removeEventListener('click', onClick);
     host.removeEventListener('change', onChange);
   };

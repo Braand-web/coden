@@ -18,7 +18,7 @@ body {
 }
 
 :where(button, a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
@@ -55,7 +55,7 @@ body {
 
 :where(input, textarea, select):focus,
 :where(.input-wrapper, .search-wrapper):focus-within {
-  border-color: var(--accent) !important;
+  border-color: var(--field-focus-border) !important;
   box-shadow: var(--ring) !important;
-  outline: none;
+  outline: none !important;
 }

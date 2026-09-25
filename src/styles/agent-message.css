@@ -33,7 +33,7 @@
 }
 button.coden-tool-line { cursor:pointer; }
 button.coden-tool-line:hover { color:var(--text-secondary); }
-button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+button.coden-tool-line:focus-visible { outline: var(--focus-outline); outline-offset:3px; border-radius:4px; }
 .coden-tool-line svg,.coden-tool-verb,.coden-tool-chevron { flex-shrink:0; }
 .coden-tool-paths { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:13px/1.6 ui-monospace,monospace; }
 .coden-tool-chevron { display:grid; place-items:center; width:16px; height:16px; }
@@ -56,7 +56,7 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-message-actions { display:flex; gap:4px; }
 .coden-message-actions button { display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; }
 .coden-message-actions button:hover { background:var(--input); color:var(--foreground); }
-.coden-message-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.coden-message-actions button:focus-visible { outline: var(--focus-outline); outline-offset:2px; }
 .coden-agent-message-error {
   display: grid;
   gap: 4px;
@@ -103,7 +103,7 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-agent-reasoning > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer; list-style:none; user-select:none; color:var(--text-muted); border-radius:4px; }
 .coden-agent-reasoning > summary::-webkit-details-marker { display:none; }
 .coden-agent-reasoning > summary:hover { color:var(--text-secondary); }
-.coden-agent-reasoning > summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.coden-agent-reasoning > summary:focus-visible { outline: var(--focus-outline); outline-offset:3px; }
 .coden-agent-reasoning-chevron { transition:transform .16s ease; }
 .coden-agent-reasoning[open] .coden-agent-reasoning-chevron { transform:rotate(90deg); }
 .coden-agent-reasoning-body { margin:8px 0 2px; padding-left:12px; border-left:2px solid var(--border); white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.6; max-height:320px; overflow:auto; }
@@ -119,7 +119,7 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-connection-options button { display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:0 14px; border:1px solid var(--border); border-radius:var(--radius-control,10px); background:var(--surface-soft); color:var(--foreground); font:inherit; font-size:13px; font-weight:650; cursor:pointer; transition:background var(--transition-micro,120ms ease), border-color var(--transition-micro,120ms ease), transform var(--transition-micro,120ms ease); }
 .coden-connection-options button:hover:not(:disabled) { border-color:var(--accent); background:var(--accent-soft); }
 .coden-connection-options button:active:not(:disabled) { transform:translateY(1px); }
-.coden-connection-options button:focus-visible, .coden-connection-later:focus-visible { outline:2px solid var(--ring,var(--accent)); outline-offset:2px; }
+.coden-connection-options button:focus-visible, .coden-connection-later:focus-visible { outline: var(--focus-outline); outline-offset:2px; }
 .coden-connection-options button:disabled { cursor:default; opacity:.55; }
 .coden-connection-options button[data-selected] { opacity:1; border-color:var(--accent); background:var(--accent-soft); }
 .coden-connection-card[data-state="done"] .coden-connection-options button[data-selected] { border-color:var(--success); background:var(--success-background,var(--surface-soft)); color:var(--success); }

@@ -25,8 +25,8 @@
 }
 
 :where(.input-wrapper, .checkout-card, .pricing-card, .feature-card, .testimonial-card):focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow-sm);
+  border-color: var(--field-focus-border);
+  box-shadow: var(--ring), var(--shadow-sm);
 }
 
 :where(.sign-in-btn, .btn-solid, .pricing-btn.primary, .checkout-submit, .card-cta) {

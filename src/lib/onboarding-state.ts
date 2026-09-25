@@ -39,7 +39,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
       { value: 'agency', label: 'Agence', hint: 'Une équipe, plusieurs clients', icon: 'users' },
       { value: 'developer', label: 'Développeur', hint: 'Je veux aller plus vite', icon: 'code' },
       { value: 'marketer', label: 'Marketing ou produit', hint: 'Je teste des idées', icon: 'megaphone' },
-      { value: 'other', label: 'Autre', hint: 'Curieux de découvrir', icon: 'sparkle' },
+      { value: 'other', label: 'Autre', hint: 'Curieux de découvrir', icon: 'dots' },
     ],
   },
   {
@@ -50,7 +50,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
       { value: 'launch', label: 'Lancer un produit', hint: 'Un SaaS ou une app à vendre', icon: 'rocket' },
       { value: 'internal', label: 'Un outil interne', hint: 'Gagner du temps au quotidien', icon: 'wrench' },
       { value: 'client', label: 'Un site pour un client', hint: 'Livrer vite et bien', icon: 'briefcase' },
-      { value: 'prototype', label: 'Prototyper une idée', hint: 'Valider avant d’investir', icon: 'sparkle' },
+      { value: 'prototype', label: 'Prototyper une idée', hint: 'Valider avant d’investir', icon: 'bulb' },
       { value: 'learn', label: 'Apprendre', hint: 'Voir ce que l’IA sait faire', icon: 'book' },
     ],
   },
@@ -64,7 +64,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
       { value: 'website', label: 'Site vitrine', hint: 'Présenter une activité', icon: 'globe' },
       { value: 'dashboard', label: 'Tableau de bord', hint: 'Données et indicateurs', icon: 'chart' },
       { value: 'app', label: 'Application web', hint: 'Réservation, CRM, outil métier', icon: 'phone' },
-      { value: 'other', label: 'Autre chose', hint: 'Je verrai en chemin', icon: 'sparkle' },
+      { value: 'other', label: 'Autre chose', hint: 'Je verrai en chemin', icon: 'dots' },
     ],
   },
   {

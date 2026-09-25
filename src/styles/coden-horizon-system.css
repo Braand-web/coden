@@ -44,10 +44,21 @@ body {
   transition-timing-function: var(--ease-standard);
 }
 
-:where(button, a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid var(--accent) !important;
-  outline-offset: 3px !important;
-  box-shadow: 0 0 0 4px var(--accent) !important;
+:where(button, a, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: var(--focus-outline) !important;
+  outline-offset: 2px !important;
+  box-shadow: none !important;
+}
+
+/* A dialog or panel focused by script is not something the person moved to. */
+:where([tabindex="-1"]):focus,
+:where([tabindex="-1"]):focus-visible {
+  outline: none !important;
+}
+
+/* A field shows focus with its border and the 1px ring (coherence.css), as the composer does. */
+:where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus-visible {
+  outline: none !important;
 }
 
 :where(button, [role="button"]):active:not(:disabled) { transform: scale(.98); }

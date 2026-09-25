@@ -223,8 +223,8 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
 }
 .auth-studio .input::placeholder { color: var(--text-disabled); }
 .auth-studio .input:hover { border-color: var(--border-strong); }
-.auth-studio .input:focus { border-color: var(--accent); box-shadow: var(--ring); }
-.auth-studio .input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent); }
+.auth-studio .input:focus { border-color: var(--field-focus-border); box-shadow: var(--ring); }
+.auth-studio .input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent); }
 .auth-studio .password-control { position: relative; }
 .auth-studio .password-control .input { padding-right: 88px; }
 .auth-studio .password-toggle {
@@ -277,7 +277,7 @@ html[data-theme="dark"] .auth-studio .btn-social { background: var(--control); b
 .auth-studio .btn-submit:disabled { opacity: .7; cursor: default; }
 
 .auth-studio :is(.tab-btn, .btn-social, .input, .password-toggle, .auth-recovery-link, .btn-submit, .theme-toggle, .auth-back-link, .auth-footer button):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-outline);
   outline-offset: 2px;
 }
 
