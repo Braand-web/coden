@@ -21,6 +21,7 @@ export type DecisionOption = { id: string; label: string; description?: string; 
 export type ConnectionChoice = { kind: 'coden_cloud' | 'toolkit' | 'browse'; toolkit?: string; search?: string };
 /** Present when a question asks which service to connect; `choices[i]` belongs to `options[i]`. */
 export type ConnectionRequest = { need: string; choices: ConnectionChoice[] };
+export type SubagentSnapshot = { id: string; role: string; status: 'queued' | 'running' | 'retrying' | 'done' | 'failed'; progress: number; model?: string; scope: string[]; summary?: string; error?: string };
 export type DecisionQuestion = { q: string; type: 'radio' | 'check'; options: string[]; connect?: ConnectionRequest };
 
 /** What the user answered: chosen option indices, plus anything they typed. */
@@ -35,6 +36,8 @@ export type ChatEvent =
   /** What Auto chose — or switched to — shown discreetly beside the answer. */
   | { type: 'model_selected'; modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' | 'substitution' }
   | { type: 'files_touched'; action: FileAction; paths: string[] }
+  /** The master's sub-agents: the whole list each time, so a late client catches up. */
+  | { type: 'subagents'; agents: SubagentSnapshot[] }
   | { type: 'decision_required'; decisionId: string; question: string; options: DecisionOption[]; allowFreeText: boolean; questions?: DecisionQuestion[] }
   | { type: 'artifact_ready'; artifactId: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number }
   | { type: 'cost_checkpoint'; checkpointId: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number }

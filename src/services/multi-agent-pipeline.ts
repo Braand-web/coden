@@ -64,6 +64,9 @@ import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
 import { resolveQualityPolicy } from './quality-tier.ts';
 import { runDesignReview } from './design-review-agent.ts';
 import type { ValidationProblem, ValidationReport } from './sandbox/validate.ts';
+import { createAgentTeam, teamBriefing, TEAM_TOOL_NAMES, type TeamDeps } from './agent-library/team.ts';
+import { subagentLimits } from './agent-library/subagents.ts';
+import type { AgentLibraryStore, LibrarySession } from './agent-library/store.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -376,7 +379,12 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    * itself (a runtime option, a capability, its route or quota), rather than
    * failing the run. Absent, or returning null, and the error propagates.
    */
-  substitute?: (failed: AllowedModelId, diagnosticCode: string) => AllowedModelId | null }): RepairTurn {
+  substitute?: (failed: AllowedModelId, diagnosticCode: string) => AllowedModelId | null;
+  /**
+   * The master's team: parallel sub-agents, skills, error lessons. Absent,
+   * the coder works alone exactly as before.
+   */
+  team?: Omit<TeamDeps, 'runtimeFor' | 'gateway' | 'deadline' | 'signal'> }): RepairTurn {
   const levelFor = () => input.current?.reasoningLevel ?? reasoningLevelForEffort(normalizeAgentEffort(input.effort));
   const runtimeFor = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
     modelId,
@@ -403,6 +411,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    */
   const rounds: ChatMessage[][] = [];
   const CARRIED_ROUNDS = 3;
+  const team = input.team ? createAgentTeam({ ...input.team, gateway: input.gateway, runtimeFor, deadline: input.deadline, signal: input.signal }) : null;
 
   return async ({ instruction, tools, call, maxToolCalls }) => {
     const carried = compactTranscript(rounds.slice(-CARRIED_ROUNDS).flat(), 10)
@@ -421,11 +430,21 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     let toolCalls = 0;
     const knownPaths = new Set(await input.sandbox.listFiles());
     const touched = new Map<import('../lib/agent-chat-protocol.ts').FileAction, Set<string>>();
-    const handlers = Object.fromEntries(tools.map(tool => [
+    // The team's tools sit beside the sandbox's; sub-agents get the sandbox's only (depth 1).
+    const allTools = team ? [...tools, ...team.schemas.filter(schema => !tools.some(tool => tool.name === schema.name))] : tools;
+    const handlers = Object.fromEntries(allTools.map(tool => [
       tool.name,
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
+        if (team && TEAM_TOOL_NAMES.has(tool.name)) {
+          return recordToolCall(
+            input.harness || null,
+            input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null,
+            { name: tool.name, args },
+            () => team.handle(tool.name, args, { schemas: tools as any, call }),
+          );
+        }
         /*
          * Every tool call becomes an item the harness can show.
          *
@@ -474,7 +493,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       handlers,
       runtimeConfig: {
         ...runtimeFor(modelId),
-        tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
+        tools: allTools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
         toolChoice: 'auto',
       } as any,
       runtimeConfigForModel: runtimeFor,
@@ -593,6 +612,12 @@ export async function runMultiAgentPipeline(input: {
   backendEnv?: Record<string, string>;
   /** Keeps deterministic infrastructure tests independent from model analysis. */
   enableSpecialists?: boolean;
+  /**
+   * The shared library for this run: its store, the run's session, and the
+   * rendered block (error rules, skills, reusable sub-agents) the master and
+   * every sub-agent read before writing. Absent, the coder works alone.
+   */
+  library?: { store: AgentLibraryStore | null; session: LibrarySession | null; block: string };
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
@@ -1073,6 +1098,7 @@ export async function runMultiAgentPipeline(input: {
   } : undefined;
 
   let repairOutcome: RepairOutcome;
+  const teamLimits = subagentLimits();
   activity('Coden construit l’application…', 'Coden is building the application…');
   try { repairOutcome = await runCoderLoop({
     sandbox,
@@ -1095,7 +1121,24 @@ export async function runMultiAgentPipeline(input: {
       harnessTurn: ctx ? { turnId: ctx.turnId, role: 'integrator' as const } : undefined,
       // Both in the system message, so a repair round cannot lose either one
       // and quietly swap a real query back out for mock data.
-      designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
+      // The library block (error rules, skills, reusable sub-agents) and the team briefing follow.
+      designPolicy: [...[designPolicy, backendBriefing].filter(Boolean), input.library?.block, input.library ? teamBriefing(teamLimits) : ''].filter(Boolean).join('\n\n') || undefined,
+      team: input.library ? {
+        store: input.library.store,
+        session: input.library.session,
+        limits: teamLimits,
+        plan: String(input.userPlan || 'free'),
+        credits: input.credits,
+        pinnedModel: input.selectedModel,
+        libraryBlock: input.library.block,
+        designPolicy,
+        onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
+        onSpend: subSpend => {
+          spent.toolCalls += subSpend.toolCalls;
+          spent.costUsd += subSpend.costUsd;
+          if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: subSpend.toolCalls, costUsd: subSpend.costUsd });
+        },
+      } : undefined,
       deadline: runDeadline,
       allowFallback: input.selectedModel === undefined,
       effort: input.effort,

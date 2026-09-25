@@ -42,6 +42,11 @@ export type AgentLoopBudget = {
    * reason the ceilings were low in the first place.
    */
   compactAboveChars: number;
+  /**
+   * Tokens (prompt + completion) this loop may spend. A sub-agent has its own
+   * allowance, so one runaway helper cannot eat the run's budget.
+   */
+  maxTokens?: number;
 };
 
 export const DEFAULT_AGENT_LOOP_BUDGET: AgentLoopBudget = {
@@ -70,7 +75,7 @@ export type AgentLoopSpend = {
   completionTokens: number;
   costUsd: number;
   compactions: number;
-  stoppedBecause: 'answered' | 'step_budget' | 'tool_budget' | 'time_budget';
+  stoppedBecause: 'answered' | 'step_budget' | 'tool_budget' | 'time_budget' | 'token_budget';
 };
 
 export type LlmToolLoopResult = {
@@ -327,6 +332,8 @@ export async function runLlmToolLoop(input: {
      * A run out of time now says so, which is both true and free.
      */
     if (deadline - Date.now() < MIN_VIABLE_CALL_MS) { stoppedBecause = 'time_budget'; break; }
+    // Checked between steps, so an assistant turn and its tool results always stay paired.
+    if (budget.maxTokens && promptTokens + completionTokens >= budget.maxTokens) { stoppedBecause = 'token_budget'; break; }
     steps = step + 1;
 
     // Compacted before the call, not after: the request about to be sent is
@@ -533,7 +540,7 @@ export async function runLlmToolLoop(input: {
    * why, so the caller keeps the files the earlier rounds wrote.
    */
   if (!result) {
-    if (stoppedBecause !== 'time_budget') throw new Error('The model tool loop did not produce a response.');
+    if (stoppedBecause !== 'time_budget' && stoppedBecause !== 'token_budget') throw new Error('The model tool loop did not produce a response.');
     return {
       result: { text: '', model: input.modelId, usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }, cost_usd: 0 },
       messages,
