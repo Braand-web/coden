@@ -5949,12 +5949,6 @@ function maskSecret(value: string) {
   return `${value.slice(0, 4)}••••••${value.slice(-4)}`;
 }
 
-function pseudoEncryptSecret(value: string) {
-  const salt = randomBytes(6).toString('hex');
-  const digest = createHash('sha256').update(`${salt}:${value}`).digest('hex');
-  return `sha256:${salt}:${digest}`;
-}
-
 function modelCreditFloor(modelId: unknown, fallback = 0) {
   return typeof modelId === 'string' && modelId !== 'auto'
     ? MODEL_ACTION_CREDIT_FLOORS[modelId as AllowedModelId] || fallback
@@ -8536,6 +8530,52 @@ async function upsertProjectBackendRequirements(project: GeneratedProject, promp
   }
 }
 
+async function recordBackendRequirementsFromFiles(project: GeneratedProject, needs: { needs_database: boolean; needs_auth: boolean; needs_storage: boolean }) {
+  const client = requireSupabase('Coden Cloud requirement from files');
+  const now = new Date().toISOString();
+  const { error } = await client.from('project_backend_requirements').upsert([{
+    organization_id: project.organization_id,
+    project_id: project.id,
+    needs_database: needs.needs_database,
+    needs_auth: needs.needs_auth,
+    needs_storage: needs.needs_storage,
+    needs_edge_functions: false,
+    needs_secrets: false,
+    detected_from_prompt: false,
+    recommended_mode: 'dedicated',
+    status: 'detected',
+    updated_at: now,
+  }], { onConflict: 'project_id' });
+  if (error && !isMissingCodenCloudTableError(error)) throw error;
+}
+
+/**
+ * Where a provisioning attempt left the project, written down so the console
+ * can say what happened: `provisioning` while it runs, `failed` with a reason
+ * code (never the provider's raw text) when it did not work.
+ */
+async function markCloudProvisioning(project: GeneratedProject, status: 'provisioning' | 'failed', reason?: string) {
+  const client = getSupabase();
+  if (!client) return;
+  try {
+    const existing = await client.from('coden_cloud_projects').select('public_runtime_config').eq('project_id', project.id).maybeSingle();
+    const runtime = { ...(existing.data?.public_runtime_config || {}), backend_status: status, last_error: status === 'failed' ? reason || 'provider_error' : null, last_attempt_at: new Date().toISOString() };
+    await client.from('coden_cloud_projects').upsert([{
+      organization_id: project.organization_id,
+      project_id: project.id,
+      provider: 'coden_cloud',
+      mode: 'dedicated',
+      status,
+      region: 'auto',
+      schema_name: buildCodenCloudSchemaName(project.id),
+      public_runtime_config: runtime,
+      updated_at: new Date().toISOString(),
+    }], { onConflict: 'project_id' });
+  } catch (error: any) {
+    console.warn('[coden:cloud_provision_state_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
+}
+
 async function loadProjectCodenCloud(projectId: string) {
   try {
     const client = requireSupabase('Coden Cloud project view');
@@ -10154,31 +10194,75 @@ async function saveProjectPatch(project: GeneratedProject, patch: any) {
   if (error) throw new Error(`Supabase project patch persistence failed: ${error.message}`);
 }
 
-async function listProjectSecrets(projectId: string) {
+async function loadProjectSecretRows(projectId: string): Promise<StoredSecretRow[]> {
   const client = requireSupabase('Project secrets listing');
-  const { data, error } = await client.from('project_secrets').select('id, project_id, service, variable, masked_value, status, created_at, updated_at').eq('project_id', projectId).order('created_at', { ascending: false });
+  const { data, error } = await client.from('project_secrets').select('id, service, variable, encrypted_value, masked_value, status, created_at, updated_at').eq('project_id', projectId).order('created_at', { ascending: false });
   if (error) throw new Error(`Supabase project secrets listing failed: ${error.message}`);
-  return data || [];
+  return (data || []) as StoredSecretRow[];
 }
 
+/** Names and masks only: the sealed value never leaves the server. */
+async function listProjectSecrets(projectId: string) {
+  return (await loadProjectSecretRows(projectId)).map(publicSecretRow);
+}
+
+/**
+ * The environment an application's server code receives, opened here and
+ * handed straight to the sandbox. Empty on any failure: a missing secret is a
+ * feature that reports itself, never a run that fails.
+ */
+async function loadProjectServerSecrets(projectId: string): Promise<Record<string, string>> {
+  try {
+    if (!getSupabase()) return {};
+    return serverSecretEnv(await loadProjectSecretRows(projectId));
+  } catch (error: any) {
+    console.warn('[coden:project_secrets_env_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 160) });
+    return {};
+  }
+}
+
+/**
+ * One row per variable: saving a name that exists replaces its value instead
+ * of adding a second row the application could not choose between.
+ */
 async function saveProjectSecret(project: GeneratedProject, service: string, variable: string, value: string, status = 'configured') {
+  if (!isValidSecretVariable(variable)) throw new SecretInputError('Nom de variable invalide : majuscules, chiffres et « _ » uniquement (ex. RESEND_API_KEY).');
+  if (status === 'configured' && !value) throw new SecretInputError('La valeur du secret ne peut pas être vide.');
+  if (value.length > 8_000) throw new SecretInputError('La valeur du secret dépasse 8 000 caractères.');
+  const key = projectSecretsKey();
+  if (value && !key) throw new Error('Project secrets encryption key is not configured.');
+  const client = requireSupabase('Project secret persistence');
+  const now = new Date().toISOString();
+  const sealed = value ? { encrypted_value: sealProjectSecret(value, key), masked_value: maskSecretValue(value) } : { encrypted_value: null, masked_value: 'not configured' };
+  const existing = await client.from('project_secrets').select('id, created_at').eq('project_id', project.id).eq('variable', variable).order('created_at', { ascending: true });
+  if (existing.error) throw new Error(`Supabase project secret lookup failed: ${existing.error.message}`);
+  const [keep, ...duplicates] = existing.data || [];
+  if (keep) {
+    const { data, error } = await client.from('project_secrets')
+      .update({ service: normalizeSecretService(service), ...sealed, status, updated_at: now })
+      .eq('id', keep.id).eq('project_id', project.id)
+      .select('id, service, variable, encrypted_value, masked_value, status, created_at, updated_at').single();
+    if (error) throw new Error(`Supabase project secret update failed: ${error.message}`);
+    if (duplicates.length) await client.from('project_secrets').delete().in('id', duplicates.map((row: any) => row.id)).eq('project_id', project.id);
+    return publicSecretRow(data as StoredSecretRow);
+  }
   const row = {
     id: randomUUID(),
     organization_id: project.organization_id,
     project_id: project.id,
-    service,
+    service: normalizeSecretService(service),
     variable,
-    encrypted_value: value ? pseudoEncryptSecret(value) : null,
-    masked_value: value ? maskSecret(value) : 'not configured',
+    ...sealed,
     status,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
-  const client = requireSupabase('Project secret persistence');
   const { error } = await client.from('project_secrets').insert([row]);
   if (error) throw new Error(`Supabase project secret persistence failed: ${error.message}`);
-  return { ...row, encrypted_value: undefined };
+  return publicSecretRow(row);
 }
+
+class SecretInputError extends Error {}
 
 
 
@@ -11702,6 +11786,7 @@ function sanitizeAdminWallet(row: any) {
 
 function buildAdminHealth() {
   const supabaseDiagnostics = getSupabaseRuntimeDiagnostics();
+  const cloudProvisioning = provisioningConfiguredSync();
   const has = (...names: string[]) => names.every(name => Boolean(String(process.env[name] || '').trim()));
   const publishReady = has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') || has('VERCEL_TOKEN');
   const adminCount = getPlatformAdminEmails().size;
@@ -11710,7 +11795,8 @@ function buildAdminHealth() {
     { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'Clé API configurée' : 'Clé fournisseur manquante' },
     { id: 'sandbox', label: 'Sandbox E2B', status: remoteSandboxConfigured() ? 'ok' : 'warning', detail: remoteSandboxConfigured() ? 'MicroVM isolées pour les builds' : 'E2B_API_KEY manquante : builds sans sandbox isolée' },
     { id: 'composio', label: 'Intégrations Composio', status: composioConfigured() ? 'ok' : 'warning', detail: composioConfigured() ? 'Clé API configurée côté serveur' : 'COMPOSIO_API_KEY manquante' },
-    { id: 'coden_cloud', label: 'Coden Cloud', status: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'ok' : 'warning', detail: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'Provisionnement automatique des backends' : 'Jeton de gestion Supabase manquant' },
+    { id: 'coden_cloud', label: 'Coden Cloud', status: cloudProvisioning.configured ? 'ok' : 'warning', detail: cloudProvisioning.configured ? 'Provisionnement automatique des backends (jeton configuré — « Tester » vérifie qu’il est accepté)' : cloudProvisioning.reason === 'invalid_token_format' ? 'Le jeton de gestion ne commence pas par « sbp_ » : ce n’est pas un jeton d’accès Supabase' : 'Jeton de gestion Supabase manquant (CODEN_SUPABASE_MGMT_TOKEN)', testable: cloudProvisioning.configured },
+    { id: 'secrets_key', label: 'Chiffrement des secrets', status: has('CODEN_SECRETS_KEY') ? 'ok' : has('SUPABASE_SERVICE_ROLE_KEY') ? 'warning' : 'error', detail: has('CODEN_SECRETS_KEY') ? 'Clé dédiée CODEN_SECRETS_KEY' : has('SUPABASE_SERVICE_ROLE_KEY') ? 'Clé dérivée de la clé service : définissez CODEN_SECRETS_KEY pour survivre à sa rotation' : 'Aucune clé : les secrets de projet ne peuvent pas être enregistrés' },
     { id: 'publish', label: 'Publication', status: publishReady ? 'ok' : 'warning', detail: has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') ? 'Cloudflare configuré' : has('VERCEL_TOKEN') ? 'Vercel configuré' : 'Aucun hébergeur configuré' },
     { id: 'saspay', label: 'Saspay', status: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'ok' : 'warning', detail: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'Clé de paiement et webhook configurés' : 'Configuration de paiement incomplète' },
     { id: 'admin', label: 'Accès admin', status: 'ok', detail: `${adminCount} e-mail${adminCount > 1 ? 's' : ''} administrateur${adminCount > 1 ? 's' : ''}` },
@@ -12575,18 +12661,28 @@ app.post('/api/projects/:id/cloud/provision', async (req: any, res: any) => {
   if (!requireProjectCapability(req, res, 'build', project)) return;
   const existing = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
   if (existing.VITE_SUPABASE_URL) return res.json({ success: true, status: 'ready', already: true });
+  if (!enforceRateLimit(`cloud-provision:${project.id}`, 3, 10 * 60_000)) {
+    return res.status(429).json({ success: false, status: 'rate_limited', error: 'Trop de tentatives d’activation. Réessayez dans quelques minutes.' });
+  }
+  const { provisionAppBackend, classifyProvisionFailure } = await import('./src/services/supabase-auto-provision');
+  await markCloudProvisioning(project, 'provisioning');
   try {
-    const { provisionAppBackend } = await import('./src/services/supabase-auto-provision');
-    const result = await provisionAppBackend({ appName: project.name || `coden-${project.slug}`, files: [] });
+    const files = await loadProjectFiles(project.id).catch(() => [] as GeneratedFile[]);
+    const result = await provisionAppBackend({ appName: project.name || `coden-${project.slug}`, files });
     if (!result.ok || !result.project) {
-      return res.status(503).json({ success: false, status: 'unavailable', error: 'Coden Cloud ne peut pas créer de backend pour le moment.', reason: result.reason || result.error || 'unavailable' });
+      const reason = classifyProvisionFailure(result.reason || result.error);
+      console.warn('[coden:supabase_on_demand_provision_skipped]', { project_id: project.id, reason, detail: redactSecrets(String(result.error || ''), '[redacted]').slice(0, 200) });
+      await markCloudProvisioning(project, 'failed', reason);
+      return res.status(503).json({ success: false, status: 'failed', reason, error: provisionReasonText(reason) });
     }
     const stored = await saveProvisionedBackend({ client: getSupabase(), projectId: project.id, organizationId: project.organization_id, provisioned: result.project });
     console.log('[coden:supabase_on_demand_provisioned]', { project_id: project.id, supabase_ref: result.project.ref, persisted: stored });
     res.json({ success: true, status: 'ready' });
   } catch (error: any) {
-    console.warn('[coden:supabase_on_demand_provision_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
-    res.status(502).json({ success: false, status: 'failed', error: 'Le provisionnement de Coden Cloud a échoué.' });
+    const reason = classifyProvisionFailure(error?.message);
+    console.warn('[coden:supabase_on_demand_provision_failed]', { project_id: project.id, reason, message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    await markCloudProvisioning(project, 'failed', reason);
+    res.status(502).json({ success: false, status: 'failed', reason, error: provisionReasonText(reason) });
   }
 });
 
@@ -12981,8 +13077,19 @@ app.post('/api/projects', async (req: any, res: any) => {
     // this app, when a management token is configured. Best-effort: never
     // blocks project creation; result is returned to the caller for display.
     let supabaseProvision: any = null;
-    try {
-      const { provisionAppBackend, publicProvisionedProject } = await import('./src/services/supabase-auto-provision');
+    /*
+     * Only for an application that needs a backend. Every project used to get
+     * its own Supabase project, a landing page included — a quota spent on
+     * nothing, and the reason a real need could find the organization full.
+     * The rest can activate Coden Cloud from the console, or will when a
+     * later request asks for data, accounts or files.
+     */
+    const needsBackendAtCreation = Boolean(codenCloud && hasBackendNeed(codenCloud.requirement as any));
+    if (!needsBackendAtCreation) {
+      supabaseProvision = { status: 'skipped', reason: 'not_needed' };
+    } else try {
+      const { provisionAppBackend, publicProvisionedProject, classifyProvisionFailure } = await import('./src/services/supabase-auto-provision');
+      await markCloudProvisioning(project, 'provisioning');
       const result = await provisionAppBackend({
         appName: project.name || `coden-${project.slug}`,
         files,
@@ -13016,11 +13123,15 @@ app.post('/api/projects', async (req: any, res: any) => {
           persisted: stored,
         });
       } else {
-        supabaseProvision = { status: 'skipped', reason: result.reason || result.error || 'unknown' };
+        const reason = classifyProvisionFailure(result.reason || result.error);
+        console.warn('[coden:supabase_auto_provision_skipped]', { project_id: project.id, reason, detail: redactSecrets(String(result.error || ''), '[redacted]').slice(0, 200) });
+        await markCloudProvisioning(project, 'failed', reason);
+        supabaseProvision = { status: 'skipped', reason };
       }
     } catch (error: any) {
-      console.warn('[coden:supabase_auto_provision_failed]', { message: error?.message || String(error) });
-      supabaseProvision = { status: 'error', reason: error?.message || 'provision_failed' };
+      console.warn('[coden:supabase_auto_provision_failed]', { project_id: project.id, message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+      await markCloudProvisioning(project, 'failed', 'provider_error');
+      supabaseProvision = { status: 'error', reason: 'provider_error' };
     }
 
     await upsertUserWorkspaceState(userId, {
@@ -14246,6 +14357,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         client: getSupabase(),
         projectId: project.id,
       });
+      const serverSecretsPromise = loadProjectServerSecrets(project.id);
       routingPromise.catch(() => undefined);
       backendEnvPromise.catch(() => undefined);
 
@@ -14280,6 +14392,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
        * localStorage stand-in beside a client they never call.
        */
       const backendEnv = await backendEnvPromise;
+      const serverSecrets = await serverSecretsPromise;
       const [routingPlan, routingCredits] = await routingPromise;
 
       /*
@@ -14338,6 +14451,7 @@ ${resolvedMission}` : resolvedMission;
         // Settled decisions, then what already happened in this session.
         memoryContext: [projectMemory, sessionContext, sharedKnowledge].filter(Boolean).join('\n\n') || undefined,
         backendEnv,
+        serverSecrets,
         route: pipelineRoute,
         onErrorsResolved: problems => { resolvedDuringRun.push(...problems); },
         existingFiles,
@@ -16837,22 +16951,52 @@ app.get('/api/projects/:id/database', async (req: any, res: any) => {
   const secrets = await listProjectSecrets(project.id);
   const client = requireSupabase('Project database view');
   const { data: integrations = [] } = await client.from('project_integrations').select('*').eq('project_id', project.id).order('updated_at', { ascending: false });
-  const { data: assets = [] } = await client.from('project_assets').select('id, name, url, kind, mime_type, size_bytes, status, storage_path, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  const { data: assetRows = [] } = await client.from('project_assets').select('id, name, url, kind, mime_type, size_bytes, status, storage_path, created_at').eq('project_id', project.id).order('created_at', { ascending: false });
+  const assets = await withSignedAssetUrls(client, assetRows || []);
   const { data: activity = [] } = await client.from('agent_events').select('event_type, message, created_at').eq('project_id', project.id).order('created_at', { ascending: false }).limit(8);
-  const codenCloud = await loadProjectCodenCloud(project.id);
+  let codenCloud = await loadProjectCodenCloud(project.id);
   const generatedTables = parseGeneratedSchemaTables(schemaFile?.content || '');
   const tables = generatedTables.length
     ? generatedTables.map(table => ({ ...table, rows: null, source: 'supabase/schema.sql' }))
     : [];
+  /*
+   * The need for a backend, read from what was built as well as from the
+   * first prompt. A project whose files use a database, sign-in or storage
+   * gets its requirement recorded now, so the console and the next run agree.
+   */
+  const fileNeeds = detectBackendNeedsFromFiles(files);
+  if (!codenCloud.requirements && hasBackendNeed(fileNeeds)) {
+    await recordBackendRequirementsFromFiles(project, fileNeeds).catch((error: any) => {
+      console.warn('[coden:cloud_requirement_from_files_skipped]', { message: String(error?.message || error).slice(0, 160) });
+    });
+    codenCloud = await loadProjectCodenCloud(project.id);
+  }
+  const needs = {
+    needs_database: Boolean(codenCloud.requirements?.needs_database || fileNeeds.needs_database),
+    needs_auth: Boolean(codenCloud.requirements?.needs_auth || fileNeeds.needs_auth),
+    needs_storage: Boolean(codenCloud.requirements?.needs_storage || fileNeeds.needs_storage),
+  };
+  const backendEnv = await loadProjectBackendEnv({ client, projectId: project.id });
+  const { provisioningConfigured } = await import('./src/services/supabase-auto-provision');
+  const cloudState = resolveCloudState({
+    status: codenCloud.project?.status || null,
+    hasSupabaseUrl: Boolean(backendEnv.VITE_SUPABASE_URL),
+    needs,
+    lastError: codenCloud.project?.public_runtime_config?.last_error || null,
+    provisioningAvailable: provisioningConfigured().configured,
+  });
   res.json({
     success: true,
     database: {
       project_id: project.id,
-      backend_status: codenCloud.project?.status || (schemaFile ? 'schema_generated' : 'waiting_for_schema'),
+      backend_status: cloudState.state,
       mode: codenCloud.project?.mode || codenCloud.requirements?.recommended_mode || 'shared_supabase_project',
       cloud: {
         provider: codenCloud.project?.provider || 'coden_cloud',
-        status: codenCloud.project?.status || (codenCloud.requirements ? 'detected' : 'not_detected'),
+        status: cloudState.state,
+        raw_status: codenCloud.project?.status || null,
+        state: cloudState,
+        needs,
         mode: codenCloud.project?.mode || codenCloud.requirements?.recommended_mode || 'shared',
         region: codenCloud.project?.region || 'auto',
         schema_name: codenCloud.project?.schema_name || (codenCloud.requirements ? buildCodenCloudSchemaName(project.id) : null),
@@ -16868,9 +17012,9 @@ app.get('/api/projects/:id/database', async (req: any, res: any) => {
       secrets,
       integrations,
       assets,
-      storage: { bucket: 'project-assets', assets_count: assets.length },
+      storage: { bucket: 'project-assets', assets_count: assets.length, private: true },
       activity,
-      security: { rls_required: true, secrets_masked: true, service_role_server_only: true },
+      security: { rls_required: cloudState.state === 'connected' || needs.needs_database, secrets_masked: true, secrets_encrypted: true, service_role_server_only: true },
     },
   });
 });
@@ -16888,6 +17032,7 @@ app.get('/api/projects/:id/database/secrets', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
   const secrets = await listProjectSecrets(project.id);
   res.json({ success: true, secrets });
 });
@@ -16967,8 +17112,41 @@ app.post('/api/projects/:id/database/secrets', async (req: any, res: any) => {
   if (!enforceRateLimit(`secret:${userId}`, 20, 60_000)) {
     return res.status(429).json({ success: false, error: 'Too many secret updates.' });
   }
-  const row = await saveProjectSecret(project, String(req.body?.service || 'Custom'), String(req.body?.variable || 'CUSTOM_API_KEY'), String(req.body?.value || ''), 'configured');
-  res.json({ success: true, secret: row });
+  try {
+    const row = await saveProjectSecret(project, String(req.body?.service || 'Custom'), String(req.body?.variable || '').trim(), String(req.body?.value || ''), 'configured');
+    res.json({ success: true, secret: row });
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message });
+    console.warn('[coden:project_secret_save_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'Le secret n’a pas pu être enregistré. Réessayez.' });
+  }
+});
+
+/* Replace a secret's value (and optionally its name). The old value is never sent back. */
+app.patch('/api/projects/:id/database/secrets/:secretId', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'secrets', project)) return;
+  if (!enforceRateLimit(`secret:${userId}`, 20, 60_000)) {
+    return res.status(429).json({ success: false, error: 'Too many secret updates.' });
+  }
+  const client = requireSupabase('Project secret update');
+  const current = await client.from('project_secrets').select('id, service, variable').eq('id', req.params.secretId).eq('project_id', project.id).maybeSingle();
+  if (current.error) return res.status(500).json({ success: false, error: current.error.message });
+  if (!current.data) return res.status(404).json({ success: false, error: 'Secret introuvable.' });
+  const variable = String(req.body?.variable || current.data.variable).trim();
+  try {
+    const row = await saveProjectSecret(project, String(req.body?.service || current.data.service || 'Custom'), variable, String(req.body?.value || ''), 'configured');
+    if (variable !== current.data.variable) {
+      await client.from('project_secrets').delete().eq('id', current.data.id).eq('project_id', project.id);
+    }
+    res.json({ success: true, secret: row });
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message });
+    console.warn('[coden:project_secret_update_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'Le secret n’a pas pu être modifié. Réessayez.' });
+  }
 });
 
 app.post('/api/projects/:id/external-keys', async (req: any, res: any) => {
@@ -16978,8 +17156,14 @@ app.post('/api/projects/:id/external-keys', async (req: any, res: any) => {
   if (!requireProjectCapability(req, res, 'secrets', project)) return;
   const keys = Array.isArray(req.body?.keys) ? req.body.keys : [];
   const saved = [];
-  for (const item of keys) {
-    saved.push(await saveProjectSecret(project, String(item.service || 'Custom'), String(item.variable || 'CUSTOM_API_KEY'), String(item.value || ''), item.skip ? 'skipped' : 'configured'));
+  try {
+    for (const item of keys.slice(0, 40)) {
+      saved.push(await saveProjectSecret(project, String(item.service || 'Custom'), String(item.variable || 'CUSTOM_API_KEY').trim(), String(item.value || ''), item.skip || !item.value ? 'skipped' : 'configured'));
+    }
+  } catch (error: any) {
+    if (error instanceof SecretInputError) return res.status(400).json({ success: false, error: error.message, secrets: saved });
+    console.warn('[coden:project_secret_save_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    return res.status(500).json({ success: false, error: 'Les clés n’ont pas pu être enregistrées.', secrets: saved });
   }
   res.json({ success: true, secrets: saved });
 });
@@ -17175,6 +17359,19 @@ app.post('/api/projects/:id/users', async (req: any, res: any) => {
   return res.status(409).json({ success: false, error: 'Project Auth is not provisioned with an isolated service role.', diagnostic_code: 'PROJECT_AUTH_NOT_PROVISIONED' });
 });
 
+/**
+ * The bucket is private: a file is read through a link signed for an hour,
+ * issued to someone who may view the project, instead of a public URL that
+ * would outlive every permission.
+ */
+async function withSignedAssetUrls(client: any, rows: any[]) {
+  const paths = rows.map(row => String(row?.storage_path || '')).filter(Boolean);
+  if (!paths.length) return rows;
+  const signed = await client.storage.from('project-assets').createSignedUrls(paths, 3600).catch(() => ({ data: null }));
+  const byPath = new Map<string, string>((signed?.data || []).filter((item: any) => item?.signedUrl).map((item: any) => [String(item.path), String(item.signedUrl)]));
+  return rows.map(row => row?.storage_path ? { ...row, url: byPath.get(String(row.storage_path)) || null } : row);
+}
+
 app.get('/api/projects/:id/assets', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
@@ -17183,7 +17380,7 @@ app.get('/api/projects/:id/assets', async (req: any, res: any) => {
   const client = requireSupabase('Project asset listing');
   const { data, error } = await client.from('project_assets').select('id,name,url,kind,mime_type,size_bytes,status,storage_path,created_at').eq('project_id', project.id).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ success: false, error: error.message });
-  res.json({ success: true, assets: data || [], storage: { bucket: 'project-assets', provider: 'supabase_storage', configured: true } });
+  res.json({ success: true, assets: await withSignedAssetUrls(client, data || []), storage: { bucket: 'project-assets', provider: 'supabase_storage', configured: true, private: true } });
 });
 
 app.delete('/api/projects/:id/assets/:assetId', async (req: any, res: any) => {
@@ -17197,7 +17394,10 @@ app.delete('/api/projects/:id/assets/:assetId', async (req: any, res: any) => {
   if (!existing.data) return res.status(404).json({ success: false, error: 'Asset not found.' });
   if (existing.data.storage_path) {
     const removed = await client.storage.from('project-assets').remove([String(existing.data.storage_path)]);
-    if (removed.error) return res.status(500).json({ success: false, error: removed.error.message });
+    // An object already gone is what deletion wanted; anything else keeps the row so nothing is orphaned.
+    if (removed.error && !/not.?found|does not exist|404/i.test(String(removed.error.message || ''))) {
+      return res.status(500).json({ success: false, error: 'Le fichier n’a pas pu être supprimé du stockage. Réessayez.' });
+    }
   }
   const deleted = await client.from('project_assets').delete().eq('id', req.params.assetId).eq('project_id', project.id);
   if (deleted.error) return res.status(500).json({ success: false, error: deleted.error.message });
@@ -17235,13 +17435,16 @@ app.post('/api/projects/:id/assets', async (req: any, res: any) => {
           upsert: false,
         });
       if (uploadError) {
+        console.warn('[coden:project_asset_upload_failed]', { project_id: project.id, message: String(uploadError.message || '').slice(0, 160) });
         return res.status(500).json({
           success: false,
-          error: 'Project asset storage is not configured. Create the Supabase Storage bucket "project-assets" and retry.',
+          error: /bucket.*not.?found|not.?found.*bucket/i.test(String(uploadError.message || ''))
+            ? 'Le stockage de Coden Cloud n’est pas encore configuré sur cette instance. Réessayez après la prochaine mise à jour.'
+            : 'Le fichier n’a pas pu être importé. Réessayez.',
         });
       }
-      const { data: publicUrl } = client.storage.from('project-assets').getPublicUrl(storagePath);
-      url = publicUrl?.publicUrl || '';
+      // Private bucket: the stored row keeps the path; readers get a signed link.
+      url = '';
       status = 'uploaded';
     }
   } catch (error) {
@@ -18291,6 +18494,9 @@ import { prepareRemoteTemplate, remoteSandboxConfigured } from './src/services/s
 import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
+import { describeServerSecrets, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
+import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
+import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
 import { runRepairLoop } from './src/services/sandbox/repair-loop.ts';

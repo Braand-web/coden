@@ -20,6 +20,7 @@
  */
 
 import { withUserInstructions } from './agent-personalization.ts';
+import { describeServerSecrets } from '../lib/project-secrets.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
@@ -610,6 +611,12 @@ export async function runMultiAgentPipeline(input: {
    * one feature unavailable — never a reason to fail the run.
    */
   backendEnv?: Record<string, string>;
+  /**
+   * The project's secrets, opened on the server, for the application's own
+   * server code (API routes, functions). Given to the sandbox's environment
+   * only: agents are told the names, never the values.
+   */
+  serverSecrets?: Record<string, string>;
   /** Keeps deterministic infrastructure tests independent from model analysis. */
   enableSpecialists?: boolean;
   /**
@@ -747,7 +754,8 @@ export async function runMultiAgentPipeline(input: {
   // Undefined when no backend was provisioned, so nothing tells an agent a
   // database exists when none does — the one failure worse than no backend is
   // an app written against one that is not there.
-  const backendBriefing = describeProjectBackend(input.backendEnv || {});
+  const backendBriefing = [describeProjectBackend(input.backendEnv || {}), describeServerSecrets(Object.keys(input.serverSecrets || {}))].filter(Boolean).join('\n\n') || undefined;
+  const runtimeEnv = { ...(input.serverSecrets || {}), ...(input.backendEnv || {}) };
 
   // The spend counter starts before specialist analysis: those calls are real
   // provider work and must never disappear from billing or observability.
@@ -784,7 +792,7 @@ export async function runMultiAgentPipeline(input: {
      * yet". The dedicated Supabase project existed; the sandbox was simply
      * never told about it.
      */
-    env: input.backendEnv,
+    env: runtimeEnv,
     signal: input.signal,
     onEvent: event => {
       input.onSandboxEvent?.(event);
@@ -1184,7 +1192,7 @@ export async function runMultiAgentPipeline(input: {
     ensureRuntime: async restartRequired => {
       if (!restartRequired && sandbox.status().state === 'running') return;
       await launchProjectPreview({ projectId: input.projectId, userId: input.userId, files: await readAllFiles(sandbox),
-        reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
+        env: runtimeEnv, reinstall: restartRequired, signal: input.signal, onEvent: input.onSandboxEvent });
     },
     verifyPreview:async () => {
       const preview = await verifyLivePreview(sandbox, input.signal, {

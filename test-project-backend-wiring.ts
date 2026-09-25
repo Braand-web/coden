@@ -151,10 +151,12 @@ const PROVISIONED = {
 {
   const pipeline = readFileSync(new URL('./src/services/multi-agent-pipeline.ts', import.meta.url), 'utf8');
   const launch = pipeline.slice(pipeline.indexOf('const launchPromise = launchProjectPreview({'), pipeline.indexOf('const launchPromise = launchProjectPreview({') + 1200);
-  assert.match(launch, /env: input\.backendEnv/, 'the dev server must be given the backend environment');
+  assert.match(launch, /env: runtimeEnv/, 'the dev server must be given the backend environment');
+  assert.match(pipeline, /const runtimeEnv = \{ \.\.\.\(input\.serverSecrets \|\| \{\}\), \.\.\.\(input\.backendEnv \|\| \{\}\) \}/, 'the runtime environment is the backend plus the project’s server secrets');
+  assert.match(pipeline, /env: runtimeEnv, reinstall: restartRequired/, 'a restarted dev server keeps its environment');
 
-  // Both agents are told, for the reason each needs it.
-  assert.match(pipeline, /const backendBriefing = describeProjectBackend\(/, 'the briefing is built once');
+  // Both agents are told, for the reason each needs it — secret names, never values.
+  assert.match(pipeline, /const backendBriefing = \[describeProjectBackend\(input\.backendEnv \|\| \{\}\), describeServerSecrets\(Object\.keys\(/, 'the briefing is built once');
   const briefed = pipeline.match(/\[designPolicy, backendBriefing\]\.filter\(Boolean\)/g) || [];
   assert.equal(briefed.length, 2, 'the planner and the coder both receive it');
 }
