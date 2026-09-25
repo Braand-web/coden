@@ -1,0 +1,102 @@
+/* Admin console: tables, live strip, alerts, timeline. Loaded after the page's
+   own styles, on the same tokens, so light and dark follow. */
+
+/* The current destination reads at a glance, not only by a lighter fill. */
+body[data-coden-surface="admin"] .admin-nav button.active {
+  position: relative;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  font-weight: 650;
+}
+body[data-coden-surface="admin"] .admin-nav button.active .admin-nav-icon { color: var(--accent); }
+body[data-coden-surface="admin"] .admin-nav button:focus-visible,
+.admin-dt-sort:focus-visible,
+.admin-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.admin-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.admin-metric-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.admin-metric-row > .admin-card { grid-column: auto; }
+.admin-costs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* Data tables */
+.admin-dt { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
+.admin-dt-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-dt-toolbar .admin-dt-search { flex: 1 1 240px; min-width: 0; max-width: 420px; }
+.admin-dt-toolbar .admin-dt-filters { margin: 0; }
+.admin-dt-count { margin-left: auto; color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.admin-dt-sort { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; text-transform: inherit; letter-spacing: inherit; }
+.admin-dt-sort span { opacity: .45; font-size: 11px; }
+th[aria-sort="ascending"] .admin-dt-sort span,
+th[aria-sort="descending"] .admin-dt-sort span { opacity: 1; color: var(--accent); }
+.admin-table th.is-end,
+.admin-table td.is-end { text-align: right; font-variant-numeric: tabular-nums; }
+.admin-dt-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--text-muted); font-size: 12px; }
+.admin-dt-pager:empty { display: none; }
+.admin-dt-pages { display: flex; align-items: center; gap: 8px; }
+.admin-dt-size { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.admin-dt-size select { min-height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--foreground); font: inherit; }
+.admin-button:disabled { opacity: .5; cursor: not-allowed; }
+.admin-button.is-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.admin-link { display: inline; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-align: left; cursor: pointer; }
+.admin-link:hover { text-decoration: underline; }
+
+/* Live strip */
+.admin-live .admin-panel-head { margin-bottom: 12px; }
+.admin-live-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); animation: admin-live-pulse 2s ease-out infinite; vertical-align: middle; }
+@keyframes admin-live-pulse { to { box-shadow: 0 0 0 8px transparent; } }
+.admin-live-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.admin-live-tile { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
+.admin-live-tile span { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.admin-live-tile strong { font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-live-tile small { color: var(--text-muted); font-size: 12px; line-height: 16px; }
+.admin-live-tile[data-tone="warn"] strong { color: var(--syntax-orange, #d97706); }
+.admin-live-errors { margin-top: 14px; }
+.admin-live-errors ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.admin-live-errors li button { display: flex; width: 100%; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); text-align: left; cursor: pointer; }
+.admin-live-errors li button:hover { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.admin-live-errors li strong { font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.admin-live-errors li span { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+
+/* Alerts */
+.admin-alert { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--syntax-orange, #d97706) 45%, var(--border)); border-left-width: 3px; border-radius: 10px; background: color-mix(in srgb, var(--syntax-orange, #d97706) 7%, var(--surface)); font-size: 13px; }
+.admin-alert[data-level="exceeded"] { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); background: color-mix(in srgb, var(--danger) 7%, var(--surface)); }
+.admin-alert span { flex: 1 1 240px; color: var(--text-secondary); }
+.admin-alert-form { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.admin-alert-form label { display: grid; gap: 4px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.admin-alert-form label[hidden] { display: none; }
+.admin-alert-form select,
+.admin-alert-form input { min-height: 34px; min-width: 160px; padding: 0 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 13px; }
+
+/* Health actions */
+.health-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+/* Drawer: user timeline */
+.drawer-section-title { margin: 20px 0 8px; font-size: 13px; font-weight: 650; }
+.admin-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.admin-timeline li { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.admin-timeline li:first-child { border-top: 0; }
+.admin-timeline small { display: block; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.admin-timeline time { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.admin-timeline-kind { justify-self: start; padding: 2px 8px; border-radius: 999px; background: var(--surface-soft); color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.admin-timeline li[data-kind="admin"] .admin-timeline-kind { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); }
+
+@media (max-width: 1120px) {
+  .admin-live-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .admin-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-dt-count { margin-left: 0; }
+  .admin-dt-toolbar .admin-dt-search { max-width: none; flex-basis: 100%; }
+  .admin-dt-toolbar .admin-dt-filters { overflow-x: auto; flex-wrap: nowrap; max-width: 100%; }
+  .admin-alert-form label,
+  .admin-alert-form select,
+  .admin-alert-form input { width: 100%; }
+  .admin-timeline li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .admin-live-errors li button { flex-direction: column; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-live-dot { animation: none; }
+}
