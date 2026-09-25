@@ -99,6 +99,8 @@ export type MultiAgentPipelineOutcome =
       repairOutcome: RepairOutcome;
       /** Measured provider spend for the whole run, in USD. What the caller bills on. */
       costUsd: number;
+      /** Tokens the provider reported for the run's model calls (planner excluded when it does not report them). */
+      tokens: { prompt: number; completion: number };
     };
 
 /**
@@ -759,7 +761,7 @@ export async function runMultiAgentPipeline(input: {
 
   // The spend counter starts before specialist analysis: those calls are real
   // provider work and must never disappear from billing or observability.
-  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0 };
+  const spent = { toolCalls: 0, repairAttempts: 0, costUsd: 0, promptTokens: 0, completionTokens: 0 };
 
   /*
    * The sandbox comes up while the agents think.
@@ -878,6 +880,8 @@ export async function runMultiAgentPipeline(input: {
             signal: input.signal,
           });
           spent.costUsd += result.cost_usd || 0;
+          spent.promptTokens += Number(result.usage?.prompt_tokens || 0);
+          spent.completionTokens += Number(result.usage?.completion_tokens || 0);
           return result.text;
         },
         roles,
@@ -1144,6 +1148,8 @@ export async function runMultiAgentPipeline(input: {
         onSpend: subSpend => {
           spent.toolCalls += subSpend.toolCalls;
           spent.costUsd += subSpend.costUsd;
+          spent.promptTokens += Number(subSpend.promptTokens || 0);
+          spent.completionTokens += Number(subSpend.completionTokens || 0);
           if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: subSpend.toolCalls, costUsd: subSpend.costUsd });
         },
       } : undefined,
@@ -1170,6 +1176,8 @@ export async function runMultiAgentPipeline(input: {
         spent.toolCalls += roundSpend.toolCalls;
         spent.repairAttempts += 1;
         spent.costUsd += roundSpend.costUsd;
+        spent.promptTokens += Number((roundSpend as { promptTokens?: number }).promptTokens || 0);
+        spent.completionTokens += Number((roundSpend as { completionTokens?: number }).completionTokens || 0);
         // Written per round rather than once at the end: a run that is
         // cancelled or crashes still leaves what it had already spent.
         if (ctx) return ctx.harness.recordSpend(ctx.turnId, { toolCalls: roundSpend.toolCalls, repairAttempts: 1, costUsd: roundSpend.costUsd });
@@ -1347,6 +1355,7 @@ export async function runMultiAgentPipeline(input: {
      * the six that generated and edited an application were not billed at all.
      */
     costUsd: spent.costUsd,
+    tokens: { prompt: spent.promptTokens, completion: spent.completionTokens },
   };
   } finally {
     releaseRun();

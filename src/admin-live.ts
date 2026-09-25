@@ -1,6 +1,9 @@
 import { apiFetch } from './lib/api';
 import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
+import { mountDataTable, type DataTable, type DataTableColumn, type DataTableFilter } from './admin-table';
+import { confirmDialog, toast } from './lib/ui-feedback';
+import './styles/admin-console.css';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
@@ -27,6 +30,9 @@ type AdminState = {
   flags: JsonRecord[];
   learning: JsonRecord | null;
   integrations: JsonRecord | null;
+  live: JsonRecord | null;
+  costs: JsonRecord | null;
+  audit: JsonRecord[];
   loading: boolean;
 };
 
@@ -42,6 +48,9 @@ const state: AdminState = {
   flags: [],
   learning: null,
   integrations: null,
+  live: null,
+  costs: null,
+  audit: [],
   loading: true,
 };
 
@@ -49,10 +58,8 @@ let allUsers: JsonRecord[] = [];
 let allProjects: JsonRecord[] = [];
 let allRuns: JsonRecord[] = [];
 let globalQuery = '';
-const activeFilters: Record<'users' | 'projects', string> = {
-  users: 'all',
-  projects: 'all',
-};
+let costDays = 30;
+const tables: Record<string, DataTable<JsonRecord>> = {};
 
 const SECTION_LABELS: Record<string, string> = {
   overview: 'Vue d’ensemble',
@@ -63,10 +70,12 @@ const SECTION_LABELS: Record<string, string> = {
   runs: 'Runs',
   errors: 'Erreurs',
   models: 'Modèles',
+  costs: 'Coûts',
   integrations: 'Intégrations',
   publish: 'Publication',
   security: 'Sécurité',
   flags: 'Drapeaux',
+  audit: 'Journal d’audit',
   support: 'Support',
 };
 
@@ -226,6 +235,46 @@ function table(headers: string[], rows: string[][], emptyMessage = 'Aucune donn�
   `;
 }
 
+function formatUsd(value: unknown, digits = 2) {
+  const number = Number(value || 0);
+  return `${number.toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, number && number < 0.1 ? 4 : digits) })} $`;
+}
+
+function formatTokens(value: unknown) {
+  const number = Number(value || 0);
+  if (number >= 1_000_000) return `${(number / 1_000_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M`;
+  if (number >= 1_000) return `${(number / 1_000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} k`;
+  return number.toLocaleString('fr-FR');
+}
+
+function userLabel(userId: unknown) {
+  const user = allUsers.find(row => row.id === userId);
+  return user?.email || (userId ? `${String(userId).slice(0, 8)}…` : '--');
+}
+
+/**
+ * Sets a section's frame once. Tables mounted inside it keep their search,
+ * sort and page across refreshes; only the metric cards are redrawn.
+ */
+function frame(root: HTMLElement, key: string, html: string) {
+  if (root.dataset.frame === key) return false;
+  root.dataset.frame = key;
+  root.innerHTML = html;
+  return true;
+}
+
+function tableIn<Row extends JsonRecord>(key: string, host: HTMLElement | null, options: Parameters<typeof mountDataTable<Row>>[1]) {
+  if (!host) return null;
+  if (!tables[key] || !host.contains(document.querySelector(`[data-dt-key="${key}"]`))) {
+    host.dataset.dtKey = key;
+    tables[key] = mountDataTable(host, options as any) as unknown as DataTable<JsonRecord>;
+    if (globalQuery) tables[key].setExternalQuery(globalQuery);
+  }
+  return tables[key];
+}
+
+const detailsButton = (type: string, id: unknown, label = 'Détails') => `<button class="admin-button" data-drawer-type="${escapeHtml(type)}" data-drawer-id="${escapeHtml(id)}" type="button">${escapeHtml(label)}</button>`;
+
 function drawerField(label: string, value: unknown) {
   return `<div class="drawer-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '--')}</strong></div>`;
 }
@@ -260,7 +309,7 @@ function renderHealth(rows: JsonRecord[] = []) {
   return `<div class="health-list">${rows.map(row => `
     <div class="health-row">
       <div><strong>${escapeHtml(row.label)}</strong><br><span>${escapeHtml(row.detail)}</span></div>
-      ${pill(row.status)}
+      <div class="health-actions">${row.testable ? `<button class="admin-button subtle" type="button" data-health-test="${escapeHtml(row.id)}">Tester</button>` : ''}${pill(row.status)}</div>
     </div>
   `).join('')}</div>`;
 }
@@ -298,6 +347,7 @@ function renderOverview() {
   const learning = state.learning;
   const integrations = state.integrations;
   root.innerHTML = [
+    `<section class="admin-card full admin-live" aria-labelledby="admin-live-title"><div class="admin-panel-head"><div><span class="panel-label" id="admin-live-title"><span class="admin-live-dot" aria-hidden="true"></span>En direct</span><p class="metric-note">Actualisé toutes les 15 secondes tant que cette page est ouverte.</p></div><span class="metric-note" id="admin-live-updated"></span></div><div id="admin-live-body">${renderLiveBody()}</div></section>`,
     metric('Utilisateurs', formatNumber(metrics.users ?? 0), `${formatNumber(metrics.active_today ?? 0)} actifs aujourd’hui`),
     metric('Projets', formatNumber(metrics.projects ?? 0), `${formatNumber(metrics.previews_ready ?? 0)} aperçus vérifiés`),
     metric('Réussite des runs', `${metrics.success_rate ?? 100} %`, `${formatNumber(metrics.failed_runs ?? 0)} runs en échec`, dailyBars(allRuns.map(run => run.created_at))),
@@ -432,50 +482,116 @@ function renderIntegrations() {
   `;
 }
 
+function renderLiveBody() {
+  const data = state.live;
+  if (!data) return skeleton(3);
+  if (data.success === false) return `<div class="admin-error">${escapeHtml(data.error || 'Les données en direct sont indisponibles.')}</div>`;
+  const live = data.live || {};
+  const alerts: JsonRecord[] = data.alerts || [];
+  const errors: JsonRecord[] = data.recent_errors || [];
+  const tile = (label: string, value: string, note: string, tone = '') => `<div class="admin-live-tile"${tone ? ` data-tone="${tone}"` : ''}><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></div>`;
+  return `
+    ${alerts.length ? `<div class="admin-alert" data-level="${alerts.some(alert => alert.level === 'exceeded') ? 'exceeded' : 'warning'}" role="alert"><strong>${alerts.length} alerte${alerts.length > 1 ? 's' : ''} de coût</strong><span>${alerts.slice(0, 3).map(alert => escapeHtml(`${alert.scope === 'global' ? 'Budget global' : alert.scope === 'user' ? userLabel(alert.target_id) : alert.target_id} : ${formatUsd(alert.spent_usd)} / ${formatUsd(alert.budget_usd)} (${Math.round(alert.ratio * 100)} %)`)).join(' · ')}</span><button class="admin-button subtle" type="button" data-goto="costs">Voir les coûts</button></div>` : ''}
+    <div class="admin-live-grid">
+      ${tile('Actifs maintenant', formatNumber(live.active_now ?? 0), 'runs lancés ces 15 dernières minutes')}
+      ${tile('Actifs aujourd’hui', formatNumber(live.active_today ?? 0), `sur ${formatNumber(live.users_total ?? 0)} comptes`)}
+      ${tile('Projets créés', formatNumber(live.projects_today ?? 0), `24 h · ${formatNumber(live.projects_week ?? 0)} sur 7 jours`)}
+      ${tile('Runs (24 h)', formatNumber(live.runs_today ?? 0), `${formatNumber(live.runs_failed_today ?? 0)} en échec · ${formatNumber(live.running_turns ?? 0)} en cours`, Number(live.runs_failed_today) > 0 ? 'warn' : '')}
+      ${tile('Tokens (24 h)', formatTokens(live.tokens_today ?? 0), 'déclarés par OpenRouter')}
+      ${tile('Coût OpenRouter', formatUsd(live.cost_today_usd ?? 0), `aujourd’hui · ${formatUsd(live.cost_month_usd ?? 0)} ce mois`)}
+    </div>
+    <div class="admin-live-errors"><span class="panel-label">Erreurs récentes</span>${errors.length ? `<ul>${errors.slice(0, 5).map(run => `<li><button type="button" class="admin-link" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}"><strong>${escapeHtml(run.diagnostic_code || run.suggested_action || 'Échec du run')}</strong><span>${escapeHtml(userLabel(run.user_id))} · ${escapeHtml(run.model_id || 'Auto')} · ${escapeHtml(formatDate(run.created_at))}</span></button></li>`).join('')}</ul>` : empty('Aucune erreur récente.')}</div>`;
+}
+
+function renderLive() {
+  const body = qs('#admin-live-body');
+  if (body) body.innerHTML = renderLiveBody();
+  const updated = qs('#admin-live-updated');
+  if (updated && state.live?.generated_at) updated.textContent = `Mis à jour à ${new Date(state.live.generated_at).toLocaleTimeString('fr-FR')}`;
+}
+
+let livePoll: number | null = null;
+async function refreshLive() {
+  const data = await safeAdminFetch('/api/admin/live', { live: {}, alerts: [], recent_errors: [] });
+  state.live = data;
+  renderLive();
+}
+function syncLivePolling() {
+  const overviewActive = qs('[data-section="overview"]')?.classList.contains('active');
+  const shouldPoll = Boolean(overviewActive && document.visibilityState === 'visible');
+  if (shouldPoll && livePoll === null) livePoll = window.setInterval(() => void refreshLive(), 15_000);
+  if (!shouldPoll && livePoll !== null) { window.clearInterval(livePoll); livePoll = null; }
+}
+
+const USER_FILTERS: DataTableFilter<JsonRecord>[] = [
+  { value: 'admin', label: 'Admins', test: user => Boolean(user.is_platform_admin) },
+  { value: 'active', label: 'Actifs aujourd’hui', test: user => isRecent(user.last_sign_in_at, 24) },
+  { value: 'suspended', label: 'Suspendus', test: user => Boolean(user.suspended) },
+  { value: 'no-email', label: 'Sans e-mail', test: user => !user.email },
+];
+
 function renderUsers() {
   const root = qs('#admin-users');
   if (!root) return;
-  const rows = state.users
-    .filter(user => matchesQuery(user))
-    .filter(user => {
-      if (activeFilters.users === 'admin') return Boolean(user.is_platform_admin);
-      if (activeFilters.users === 'active') return isRecent(user.last_sign_in_at, 24);
-      if (activeFilters.users === 'no-email') return !user.email;
-      return true;
-    });
-  root.innerHTML = table(['Utilisateur', 'Crédits', 'Projets', 'Runs', 'Dernière connexion', 'Rôle', 'Action'], rows.map(user => [
-    `<strong>${escapeHtml(user.email || 'Sans e-mail')}</strong><br><span>${escapeHtml(user.id)}</span>`,
-    `<strong>${escapeHtml(user.wallet?.balance ?? '--')}</strong><br><span>crédits visibles</span>`,
-    escapeHtml(user.project_count ?? 0),
-    escapeHtml(user.run_count ?? 0),
-    escapeHtml(formatDate(user.last_sign_in_at)),
-    pill(user.is_platform_admin ? 'platform_admin' : user.role || 'user'),
-    `<button class="admin-button" data-drawer-type="user" data-drawer-id="${escapeHtml(user.id)}" type="button">Détails</button>`,
-  ]));
+  frame(root, 'users', `
+    <div class="admin-grid admin-metric-row" data-users-metrics></div>
+    <article class="admin-card full"><span class="panel-label">Utilisateurs</span><div data-users-table></div></article>`);
+  const suspended = state.users.filter(user => user.suspended).length;
+  const metricsHost = root.querySelector<HTMLElement>('[data-users-metrics]');
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Comptes', formatNumber(state.users.length), `${formatNumber(state.users.filter(user => isRecent(user.last_sign_in_at, 24)).length)} actifs aujourd’hui`),
+    metric('Nouveaux (7 j)', formatNumber(state.users.filter(user => isRecent(user.created_at, 24 * 7)).length), 'inscriptions récentes'),
+    metric('Suspendus', formatNumber(suspended), suspended ? 'connexion bloquée' : 'aucun compte suspendu'),
+  ].join('');
+  const columns: DataTableColumn<JsonRecord>[] = [
+    { key: 'email', label: 'Utilisateur', sortable: true, value: user => user.email || '', render: user => `<strong>${escapeHtml(user.email || 'Sans e-mail')}</strong><br><span class="admin-mono">${escapeHtml(user.id)}</span>` },
+    { key: 'status', label: 'Statut', sortable: true, value: user => user.suspended ? 'Suspendu' : 'Actif', render: user => user.suspended ? pill('failed', 'Suspendu') : pill('ok', 'Actif') },
+    { key: 'credits', label: 'Crédits', sortable: true, align: 'end', value: user => Number(user.wallet?.balance ?? 0), render: user => escapeHtml(formatNumber(user.wallet?.balance ?? 0)) },
+    { key: 'project_count', label: 'Projets', sortable: true, align: 'end' },
+    { key: 'run_count', label: 'Runs', sortable: true, align: 'end' },
+    { key: 'created_at', label: 'Inscription', sortable: true, render: user => escapeHtml(formatDate(user.created_at)) },
+    { key: 'last_sign_in_at', label: 'Dernière connexion', sortable: true, render: user => escapeHtml(formatDate(user.last_sign_in_at)) },
+    { key: 'role', label: 'Rôle', sortable: true, value: user => user.is_platform_admin ? 'Admin plateforme' : 'Utilisateur', render: user => pill(user.is_platform_admin ? 'platform_admin' : 'user') },
+    { key: 'actions', label: 'Action', exportable: false, render: user => detailsButton('user', user.id) },
+  ];
+  tableIn('users', root.querySelector<HTMLElement>('[data-users-table]'), { label: 'Utilisateurs', columns, filters: USER_FILTERS, searchPlaceholder: 'Rechercher un e-mail ou un identifiant', exportName: 'utilisateurs', initialSort: { key: 'last_sign_in_at', direction: 'desc' }, emptyMessage: 'Aucun utilisateur.' })?.setRows(state.users);
 }
 
 function renderProjects() {
   const root = qs('#admin-projects');
   if (!root) return;
-  const rows = state.projects
-    .filter(project => matchesQuery(project))
-    .filter(project => {
-      if (activeFilters.projects === 'preview-ready') return project.preview_status === 'verified';
-      if (activeFilters.projects === 'published') return Boolean(project.live_url) || /published|ready|success/i.test(String(project.publish_status || ''));
-      if (activeFilters.projects === 'needs-attention') return /fail|error|blocked|unknown|not_ready|needs_fix/i.test(`${project.preview_status} ${project.publish_status}`);
-      return true;
-    });
-  root.innerHTML = table(['Projet', 'Propriétaire', 'Aperçu', 'Publication', 'Fichiers', 'Mis à jour', 'Action'], rows.map(project => [
-    `<strong>${escapeHtml(project.name)}</strong><br><span class="admin-mono" aria-label="Identifiant de l’application">ID · ${escapeHtml(project.id)}</span>`,
-    escapeHtml(project.owner_id || '--'),
-    pill(project.preview_status),
-    pill(project.publish_status || (project.live_url ? 'published' : 'draft')),
-    escapeHtml(project.file_count ?? '--'),
-    escapeHtml(formatDate(project.updated_at)),
-    `<button class="admin-button" data-drawer-type="project" data-drawer-id="${escapeHtml(project.id)}" type="button">Détails</button>
-     <button class="admin-button subtle" data-open-project="${escapeHtml(project.id)}" type="button">Ouvrir</button>`,
-  ]));
+  frame(root, 'projects', `<article class="admin-card full"><span class="panel-label">Projets</span><div data-projects-table></div></article>`);
+  const columns: DataTableColumn<JsonRecord>[] = [
+    { key: 'name', label: 'Projet', sortable: true, render: project => `<strong>${escapeHtml(project.name)}</strong><br><span class="admin-mono" aria-label="Identifiant de l’application">ID · ${escapeHtml(project.id)}</span>` },
+    { key: 'owner', label: 'Propriétaire', sortable: true, value: project => userLabel(project.owner_id) },
+    { key: 'preview_status', label: 'Aperçu', sortable: true, render: project => pill(project.preview_status) },
+    { key: 'publish', label: 'Publication', sortable: true, value: project => project.publish_status || (project.live_url ? 'published' : 'draft'), render: project => pill(project.publish_status || (project.live_url ? 'published' : 'draft')) },
+    { key: 'file_count', label: 'Fichiers', sortable: true, align: 'end' },
+    { key: 'created_at', label: 'Créé', sortable: true, render: project => escapeHtml(formatDate(project.created_at)) },
+    { key: 'updated_at', label: 'Mis à jour', sortable: true, render: project => escapeHtml(formatDate(project.updated_at)) },
+    { key: 'actions', label: 'Action', exportable: false, render: project => `${detailsButton('project', project.id)} <button class="admin-button subtle" data-open-project="${escapeHtml(project.id)}" type="button">Ouvrir</button>` },
+  ];
+  tableIn('projects', root.querySelector<HTMLElement>('[data-projects-table]'), {
+    label: 'Projets', columns, searchPlaceholder: 'Rechercher un projet, un propriétaire ou un identifiant', exportName: 'projets', initialSort: { key: 'updated_at', direction: 'desc' },
+    filters: [
+      { value: 'preview-ready', label: 'Aperçu vérifié', test: project => project.preview_status === 'verified' },
+      { value: 'published', label: 'Publiés', test: project => Boolean(project.live_url) || /published|ready|success/i.test(String(project.publish_status || '')) },
+      { value: 'needs-attention', label: 'À surveiller', test: project => /fail|error|blocked|unknown|not_ready|needs_fix/i.test(`${project.preview_status} ${project.publish_status}`) },
+    ],
+  })?.setRows(state.projects);
 }
+
+const RUN_COLUMNS: DataTableColumn<JsonRecord>[] = [
+  { key: 'request_id', label: 'Run', sortable: true, value: run => run.request_id || run.id, render: run => `<strong>${escapeHtml(run.request_id || run.id)}</strong><br><span class="admin-mono">${escapeHtml(run.project_id || '--')}</span>` },
+  { key: 'status', label: 'Statut', sortable: true, render: run => pill(run.status) },
+  { key: 'user', label: 'Utilisateur', sortable: true, value: run => userLabel(run.user_id) },
+  { key: 'intent', label: 'Intention', sortable: true },
+  { key: 'model_id', label: 'Modèle', sortable: true, value: run => run.model_id || 'Auto', render: run => `<code>${escapeHtml(run.model_id || 'Auto')}</code>` },
+  { key: 'diagnostic_code', label: 'Diagnostic', sortable: true, value: run => run.diagnostic_code || run.suggested_action || '' },
+  { key: 'duration_ms', label: 'Durée', sortable: true, align: 'end', value: run => Number(run.duration_ms || 0), render: run => escapeHtml(`${Math.round(Number(run.duration_ms || 0) / 1000)} s`) },
+  { key: 'created_at', label: 'Créé', sortable: true, render: run => escapeHtml(formatDate(run.created_at)) },
+  { key: 'actions', label: 'Action', exportable: false, render: run => detailsButton('run', run.id) },
+];
 
 function renderFailedRuns(rows: JsonRecord[]) {
   return table(['Requête', 'Intention', 'Modèle', 'Diagnostic', 'Quand', 'Action'], rows.map(run => [
@@ -491,23 +607,24 @@ function renderFailedRuns(rows: JsonRecord[]) {
 function renderRuns() {
   const root = qs('#admin-runs');
   if (!root) return;
-  const distributions = state.overview?.distributions || {};
-  const intents = Object.entries(distributions.run_intent || {}).sort((a, b) => Number(b[1]) - Number(a[1]));
-  root.innerHTML = `
-    ${metric('Runs observés', formatNumber(state.runs.length), '500 derniers runs d’agent', dailyBars(state.runs.map(run => run.created_at)))}
-    ${metric('En échec', formatNumber(state.runs.filter(run => run.status === 'failed').length), 'À examiner')}
-    ${metric('Durée moyenne', averageDuration(state.runs), 'Runs terminés')}
-    <article class="admin-card full"><span class="panel-label">Runs récents</span>${table(['Run', 'Statut', 'Intention', 'Modèle', 'Durée', 'Créé', 'Action'], state.runs.filter(run => matchesQuery(run)).slice(0, 80).map(run => [
-      `<strong>${escapeHtml(run.request_id || run.id)}</strong><br><span>${escapeHtml(run.project_id || '--')}</span>`,
-      pill(run.status),
-      escapeHtml(run.intent || '--'),
-      escapeHtml(run.model_id || 'Auto'),
-      escapeHtml(`${Math.round(Number(run.duration_ms || 0) / 1000)} s`),
-      escapeHtml(formatDate(run.created_at)),
-      `<button class="admin-button" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}" type="button">Détails</button>`,
-    ]))}</article>
-    <article class="admin-card full"><span class="panel-label">Répartition des intentions</span>${table(['Intention', 'Runs'], intents.map(([intent, count]) => [escapeHtml(intent), escapeHtml(formatNumber(count))]))}</article>
-  `;
+  frame(root, 'runs', `<div class="admin-grid admin-metric-row" data-runs-metrics></div><article class="admin-card full"><span class="panel-label">Runs récents</span><div data-runs-table></div></article><article class="admin-card full"><span class="panel-label">Répartition des intentions</span><div data-runs-intents></div></article>`);
+  const metricsHost = root.querySelector<HTMLElement>('[data-runs-metrics]');
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Runs observés', formatNumber(state.runs.length), '500 derniers runs d’agent', dailyBars(state.runs.map(run => run.created_at))),
+    metric('En échec', formatNumber(state.runs.filter(run => run.status === 'failed').length), 'À examiner'),
+    metric('Durée moyenne', averageDuration(state.runs), 'Runs terminés'),
+  ].join('');
+  tableIn('runs', root.querySelector<HTMLElement>('[data-runs-table]'), {
+    label: 'Runs', columns: RUN_COLUMNS, exportName: 'runs', searchPlaceholder: 'Rechercher un run, un projet, un modèle', initialSort: { key: 'created_at', direction: 'desc' },
+    filters: [
+      { value: 'failed', label: 'En échec', test: run => run.status === 'failed' },
+      { value: 'completed', label: 'Terminés', test: run => run.status === 'completed' },
+      { value: 'running', label: 'En cours', test: run => /running|queued|pending/.test(String(run.status)) },
+    ],
+  })?.setRows(state.runs);
+  const intents = Object.entries(state.overview?.distributions?.run_intent || {}).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const intentsHost = root.querySelector<HTMLElement>('[data-runs-intents]');
+  if (intentsHost) intentsHost.innerHTML = table(['Intention', 'Runs'], intents.map(([intent, count]) => [escapeHtml(intent), escapeHtml(formatNumber(count))]));
 }
 
 function averageDuration(rows: JsonRecord[]) {
@@ -521,20 +638,25 @@ function renderErrors() {
   if (!root) return;
   const failedRuns = state.errors?.errors?.failed_runs || [];
   const runnerFailures = state.errors?.errors?.runner_failures || [];
-  root.innerHTML = `
-    ${metric('Runs en échec', formatNumber(failedRuns.length), 'Échecs récents au niveau du run')}
-    ${metric('Contrôles en échec', formatNumber(runnerFailures.length), 'Build, aperçu ou contrôle qualité')}
-    ${metric('Diagnostic le plus fréquent', topKey(state.errors?.grouped?.diagnostic_code), 'Cause dominante')}
-    <article class="admin-card full"><span class="panel-label">Runs en échec</span>${renderFailedRuns(failedRuns.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80))}</article>
-    <article class="admin-card full"><span class="panel-label">Contrôles en échec</span>${table(['Run', 'Contrôle', 'Gravité', 'Message', 'Quand', 'Action'], runnerFailures.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
-      escapeHtml(row.agent_run_id || '--'),
-      escapeHtml(row.check_type || '--'),
-      pill(row.severity || row.status),
-      escapeHtml(row.message || '--'),
-      escapeHtml(formatDate(row.created_at)),
-      `<button class="admin-button" data-drawer-type="runner_failure" data-drawer-id="${escapeHtml(row.agent_run_id || row.created_at || '')}" type="button">Détails</button>`,
-    ]))}</article>
-  `;
+  frame(root, 'errors', `<div class="admin-grid admin-metric-row" data-errors-metrics></div><article class="admin-card full"><span class="panel-label">Runs en échec</span><div data-errors-runs></div></article><article class="admin-card full"><span class="panel-label">Contrôles en échec</span><div data-errors-checks></div></article>`);
+  const metricsHost = root.querySelector<HTMLElement>('[data-errors-metrics]');
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Runs en échec', formatNumber(failedRuns.length), 'Échecs récents au niveau du run'),
+    metric('Contrôles en échec', formatNumber(runnerFailures.length), 'Build, aperçu ou contrôle qualité'),
+    metric('Diagnostic le plus fréquent', topKey(state.errors?.grouped?.diagnostic_code), 'Cause dominante'),
+  ].join('');
+  tableIn('errors-runs', root.querySelector<HTMLElement>('[data-errors-runs]'), { label: 'Runs en échec', columns: RUN_COLUMNS, exportName: 'runs-en-echec', initialSort: { key: 'created_at', direction: 'desc' }, emptyMessage: 'Aucun run en échec.' })?.setRows(failedRuns);
+  tableIn('errors-checks', root.querySelector<HTMLElement>('[data-errors-checks]'), {
+    label: 'Contrôles en échec', exportName: 'controles-en-echec', initialSort: { key: 'created_at', direction: 'desc' }, emptyMessage: 'Aucun contrôle en échec.',
+    columns: [
+      { key: 'agent_run_id', label: 'Run', sortable: true },
+      { key: 'check_type', label: 'Contrôle', sortable: true },
+      { key: 'severity', label: 'Gravité', sortable: true, value: row => row.severity || row.status, render: row => pill(row.severity || row.status) },
+      { key: 'message', label: 'Message', sortable: false },
+      { key: 'created_at', label: 'Quand', sortable: true, render: row => escapeHtml(formatDate(row.created_at)) },
+      { key: 'actions', label: 'Action', exportable: false, render: row => detailsButton('runner_failure', row.agent_run_id || row.created_at || '') },
+    ],
+  })?.setRows(runnerFailures);
 }
 
 function topKey(record: JsonRecord = {}) {
@@ -548,24 +670,133 @@ function renderModels() {
   const costs = state.models?.costs || [];
   const providers = state.models?.providers || [];
   const margins = state.models?.margins || [];
-  const byModel = Object.entries(costs.reduce((acc: Record<string, number>, row: JsonRecord) => {
-    const key = String(row.model_id || 'Auto');
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {})).sort((a, b) => Number(b[1]) - Number(a[1]));
-  root.innerHTML = `
-    ${metric('Requêtes IA', formatNumber(costs.length), 'Lignes récentes')}
-    ${metric('Usage fournisseurs', formatNumber(providers.length), 'Événements d’usage fournisseur')}
-    ${metric('Contrôles de marge', formatNumber(margins.length), 'Échantillons de garde-fous de coût')}
-    <article class="admin-card wide"><span class="panel-label">Requêtes par modèle</span>${table(['Modèle', 'Requêtes'], byModel.map(([model, count]) => [`<code>${escapeHtml(model)}</code>`, escapeHtml(formatNumber(count))]))}</article>
-    <article class="admin-card full"><span class="panel-label">Requêtes récentes</span>${table(['Modèle', 'Type', 'Statut', 'Projet', 'Quand'], costs.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
-      escapeHtml(row.model_id || 'Auto'),
-      escapeHtml(row.request_type || '--'),
-      pill(row.status),
-      escapeHtml(row.project_id || '--'),
-      escapeHtml(formatDate(row.created_at)),
-    ]))}</article>
-  `;
+  frame(root, 'models', `<div class="admin-grid admin-metric-row" data-models-metrics></div><article class="admin-card full"><span class="panel-label">Requêtes récentes</span><div data-models-table></div></article>`);
+  const metricsHost = root.querySelector<HTMLElement>('[data-models-metrics]');
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Requêtes IA', formatNumber(costs.length), 'Lignes récentes'),
+    metric('Usage fournisseurs', formatNumber(providers.length), 'Événements d’usage fournisseur'),
+    metric('Contrôles de marge', formatNumber(margins.length), 'Échantillons de garde-fous de coût'),
+  ].join('');
+  tableIn('models', root.querySelector<HTMLElement>('[data-models-table]'), {
+    label: 'Requêtes IA', exportName: 'requetes-ia', initialSort: { key: 'created_at', direction: 'desc' },
+    columns: [
+      { key: 'model_id', label: 'Modèle', sortable: true, value: row => row.model_id || 'Auto', render: row => `<code>${escapeHtml(row.model_id || 'Auto')}</code>` },
+      { key: 'request_type', label: 'Type', sortable: true },
+      { key: 'status', label: 'Statut', sortable: true, render: row => pill(row.status) },
+      { key: 'project_id', label: 'Projet', sortable: true },
+      { key: 'created_at', label: 'Quand', sortable: true, render: row => escapeHtml(formatDate(row.created_at)) },
+    ],
+  })?.setRows(costs);
+}
+
+function renderCosts() {
+  const root = qs('#admin-costs');
+  if (!root) return;
+  frame(root, 'costs', `
+    <div class="admin-card full admin-costs-head"><div><span class="panel-label">Coûts OpenRouter</span><p class="metric-note">Mesurés sur le registre d’usage (coût facturé par le fournisseur), jamais estimés.</p></div><label class="admin-dt-size">Période <select data-cost-days aria-label="Période">${[7, 30, 90].map(days => `<option value="${days}"${days === costDays ? ' selected' : ''}>${days} jours</option>`).join('')}</select></label></div>
+    <div class="admin-grid admin-metric-row" data-costs-metrics></div>
+    <div data-costs-alerts class="admin-card full"></div>
+    <article class="admin-card full"><span class="panel-label">Par modèle</span><div data-costs-models></div></article>
+    <article class="admin-card full"><span class="panel-label">Par utilisateur</span><div data-costs-users></div></article>`);
+  root.querySelector<HTMLSelectElement>('[data-cost-days]')!.value = String(costDays);
+  const data = state.costs;
+  const metricsHost = root.querySelector<HTMLElement>('[data-costs-metrics]');
+  if (!data) { if (metricsHost) metricsHost.innerHTML = skeleton(3); return; }
+  if (data.success === false) { if (metricsHost) metricsHost.innerHTML = `<div class="admin-error">${escapeHtml(data.error || 'Coûts indisponibles.')}</div>`; return; }
+  const totals = data.totals || {};
+  const days: JsonRecord[] = data.by_day || [];
+  const max = Math.max(0.0001, ...days.map(day => Number(day.cost_usd || 0)));
+  const bars = `<div class="admin-bars" aria-hidden="true">${days.map(day => `<span style="height:${Math.max(6, Math.round((Number(day.cost_usd || 0) / max) * 100))}%"${Number(day.cost_usd) ? '' : ' data-empty'} title="${escapeHtml(day.key)} : ${escapeHtml(formatUsd(day.cost_usd))}"></span>`).join('')}</div>`;
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Aujourd’hui', formatUsd(totals.today_usd), 'coût fournisseur'),
+    metric('Ce mois', formatUsd(totals.month_usd), 'depuis le 1er du mois'),
+    metric(`${data.days || costDays} derniers jours`, formatUsd(totals.cost_usd), `${formatNumber(totals.requests ?? 0)} requêtes facturées`, bars),
+    metric('Tokens', formatTokens(Number(totals.prompt_tokens || 0) + Number(totals.completion_tokens || 0)), `${formatTokens(totals.prompt_tokens)} en entrée · ${formatTokens(totals.completion_tokens)} en sortie`),
+  ].join('');
+  const alerts = data.alerts || {};
+  const alertsHost = root.querySelector<HTMLElement>('[data-costs-alerts]');
+  const modelOptions = (data.by_model || []).map((row: JsonRecord) => `<option value="${escapeHtml(row.key)}">${escapeHtml(row.key)}</option>`).join('');
+  const userOptions = allUsers.filter(user => user.email).map(user => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.email)}</option>`).join('');
+  const scopeLabel = (rule: JsonRecord) => rule.scope === 'global' ? 'Budget global' : rule.scope === 'user' ? `Utilisateur · ${rule.email || userLabel(rule.target_id)}` : `Modèle · ${rule.target_id}`;
+  if (alertsHost) alertsHost.innerHTML = `
+    <div class="admin-panel-head"><div><span class="panel-label">Alertes de dépassement</span><p class="metric-note">Budget mensuel en dollars : alerte à 80 %, dépassement à 100 %. Les alertes s’affichent ici et sur la vue d’ensemble.</p></div></div>
+    ${alerts.available === false ? '<div class="admin-error">La table des alertes n’existe pas encore : la migration admin doit être appliquée.</div>' : ''}
+    ${(alerts.triggered || []).map((alert: JsonRecord) => `<div class="admin-alert" data-level="${alert.level}"><strong>${alert.level === 'exceeded' ? 'Dépassé' : 'Bientôt atteint'}</strong><span>${escapeHtml(scopeLabel({ ...alert, email: alert.email }))} : ${escapeHtml(formatUsd(alert.spent_usd))} sur ${escapeHtml(formatUsd(alert.budget_usd))} (${Math.round(Number(alert.ratio) * 100)} %)</span></div>`).join('')}
+    ${table(['Portée', 'Budget mensuel', 'Créée par', 'Action'], (alerts.rules || []).map((rule: JsonRecord) => [escapeHtml(scopeLabel(rule)), escapeHtml(formatUsd(rule.monthly_budget_usd)), escapeHtml(rule.created_by || '--'), `<button class="admin-button subtle is-danger" type="button" data-delete-alert="${escapeHtml(rule.id)}" data-alert-label="${escapeHtml(scopeLabel(rule))}">Supprimer</button>`]), 'Aucun budget défini.')}
+    <form class="admin-alert-form" data-alert-form>
+      <label>Portée<select name="scope"><option value="global">Global</option><option value="user">Utilisateur</option><option value="model">Modèle</option></select></label>
+      <label data-target="user" hidden>Utilisateur<select name="user">${userOptions}</select></label>
+      <label data-target="model" hidden>Modèle<select name="model">${modelOptions}</select></label>
+      <label>Budget mensuel ($)<input name="budget" type="number" min="0.01" step="0.01" required placeholder="50"></label>
+      <button class="admin-button primary" type="submit">Enregistrer le budget</button>
+    </form>`;
+  tableIn('costs-models', root.querySelector<HTMLElement>('[data-costs-models]'), {
+    label: 'Coûts par modèle', exportName: 'couts-par-modele', initialSort: { key: 'cost_usd', direction: 'desc' }, emptyMessage: 'Aucun coût mesuré sur la période.',
+    columns: [
+      { key: 'key', label: 'Modèle', sortable: true, render: row => `<code>${escapeHtml(row.key)}</code>` },
+      { key: 'cost_usd', label: 'Coût', sortable: true, align: 'end', render: row => escapeHtml(formatUsd(row.cost_usd)) },
+      { key: 'requests', label: 'Requêtes', sortable: true, align: 'end' },
+      { key: 'prompt_tokens', label: 'Tokens entrée', sortable: true, align: 'end', render: row => escapeHtml(formatTokens(row.prompt_tokens)) },
+      { key: 'completion_tokens', label: 'Tokens sortie', sortable: true, align: 'end', render: row => escapeHtml(formatTokens(row.completion_tokens)) },
+      { key: 'average', label: 'Coût moyen', sortable: true, align: 'end', value: row => Number(row.requests) ? Number(row.cost_usd) / Number(row.requests) : 0, render: row => escapeHtml(formatUsd(Number(row.requests) ? Number(row.cost_usd) / Number(row.requests) : 0, 3)) },
+    ],
+  })?.setRows(data.by_model || []);
+  tableIn('costs-users', root.querySelector<HTMLElement>('[data-costs-users]'), {
+    label: 'Coûts par utilisateur', exportName: 'couts-par-utilisateur', initialSort: { key: 'cost_usd', direction: 'desc' }, emptyMessage: 'Aucun coût mesuré sur la période.',
+    columns: [
+      { key: 'email', label: 'Utilisateur', sortable: true, value: row => row.email || userLabel(row.key), render: row => `<strong>${escapeHtml(row.email || userLabel(row.key))}</strong><br><span class="admin-mono">${escapeHtml(row.key)}</span>` },
+      { key: 'cost_usd', label: 'Coût', sortable: true, align: 'end', render: row => escapeHtml(formatUsd(row.cost_usd)) },
+      { key: 'requests', label: 'Requêtes', sortable: true, align: 'end' },
+      { key: 'tokens', label: 'Tokens', sortable: true, align: 'end', value: row => Number(row.prompt_tokens || 0) + Number(row.completion_tokens || 0), render: row => escapeHtml(formatTokens(Number(row.prompt_tokens || 0) + Number(row.completion_tokens || 0))) },
+      { key: 'actions', label: 'Action', exportable: false, render: row => detailsButton('user', row.key) },
+    ],
+  })?.setRows(data.by_user || []);
+}
+
+async function loadCosts() {
+  state.costs = await safeAdminFetch(`/api/admin/costs?days=${costDays}`, { totals: {}, by_user: [], by_model: [], by_day: [], alerts: { rules: [], triggered: [] } });
+  renderCosts();
+}
+
+const AUDIT_LABELS: Record<string, string> = {
+  'user.suspended': 'Compte suspendu',
+  'user.unsuspended': 'Compte réactivé',
+  'user.password_reset_sent': 'Réinitialisation du mot de passe envoyée',
+  'cost_alert.created': 'Budget créé',
+  'cost_alert.updated': 'Budget modifié',
+  'cost_alert.deleted': 'Budget supprimé',
+  'library.updated': 'Bibliothèque modifiée',
+  'library.deleted': 'Élément de bibliothèque supprimé',
+  'error_memory.updated': 'Règle d’erreur modifiée',
+  'error_memory.deleted': 'Règle d’erreur supprimée',
+  'cloud.provisioning_checked': 'Test du provisionnement Cloud',
+};
+
+function renderAudit() {
+  const root = qs('#admin-audit');
+  if (!root) return;
+  frame(root, 'audit', `<article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Journal d’audit</span><p class="metric-note">Chaque action admin qui modifie quelque chose : qui, quoi, sur quoi et quand. Les adresses IP ne sont conservées que sous forme d’empreinte.</p></div></div><div data-audit-table></div></article>`);
+  tableIn('audit', root.querySelector<HTMLElement>('[data-audit-table]'), {
+    label: 'Journal d’audit', exportName: 'journal-audit', initialSort: { key: 'created_at', direction: 'desc' }, emptyMessage: 'Aucune action admin enregistrée pour le moment.',
+    filters: [
+      { value: 'users', label: 'Utilisateurs', test: row => String(row.action).startsWith('user.') },
+      { value: 'costs', label: 'Coûts', test: row => String(row.action).startsWith('cost_alert.') },
+      { value: 'library', label: 'Bibliothèque', test: row => /^(library|error_memory)\./.test(String(row.action)) },
+    ],
+    columns: [
+      { key: 'created_at', label: 'Quand', sortable: true, render: row => escapeHtml(formatDate(row.created_at)) },
+      { key: 'actor_email', label: 'Admin', sortable: true },
+      { key: 'action', label: 'Action', sortable: true, value: row => AUDIT_LABELS[row.action] || row.action },
+      { key: 'target', label: 'Cible', sortable: true, value: row => row.target_type === 'user' ? userLabel(row.target_id) : `${row.target_type || ''} ${row.target_id || ''}`.trim() },
+      { key: 'detail', label: 'Détail', value: row => Object.entries(row.detail || {}).filter(([key]) => key !== 'email').map(([key, value]) => `${key} : ${Array.isArray(value) ? value.join(', ') : value}`).join(' · ') },
+    ],
+  })?.setRows(state.audit);
+}
+
+async function loadAudit() {
+  const data = await safeAdminFetch('/api/admin/audit-log', { entries: [] });
+  state.audit = data.entries || [];
+  renderAudit();
 }
 
 function renderPublish() {
@@ -573,19 +804,24 @@ function renderPublish() {
   if (!root) return;
   const deployments = state.publish?.deployments || [];
   const domains = state.publish?.domains || [];
-  root.innerHTML = `
-    ${metric('Déploiements', formatNumber(deployments.length), 'Publications récentes', dailyBars(deployments.map((row: JsonRecord) => row.created_at)))}
-    ${metric('Domaines', formatNumber(domains.length), 'Domaines personnalisés')}
-    ${metric('En ligne', formatNumber(deployments.filter((row: JsonRecord) => /ready|success|published|completed/i.test(row.status)).length), 'Déploiements réussis')}
-    <article class="admin-card full"><span class="panel-label">Déploiements</span>${table(['Déploiement', 'Projet', 'Statut', 'Adresse', 'Quand', 'Action'], deployments.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 100).map((row: JsonRecord) => [
-      escapeHtml(row.id || '--'),
-      escapeHtml(row.project_id || '--'),
-      pill(row.status),
-      row.url ? `<a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.url)}</a>` : '--',
-      escapeHtml(formatDate(row.created_at)),
-      `<button class="admin-button" data-drawer-type="deployment" data-drawer-id="${escapeHtml(row.id || row.url || '')}" type="button">Détails</button>`,
-    ]))}</article>
-  `;
+  frame(root, 'publish', `<div class="admin-grid admin-metric-row" data-publish-metrics></div><article class="admin-card full"><span class="panel-label">Déploiements</span><div data-publish-table></div></article>`);
+  const metricsHost = root.querySelector<HTMLElement>('[data-publish-metrics]');
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Déploiements', formatNumber(deployments.length), 'Publications récentes', dailyBars(deployments.map((row: JsonRecord) => row.created_at))),
+    metric('Domaines', formatNumber(domains.length), 'Domaines personnalisés'),
+    metric('En ligne', formatNumber(deployments.filter((row: JsonRecord) => /ready|success|published|completed/i.test(row.status)).length), 'Déploiements réussis'),
+  ].join('');
+  tableIn('publish', root.querySelector<HTMLElement>('[data-publish-table]'), {
+    label: 'Déploiements', exportName: 'deploiements', initialSort: { key: 'created_at', direction: 'desc' },
+    columns: [
+      { key: 'id', label: 'Déploiement', sortable: true },
+      { key: 'project_id', label: 'Projet', sortable: true },
+      { key: 'status', label: 'Statut', sortable: true, render: row => pill(row.status) },
+      { key: 'url', label: 'Adresse', sortable: true, render: row => row.url ? `<a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(row.url)}</a>` : '--' },
+      { key: 'created_at', label: 'Quand', sortable: true, render: row => escapeHtml(formatDate(row.created_at)) },
+      { key: 'actions', label: 'Action', exportable: false, render: row => detailsButton('deployment', row.id || row.url || '') },
+    ],
+  })?.setRows(deployments);
 }
 
 function renderSecurity() {
@@ -679,6 +915,8 @@ function renderAll() {
   renderSecurity();
   renderFlags();
   renderSupport();
+  if (state.costs) renderCosts();
+  if (tables.audit) renderAudit();
 }
 
 async function loadAdminData() {
@@ -686,7 +924,7 @@ async function loadAdminData() {
     qs('#admin-overview')!.innerHTML = skeleton(6);
     const liveStatus = qs('#admin-live-status');
     if (liveStatus) liveStatus.textContent = 'Actualisation…';
-    const [overview, users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations] = await Promise.all([
+    const [overview, users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live] = await Promise.all([
       safeAdminFetch('/api/admin/overview', { metrics: {}, health: [], availability: {}, distributions: {}, recent: { failed_runs: [] } }),
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
@@ -700,7 +938,9 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/feature-flags', { flags: [], availability: {} }),
       safeAdminFetch('/api/admin/agent-learning', { signals: {}, knowledge: {}, personalization: {}, routing: { stats: [] }, availability: {} }),
       safeAdminFetch('/api/admin/integrations', { configured: false, by_toolkit: [], recent: [], totals: {} }),
+      safeAdminFetch('/api/admin/live', { live: {}, alerts: [], recent_errors: [] }),
     ]);
+    state.live = live;
     state.overview = overview;
     allUsers = users.users || [];
     allProjects = projects.projects || [];
@@ -716,6 +956,9 @@ async function loadAdminData() {
     state.learning = learning;
     state.integrations = integrations;
     renderAll();
+    renderLive();
+    if (tables.audit) void loadAudit();
+    if (state.costs) void loadCosts();
     if (liveStatus) liveStatus.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Impossible de charger les données admin.';
@@ -737,6 +980,8 @@ function ensureAdminLibrary() {
 
 function activateSection(tab: string) {
   if (tab === 'library') ensureAdminLibrary();
+  if (tab === 'costs' && !state.costs) void loadCosts();
+  if (tab === 'audit' && !tables.audit) { renderAudit(); void loadAudit(); }
   document.querySelectorAll<HTMLElement>('[data-admin-tab]').forEach(item => {
     const active = item.dataset.adminTab === tab;
     item.classList.toggle('active', active);
@@ -747,6 +992,8 @@ function activateSection(tab: string) {
   const crumb = qs('[data-admin-crumb]');
   if (crumb) crumb.textContent = `/ ${SECTION_LABELS[tab] || tab}`;
   try { history.replaceState(null, '', `#${tab}`); } catch { /* the hash is a convenience */ }
+  syncLivePolling();
+  if (tab === 'overview') void refreshLive();
 }
 
 function bindNavigation() {
@@ -758,30 +1005,99 @@ function bindNavigation() {
 }
 
 function bindFilters() {
-  qs<HTMLInputElement>('#admin-user-search')?.addEventListener('input', event => {
-    const value = (event.currentTarget as HTMLInputElement).value.trim().toLowerCase();
-    state.users = allUsers.filter(user => !value || String(user.email || '').toLowerCase().includes(value) || String(user.id || '').toLowerCase().includes(value));
-    renderUsers();
-  });
-  qs<HTMLInputElement>('#admin-project-search')?.addEventListener('input', event => {
-    const value = (event.currentTarget as HTMLInputElement).value.trim().toLowerCase();
-    state.projects = allProjects.filter(project => !value || String(project.name || '').toLowerCase().includes(value) || String(project.id || '').toLowerCase().includes(value) || String(project.owner_id || '').toLowerCase().includes(value));
-    renderProjects();
-  });
+  let searchTimer = 0;
   qs<HTMLInputElement>('#admin-global-search')?.addEventListener('input', event => {
-    globalQuery = (event.currentTarget as HTMLInputElement).value.trim().toLowerCase();
-    renderAll();
+    const value = (event.currentTarget as HTMLInputElement).value;
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      globalQuery = value.trim().toLowerCase();
+      Object.values(tables).forEach(item => item.setExternalQuery(globalQuery));
+      renderAgent();
+      renderIntegrations();
+      renderSecurity();
+    }, 150);
   });
-  document.querySelectorAll<HTMLButtonElement>('[data-filter-group][data-filter-value], [data-filter-group] [data-filter-value]').forEach(button => {
-    button.addEventListener('click', () => {
-      const group = button.closest<HTMLElement>('[data-filter-group]')?.dataset.filterGroup as 'users' | 'projects' | undefined;
-      if (!group) return;
-      activeFilters[group] = button.dataset.filterValue || 'all';
-      button.closest('[data-filter-group]')?.querySelectorAll('[data-filter-value]').forEach(chip => chip.classList.toggle('active', chip === button));
-      if (group === 'users') renderUsers();
-      if (group === 'projects') renderProjects();
-    });
-  });
+}
+
+const ACTIVITY_ICONS: Record<string, string> = { run: 'Run', project: 'Projet', admin: 'Admin', login: 'Connexion' };
+
+/**
+ * One account, loaded when opened: status, spend, projects, activity, and
+ * the actions an admin may take on it — each confirmed, each audited.
+ */
+async function openUserDrawer(id: string) {
+  const drawer = qs('#admin-drawer');
+  const content = qs('#admin-drawer-content');
+  if (!drawer || !content) return;
+  const known = allUsers.find(row => String(row.id) === id);
+  content.innerHTML = `<h2 class="drawer-title">${escapeHtml(known?.email || 'Utilisateur')}</h2><p class="drawer-subtitle">Chargement du compte…</p>${skeleton(6)}`;
+  drawer.classList.add('open');
+  qs('#admin-drawer-backdrop')?.classList.add('open');
+  let data: JsonRecord;
+  try { data = await apiFetch<JsonRecord>(`/api/admin/users/${encodeURIComponent(id)}`); }
+  catch (error) {
+    content.innerHTML = `<h2 class="drawer-title">${escapeHtml(known?.email || 'Utilisateur')}</h2><div class="admin-error">${escapeHtml(error instanceof Error ? error.message : 'Compte indisponible.')}</div>`;
+    return;
+  }
+  const user = data.user || {};
+  const costs = data.costs?.totals || {};
+  const activity: JsonRecord[] = data.activity || [];
+  const projects: JsonRecord[] = data.projects || [];
+  const actions = `
+    ${user.suspended
+      ? `<button class="admin-button primary" type="button" data-user-action="unsuspend" data-user-id="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email || '')}">Réactiver le compte</button>`
+      : `<button class="admin-button is-danger" type="button" data-user-action="suspend" data-user-id="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email || '')}"${user.is_platform_admin ? ' disabled title="Un admin plateforme ne peut pas être suspendu"' : ''}>Suspendre</button>`}
+    <button class="admin-button" type="button" data-user-action="reset" data-user-id="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email || '')}"${user.email ? '' : ' disabled'}>Réinitialiser le mot de passe</button>
+    <button class="admin-button subtle" data-copy-value="${escapeHtml(user.id)}" type="button">Copier l’identifiant</button>`;
+  content.innerHTML = `
+    <h2 class="drawer-title">${escapeHtml(user.email || 'Sans e-mail')}</h2>
+    <p class="drawer-subtitle">${user.suspended ? pill('failed', 'Suspendu') : pill('ok', 'Actif')} ${user.is_platform_admin ? pill('platform_admin') : ''}</p>
+    <div class="drawer-actions">${actions}</div>
+    <div class="drawer-grid">${[
+      ['Identifiant', user.id],
+      ['Inscription', formatDate(user.created_at)],
+      ['Dernière connexion', formatDate(user.last_sign_in_at)],
+      ['E-mail confirmé', user.confirmed_at ? formatDate(user.confirmed_at) : 'Non'],
+      ['Crédits', data.wallet?.balance ?? '--'],
+      ['Projets', projects.length],
+      ['Coût OpenRouter (30 j)', formatUsd(costs.cost_usd)],
+      ['Tokens (30 j)', formatTokens(Number(costs.prompt_tokens || 0) + Number(costs.completion_tokens || 0))],
+    ].map(([label, value]) => drawerField(String(label), value)).join('')}</div>
+    <h3 class="drawer-section-title">Historique d’activité</h3>
+    ${activity.length ? `<ol class="admin-timeline">${activity.slice(0, 30).map(item => `<li data-kind="${escapeHtml(item.kind)}"><span class="admin-timeline-kind">${escapeHtml(ACTIVITY_ICONS[item.kind] || item.kind)}</span><div><strong>${escapeHtml(item.label)}</strong>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ''}</div><time>${escapeHtml(formatDate(item.at))}</time></li>`).join('')}</ol>` : empty('Aucune activité enregistrée.')}
+    <h3 class="drawer-section-title">Projets</h3>
+    ${table(['Projet', 'Aperçu', 'Mis à jour'], projects.slice(0, 20).map(project => [`<button class="admin-link" type="button" data-open-project="${escapeHtml(project.id)}">${escapeHtml(project.name)}</button>`, pill(project.preview_status), escapeHtml(formatDate(project.updated_at))]), 'Aucun projet.')}
+    <h3 class="drawer-section-title">Coûts par modèle (30 j)</h3>
+    ${table(['Modèle', 'Coût', 'Requêtes'], (data.costs?.by_model || []).map((row: JsonRecord) => [`<code>${escapeHtml(row.key)}</code>`, escapeHtml(formatUsd(row.cost_usd)), escapeHtml(formatNumber(row.requests))]), 'Aucun coût mesuré.')}`;
+}
+
+async function runUserAction(button: HTMLButtonElement) {
+  const action = button.dataset.userAction;
+  const id = button.dataset.userId || '';
+  const email = button.dataset.userEmail || '';
+  const who = email || 'ce compte';
+  if (!id || !action) return;
+  if (action === 'suspend') {
+    const ok = await confirmDialog({ title: `Suspendre ${who} ?`, body: 'La personne ne pourra plus se connecter ni lancer de génération. Ses projets et ses données sont conservés ; la suspension se lève à tout moment.', confirmLabel: 'Suspendre le compte', danger: true, typeToConfirm: email || undefined });
+    if (!ok) return;
+  } else if (action === 'unsuspend') {
+    if (!(await confirmDialog({ title: `Réactiver ${who} ?`, body: 'La personne pourra de nouveau se connecter.', confirmLabel: 'Réactiver' }))) return;
+  } else if (action === 'reset') {
+    if (!(await confirmDialog({ title: 'Réinitialiser le mot de passe ?', body: `${who} recevra un e-mail pour choisir un nouveau mot de passe. Aucun mot de passe n’est visible ni défini par un admin.`, confirmLabel: 'Envoyer l’e-mail' }))) return;
+  }
+  button.disabled = true;
+  try {
+    const path = action === 'reset' ? 'reset-password' : action;
+    await apiFetch(`/api/admin/users/${encodeURIComponent(id)}/${path}`, { method: 'POST', body: JSON.stringify({}) });
+    toast(action === 'suspend' ? `${who} est suspendu.` : action === 'unsuspend' ? `${who} est réactivé.` : `E-mail de réinitialisation envoyé à ${who}.`, 'success');
+    const row = allUsers.find(user => user.id === id);
+    if (row && action !== 'reset') { row.suspended = action === 'suspend'; renderUsers(); }
+    void openUserDrawer(id);
+    if (tables.audit) void loadAudit();
+  } catch (error) {
+    button.disabled = false;
+    toast(error instanceof Error ? error.message : 'Action impossible.', 'error');
+  }
 }
 
 function openEntityDrawer(type: string, id: string) {
@@ -794,6 +1110,11 @@ function openEntityDrawer(type: string, id: string) {
   }
 
   if (type === 'user') {
+    void openUserDrawer(id);
+    return;
+  }
+
+  if (type === 'user-legacy') {
     const user = allUsers.find(row => String(row.id) === id);
     if (!user) {
       openDrawer('Compte', 'Ce compte n’apparaît pas dans les 500 derniers utilisateurs chargés.', [['Identifiant', id]], undefined, `<button class="admin-button" data-copy-value="${escapeHtml(id)}" type="button">Copier l’identifiant</button>`);
@@ -890,26 +1211,75 @@ function bindActions() {
     globalQuery = '';
     const globalInput = qs<HTMLInputElement>('#admin-global-search');
     if (globalInput) globalInput.value = '';
-    activeFilters.users = 'all';
-    activeFilters.projects = 'all';
-    document.querySelectorAll<HTMLElement>('[data-filter-group]').forEach(group => {
-      group.querySelectorAll<HTMLElement>('[data-filter-value]').forEach(chip => chip.classList.toggle('active', chip.dataset.filterValue === 'all'));
-    });
+    Object.values(tables).forEach(item => item.setExternalQuery(''));
     renderAll();
   });
-  qs('#admin-copy-summary')?.addEventListener('click', async event => {
-    const button = event.currentTarget as HTMLButtonElement;
-    await navigator.clipboard?.writeText(buildSupportSummary()).catch(() => undefined);
-    const label = button.textContent;
-    button.textContent = 'Copié';
-    window.setTimeout(() => { button.textContent = label; }, 1400);
+  qs('#admin-copy-summary')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(buildSupportSummary()); toast('Résumé copié dans le presse-papiers.', 'success'); }
+    catch { toast('Copie impossible : votre navigateur a refusé l’accès au presse-papiers.', 'error'); }
+  });
+  document.addEventListener('visibilitychange', syncLivePolling);
+  document.addEventListener('change', event => {
+    const target = event.target as HTMLElement;
+    if (target.matches('[data-cost-days]')) {
+      costDays = Number((target as HTMLSelectElement).value) || 30;
+      state.costs = null;
+      renderCosts();
+      void loadCosts();
+    }
+    if (target.matches('[data-alert-form] select[name="scope"]')) {
+      const form = target.closest('form')!;
+      const scope = (target as HTMLSelectElement).value;
+      form.querySelectorAll<HTMLElement>('[data-target]').forEach(label => { label.hidden = label.dataset.target !== scope; });
+    }
+  });
+  document.addEventListener('submit', async event => {
+    const form = (event.target as HTMLElement).closest<HTMLFormElement>('[data-alert-form]');
+    if (!form) return;
+    event.preventDefault();
+    const data = new FormData(form);
+    const scope = String(data.get('scope') || 'global');
+    const target_id = scope === 'user' ? data.get('user') : scope === 'model' ? data.get('model') : null;
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    try {
+      await apiFetch('/api/admin/cost-alerts', { method: 'POST', body: JSON.stringify({ scope, target_id, monthly_budget_usd: Number(data.get('budget')) }) });
+      toast('Budget enregistré.', 'success');
+      await loadCosts();
+      void refreshLive();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Le budget n’a pas pu être enregistré.', 'error');
+    } finally { if (submit) submit.disabled = false; }
   });
   qs('#admin-build-support-summary')?.addEventListener('click', renderSupport);
   document.addEventListener('click', event => {
     const target = event.target as HTMLElement;
     const copyValue = target.closest<HTMLElement>('[data-copy-value]')?.dataset.copyValue;
     if (copyValue) {
-      void navigator.clipboard?.writeText(copyValue).catch(() => undefined);
+      void navigator.clipboard?.writeText(copyValue).then(() => toast('Copié.', 'success'), () => toast('Copie impossible.', 'error'));
+      return;
+    }
+    const userAction = target.closest<HTMLButtonElement>('[data-user-action]');
+    if (userAction) { void runUserAction(userAction); return; }
+    const goto = target.closest<HTMLElement>('[data-goto]')?.dataset.goto;
+    if (goto) { activateSection(goto); return; }
+    const deleteAlert = target.closest<HTMLButtonElement>('[data-delete-alert]');
+    if (deleteAlert) {
+      void (async () => {
+        if (!(await confirmDialog({ title: 'Supprimer ce budget ?', body: `${deleteAlert.dataset.alertLabel || 'Ce budget'} ne déclenchera plus d’alerte.`, confirmLabel: 'Supprimer', danger: true }))) return;
+        try { await apiFetch(`/api/admin/cost-alerts/${encodeURIComponent(deleteAlert.dataset.deleteAlert || '')}`, { method: 'DELETE' }); toast('Budget supprimé.', 'success'); await loadCosts(); }
+        catch (error) { toast(error instanceof Error ? error.message : 'Suppression impossible.', 'error'); }
+      })();
+      return;
+    }
+    const healthTest = target.closest<HTMLButtonElement>('[data-health-test]');
+    if (healthTest) {
+      healthTest.disabled = true;
+      healthTest.textContent = 'Test…';
+      void apiFetch<JsonRecord>('/api/admin/cloud/provisioning-check', { method: 'POST', body: JSON.stringify({}) })
+        .then(result => toast(String(result.message || (result.ok ? 'Test réussi.' : 'Test en échec.')), result.ok ? 'success' : 'error'))
+        .catch(error => toast(error instanceof Error ? error.message : 'Test impossible.', 'error'))
+        .finally(() => { healthTest.disabled = false; healthTest.textContent = 'Tester'; });
       return;
     }
     const projectId = target.closest<HTMLElement>('[data-open-project]')?.dataset.openProject;
