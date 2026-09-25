@@ -1,7 +1,7 @@
 import { apiFetch } from './lib/api';
 import { mountIntegrationsGrid } from './integrations';
 import { enhanceSelect } from './lib/select-menu';
-import { publicBillingCatalog } from './config/billing-v2';
+import { FEATURED_PLAN_BADGE, planFeatures, publicBillingCatalog, topupUnitXaf } from './config/billing-v2';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
 import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
 
@@ -188,7 +188,8 @@ const settingsTabMeta: Record<string, { title: string; description: string }> = 
 /** "free" and "Free" read as the plan's French name; other plan names are proper nouns. */
 function planDisplayName(value: unknown): string {
   const raw = String(value || '').trim();
-  if (!raw || /^free$/i.test(raw) || /^gratuit$/i.test(raw)) return 'Gratuit';
+  // The plan is called Free everywhere else in the product.
+  if (!raw || /^free$/i.test(raw) || /^gratuit$/i.test(raw)) return 'Free';
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
@@ -886,10 +887,11 @@ function installSettingsStyle() {
       display: flex;
       align-items: center;
       gap: 7px;
-      min-width: min(280px, 54%);
+      min-width: min(340px, 62%);
     }
 
     .billing-inline-actions .billing-tier-select { min-width: 150px; }
+    .billing-inline-actions .coden-select { flex: 1 1 auto; min-width: 220px; }
 
     .billing-plan-features {
       display: grid;
@@ -927,6 +929,7 @@ function installSettingsStyle() {
       .billing-balance-card { grid-template-columns: 1fr; }
       .billing-inline-actions { width: 100%; min-width: 0; }
       .billing-inline-actions .billing-tier-select { min-width: 0; }
+      .billing-inline-actions .coden-select { min-width: 0; }
     }
 
     .settings-segment {
@@ -1683,7 +1686,7 @@ function settingsMarkup() {
             <h3 data-settings-profile-name>Profil du workspace</h3>
             <p data-settings-profile-email>Chargement du compte…</p>
           </div>
-          <span class="settings-plan-badge" data-settings-plan-badge>Gratuit</span>
+          <span class="settings-plan-badge" data-settings-plan-badge>Free</span>
         </div>
         <div class="settings-card">
           <h3>Préférences personnelles</h3>
@@ -1751,7 +1754,7 @@ function settingsMarkup() {
           <p>Votre identité, votre forfait et la session de ce navigateur.</p>
           <div class="settings-row">
             <div><strong>E-mail</strong><span data-settings-account-email>Chargement…</span></div>
-            <span class="settings-mini-badge" data-settings-account-plan>Gratuit</span>
+            <span class="settings-mini-badge" data-settings-account-plan>Free</span>
           </div>
           <div class="settings-row">
             <div><strong>Identifiant</strong><code data-settings-account-id>--</code></div>
@@ -1793,7 +1796,7 @@ function settingsMarkup() {
         <div class="settings-card billing-intent" data-billing-intent hidden></div>
         <div class="settings-card billing-balance-card">
           <div>
-            <h3 data-settings-billing-plan>Forfait gratuit</h3>
+            <h3 data-settings-billing-plan>Forfait Free</h3>
             <p>Un solde unique pour la génération, le Cloud et l’IA intégrée. Les crédits réservés à un usage sont consommés en premier.</p>
             <strong class="billing-balance-value" data-billing-balance>—</strong>
           </div>
@@ -1814,7 +1817,7 @@ function settingsMarkup() {
           <h3>Crédits et paiements</h3>
           <p>Les recharges expirent après douze mois et ne sont accordées qu’après confirmation signée de Saspay.</p>
           <div class="settings-row">
-            <div><strong>Ajouter des crédits</strong><span>Disponible pour les forfaits Pro et Business.</span></div>
+            <div><strong>Ajouter des crédits</strong><span data-billing-topup-rule>Pro et Business · le crédit de votre forfait + 25 %, valable 12 mois.</span></div>
             <div class="billing-inline-actions">
               <select class="billing-tier-select" data-billing-topup-product aria-label="Montant de la recharge"><option value="">Chargement…</option></select>
               <button type="button" class="settings-action-button" data-settings-action="billing-topup">Ajouter</button>
@@ -2050,7 +2053,7 @@ function renderAuthSummary(auth: AuthMeResponse | null, prefs = loadSettingsPref
   if (accountEmail) accountEmail.textContent = email;
   if (accountId) accountId.textContent = userId;
   if (accountPlan) accountPlan.textContent = String(planLabel);
-  if (billingPlan) billingPlan.textContent = planLabel === 'Gratuit' ? 'Forfait gratuit' : `Forfait ${String(planLabel)}`;
+  if (billingPlan) billingPlan.textContent = `Forfait ${String(planLabel)}`;
 }
 
 async function hydrateSettingsPanel() {
@@ -2553,6 +2556,8 @@ function bindSettingsPanel() {
       const price = billingPrice(billingTier.dataset.billingTier, Number(billingTier.value));
       const priceNode = document.querySelector<HTMLElement>(`[data-billing-price="${billingTier.dataset.billingTier}"]`);
       if (priceNode) priceNode.innerHTML = `<strong>${formatBillingAmount(price?.monthlyEquivalent, price?.currency)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · paiement annuel' : ''}</span>`;
+      const featureList = document.querySelector<HTMLElement>(`[data-billing-features="${billingTier.dataset.billingTier}"]`);
+      if (featureList) featureList.innerHTML = planFeatures(billingTier.dataset.billingTier, Number(billingTier.value)).map(item => `<li>${escapeHtml(item)}</li>`).join('');
       return;
     }
     if (!target?.closest('#settings-panel [data-settings-field]')) return;
@@ -2616,12 +2621,12 @@ function billingPlanMarkup(plan: 'pro' | 'business') {
   const current = billingWallet?.plan === plan;
   return `
     <article class="billing-plan-card" data-plan="${plan}">
-      <div class="billing-plan-head"><strong>${escapeHtml(catalogPlan?.name || plan)}</strong>${current ? '<span class="settings-mini-badge">Actuel</span>' : ''}</div>
+      <div class="billing-plan-head"><strong>${escapeHtml(catalogPlan?.name || plan)}</strong>${current ? '<span class="settings-mini-badge">Actuel</span>' : plan === 'pro' ? `<span class="settings-mini-badge">${escapeHtml(FEATURED_PLAN_BADGE)}</span>` : ''}</div>
       <select class="billing-tier-select" data-billing-tier="${plan}" aria-label="Crédits mensuels ${escapeHtml(catalogPlan?.name || plan)}">
         ${tiers.map(tier => `<option value="${tier}"${tier === defaultTier ? ' selected' : ''}>${new Intl.NumberFormat('fr-FR').format(tier)} crédits</option>`).join('')}
       </select>
       <div class="billing-plan-price" data-billing-price="${plan}"><strong>${formatBillingAmount(price?.monthlyEquivalent, price?.currency)}</strong><span>/ mois${selectedBillingInterval === 'annual' ? ' · paiement annuel' : ''}</span></div>
-      <ul class="billing-plan-features">${(catalogPlan?.capabilities || []).slice(0, 5).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+      <ul class="billing-plan-features" data-billing-features="${plan}">${planFeatures(plan, defaultTier).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
       <button type="button" class="settings-action-button" data-billing-checkout="${plan}"${current ? ' disabled' : ''}>${current ? 'Forfait actuel' : `Choisir ${escapeHtml(catalogPlan?.name || plan)}`}</button>
     </article>`;
 }
@@ -2657,6 +2662,13 @@ function renderBillingSettings() {
     topupSelect.disabled = !isPaid;
   }
   if (topupButton) topupButton.disabled = !isPaid;
+  const topupRule = document.querySelector<HTMLElement>('[data-billing-topup-rule]');
+  if (topupRule) {
+    const unit = (value: number) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)} FCFA`;
+    topupRule.textContent = isPaid
+      ? `${unit(topupUnitXaf(plan))} le crédit sur votre forfait ${plan === 'business' ? 'Business' : 'Pro'} (crédit du forfait + 25 %), valable 12 mois.`
+      : `Réservé aux forfaits Pro (${unit(topupUnitXaf('pro'))} le crédit) et Business (${unit(topupUnitXaf('business'))}), valable 12 mois.`;
+  }
   enhanceBillingSelects();
 }
 

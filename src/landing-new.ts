@@ -13,7 +13,7 @@ import {
   writePreferredEffort,
   writePreferredModelSelection,
 } from './lib/composer-preferences';
-import { BILLING_XAF_PER_USD, priceFor, publicationLimitsFor, type BillingInterval } from './config/billing-v2';
+import { BILLING_XAF_PER_USD, planFeatures, priceFor, type BillingInterval } from './config/billing-v2';
 
 const reducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
@@ -284,11 +284,10 @@ function formatAmount(xaf: number, currency: DisplayCurrency) {
   return `${figure}\u00a0${unit}`;
 }
 
-function publicationLabel(credits: number) {
-  const { publishedSites, customDomains } = publicationLimitsFor('pro', credits);
-  const sites = publishedSites === null ? 'Sites publiés illimités' : `${publishedSites} site${publishedSites > 1 ? 's' : ''} publié${publishedSites > 1 ? 's' : ''}`;
-  const domains = customDomains === null ? 'domaines illimités' : `${customDomains} domaine${customDomains > 1 ? 's' : ''} personnalisé${customDomains > 1 ? 's' : ''}`;
-  return `${sites} et ${domains}`;
+/* The first three lines of the plan's canonical list, as on the pricing page. */
+function renderPlanFeatures(section: ParentNode, plan: 'free' | 'pro' | 'business', credits = 0) {
+  const items = section.querySelectorAll<HTMLElement>(`[data-lp-features="${plan}"] li span`);
+  planFeatures(plan, credits).slice(0, items.length).forEach((text, index) => { items[index].textContent = text; });
 }
 
 /* Slide each toggle's thumb under its pressed option. */
@@ -375,7 +374,7 @@ function setupPricing() {
       show(section.querySelector<HTMLElement>(`[data-lp-was="${plan}"]`), annual ? `${formatAmount(monthly.amount, currency)} / mois` : null);
       setText(section.querySelector(`[data-lp-note="${plan}"]`), annual ? `${formatAmount(price.amount, currency)} facturés par an` : 'Facturé mensuellement', false);
       show(section.querySelector<HTMLElement>(`[data-lp-save="${plan}"]`), annual ? `Économie de ${formatAmount(monthly.amount * 12 - price.amount, currency)}` : null);
-      if (plan === 'pro') setText(section.querySelector('[data-lp-publication="pro"] span'), publicationLabel(price.credits), false);
+      renderPlanFeatures(section, plan, price.credits);
     });
     dropdowns.forEach(dropdown => dropdown.refresh());
     updateCtas();

@@ -3,7 +3,7 @@ import './pricing-page.css';
 import { hasStoredSession } from './lib/stored-session';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { enhanceSelect, type SelectMenu } from './lib/select-menu';
-import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, type BillingInterval } from './config/billing-v2';
+import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, planFeatures, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, topupUnitXaf, type BillingInterval } from './config/billing-v2';
 
 type PricingPlan = {
   key: 'free' | 'pro' | 'business';
@@ -145,36 +145,29 @@ function setInterval(next: BillingInterval) {
   refreshTierMenus();
 }
 
+/* The same list, word for word, as the landing, the upgrade modal and Settings. */
 function renderCapabilities(plan: PricingPlan, selectedCredits = Number(plan.baseCredits || 0)) {
   const list = document.querySelector<HTMLUListElement>(`[data-pricing-capabilities="${plan.key}"]`);
   if (!list) return;
-  let values = [...(plan.capabilities || [])];
-  if (plan.key === 'pro') {
-    const sites = selectedCredits >= 100 ? 'Sites publiés illimités' : `${selectedCredits >= 60 ? 3 : 1} site${selectedCredits >= 60 ? 's' : ''} publié${selectedCredits >= 60 ? 's' : ''}`;
-    const domains = selectedCredits >= 100 ? 10 : selectedCredits >= 60 ? 3 : 1;
-    values = [
-      `${selectedCredits} crédits chaque mois`,
-      sites,
-      `${domains} domaine${domains > 1 ? 's' : ''} personnalisé${domains > 1 ? 's' : ''}`,
-      'Édition et export du code',
-      'Historique des versions et rollback',
-    ];
-  } else if (plan.key === 'business') {
-    values = [
-      `${selectedCredits || 100} crédits chaque mois`,
-      'Sites publiés illimités',
-      'Domaines personnalisés illimités',
-      'Rôles et projets internes',
-      'Modèles premium et support prioritaire',
-    ];
-  }
-  if (!values.length) return;
+  const values = plan.key === 'free'
+    ? ['5 crédits offerts une seule fois', ...planFeatures('free')]
+    : planFeatures(plan.key, selectedCredits);
   list.replaceChildren(...values.map(value => {
     const item = document.createElement('li');
     item.textContent = value;
     return item;
   }));
 }
+
+/* What a top-up credit costs, from the same catalogue as the plans. */
+function renderTopupUnits() {
+  const format = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+  document.querySelectorAll<HTMLElement>('[data-pricing-topup-unit]').forEach(node => {
+    const plan = node.dataset.pricingTopupUnit === 'business' ? 'business' : 'pro';
+    node.textContent = `${format(topupUnitXaf(plan))} FCFA le crédit`;
+  });
+}
+renderTopupUnits();
 
 function syncTierOptions(plan: 'pro' | 'business', definition?: PricingPlan) {
   const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);
