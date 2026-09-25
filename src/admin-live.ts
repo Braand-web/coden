@@ -1,4 +1,5 @@
 import { apiFetch } from './lib/api';
+import { localConnectorLogo } from './lib/connector-logos';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
@@ -23,6 +24,8 @@ type AdminState = {
   publish: JsonRecord | null;
   security: JsonRecord | null;
   flags: JsonRecord[];
+  learning: JsonRecord | null;
+  integrations: JsonRecord | null;
   loading: boolean;
 };
 
@@ -36,6 +39,8 @@ const state: AdminState = {
   publish: null,
   security: null,
   flags: [],
+  learning: null,
+  integrations: null,
   loading: true,
 };
 
@@ -46,6 +51,21 @@ let globalQuery = '';
 const activeFilters: Record<'users' | 'projects', string> = {
   users: 'all',
   projects: 'all',
+};
+
+const SECTION_LABELS: Record<string, string> = {
+  overview: 'Vue d’ensemble',
+  agent: 'Agent',
+  users: 'Utilisateurs',
+  projects: 'Projets',
+  runs: 'Runs',
+  errors: 'Erreurs',
+  models: 'Modèles',
+  integrations: 'Intégrations',
+  publish: 'Publication',
+  security: 'Sécurité',
+  flags: 'Drapeaux',
+  support: 'Support',
 };
 
 function qs<T extends HTMLElement = HTMLElement>(selector: string) {
@@ -63,22 +83,63 @@ function escapeHtml(value: unknown) {
 
 function statusClass(value: unknown) {
   const status = String(value || 'unknown').toLowerCase();
-  if (/ok|ready|success|completed|published|active|enabled/.test(status)) return 'ok';
-  if (/fail|error|blocked|denied|missing|disabled/.test(status)) return 'failed';
-  if (/warn|draft|running|pending|unknown|idle/.test(status)) return 'warning';
+  if (/ok|ready|success|completed|published|active|enabled|verified/.test(status)) return 'ok';
+  if (/fail|error|blocked|denied|missing|disabled|expired|revoked/.test(status)) return 'failed';
+  if (/warn|draft|running|pending|unknown|idle|initiated|initializing|needs_fix/.test(status)) return 'warning';
   return status.replace(/[^a-z0-9_-]/g, '') || 'warning';
 }
 
-function pill(value: unknown) {
-  const text = String(value || 'unknown');
-  return `<span class="status-pill ${statusClass(text)}">${escapeHtml(text)}</span>`;
+/** The words people read; the class keeps the raw status. */
+const STATUS_LABELS: Record<string, string> = {
+  ok: 'OK',
+  warning: 'À vérifier',
+  failed: 'Échec',
+  error: 'Erreur',
+  completed: 'Terminé',
+  running: 'En cours',
+  queued: 'En file',
+  cancelled: 'Annulé',
+  blocked: 'Bloqué',
+  verified: 'Vérifié',
+  needs_fix: 'À corriger',
+  idle: 'Inactif',
+  draft: 'Brouillon',
+  active: 'Actif',
+  published: 'Publié',
+  ready: 'Prêt',
+  success: 'Réussi',
+  pending: 'En attente',
+  unknown: 'Inconnu',
+  enabled: 'Activé',
+  disabled: 'Désactivé',
+  initiated: 'En attente',
+  initializing: 'En attente',
+  expired: 'Expiré',
+  revoked: 'Révoqué',
+  platform_admin: 'Admin plateforme',
+  user: 'Utilisateur',
+  high: 'Élevée',
+  medium: 'Moyenne',
+  low: 'Faible',
+  critical: 'Critique',
+};
+
+function pill(value: unknown, label?: string) {
+  const raw = String(value || 'unknown');
+  const text = label ?? STATUS_LABELS[raw.toLowerCase()] ?? raw;
+  return `<span class="status-pill ${statusClass(raw)}">${escapeHtml(text)}</span>`;
 }
 
 function formatDate(value: unknown) {
-  if (!value) return 'Never';
+  if (!value) return 'Jamais';
   const date = new Date(String(value));
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString('fr-FR') : String(value ?? '--');
 }
 
 function isRecent(value: unknown, hours = 24) {
@@ -93,14 +154,14 @@ function matchesQuery(row: JsonRecord, query = globalQuery) {
 }
 
 function skeleton(rows = 5) {
-  return `<div class="admin-skeleton" aria-label="Loading">${Array.from({ length: rows }, () => '<div class="admin-skeleton-line"></div>').join('')}</div>`;
+  return `<div class="admin-skeleton" aria-label="Chargement">${Array.from({ length: rows }, () => '<div class="admin-skeleton-line"></div>').join('')}</div>`;
 }
 
 async function safeAdminFetch<T extends JsonRecord>(path: string, fallback: T): Promise<T> {
   try {
     return await apiFetch<T>(path);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Admin data unavailable.';
+    const message = error instanceof Error ? error.message : 'Données admin indisponibles.';
     return {
       ...fallback,
       success: false,
@@ -113,22 +174,46 @@ async function safeAdminFetch<T extends JsonRecord>(path: string, fallback: T): 
   }
 }
 
-function metric(label: string, value: unknown, note = '') {
+function metric(label: string, value: unknown, note = '', extra = '') {
   return `
     <article class="admin-card clickable" data-drawer-type="metric" data-drawer-id="${escapeHtml(label)}">
       <span class="metric-label">${escapeHtml(label)}</span>
       <strong class="metric-value">${escapeHtml(value)}</strong>
       ${note ? `<span class="metric-note">${escapeHtml(note)}</span>` : ''}
+      ${extra}
     </article>
   `;
+}
+
+/** Daily bars from real rows: one bar per day over the window, empty days drawn flat. */
+function dailyBars(dates: unknown[], days = 14) {
+  const counts = new Map<string, number>();
+  for (const value of dates) {
+    const day = String(value || '').slice(0, 10);
+    if (day) counts.set(day, (counts.get(day) || 0) + 1);
+  }
+  const series: Array<{ day: string; count: number }> = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const day = new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+    series.push({ day, count: counts.get(day) || 0 });
+  }
+  const max = Math.max(1, ...series.map(item => item.count));
+  return `<div class="admin-bars" aria-hidden="true">${series.map(item => `<span style="height:${Math.max(8, Math.round((item.count / max) * 100))}%"${item.count ? '' : ' data-empty'} title="${escapeHtml(item.day)} : ${item.count}"></span>`).join('')}</div>`;
+}
+
+function ratio(positive: number, negative: number) {
+  const total = positive + negative;
+  if (!total) return '';
+  const share = Math.round((positive / total) * 100);
+  return `<div class="admin-ratio" aria-hidden="true"><span style="width:${share}%"></span><span style="width:${100 - share}%"></span></div>`;
 }
 
 function empty(message: string) {
   return `<div class="admin-empty">${escapeHtml(message)}</div>`;
 }
 
-function table(headers: string[], rows: string[][]) {
-  if (!rows.length) return empty('No data available yet.');
+function table(headers: string[], rows: string[][], emptyMessage = 'Aucune donnée pour le moment.') {
+  if (!rows.length) return empty(emptyMessage);
   return `
     <div class="admin-table-wrap">
       <table class="admin-table">
@@ -169,11 +254,32 @@ function closeDrawer() {
 }
 
 function renderHealth(rows: JsonRecord[] = []) {
-  if (!rows.length) return empty('Health checks are unavailable.');
+  if (!rows.length) return empty('Contrôles de santé indisponibles.');
   return `<div class="health-list">${rows.map(row => `
     <div class="health-row">
       <div><strong>${escapeHtml(row.label)}</strong><br><span>${escapeHtml(row.detail)}</span></div>
       ${pill(row.status)}
+    </div>
+  `).join('')}</div>`;
+}
+
+const AVAILABILITY_LABELS: Record<string, string> = {
+  users: 'Utilisateurs',
+  projects: 'Projets',
+  agent_runs: 'Runs',
+  ai_requests: 'Requêtes IA',
+  deployments: 'Déploiements',
+  credit_wallets: 'Portefeuilles',
+  endpoint: 'Point d’accès admin',
+};
+
+function renderAvailability(availability: JsonRecord) {
+  const entries = Object.entries(availability);
+  if (!entries.length) return empty('Aucune donnée de disponibilité.');
+  return `<div class="flag-list">${entries.map(([key, available]) => `
+    <div class="flag-row">
+      <div><strong>${escapeHtml(AVAILABILITY_LABELS[key] || key.replace(/_/g, ' '))}</strong><br><span>${available ? 'Table accessible' : 'Absente ou indisponible'}</span></div>
+      ${pill(available ? 'ok' : 'warning')}
     </div>
   `).join('')}</div>`;
 }
@@ -183,32 +289,145 @@ function renderOverview() {
   if (!root) return;
   const overview = state.overview;
   if (!overview) {
-    root.innerHTML = empty('Loading admin overview...');
+    root.innerHTML = empty('Chargement de la vue d’ensemble…');
     return;
   }
   const metrics = overview.metrics || {};
+  const learning = state.learning;
+  const integrations = state.integrations;
   root.innerHTML = [
-    metric('Users', metrics.users ?? 0, `${metrics.active_today ?? 0} active today`),
-    metric('Projects', metrics.projects ?? 0, `${metrics.previews_ready ?? 0} previews ready`),
-    metric('Run success', `${metrics.success_rate ?? 100}%`, `${metrics.failed_runs ?? 0} failed runs observed`),
-    metric('Published', metrics.publish_success ?? 0, 'Successful deployment records'),
-    metric('AI requests', metrics.ai_requests ?? 0, 'Recent provider requests'),
-    metric('Wallet credits', metrics.wallet_credits ?? 0, 'Total visible wallet balance'),
-    `<article class="admin-card wide"><span class="panel-label">System health</span>${renderHealth(overview.health || [])}</article>`,
-    `<article class="admin-card"><span class="panel-label">Availability</span>${renderAvailability(overview.availability || {})}</article>`,
-    `<article class="admin-card full"><span class="panel-label">Recent failed runs</span>${renderFailedRuns(overview.recent?.failed_runs || [])}</article>`,
+    metric('Utilisateurs', formatNumber(metrics.users ?? 0), `${formatNumber(metrics.active_today ?? 0)} actifs aujourd’hui`),
+    metric('Projets', formatNumber(metrics.projects ?? 0), `${formatNumber(metrics.previews_ready ?? 0)} aperçus vérifiés`),
+    metric('Réussite des runs', `${metrics.success_rate ?? 100} %`, `${formatNumber(metrics.failed_runs ?? 0)} runs en échec`, dailyBars(allRuns.map(run => run.created_at))),
+    metric('Publications', formatNumber(metrics.publish_success ?? 0), 'Déploiements réussis'),
+    metric('Apprentissage', formatNumber(learning?.signals?.total ?? 0), learning ? `${formatNumber(learning.knowledge?.visible_patterns ?? 0)} schémas partagés · ${learning.personalization?.share_rate ?? 100} % partagent` : 'Signaux des 30 derniers jours'),
+    metric('Intégrations', integrations?.configured ? formatNumber(integrations?.totals?.active ?? 0) : 'Inactives', integrations?.configured ? `${formatNumber(integrations?.totals?.users ?? 0)} comptes · ${formatNumber(integrations?.totals?.toolkits ?? 0)} services` : 'COMPOSIO_API_KEY manquante'),
+    `<article class="admin-card wide"><span class="panel-label">Santé des services</span>${renderHealth(overview.health || [])}</article>`,
+    `<article class="admin-card"><span class="panel-label">Données</span>${renderAvailability(overview.availability || {})}</article>`,
+    `<article class="admin-card full"><span class="panel-label">Derniers runs en échec</span>${renderFailedRuns(overview.recent?.failed_runs || [])}</article>`,
   ].join('');
 }
 
-function renderAvailability(availability: JsonRecord) {
-  const entries = Object.entries(availability);
-  if (!entries.length) return empty('No availability data.');
-  return `<div class="flag-list">${entries.map(([key, available]) => `
-    <div class="flag-row">
-      <div><strong>${escapeHtml(key.replace(/_/g, ' '))}</strong><br><span>${available ? 'Connected' : 'Missing or unavailable'}</span></div>
-      ${pill(available ? 'ok' : 'warning')}
-    </div>
-  `).join('')}</div>`;
+const TASK_LABELS: Record<string, string> = {
+  code_generation: 'Génération',
+  code_edit: 'Modification',
+  general: 'Général',
+};
+
+const SIGNAL_LABELS: Record<string, string> = {
+  run: 'Runs',
+  error_fixed: 'Erreurs corrigées',
+  retry: 'Relances',
+  feedback: 'Avis 👍/👎',
+  revert: 'Versions restaurées',
+};
+
+function renderAgent() {
+  const root = qs('#admin-agent');
+  if (!root) return;
+  const learning = state.learning;
+  if (!learning) {
+    root.innerHTML = skeleton(4);
+    return;
+  }
+  if (learning.success === false) {
+    root.innerHTML = `<article class="admin-card full">${empty(learning.error || 'Les données d’apprentissage sont indisponibles.')}</article>`;
+    return;
+  }
+  const signals = learning.signals || {};
+  const knowledge = learning.knowledge || {};
+  const personalization = learning.personalization || {};
+  const routing = learning.routing || {};
+  const perDay: JsonRecord[] = signals.per_day || [];
+  const runDates = perDay.flatMap(day => Array.from({ length: Number(day.runs) || 0 }, () => day.day));
+  root.innerHTML = `
+    ${metric('Signaux (30 j)', formatNumber(signals.total ?? 0), `${formatNumber(signals.shared ?? 0)} partagés avec la base commune`, dailyBars(runDates, 30))}
+    ${metric('Réussite mesurée', signals.run_success_rate === null || signals.run_success_rate === undefined ? '--' : `${signals.run_success_rate} %`, `${formatNumber(signals.runs ?? 0)} runs · ${formatNumber(signals.errors_fixed ?? 0)} erreurs corrigées`)}
+    ${metric('Avis utilisateurs', `${formatNumber(signals.feedback_positive ?? 0)} 👍 · ${formatNumber(signals.feedback_negative ?? 0)} 👎`, `${formatNumber(signals.reverts ?? 0)} versions restaurées · ${formatNumber(signals.retries ?? 0)} relances`, ratio(Number(signals.feedback_positive) || 0, Number(signals.feedback_negative) || 0))}
+    ${metric('Base commune', formatNumber(knowledge.visible_patterns ?? 0), `schémas visibles (≥ ${knowledge.min_contributors ?? 2} contributeurs) · ${formatNumber(knowledge.patterns ?? 0)} observés · ${formatNumber(knowledge.curated ?? 0)} curés`)}
+    ${metric('Partage des données', `${personalization.share_rate ?? 100} %`, `${formatNumber(personalization.opted_out ?? 0)} désinscription${Number(personalization.opted_out) > 1 ? 's' : ''} sur ${formatNumber(personalization.users ?? 0)} comptes`)}
+    ${metric('Personnalisation', formatNumber(personalization.with_instructions ?? 0), `comptes avec des instructions · mémoire privée pour ${formatNumber(personalization.memory_users ?? 0)}`)}
+    <article class="admin-card full">
+      <div class="admin-panel-head">
+        <div>
+          <span class="panel-label">Routeur Auto · taux de réussite par modèle</span>
+          <p class="metric-note">Lissés vers 70 % tant que les runs sont peu nombreux. Un modèle n’influence Auto qu’à partir de ${formatNumber(routing.min_runs ?? 8)} runs et 12 points d’avance.</p>
+        </div>
+      </div>
+      ${table(['Tâche', 'Modèle', 'Runs', 'Réussite brute', 'Réussite lissée', 'Fiabilité'], (routing.stats || []).filter((row: JsonRecord) => matchesQuery(row)).slice(0, 60).map((row: JsonRecord) => [
+        escapeHtml(TASK_LABELS[row.task_type] || row.task_type),
+        `<code>${escapeHtml(row.model_id)}</code>`,
+        escapeHtml(formatNumber(row.runs)),
+        escapeHtml(`${row.success_rate} %`),
+        `<strong>${escapeHtml(`${row.smoothed_rate} %`)}</strong>`,
+        pill(row.reliable ? 'ok' : 'warning', row.reliable ? 'Pris en compte' : 'Trop peu de runs'),
+      ]), 'Aucun run mesuré sur les 30 derniers jours.')}
+    </article>
+    <article class="admin-card wide">
+      <span class="panel-label">Schémas partagés les plus confirmés</span>
+      ${table(['Schéma', 'Type', 'Contributeurs'], (knowledge.top || []).filter((row: JsonRecord) => matchesQuery(row)).map((row: JsonRecord) => [
+        `<div class="admin-pattern"><span>${escapeHtml(row.content)}</span><small>${escapeHtml(TASK_LABELS[row.task_type] || row.task_type)} · vu le ${escapeHtml(formatDate(row.last_seen))}</small></div>`,
+        pill(row.kind === 'error_fix' ? 'ok' : 'warning', row.kind === 'error_fix' ? 'Correction' : row.kind === 'stack_pattern' ? 'Stack' : row.kind),
+        escapeHtml(formatNumber(row.contributors)),
+      ]), 'Aucun schéma n’a encore été confirmé par deux contributeurs. Les entrées curées servent en attendant.')}
+    </article>
+    <article class="admin-card">
+      <span class="panel-label">Signaux par type</span>
+      <div class="flag-list">${Object.entries(signals.by_kind || {}).map(([kind, count]) => `
+        <div class="flag-row"><div><strong>${escapeHtml(SIGNAL_LABELS[kind] || kind)}</strong></div><span class="metric-note">${escapeHtml(formatNumber(count))}</span></div>
+      `).join('') || empty('Aucun signal.')}</div>
+      <p class="metric-note" style="margin-top:12px;">Signaux sans contenu : ni prompt, ni fichier, ni instruction ne quittent le compte de l’utilisateur.</p>
+    </article>
+  `;
+}
+
+function toolkitCell(slug: string) {
+  const logo = localConnectorLogo(slug);
+  const name = slug.replace(/[-_]/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
+  return `<span class="admin-toolkit"><span class="admin-toolkit-logo">${logo ? `<img src="${escapeHtml(logo)}" alt="" loading="lazy">` : escapeHtml(name.slice(0, 2).toUpperCase())}</span>${escapeHtml(name)}</span>`;
+}
+
+function renderIntegrations() {
+  const root = qs('#admin-integrations');
+  if (!root) return;
+  const data = state.integrations;
+  if (!data) {
+    root.innerHTML = skeleton(4);
+    return;
+  }
+  if (!data.configured) {
+    root.innerHTML = `
+      ${metric('Composio', 'Non configuré', 'Ajoutez COMPOSIO_API_KEY dans les variables Railway')}
+      <article class="admin-card wide"><span class="panel-label">Effet</span>${empty('Les utilisateurs voient les services phares en « Bientôt » ; l’agent propose Coden Cloud quand une app a besoin d’un backend.')}</article>
+    `;
+    return;
+  }
+  if (data.success === false) {
+    root.innerHTML = `
+      ${metric('Composio', 'Erreur', data.error || 'Composio ne répond pas')}
+      <article class="admin-card wide">${empty('Vérifiez la clé COMPOSIO_API_KEY : une clé refusée par Composio apparaît ici.')}</article>
+    `;
+    return;
+  }
+  const totals = data.totals || {};
+  root.innerHTML = `
+    ${metric('Connexions actives', formatNumber(totals.active ?? 0), `${formatNumber(totals.connections ?? 0)} au total`)}
+    ${metric('Comptes connectés', formatNumber(totals.users ?? 0), 'Utilisateurs Coden avec au moins un service')}
+    ${metric('Services utilisés', formatNumber(totals.toolkits ?? 0), data.catalogue_total ? `sur ${formatNumber(data.catalogue_total)} disponibles dans le catalogue` : 'Catalogue Composio')}
+    <article class="admin-card full"><span class="panel-label">Par service</span>${table(['Service', 'Actives', 'En attente', 'En échec', 'Comptes'], (data.by_toolkit || []).filter((row: JsonRecord) => matchesQuery(row)).map((row: JsonRecord) => [
+      toolkitCell(row.toolkit),
+      escapeHtml(formatNumber(row.active)),
+      escapeHtml(formatNumber(row.pending)),
+      escapeHtml(formatNumber(row.failed)),
+      escapeHtml(formatNumber(row.users)),
+    ]), 'Aucune connexion pour le moment.')}</article>
+    <article class="admin-card full"><span class="panel-label">Connexions récentes</span>${table(['Service', 'Statut', 'Compte', 'Créée'], (data.recent || []).filter((row: JsonRecord) => matchesQuery(row)).map((row: JsonRecord) => [
+      toolkitCell(row.toolkit),
+      pill(String(row.status || '').toLowerCase()),
+      row.user_id ? `<button class="admin-button subtle" data-drawer-type="user" data-drawer-id="${escapeHtml(row.user_id)}" type="button">${escapeHtml(String(row.user_id).slice(0, 8))}…</button>` : '--',
+      escapeHtml(formatDate(row.created_at)),
+    ]), 'Aucune connexion récente.')}</article>
+  `;
 }
 
 function renderUsers() {
@@ -222,14 +441,14 @@ function renderUsers() {
       if (activeFilters.users === 'no-email') return !user.email;
       return true;
     });
-  root.innerHTML = table(['User', 'Plan/credits', 'Projects', 'Runs', 'Last sign in', 'Role', 'Action'], rows.map(user => [
-    `<strong>${escapeHtml(user.email || 'No email')}</strong><br><span>${escapeHtml(user.id)}</span>`,
-    `<strong>${escapeHtml(user.wallet?.balance ?? '--')}</strong><br><span>visible credits</span>`,
+  root.innerHTML = table(['Utilisateur', 'Crédits', 'Projets', 'Runs', 'Dernière connexion', 'Rôle', 'Action'], rows.map(user => [
+    `<strong>${escapeHtml(user.email || 'Sans e-mail')}</strong><br><span>${escapeHtml(user.id)}</span>`,
+    `<strong>${escapeHtml(user.wallet?.balance ?? '--')}</strong><br><span>crédits visibles</span>`,
     escapeHtml(user.project_count ?? 0),
     escapeHtml(user.run_count ?? 0),
     escapeHtml(formatDate(user.last_sign_in_at)),
     pill(user.is_platform_admin ? 'platform_admin' : user.role || 'user'),
-    `<button class="admin-button" data-drawer-type="user" data-drawer-id="${escapeHtml(user.id)}" type="button">Inspect</button>`,
+    `<button class="admin-button" data-drawer-type="user" data-drawer-id="${escapeHtml(user.id)}" type="button">Détails</button>`,
   ]));
 }
 
@@ -241,57 +460,58 @@ function renderProjects() {
     .filter(project => {
       if (activeFilters.projects === 'preview-ready') return project.preview_status === 'verified';
       if (activeFilters.projects === 'published') return Boolean(project.live_url) || /published|ready|success/i.test(String(project.publish_status || ''));
-      if (activeFilters.projects === 'needs-attention') return /fail|error|blocked|unknown|not_ready/i.test(`${project.preview_status} ${project.publish_status}`);
+      if (activeFilters.projects === 'needs-attention') return /fail|error|blocked|unknown|not_ready|needs_fix/i.test(`${project.preview_status} ${project.publish_status}`);
       return true;
     });
-  root.innerHTML = table(['Project', 'Owner', 'Preview', 'Publish', 'Files', 'Updated', 'Action'], rows.map(project => [
+  root.innerHTML = table(['Projet', 'Propriétaire', 'Aperçu', 'Publication', 'Fichiers', 'Mis à jour', 'Action'], rows.map(project => [
     `<strong>${escapeHtml(project.name)}</strong><br><span>${escapeHtml(project.id)}</span>`,
     escapeHtml(project.owner_id || '--'),
     pill(project.preview_status),
     pill(project.publish_status || (project.live_url ? 'published' : 'draft')),
     escapeHtml(project.file_count ?? '--'),
     escapeHtml(formatDate(project.updated_at)),
-    `<button class="admin-button" data-drawer-type="project" data-drawer-id="${escapeHtml(project.id)}" type="button">Inspect</button>
-     <button class="admin-button subtle" data-open-project="${escapeHtml(project.id)}" type="button">Open</button>`,
+    `<button class="admin-button" data-drawer-type="project" data-drawer-id="${escapeHtml(project.id)}" type="button">Détails</button>
+     <button class="admin-button subtle" data-open-project="${escapeHtml(project.id)}" type="button">Ouvrir</button>`,
   ]));
 }
 
 function renderFailedRuns(rows: JsonRecord[]) {
-  return table(['Request', 'Intent', 'Model', 'Diagnostic', 'When', 'Action'], rows.map(run => [
+  return table(['Requête', 'Intention', 'Modèle', 'Diagnostic', 'Quand', 'Action'], rows.map(run => [
     `<strong>${escapeHtml(run.request_id || run.id)}</strong><br><span>${escapeHtml(run.project_id || '--')}</span>`,
     escapeHtml(run.intent || '--'),
     escapeHtml(run.model_id || 'Auto'),
     escapeHtml(run.diagnostic_code || run.suggested_action || '--'),
     escapeHtml(formatDate(run.created_at)),
-    `<button class="admin-button" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}" type="button">Inspect</button>`,
-  ]));
+    `<button class="admin-button" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}" type="button">Détails</button>`,
+  ]), 'Aucun run en échec. 🎉');
 }
 
 function renderRuns() {
   const root = qs('#admin-runs');
   if (!root) return;
   const distributions = state.overview?.distributions || {};
+  const intents = Object.entries(distributions.run_intent || {}).sort((a, b) => Number(b[1]) - Number(a[1]));
   root.innerHTML = `
-    ${metric('Runs observed', state.runs.length, 'Latest 500 agent runs')}
-    ${metric('Failed', state.runs.filter(run => run.status === 'failed').length, 'Requires investigation')}
-    ${metric('Average duration', averageDuration(state.runs), 'Completed run mean')}
-    <article class="admin-card full"><span class="panel-label">Recent runs</span>${table(['Run', 'Status', 'Intent', 'Model', 'Duration', 'Created', 'Action'], state.runs.filter(run => matchesQuery(run)).slice(0, 80).map(run => [
+    ${metric('Runs observés', formatNumber(state.runs.length), '500 derniers runs d’agent', dailyBars(state.runs.map(run => run.created_at)))}
+    ${metric('En échec', formatNumber(state.runs.filter(run => run.status === 'failed').length), 'À examiner')}
+    ${metric('Durée moyenne', averageDuration(state.runs), 'Runs terminés')}
+    <article class="admin-card full"><span class="panel-label">Runs récents</span>${table(['Run', 'Statut', 'Intention', 'Modèle', 'Durée', 'Créé', 'Action'], state.runs.filter(run => matchesQuery(run)).slice(0, 80).map(run => [
       `<strong>${escapeHtml(run.request_id || run.id)}</strong><br><span>${escapeHtml(run.project_id || '--')}</span>`,
       pill(run.status),
       escapeHtml(run.intent || '--'),
       escapeHtml(run.model_id || 'Auto'),
-      escapeHtml(`${Math.round(Number(run.duration_ms || 0) / 1000)}s`),
+      escapeHtml(`${Math.round(Number(run.duration_ms || 0) / 1000)} s`),
       escapeHtml(formatDate(run.created_at)),
-      `<button class="admin-button" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}" type="button">Inspect</button>`,
+      `<button class="admin-button" data-drawer-type="run" data-drawer-id="${escapeHtml(run.id)}" type="button">Détails</button>`,
     ]))}</article>
-    <article class="admin-card full"><span class="panel-label">Intent distribution</span><pre class="support-summary">${escapeHtml(JSON.stringify(distributions.run_intent || {}, null, 2))}</pre></article>
+    <article class="admin-card full"><span class="panel-label">Répartition des intentions</span>${table(['Intention', 'Runs'], intents.map(([intent, count]) => [escapeHtml(intent), escapeHtml(formatNumber(count))]))}</article>
   `;
 }
 
 function averageDuration(rows: JsonRecord[]) {
   const durations = rows.map(row => Number(row.duration_ms || 0)).filter(value => value > 0);
-  if (!durations.length) return '0s';
-  return `${Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length / 1000)}s`;
+  if (!durations.length) return '0 s';
+  return `${Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length / 1000)} s`;
 }
 
 function renderErrors() {
@@ -300,17 +520,17 @@ function renderErrors() {
   const failedRuns = state.errors?.errors?.failed_runs || [];
   const runnerFailures = state.errors?.errors?.runner_failures || [];
   root.innerHTML = `
-    ${metric('Failed runs', failedRuns.length, 'Recent run-level failures')}
-    ${metric('Runner failures', runnerFailures.length, 'Build, preview or QA checks')}
-    ${metric('Top diagnostic', topKey(state.errors?.grouped?.diagnostic_code), 'Most frequent issue')}
-    <article class="admin-card full"><span class="panel-label">Failed runs</span>${renderFailedRuns(failedRuns.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80))}</article>
-    <article class="admin-card full"><span class="panel-label">Runner failures</span>${table(['Run', 'Check', 'Severity', 'Message', 'When', 'Action'], runnerFailures.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
+    ${metric('Runs en échec', formatNumber(failedRuns.length), 'Échecs récents au niveau du run')}
+    ${metric('Contrôles en échec', formatNumber(runnerFailures.length), 'Build, aperçu ou contrôle qualité')}
+    ${metric('Diagnostic le plus fréquent', topKey(state.errors?.grouped?.diagnostic_code), 'Cause dominante')}
+    <article class="admin-card full"><span class="panel-label">Runs en échec</span>${renderFailedRuns(failedRuns.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80))}</article>
+    <article class="admin-card full"><span class="panel-label">Contrôles en échec</span>${table(['Run', 'Contrôle', 'Gravité', 'Message', 'Quand', 'Action'], runnerFailures.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
       escapeHtml(row.agent_run_id || '--'),
       escapeHtml(row.check_type || '--'),
       pill(row.severity || row.status),
       escapeHtml(row.message || '--'),
       escapeHtml(formatDate(row.created_at)),
-      `<button class="admin-button" data-drawer-type="runner_failure" data-drawer-id="${escapeHtml(row.agent_run_id || row.created_at || '')}" type="button">Inspect</button>`,
+      `<button class="admin-button" data-drawer-type="runner_failure" data-drawer-id="${escapeHtml(row.agent_run_id || row.created_at || '')}" type="button">Détails</button>`,
     ]))}</article>
   `;
 }
@@ -326,11 +546,17 @@ function renderModels() {
   const costs = state.models?.costs || [];
   const providers = state.models?.providers || [];
   const margins = state.models?.margins || [];
+  const byModel = Object.entries(costs.reduce((acc: Record<string, number>, row: JsonRecord) => {
+    const key = String(row.model_id || 'Auto');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {})).sort((a, b) => Number(b[1]) - Number(a[1]));
   root.innerHTML = `
-    ${metric('AI requests', costs.length, 'Recent request rows')}
-    ${metric('Provider rows', providers.length, 'Provider usage events')}
-    ${metric('Margin rows', margins.length, 'Cost guardrail samples')}
-    <article class="admin-card full"><span class="panel-label">AI costs</span>${table(['Model', 'Type', 'Status', 'Project', 'When'], costs.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
+    ${metric('Requêtes IA', formatNumber(costs.length), 'Lignes récentes')}
+    ${metric('Usage fournisseurs', formatNumber(providers.length), 'Événements d’usage fournisseur')}
+    ${metric('Contrôles de marge', formatNumber(margins.length), 'Échantillons de garde-fous de coût')}
+    <article class="admin-card wide"><span class="panel-label">Requêtes par modèle</span>${table(['Modèle', 'Requêtes'], byModel.map(([model, count]) => [`<code>${escapeHtml(model)}</code>`, escapeHtml(formatNumber(count))]))}</article>
+    <article class="admin-card full"><span class="panel-label">Requêtes récentes</span>${table(['Modèle', 'Type', 'Statut', 'Projet', 'Quand'], costs.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 80).map((row: JsonRecord) => [
       escapeHtml(row.model_id || 'Auto'),
       escapeHtml(row.request_type || '--'),
       pill(row.status),
@@ -346,16 +572,16 @@ function renderPublish() {
   const deployments = state.publish?.deployments || [];
   const domains = state.publish?.domains || [];
   root.innerHTML = `
-    ${metric('Deployments', deployments.length, 'Recent publish records')}
-    ${metric('Domains', domains.length, 'Custom domain records')}
-    ${metric('Ready', deployments.filter((row: JsonRecord) => /ready|success|published|completed/i.test(row.status)).length, 'Successful deploys')}
-    <article class="admin-card full"><span class="panel-label">Deployments</span>${table(['Deployment', 'Project', 'Status', 'URL', 'When', 'Action'], deployments.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 100).map((row: JsonRecord) => [
+    ${metric('Déploiements', formatNumber(deployments.length), 'Publications récentes', dailyBars(deployments.map((row: JsonRecord) => row.created_at)))}
+    ${metric('Domaines', formatNumber(domains.length), 'Domaines personnalisés')}
+    ${metric('En ligne', formatNumber(deployments.filter((row: JsonRecord) => /ready|success|published|completed/i.test(row.status)).length), 'Déploiements réussis')}
+    <article class="admin-card full"><span class="panel-label">Déploiements</span>${table(['Déploiement', 'Projet', 'Statut', 'Adresse', 'Quand', 'Action'], deployments.filter((row: JsonRecord) => matchesQuery(row)).slice(0, 100).map((row: JsonRecord) => [
       escapeHtml(row.id || '--'),
       escapeHtml(row.project_id || '--'),
       pill(row.status),
       row.url ? `<a href="${escapeHtml(row.url)}" target="_blank" rel="noreferrer">${escapeHtml(row.url)}</a>` : '--',
       escapeHtml(formatDate(row.created_at)),
-      `<button class="admin-button" data-drawer-type="deployment" data-drawer-id="${escapeHtml(row.id || row.url || '')}" type="button">Inspect</button>`,
+      `<button class="admin-button" data-drawer-type="deployment" data-drawer-id="${escapeHtml(row.id || row.url || '')}" type="button">Détails</button>`,
     ]))}</article>
   `;
 }
@@ -366,18 +592,18 @@ function renderSecurity() {
   const findings = state.security?.findings || [];
   const checklist = state.security?.checklist || [];
   root.innerHTML = `
-    ${metric('Open findings', state.security?.summary?.open_findings ?? 0, 'Security-related runner findings')}
-    ${metric('Projects observed', state.security?.summary?.projects_observed ?? 0, 'Recent projects scanned')}
-    ${metric('Admin guard', state.security?.summary?.admin_guard || 'enabled', 'Protected server routes')}
-    <article class="admin-card wide"><span class="panel-label">Checklist</span><div class="health-list">${checklist.map((item: JsonRecord) => `
+    ${metric('Alertes ouvertes', formatNumber(state.security?.summary?.open_findings ?? 0), 'Résultats de sécurité des contrôles')}
+    ${metric('Projets analysés', formatNumber(state.security?.summary?.projects_observed ?? 0), 'Projets récents')}
+    ${metric('Garde admin', state.security?.summary?.admin_guard === 'enabled' || !state.security?.summary?.admin_guard ? 'Active' : state.security.summary.admin_guard, 'Routes serveur protégées')}
+    <article class="admin-card wide"><span class="panel-label">Liste de contrôle</span><div class="health-list">${checklist.map((item: JsonRecord) => `
       <div class="health-row"><div><strong>${escapeHtml(item.label)}</strong></div>${pill(item.status)}</div>
-    `).join('')}</div></article>
-    <article class="admin-card full"><span class="panel-label">Findings</span>${table(['Run', 'Check', 'Severity', 'Message'], findings.slice(0, 80).map((row: JsonRecord) => [
+    `).join('') || empty('Aucun contrôle.')}</div></article>
+    <article class="admin-card full"><span class="panel-label">Alertes</span>${table(['Run', 'Contrôle', 'Gravité', 'Message'], findings.slice(0, 80).map((row: JsonRecord) => [
       escapeHtml(row.agent_run_id || '--'),
       escapeHtml(row.check_type || '--'),
       pill(row.severity || row.status),
       escapeHtml(row.message || '--'),
-    ]))}</article>
+    ]), 'Aucune alerte de sécurité.')}</article>
   `;
 }
 
@@ -388,10 +614,10 @@ function renderFlags() {
     <article class="admin-card full">
       <div class="admin-panel-head">
         <div>
-          <span class="panel-label">Feature flags</span>
-          <p class="metric-note">Read-only rollout map. Dangerous mutations stay disabled until audit logging is wired.</p>
+          <span class="panel-label">Drapeaux de fonctionnalités</span>
+          <p class="metric-note">Lus depuis l’environnement du serveur. Ils se modifient dans les variables Railway, pas ici.</p>
         </div>
-        ${pill(`${state.flags.filter(flag => flag.enabled).length} enabled`)}
+        ${pill('ok', `${state.flags.filter(flag => flag.enabled).length} / ${state.flags.length} actifs`)}
       </div>
       <div class="flag-list" style="margin-top:12px;">
         ${state.flags.map(flag => `
@@ -402,12 +628,12 @@ function renderFlags() {
               <span>${escapeHtml(flag.key)}</span>
             </div>
             <div class="flag-meta">
-              <span>${escapeHtml(flag.rollout || 'all')}</span>
-              <span>risk ${escapeHtml(flag.risk || 'medium')}</span>
+              <span>${escapeHtml(flag.rollout || 'tous')}</span>
+              <span>risque ${escapeHtml(STATUS_LABELS[flag.risk] || flag.risk || 'moyen').toLowerCase()}</span>
               ${pill(flag.enabled ? 'enabled' : 'disabled')}
             </div>
           </div>
-        `).join('')}
+        `).join('') || empty('Aucun drapeau.')}
       </div>
     </article>
   `;
@@ -416,15 +642,19 @@ function renderFlags() {
 function buildSupportSummary() {
   const overview = state.overview?.metrics || {};
   const failed = state.errors?.errors?.failed_runs?.[0];
+  const learning = state.learning;
+  const integrations = state.integrations;
   return [
-    'Coden support snapshot',
-    `Generated: ${new Date().toISOString()}`,
-    `Users: ${overview.users ?? 0}`,
-    `Projects: ${overview.projects ?? 0}`,
-    `Run success: ${overview.success_rate ?? 100}%`,
-    `Failed runs: ${overview.failed_runs ?? 0}`,
-    failed ? `Latest failure: ${failed.request_id || failed.id} / ${failed.diagnostic_code || failed.status}` : 'Latest failure: none observed',
-    'Secrets: redacted by admin API',
+    'Coden · résumé support',
+    `Généré le : ${new Date().toLocaleString('fr-FR')}`,
+    `Utilisateurs : ${overview.users ?? 0}`,
+    `Projets : ${overview.projects ?? 0}`,
+    `Réussite des runs : ${overview.success_rate ?? 100} %`,
+    `Runs en échec : ${overview.failed_runs ?? 0}`,
+    failed ? `Dernier échec : ${failed.request_id || failed.id} / ${failed.diagnostic_code || failed.status}` : 'Dernier échec : aucun',
+    learning ? `Apprentissage : ${learning.signals?.total ?? 0} signaux (30 j), ${learning.knowledge?.visible_patterns ?? 0} schémas partagés, ${learning.personalization?.share_rate ?? 100} % de partage` : 'Apprentissage : indisponible',
+    integrations?.configured ? `Intégrations : ${integrations.totals?.active ?? 0} connexions actives, ${integrations.totals?.users ?? 0} comptes` : 'Intégrations : Composio non configuré',
+    'Secrets : masqués par l’API admin',
   ].join('\n');
 }
 
@@ -436,11 +666,13 @@ function renderSupport() {
 
 function renderAll() {
   renderOverview();
+  renderAgent();
   renderUsers();
   renderProjects();
   renderRuns();
   renderErrors();
   renderModels();
+  renderIntegrations();
   renderPublish();
   renderSecurity();
   renderFlags();
@@ -451,8 +683,8 @@ async function loadAdminData() {
   try {
     qs('#admin-overview')!.innerHTML = skeleton(6);
     const liveStatus = qs('#admin-live-status');
-    if (liveStatus) liveStatus.textContent = 'Refreshing live data';
-    const [overview, users, projects, runs, errors, costs, providers, margins, publish, security, flags] = await Promise.all([
+    if (liveStatus) liveStatus.textContent = 'Actualisation…';
+    const [overview, users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations] = await Promise.all([
       safeAdminFetch('/api/admin/overview', { metrics: {}, health: [], availability: {}, distributions: {}, recent: { failed_runs: [] } }),
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
@@ -464,6 +696,8 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/publish', { deployments: [], domains: [], availability: {}, grouped: {} }),
       safeAdminFetch('/api/admin/security', { summary: {}, checklist: [], findings: [], availability: {} }),
       safeAdminFetch('/api/admin/feature-flags', { flags: [], availability: {} }),
+      safeAdminFetch('/api/admin/agent-learning', { signals: {}, knowledge: {}, personalization: {}, routing: { stats: [] }, availability: {} }),
+      safeAdminFetch('/api/admin/integrations', { configured: false, by_toolkit: [], recent: [], totals: {} }),
     ]);
     state.overview = overview;
     allUsers = users.users || [];
@@ -477,25 +711,38 @@ async function loadAdminData() {
     state.publish = publish;
     state.security = security;
     state.flags = flags.flags || [];
+    state.learning = learning;
+    state.integrations = integrations;
     renderAll();
-    if (liveStatus) liveStatus.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    if (liveStatus) liveStatus.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to load admin data.';
+    const message = error instanceof Error ? error.message : 'Impossible de charger les données admin.';
     const root = qs('#admin-overview');
     if (root) root.innerHTML = `<div class="admin-error">${escapeHtml(message)}</div>`;
     const liveStatus = qs('#admin-live-status');
-    if (liveStatus) liveStatus.textContent = 'Admin data unavailable';
+    if (liveStatus) liveStatus.textContent = 'Données indisponibles';
   }
+}
+
+function activateSection(tab: string) {
+  document.querySelectorAll<HTMLElement>('[data-admin-tab]').forEach(item => {
+    const active = item.dataset.adminTab === tab;
+    item.classList.toggle('active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+  document.querySelectorAll<HTMLElement>('[data-section]').forEach(section => section.classList.toggle('active', section.dataset.section === tab));
+  const crumb = qs('[data-admin-crumb]');
+  if (crumb) crumb.textContent = `/ ${SECTION_LABELS[tab] || tab}`;
+  try { history.replaceState(null, '', `#${tab}`); } catch { /* the hash is a convenience */ }
 }
 
 function bindNavigation() {
   document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]').forEach(button => {
-    button.addEventListener('click', () => {
-      const tab = button.dataset.adminTab;
-      document.querySelectorAll<HTMLElement>('[data-admin-tab]').forEach(item => item.classList.toggle('active', item.dataset.adminTab === tab));
-      document.querySelectorAll<HTMLElement>('[data-section]').forEach(section => section.classList.toggle('active', section.dataset.section === tab));
-    });
+    button.addEventListener('click', () => activateSection(button.dataset.adminTab || 'overview'));
   });
+  const initial = window.location.hash.replace('#', '');
+  if (initial && SECTION_LABELS[initial]) activateSection(initial);
 }
 
 function bindFilters() {
@@ -527,42 +774,45 @@ function bindFilters() {
 
 function openEntityDrawer(type: string, id: string) {
   if (type === 'metric') {
-    openDrawer(id, 'Metric context', [
-      ['Current value', 'See overview cards and related tables'],
-      ['Tip', 'Use search and filters to isolate the users, projects or runs behind this signal'],
+    openDrawer(id, 'Contexte de l’indicateur', [
+      ['Valeur', 'Voir les cartes et les tableaux de la section'],
+      ['Astuce', 'La recherche globale filtre les utilisateurs, projets, runs et connexions derrière ce signal'],
     ]);
     return;
   }
 
   if (type === 'user') {
     const user = allUsers.find(row => String(row.id) === id);
-    if (!user) return;
-    openDrawer(user.email || 'User', 'Account, activity and visible wallet context.', [
-      ['User ID', user.id],
-      ['Email', user.email || '--'],
-      ['Last sign in', formatDate(user.last_sign_in_at)],
-      ['Projects', user.project_count ?? 0],
+    if (!user) {
+      openDrawer('Compte', 'Ce compte n’apparaît pas dans les 500 derniers utilisateurs chargés.', [['Identifiant', id]], undefined, `<button class="admin-button" data-copy-value="${escapeHtml(id)}" type="button">Copier l’identifiant</button>`);
+      return;
+    }
+    openDrawer(user.email || 'Utilisateur', 'Compte, activité et crédits visibles.', [
+      ['Identifiant', user.id],
+      ['E-mail', user.email || '--'],
+      ['Dernière connexion', formatDate(user.last_sign_in_at)],
+      ['Projets', user.project_count ?? 0],
       ['Runs', user.run_count ?? 0],
-      ['Credits', user.wallet?.balance ?? '--'],
-      ['Role', user.is_platform_admin ? 'platform_admin' : user.role || 'user'],
-    ], user, `<button class="admin-button" data-copy-value="${escapeHtml(user.id)}" type="button">Copy user ID</button>`);
+      ['Crédits', user.wallet?.balance ?? '--'],
+      ['Rôle', user.is_platform_admin ? 'Admin plateforme' : STATUS_LABELS[user.role] || user.role || 'Utilisateur'],
+    ], user, `<button class="admin-button" data-copy-value="${escapeHtml(user.id)}" type="button">Copier l’identifiant</button>`);
     return;
   }
 
   if (type === 'project') {
     const project = allProjects.find(row => String(row.id) === id);
     if (!project) return;
-    openDrawer(project.name || 'Project', 'Preview, publish and ownership context.', [
-      ['Project ID', project.id],
-      ['Owner', project.owner_id || '--'],
-      ['Preview', project.preview_status || '--'],
-      ['Publish', project.publish_status || (project.live_url ? 'published' : 'draft')],
-      ['Live URL', project.live_url || '--'],
-      ['Files', project.file_count ?? '--'],
-      ['Updated', formatDate(project.updated_at)],
+    openDrawer(project.name || 'Projet', 'Aperçu, publication et propriétaire.', [
+      ['Identifiant', project.id],
+      ['Propriétaire', project.owner_id || '--'],
+      ['Aperçu', STATUS_LABELS[project.preview_status] || project.preview_status || '--'],
+      ['Publication', STATUS_LABELS[project.publish_status] || project.publish_status || (project.live_url ? 'Publié' : 'Brouillon')],
+      ['Adresse publique', project.live_url || '--'],
+      ['Fichiers', project.file_count ?? '--'],
+      ['Mis à jour', formatDate(project.updated_at)],
     ], project, `
-      <button class="admin-button" data-open-project="${escapeHtml(project.id)}" type="button">Open builder</button>
-      <button class="admin-button subtle" data-copy-value="${escapeHtml(project.id)}" type="button">Copy project ID</button>
+      <button class="admin-button" data-open-project="${escapeHtml(project.id)}" type="button">Ouvrir dans le Builder</button>
+      <button class="admin-button subtle" data-copy-value="${escapeHtml(project.id)}" type="button">Copier l’identifiant</button>
     `);
     return;
   }
@@ -574,20 +824,20 @@ function openEntityDrawer(type: string, id: string) {
     ];
     const run = runs.find((row: JsonRecord) => String(row.id) === id || String(row.request_id) === id);
     if (!run) return;
-    openDrawer(run.request_id || run.id || 'Run', 'Agent execution context and diagnostic fields.', [
-      ['Run ID', run.id || '--'],
-      ['Request ID', run.request_id || '--'],
-      ['Project', run.project_id || '--'],
-      ['User', run.user_id || '--'],
-      ['Status', run.status || '--'],
-      ['Intent', run.intent || '--'],
-      ['Model', run.model_id || 'Auto'],
+    openDrawer(run.request_id || run.id || 'Run', 'Exécution de l’agent et diagnostic.', [
+      ['Run', run.id || '--'],
+      ['Requête', run.request_id || '--'],
+      ['Projet', run.project_id || '--'],
+      ['Utilisateur', run.user_id || '--'],
+      ['Statut', STATUS_LABELS[run.status] || run.status || '--'],
+      ['Intention', run.intent || '--'],
+      ['Modèle', run.model_id || 'Auto'],
       ['Diagnostic', run.diagnostic_code || run.suggested_action || '--'],
-      ['Duration', `${Math.round(Number(run.duration_ms || 0) / 1000)}s`],
-      ['Created', formatDate(run.created_at)],
+      ['Durée', `${Math.round(Number(run.duration_ms || 0) / 1000)} s`],
+      ['Créé', formatDate(run.created_at)],
     ], run, `
-      ${run.project_id ? `<button class="admin-button" data-open-project="${escapeHtml(run.project_id)}" type="button">Open project</button>` : ''}
-      <button class="admin-button subtle" data-copy-value="${escapeHtml(run.request_id || run.id || '')}" type="button">Copy request</button>
+      ${run.project_id ? `<button class="admin-button" data-open-project="${escapeHtml(run.project_id)}" type="button">Ouvrir le projet</button>` : ''}
+      <button class="admin-button subtle" data-copy-value="${escapeHtml(run.request_id || run.id || '')}" type="button">Copier la requête</button>
     `);
     return;
   }
@@ -595,16 +845,16 @@ function openEntityDrawer(type: string, id: string) {
   if (type === 'deployment') {
     const deployment = (state.publish?.deployments || []).find((row: JsonRecord) => String(row.id || row.url) === id);
     if (!deployment) return;
-    openDrawer(deployment.url || deployment.id || 'Deployment', 'Publish status and live URL context.', [
-      ['Deployment', deployment.id || '--'],
-      ['Project', deployment.project_id || '--'],
-      ['Status', deployment.status || '--'],
-      ['URL', deployment.url || '--'],
-      ['Domain', deployment.domain || '--'],
-      ['Created', formatDate(deployment.created_at)],
+    openDrawer(deployment.url || deployment.id || 'Déploiement', 'Statut de publication et adresse publique.', [
+      ['Déploiement', deployment.id || '--'],
+      ['Projet', deployment.project_id || '--'],
+      ['Statut', STATUS_LABELS[deployment.status] || deployment.status || '--'],
+      ['Adresse', deployment.url || '--'],
+      ['Domaine', deployment.domain || '--'],
+      ['Créé', formatDate(deployment.created_at)],
     ], deployment, `
-      ${deployment.url ? `<a class="admin-button" href="${escapeHtml(deployment.url)}" target="_blank" rel="noreferrer">Open live</a>` : ''}
-      ${deployment.project_id ? `<button class="admin-button subtle" data-open-project="${escapeHtml(deployment.project_id)}" type="button">Open project</button>` : ''}
+      ${deployment.url ? `<a class="admin-button" href="${escapeHtml(deployment.url)}" target="_blank" rel="noreferrer">Voir en ligne</a>` : ''}
+      ${deployment.project_id ? `<button class="admin-button subtle" data-open-project="${escapeHtml(deployment.project_id)}" type="button">Ouvrir le projet</button>` : ''}
     `);
     return;
   }
@@ -612,13 +862,13 @@ function openEntityDrawer(type: string, id: string) {
   if (type === 'runner_failure') {
     const failure = (state.errors?.errors?.runner_failures || []).find((row: JsonRecord) => String(row.agent_run_id || row.created_at || '') === id);
     if (!failure) return;
-    openDrawer(failure.check_type || 'Runner failure', 'Runner, browser or quality check failure.', [
+    openDrawer(failure.check_type || 'Contrôle en échec', 'Échec d’un contrôle build, navigateur ou qualité.', [
       ['Run', failure.agent_run_id || '--'],
-      ['Check', failure.check_type || '--'],
-      ['Severity', failure.severity || failure.status || '--'],
+      ['Contrôle', failure.check_type || '--'],
+      ['Gravité', STATUS_LABELS[failure.severity] || failure.severity || failure.status || '--'],
       ['Message', failure.message || '--'],
-      ['Created', formatDate(failure.created_at)],
-    ], failure, `<button class="admin-button subtle" data-copy-value="${escapeHtml(failure.agent_run_id || '')}" type="button">Copy run ID</button>`);
+      ['Créé', formatDate(failure.created_at)],
+    ], failure, `<button class="admin-button subtle" data-copy-value="${escapeHtml(failure.agent_run_id || '')}" type="button">Copier l’identifiant du run</button>`);
   }
 }
 
@@ -635,8 +885,12 @@ function bindActions() {
     });
     renderAll();
   });
-  qs('#admin-copy-summary')?.addEventListener('click', async () => {
+  qs('#admin-copy-summary')?.addEventListener('click', async event => {
+    const button = event.currentTarget as HTMLButtonElement;
     await navigator.clipboard?.writeText(buildSupportSummary()).catch(() => undefined);
+    const label = button.textContent;
+    button.textContent = 'Copié';
+    window.setTimeout(() => { button.textContent = label; }, 1400);
   });
   qs('#admin-build-support-summary')?.addEventListener('click', renderSupport);
   document.addEventListener('click', event => {

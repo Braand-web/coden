@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="fr" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Coden — Admin Console</title>
+  <title>Coden — Administration</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Private Coden administration console." />
+  <meta name="description" content="Console d’administration privée de Coden." />
   <meta name="robots" content="noindex, nofollow" />
   <link rel="canonical" href="https://coden.fun/admin.html" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -16,24 +16,24 @@
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden — Admin Console" />
-  <meta property="og:description" content="Private Coden administration console." />
+  <meta property="og:title" content="Coden — Administration" />
+  <meta property="og:description" content="Console d’administration privée de Coden." />
   <meta property="og:url" content="https://coden.fun/admin.html" />
   <meta property="og:image" content="https://coden.fun/og-coden.png" />
-  <meta property="og:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
   <meta property="og:image:type" content="image/png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden — Admin Console" />
-  <meta name="twitter:description" content="Private Coden administration console." />
+  <meta name="twitter:title" content="Coden — Administration" />
+  <meta name="twitter:description" content="Console d’administration privée de Coden." />
   <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
-  <meta name="twitter:image:alt" content="Coden — AI app builder for building and publishing web apps" />
+  <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
   <script type="application/ld+json">{
   "@context": "https://schema.org",
   "@type": "WebPage",
-  "name": "Coden — Admin Console",
-  "description": "Private Coden administration console.",
+  "name": "Coden — Administration",
+  "description": "Console d’administration privée de Coden.",
   "url": "https://coden.fun/admin.html"
 }</script>
   <!-- CODEN_SEO_END -->
@@ -1657,109 +1657,234 @@
         justify-content: center;
       }
     }
+    /* A global rule centres every h1; the console reads left to right. */
+    .admin-topbar .admin-title {
+      text-align: start;
+      margin: 2px 0 0;
+    }
+
+    /* The search field: a visible border, no dark inset line along its top. */
+    .admin-global-search {
+      border: 1px solid var(--border);
+      background: var(--input, var(--surface));
+      box-shadow: none;
+    }
+
+    .admin-global-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .admin-search-shell::before {
+      border-color: var(--text-muted);
+      z-index: 1;
+    }
+
+    .admin-search-shell::after {
+      background: var(--text-muted);
+      z-index: 1;
+    }
+
+    /* Icons, bars and tables of the Agent and Intégrations sections. */
+    .admin-nav-icon svg,
+    .admin-app-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .admin-app-icon {
+      display: grid;
+      place-items: center;
+      color: var(--text-secondary);
+    }
+
+    .admin-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 44px;
+      margin-top: 14px;
+    }
+
+    .admin-bars span {
+      flex: 1;
+      min-width: 3px;
+      max-width: 14px;
+      min-height: 3px;
+      border-radius: 4px 4px 1px 1px;
+      background: var(--accent);
+      opacity: .85;
+    }
+
+    .admin-bars span[data-empty] {
+      background: var(--border);
+      opacity: 1;
+    }
+
+    .admin-ratio {
+      display: flex;
+      height: 8px;
+      margin-top: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--surface-soft);
+    }
+
+    .admin-ratio span {
+      display: block;
+      height: 100%;
+      background: var(--success);
+    }
+
+    .admin-ratio span + span {
+      background: var(--danger);
+    }
+
+    .admin-toolkit {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .admin-toolkit-logo {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      flex: none;
+      border-radius: 7px;
+      background: white;
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+      color: var(--syntax-blue, var(--accent));
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .admin-toolkit-logo img {
+      width: 15px;
+      height: 15px;
+      object-fit: contain;
+    }
+
+    .admin-pattern {
+      display: grid;
+      gap: 4px;
+    }
+
+    .admin-pattern small {
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 980px) {
+      .admin-nav {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .admin-nav {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+
+      /* Labels are hidden at this width: the icon is the button. */
+      .admin-nav .admin-nav-icon,
+      .admin-return .admin-nav-icon {
+        display: grid;
+      }
+
+      .admin-return {
+        justify-content: flex-start;
+        gap: 10px;
+      }
+
+      .admin-return .admin-nav-label {
+        display: inline;
+      }
+
+      .admin-nav-index {
+        display: none;
+      }
+    }
   </style>
 </head>
 <body data-coden-surface="admin">
   <div class="admin-shell">
     <aside class="admin-sidebar">
-      <a class="admin-brand" href="/dashboard.html" aria-label="Back to dashboard">
+      <a class="admin-brand" href="/dashboard.html" aria-label="Retour au dashboard">
         <span class="admin-brand-mark" data-coden-logo aria-hidden="true"><svg class="coden-logo-mark" width="100%" height="100%" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--brand, #3A83F7)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--on-brand, #FFFFFF)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--on-brand, #FFFFFF)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--on-brand, #FFFFFF)"/></svg></span>
         <span class="admin-brand-text">Coden Admin</span>
       </a>
-      <nav class="admin-nav" aria-label="Admin sections">
-        <button class="active" data-admin-tab="overview" type="button" aria-label="Overview"><span class="admin-nav-icon">O</span><span class="admin-nav-label">Overview</span><span class="admin-nav-index">01</span></button>
-        <button data-admin-tab="users" type="button" aria-label="Users"><span class="admin-nav-icon">U</span><span class="admin-nav-label">Users</span><span class="admin-nav-index">02</span></button>
-        <button data-admin-tab="projects" type="button" aria-label="Projects"><span class="admin-nav-icon">P</span><span class="admin-nav-label">Projects</span><span class="admin-nav-index">03</span></button>
-        <button data-admin-tab="runs" type="button" aria-label="Runs"><span class="admin-nav-icon">R</span><span class="admin-nav-label">Runs</span><span class="admin-nav-index">04</span></button>
-        <button data-admin-tab="errors" type="button" aria-label="Errors"><span class="admin-nav-icon">E</span><span class="admin-nav-label">Errors</span><span class="admin-nav-index">05</span></button>
-        <button data-admin-tab="models" type="button" aria-label="Models"><span class="admin-nav-icon">M</span><span class="admin-nav-label">Models</span><span class="admin-nav-index">06</span></button>
-        <button data-admin-tab="publish" type="button" aria-label="Publish"><span class="admin-nav-icon">D</span><span class="admin-nav-label">Publish</span><span class="admin-nav-index">07</span></button>
-        <button data-admin-tab="security" type="button" aria-label="Security"><span class="admin-nav-icon">S</span><span class="admin-nav-label">Security</span><span class="admin-nav-index">08</span></button>
-        <button data-admin-tab="flags" type="button" aria-label="Flags"><span class="admin-nav-icon">F</span><span class="admin-nav-label">Flags</span><span class="admin-nav-index">09</span></button>
-        <button data-admin-tab="support" type="button" aria-label="Support"><span class="admin-nav-icon">?</span><span class="admin-nav-label">Support</span><span class="admin-nav-index">10</span></button>
+      <nav class="admin-nav" aria-label="Sections d’administration">
+        <button class="active" data-admin-tab="overview" type="button" aria-label="Vue d’ensemble"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span><span class="admin-nav-label">Vue d’ensemble</span><span class="admin-nav-index">01</span></button>
+        <button data-admin-tab="agent" type="button" aria-label="Agent"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg></span><span class="admin-nav-label">Agent</span><span class="admin-nav-index">02</span></button>
+        <button data-admin-tab="users" type="button" aria-label="Utilisateurs"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="admin-nav-label">Utilisateurs</span><span class="admin-nav-index">03</span></button>
+        <button data-admin-tab="projects" type="button" aria-label="Projets"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="admin-nav-label">Projets</span><span class="admin-nav-index">04</span></button>
+        <button data-admin-tab="runs" type="button" aria-label="Runs"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span><span class="admin-nav-label">Runs</span><span class="admin-nav-index">05</span></button>
+        <button data-admin-tab="errors" type="button" aria-label="Erreurs"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span><span class="admin-nav-label">Erreurs</span><span class="admin-nav-index">06</span></button>
+        <button data-admin-tab="models" type="button" aria-label="Modèles"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg></span><span class="admin-nav-label">Modèles</span><span class="admin-nav-index">07</span></button>
+        <button data-admin-tab="integrations" type="button" aria-label="Intégrations"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg></span><span class="admin-nav-label">Intégrations</span><span class="admin-nav-index">08</span></button>
+        <button data-admin-tab="publish" type="button" aria-label="Publication"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span><span class="admin-nav-label">Publication</span><span class="admin-nav-index">09</span></button>
+        <button data-admin-tab="security" type="button" aria-label="Sécurité"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg></span><span class="admin-nav-label">Sécurité</span><span class="admin-nav-index">10</span></button>
+        <button data-admin-tab="flags" type="button" aria-label="Drapeaux"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></svg></span><span class="admin-nav-label">Drapeaux</span><span class="admin-nav-index">11</span></button>
+        <button data-admin-tab="support" type="button" aria-label="Support"><span class="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></span><span class="admin-nav-label">Support</span><span class="admin-nav-index">12</span></button>
       </nav>
-      <a class="admin-return" href="/dashboard.html" aria-label="Go to dashboard"><span class="admin-nav-icon admin-brand-icon" data-coden-logo aria-hidden="true"><svg class="coden-logo-mark" width="18" height="18" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--brand, #3A83F7)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--on-brand, #FFFFFF)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--on-brand, #FFFFFF)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--on-brand, #FFFFFF)"/></svg></span><span class="admin-nav-label">Dashboard</span><span class="admin-nav-index">-&gt;</span></a>
+      <a class="admin-return" href="/dashboard.html" aria-label="Aller au dashboard"><span class="admin-nav-icon admin-brand-icon" data-coden-logo aria-hidden="true"><svg class="coden-logo-mark" width="18" height="18" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--brand, #3A83F7)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--on-brand, #FFFFFF)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--on-brand, #FFFFFF)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--on-brand, #FFFFFF)"/></svg></span><span class="admin-nav-label">Dashboard</span><span class="admin-nav-index">&larr;</span></a>
     </aside>
 
     <main class="admin-main">
       <div class="admin-appbar" role="search">
         <div class="admin-breadcrumb">
-          <span class="admin-app-icon">~</span>
-          <span>Activity</span>
-          <strong>/ Coden Admin</strong>
+          <span class="admin-app-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>
+          <span>Administration</span>
+          <strong data-admin-crumb>/ Vue d’ensemble</strong>
         </div>
         <div class="admin-search-shell">
-          <input id="admin-global-search" class="admin-global-search" placeholder="Search activity, users, runs or request IDs" autocomplete="off" />
+          <input id="admin-global-search" class="admin-global-search" placeholder="Rechercher un utilisateur, un projet, un run ou un identifiant" autocomplete="off" aria-label="Recherche globale" />
         </div>
-        <span class="admin-live-status" id="admin-live-status">Waiting for live data</span>
-        <button class="admin-button subtle" id="admin-clear-filters" type="button">Clear</button>
+        <span class="admin-live-status" id="admin-live-status">En attente des données</span>
+        <button class="admin-button subtle" id="admin-clear-filters" type="button">Effacer</button>
       </div>
 
       <header class="admin-topbar">
         <div class="admin-product-lockup">
           <span class="admin-product-avatar" aria-hidden="true" data-coden-logo><svg class="coden-logo-mark" width="100%" height="100%" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="var(--brand, #3A83F7)"/><path d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z" fill="var(--on-brand, #FFFFFF)"/><path d="M7 16.5V24.5L11.5 22V14L7 16.5Z" fill="var(--on-brand, #FFFFFF)"/><path d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z" fill="var(--on-brand, #FFFFFF)"/></svg></span>
           <div>
-            <p class="admin-kicker">Platform operations</p>
+            <p class="admin-kicker">Opérations de la plateforme</p>
             <h1 class="admin-title">Coden Admin</h1>
-            <p class="admin-subtitle">A redacted operations cockpit for users, projects, runs, publish health, model reliability and security signals.</p>
+            <p class="admin-subtitle">Utilisateurs, projets, runs, apprentissage de l’agent, intégrations, publication et sécurité, sans aucun secret exposé.</p>
           </div>
         </div>
         <div class="admin-actions">
-          <button class="admin-button" id="admin-refresh" type="button">Refresh</button>
-          <button class="admin-button primary" id="admin-copy-summary" type="button">Copy summary</button>
+          <button class="admin-button" id="admin-refresh" type="button">Actualiser</button>
+          <button class="admin-button primary" id="admin-copy-summary" type="button">Copier le résumé</button>
         </div>
       </header>
-
-      <div class="admin-hero-metrics" aria-label="Admin highlights">
-        <article class="admin-signal-card">
-          <span class="admin-signal-value">Live</span>
-          <span class="admin-signal-note">Model, publish and builder signals in one place.</span>
-          <div class="admin-mini-bars" aria-hidden="true">
-            <span style="height: 20px"></span><span style="height: 26px"></span><span style="height: 18px"></span><span style="height: 31px"></span><span style="height: 24px"></span><span style="height: 29px"></span><span style="height: 34px"></span><span style="height: 25px"></span><span style="height: 30px"></span><span style="height: 21px"></span><span style="height: 28px"></span><span style="height: 32px"></span><span style="height: 23px"></span><span style="height: 20px"></span><span style="height: 26px"></span><span style="height: 18px"></span><span style="height: 24px"></span><span style="height: 31px"></span>
-          </div>
-        </article>
-        <article class="admin-signal-card">
-          <span class="admin-signal-value">142ms</span>
-          <span class="admin-signal-note">Target feel for admin interactions and filters.</span>
-          <div class="admin-mini-line" aria-hidden="true"></div>
-        </article>
-        <article class="admin-signal-card">
-          <span class="admin-signal-value">Safe</span>
-          <span class="admin-signal-note">Read-only by default until audited admin actions are wired.</span>
-          <div class="admin-mini-bars" aria-hidden="true">
-            <span style="height: 30px"></span><span style="height: 18px"></span><span style="height: 26px"></span><span style="height: 34px"></span><span style="height: 27px"></span><span style="height: 21px"></span><span style="height: 32px"></span><span style="height: 25px"></span><span style="height: 28px"></span><span style="height: 19px"></span><span style="height: 31px"></span><span style="height: 26px"></span><span style="height: 22px"></span><span style="height: 20px"></span><span style="height: 24px"></span><span style="height: 18px"></span><span style="height: 29px"></span><span style="height: 21px"></span>
-          </div>
-        </article>
-      </div>
-
-      <nav class="admin-tabs" aria-label="Admin workspaces">
-        <button class="active" data-admin-tab="overview" type="button">Signal</button>
-        <button data-admin-tab="users" type="button">Users</button>
-        <button data-admin-tab="projects" type="button">Projects</button>
-        <button data-admin-tab="runs" type="button">Runs</button>
-        <button data-admin-tab="errors" type="button">Errors</button>
-        <button data-admin-tab="models" type="button">Models</button>
-        <button data-admin-tab="publish" type="button">Publish</button>
-        <button data-admin-tab="security" type="button">Security</button>
-        <button data-admin-tab="flags" type="button">Flags</button>
-        <button data-admin-tab="support" type="button">Support</button>
-      </nav>
 
       <section class="admin-section active" data-section="overview">
         <div id="admin-overview" class="admin-grid"></div>
       </section>
 
+      <section class="admin-section" data-section="agent">
+        <div id="admin-agent" class="admin-grid"></div>
+      </section>
+
       <section class="admin-section" data-section="users">
         <div class="admin-card full">
           <div class="admin-panel-head">
-            <span class="panel-label">Users</span>
-            <input id="admin-user-search" class="admin-search" placeholder="Search email or user id" />
+            <span class="panel-label">Utilisateurs</span>
+            <input id="admin-user-search" class="admin-search" placeholder="Rechercher un e-mail ou un identifiant" aria-label="Rechercher un utilisateur" />
           </div>
           <div class="admin-filter-row" data-filter-group="users">
-            <button class="admin-filter-chip active" data-filter-value="all" type="button">All</button>
+            <button class="admin-filter-chip active" data-filter-value="all" type="button">Tous</button>
             <button class="admin-filter-chip" data-filter-value="admin" type="button">Admins</button>
-            <button class="admin-filter-chip" data-filter-value="active" type="button">Active today</button>
-            <button class="admin-filter-chip" data-filter-value="no-email" type="button">No email</button>
+            <button class="admin-filter-chip" data-filter-value="active" type="button">Actifs aujourd’hui</button>
+            <button class="admin-filter-chip" data-filter-value="no-email" type="button">Sans e-mail</button>
           </div>
           <div id="admin-users"></div>
         </div>
@@ -1768,14 +1893,14 @@
       <section class="admin-section" data-section="projects">
         <div class="admin-card full">
           <div class="admin-panel-head">
-            <span class="panel-label">Projects</span>
-            <input id="admin-project-search" class="admin-search" placeholder="Search project, owner or id" />
+            <span class="panel-label">Projets</span>
+            <input id="admin-project-search" class="admin-search" placeholder="Rechercher un projet, un propriétaire ou un identifiant" aria-label="Rechercher un projet" />
           </div>
           <div class="admin-filter-row" data-filter-group="projects">
-            <button class="admin-filter-chip active" data-filter-value="all" type="button">All</button>
-            <button class="admin-filter-chip" data-filter-value="preview-ready" type="button">Preview ready</button>
-            <button class="admin-filter-chip" data-filter-value="published" type="button">Published</button>
-            <button class="admin-filter-chip" data-filter-value="needs-attention" type="button">Needs attention</button>
+            <button class="admin-filter-chip active" data-filter-value="all" type="button">Tous</button>
+            <button class="admin-filter-chip" data-filter-value="preview-ready" type="button">Aperçu vérifié</button>
+            <button class="admin-filter-chip" data-filter-value="published" type="button">Publiés</button>
+            <button class="admin-filter-chip" data-filter-value="needs-attention" type="button">À surveiller</button>
           </div>
           <div id="admin-projects"></div>
         </div>
@@ -1793,6 +1918,10 @@
         <div id="admin-models" class="admin-grid"></div>
       </section>
 
+      <section class="admin-section" data-section="integrations">
+        <div id="admin-integrations" class="admin-grid"></div>
+      </section>
+
       <section class="admin-section" data-section="publish">
         <div id="admin-publish" class="admin-grid"></div>
       </section>
@@ -1808,8 +1937,8 @@
       <section class="admin-section" data-section="support">
         <div class="admin-card full">
           <div class="admin-panel-head">
-            <span class="panel-label">Support workspace</span>
-            <button class="admin-button" id="admin-build-support-summary" type="button">Build support summary</button>
+            <span class="panel-label">Espace support</span>
+            <button class="admin-button" id="admin-build-support-summary" type="button">Générer le résumé</button>
           </div>
           <div id="admin-support"></div>
         </div>
@@ -1818,8 +1947,8 @@
   </div>
 
   <div id="admin-drawer-backdrop" class="drawer-backdrop" aria-hidden="true"></div>
-  <aside id="admin-drawer" class="admin-drawer" aria-live="polite" aria-label="Admin details panel">
-    <button class="drawer-close" id="admin-drawer-close" type="button" aria-label="Close">×</button>
+  <aside id="admin-drawer" class="admin-drawer" aria-live="polite" aria-label="Détails">
+    <button class="drawer-close" id="admin-drawer-close" type="button" aria-label="Fermer">×</button>
     <div id="admin-drawer-content"></div>
   </aside>
 

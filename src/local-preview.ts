@@ -213,6 +213,9 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
   if (path === '/api/users/me/workspace-state') {
     return { handled: true, payload: { success: true, state: localPreviewState, local_preview: true } };
   }
+  if (path.startsWith('/api/admin/')) {
+    return { handled: true, payload: localPreviewAdminPayload(path.replace('/api/admin/', '').split('?')[0]) };
+  }
   if (path === '/api/integrations/status') {
     return { handled: true, payload: { success: true, configured: true, local_preview: true } };
   }
@@ -333,4 +336,73 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
     handled: true,
     payload: { success: false, local_preview: true, message: 'Cette action n’est pas disponible dans l’aperçu local.' },
   };
+}
+
+/** Small, obviously sample data so the admin console can be laid out without a backend. */
+function localPreviewAdminPayload(section: string): Record<string, unknown> {
+  const day = (offset: number) => new Date(Date.now() - offset * 86_400_000).toISOString();
+  const runs = Array.from({ length: 24 }, (_, index) => ({
+    id: `run_${index}`, request_id: `req_${index}`, project_id: LOCAL_PREVIEW_PROJECT_ID, status: index % 8 === 0 ? 'failed' : 'completed',
+    intent: index % 3 ? 'build_app' : 'edit_app', model_id: index % 2 ? 'anthropic/claude-sonnet-5' : 'openai/gpt-6-luna',
+    diagnostic_code: index % 8 === 0 ? 'PREVIEW_BROWSER_CHECK_FAILED' : null, duration_ms: 90_000 + index * 2_000, created_at: day(index % 14),
+  }));
+  const payloads: Record<string, Record<string, unknown>> = {
+    overview: {
+      metrics: { users: 42, projects: 97, active_today: 6, runs: runs.length, failed_runs: 3, success_rate: 88, previews_ready: 61, publish_success: 18, ai_requests: 240, wallet_credits: 1840 },
+      health: [
+        { label: 'Supabase', status: 'ok', detail: 'Références frontend et backend identiques' },
+        { label: 'OpenRouter', status: 'ok', detail: 'Clé API configurée' },
+        { label: 'Intégrations Composio', status: 'ok', detail: 'Clé API configurée côté serveur' },
+        { label: 'Publication', status: 'warning', detail: 'Aucun hébergeur configuré' },
+      ],
+      availability: { users: true, projects: true, agent_runs: true, deployments: true },
+      distributions: { run_intent: { build_app: 16, edit_app: 8 } },
+      recent: { failed_runs: runs.filter(run => run.status === 'failed') },
+    },
+    runs: { runs },
+    errors: { errors: { failed_runs: runs.filter(run => run.status === 'failed'), runner_failures: [] }, grouped: { diagnostic_code: { PREVIEW_BROWSER_CHECK_FAILED: 3 } } },
+    'agent-learning': {
+      signals: {
+        total: 186, shared: 171, by_kind: { run: 88, error_fixed: 51, feedback: 31, retry: 8, revert: 8 }, runs: 88, run_success_rate: 84,
+        errors_fixed: 117, retries: 8, reverts: 8, feedback_positive: 26, feedback_negative: 5,
+        per_day: Array.from({ length: 30 }, (_, index) => ({ day: day(29 - index).slice(0, 10), runs: 1 + ((index * 7) % 6), successes: 1 })),
+      },
+      knowledge: {
+        rows: 214, patterns: 73, visible_patterns: 14, curated: 11, min_contributors: 2,
+        top: [
+          { kind: 'error_fix', task_type: 'code_generation', content: 'Erreur « failed to resolve import \'recharts\' » → corrigée en : installer le paquet « recharts » avec install_package plutôt que réécrire l\'import.', contributors: 9, last_seen: day(0) },
+          { kind: 'stack_pattern', task_type: 'code_generation', content: 'Application de type saas construite et vérifiée avec : @supabase/supabase-js, lucide-react, react-router-dom, recharts.', contributors: 4, last_seen: day(2) },
+        ],
+      },
+      personalization: { users: 42, with_preferences: 17, with_instructions: 11, opted_out: 2, share_rate: 95, memory_users: 29 },
+      routing: {
+        min_runs: 8,
+        stats: [
+          { task_type: 'code_generation', model_id: 'anthropic/claude-sonnet-5', runs: 46, successes: 41, success_rate: 89, smoothed_rate: 87, reliable: true },
+          { task_type: 'code_generation', model_id: 'openai/gpt-6-luna', runs: 22, successes: 16, success_rate: 73, smoothed_rate: 72, reliable: true },
+          { task_type: 'code_edit', model_id: 'google/gemini-3-flash', runs: 5, successes: 5, success_rate: 100, smoothed_rate: 84, reliable: false },
+        ],
+      },
+    },
+    integrations: {
+      configured: true, catalogue_total: 870, totals: { connections: 23, active: 20, users: 14, toolkits: 6 },
+      by_toolkit: [
+        { toolkit: 'supabase', active: 8, pending: 1, failed: 0, users: 8 }, { toolkit: 'github', active: 5, pending: 0, failed: 0, users: 5 },
+        { toolkit: 'stripe', active: 3, pending: 1, failed: 0, users: 3 }, { toolkit: 'notion', active: 2, pending: 0, failed: 0, users: 2 },
+        { toolkit: 'gmail', active: 1, pending: 0, failed: 1, users: 1 }, { toolkit: 'slack', active: 1, pending: 0, failed: 0, users: 1 },
+      ],
+      recent: [
+        { id: 'ca_1', toolkit: 'stripe', status: 'ACTIVE', user_id: 'local-preview-user', created_at: day(0) },
+        { id: 'ca_2', toolkit: 'supabase', status: 'INITIATED', user_id: 'local-preview-user', created_at: day(1) },
+      ],
+    },
+    'feature-flags': {
+      flags: [
+        { key: 'multi_agent_pipeline', label: 'Pipeline multi-agents (planner, coder, réparation)', enabled: true, rollout: 'tous', risk: 'high' },
+        { key: 'composio_integrations', label: 'Intégrations Composio', enabled: true, rollout: 'tous', risk: 'medium' },
+        { key: 'parallel_writers', label: 'Écritures parallèles', enabled: false, rollout: 'tous', risk: 'high' },
+      ],
+    },
+  };
+  return { success: true, local_preview: true, rows: [], users: [], projects: [], deployments: [], domains: [], findings: [], checklist: [], ...(payloads[section] || {}) };
 }
