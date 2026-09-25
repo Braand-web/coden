@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Check, ChevronRight, Copy, FileText, Plug, RotateCcw } from 'lucide-react';
+import { Check, ChevronRight, Copy, FileText, LayoutGrid, Plug, RotateCcw } from 'lucide-react';
+import { CodenLogoMark } from '../brand/coden-logo';
+import { localConnectorLogo } from '../../lib/connector-logos';
 import { Response } from '../ui/response';
 import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
@@ -97,6 +99,15 @@ export type ConnectionOutcome = { status: 'connected' | 'provisioned' | 'cancell
  */
 export type ConnectionChoiceEventDetail = { decisionId: string; need: string; label: string; choice: ConnectionChoice; handled: boolean; resolve: (outcome: ConnectionOutcome) => void };
 
+/** The brand on each connection button: Coden's mark, the service's logo, or the catalogue. */
+function ConnectionChoiceLogo({ choice }: { choice: ConnectionChoice }) {
+  const [failed, setFailed] = useState(false);
+  if (choice.kind === 'coden_cloud') return <span className="coden-connection-logo is-brand"><CodenLogoMark /></span>;
+  const src = choice.kind === 'toolkit' && choice.toolkit ? localConnectorLogo(choice.toolkit) : '';
+  if (src && !failed) return <span className="coden-connection-logo"><img src={src} alt="" onError={() => setFailed(true)} /></span>;
+  return <span className="coden-connection-logo is-icon"><LayoutGrid size={14} aria-hidden="true" /></span>;
+}
+
 /*
  * The app needs a service: one button per way to get it.
  *
@@ -150,6 +161,7 @@ function ConnectionRequestCard({ decisionId, question, onAnswers }: { decisionId
     <h3>{question.q}</h3>
     <div className="coden-connection-options">
       {question.options.map((label, index) => <button key={label} type="button" disabled={busy || !onAnswers} data-selected={phase.index === index || undefined} onClick={() => choose(index)}>
+        <ConnectionChoiceLogo choice={connect.choices[index]} />
         <span>{label}</span>
         {phase.state === 'done' && phase.index === index ? <Check size={14} aria-hidden="true" /> : null}
         {phase.state === 'working' && phase.index === index ? <span className="coden-connection-spinner" aria-hidden="true" /> : null}

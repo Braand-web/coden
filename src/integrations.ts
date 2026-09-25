@@ -13,6 +13,8 @@
  * the same flow.
  */
 import { apiFetch } from './lib/api';
+import { codenLogoSvg } from './lib/coden-logo';
+import { connectorLogoCandidates } from './lib/connector-logos';
 
 export type IntegrationToolkit = {
   slug: string;
@@ -240,6 +242,64 @@ function initials(name: string) {
 }
 
 /**
+ * The brand's logo: Composio's, then Coden's own copy, then initials — each
+ * step taken when the previous image fails to load (see onLogoError).
+ */
+function logoMarkup(toolkit: Pick<IntegrationToolkit, 'slug' | 'name' | 'logo'>): string {
+  const [first, ...rest] = connectorLogoCandidates(toolkit.slug, toolkit.logo);
+  if (!first) return `<span>${escapeHtml(initials(toolkit.name))}</span>`;
+  return `<img src="${escapeHtml(first)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-fallbacks="${escapeHtml(rest.join(' '))}" data-initials="${escapeHtml(initials(toolkit.name))}">`;
+}
+
+function onLogoError(event: Event) {
+  const img = event.target as HTMLImageElement | null;
+  if (!img || img.tagName !== 'IMG' || !img.closest('.coden-int-logo')) return;
+  const [next, ...rest] = String(img.dataset.fallbacks || '').split(' ').filter(Boolean);
+  if (next) {
+    img.dataset.fallbacks = rest.join(' ');
+    img.src = next;
+    return;
+  }
+  const span = document.createElement('span');
+  span.textContent = img.dataset.initials || '·';
+  img.replaceWith(span);
+}
+
+/** Coden's own backend, always there, first in the grid. */
+const CODEN_CLOUD_CARD = `
+  <article class="coden-int-card is-builtin" data-state="builtin">
+    <div class="coden-int-card-head">
+      <div class="coden-int-logo is-brand">${codenLogoSvg({ size: 36 })}</div>
+      <div class="coden-int-card-title"><h4>Coden Cloud</h4><small>Inclus avec Coden</small></div>
+      <span class="coden-int-status" data-state="connected">Intégré</span>
+    </div>
+    <p>Base de données, authentification et stockage de vos applications, prêts sans configuration.</p>
+    <div class="coden-int-card-actions"><span class="coden-int-note">Toujours disponible</span></div>
+  </article>`;
+
+/** Shown with their real logos while Composio is not configured on the server. */
+const FEATURED: Array<Pick<IntegrationToolkit, 'slug' | 'name' | 'description'> & { category: string }> = [
+  { slug: 'supabase', name: 'Supabase', description: 'Base Postgres, authentification et stockage.', category: 'Bases de données' },
+  { slug: 'github', name: 'GitHub', description: 'Dépôts, issues et pull requests.', category: 'Développement' },
+  { slug: 'stripe', name: 'Stripe', description: 'Paiements, abonnements et factures.', category: 'Paiements' },
+  { slug: 'notion', name: 'Notion', description: 'Pages, bases et documentation.', category: 'Productivité' },
+  { slug: 'gmail', name: 'Gmail', description: 'Envoyer et organiser des e-mails.', category: 'E-mail' },
+  { slug: 'googlesheets', name: 'Google Sheets', description: 'Lire et écrire des feuilles de calcul.', category: 'Productivité' },
+  { slug: 'googlecalendar', name: 'Google Calendar', description: 'Événements, disponibilités et réservations.', category: 'Productivité' },
+  { slug: 'googledrive', name: 'Google Drive', description: 'Fichiers et dossiers partagés.', category: 'Stockage' },
+  { slug: 'airtable', name: 'Airtable', description: 'Bases de données collaboratives.', category: 'Bases de données' },
+  { slug: 'hubspot', name: 'HubSpot', description: 'Contacts, entreprises et pipeline commercial.', category: 'CRM' },
+  { slug: 'shopify', name: 'Shopify', description: 'Produits, commandes et boutique.', category: 'E-commerce' },
+  { slug: 'linear', name: 'Linear', description: 'Tickets, cycles et feuilles de route.', category: 'Développement' },
+  { slug: 'discord', name: 'Discord', description: 'Messages et bots communautaires.', category: 'Messagerie' },
+  { slug: 'telegram', name: 'Telegram', description: 'Bots, messages et notifications.', category: 'Messagerie' },
+  { slug: 'mailchimp', name: 'Mailchimp', description: 'Listes, campagnes et newsletters.', category: 'Marketing' },
+  { slug: 'resend', name: 'Resend', description: 'E-mails transactionnels pour vos apps.', category: 'E-mail' },
+  { slug: 'figma', name: 'Figma', description: 'Maquettes et composants de design.', category: 'Design' },
+  { slug: 'calendly', name: 'Calendly', description: 'Prises de rendez-vous en ligne.', category: 'Productivité' },
+];
+
+/**
  * Mounts the grid in `root`. Returns a function that re-reads the
  * connections (used when the host view becomes visible again).
  */
@@ -285,9 +345,7 @@ export function mountIntegrationsGrid(root: HTMLElement, options: GridOptions = 
     const connected = connection?.status === ACTIVE;
     const pending = Boolean(connection && PENDING.has(connection.status));
     const status = connected ? 'Connecté' : pending ? 'En attente' : 'Non connecté';
-    const logo = toolkit.logo
-      ? `<img src="${escapeHtml(toolkit.logo)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
-      : `<span>${escapeHtml(initials(toolkit.name))}</span>`;
+    const logo = logoMarkup(toolkit);
     const category = toolkit.categories[0]?.name || '';
     return `
       <article class="coden-int-card" data-int-card="${escapeHtml(toolkit.slug)}" data-state="${connected ? 'connected' : pending ? 'pending' : 'idle'}">
@@ -315,7 +373,8 @@ export function mountIntegrationsGrid(root: HTMLElement, options: GridOptions = 
     }
     // Connected services first, the rest in Composio's popularity order.
     const ordered = [...state.items].sort((a, b) => Number(connectionFor(b.slug)?.status === ACTIVE) - Number(connectionFor(a.slug)?.status === ACTIVE));
-    grid.innerHTML = ordered.map(cardMarkup).join('') + (state.loading ? Array.from({ length: state.items.length ? 3 : 9 }, () => '<div class="coden-int-card is-skeleton" aria-hidden="true"></div>').join('') : '');
+    const pinned = !state.search && !state.category ? CODEN_CLOUD_CARD : '';
+    grid.innerHTML = pinned + ordered.map(cardMarkup).join('') + (state.loading ? Array.from({ length: state.items.length ? 3 : 9 }, () => '<div class="coden-int-card is-skeleton" aria-hidden="true"></div>').join('') : '');
     more.hidden = !state.cursor || state.loading;
   };
 
@@ -367,6 +426,8 @@ export function mountIntegrationsGrid(root: HTMLElement, options: GridOptions = 
       void load();
     }, 280);
   });
+
+  root.addEventListener('error', onLogoError, true);
 
   root.addEventListener('click', async event => {
     const target = event.target as HTMLElement;
@@ -426,7 +487,17 @@ export function mountIntegrationsGrid(root: HTMLElement, options: GridOptions = 
       state.loading = false;
       root.querySelector('.coden-int-toolbar')?.setAttribute('hidden', '');
       categoriesEl.hidden = true;
-      grid.innerHTML = '<div class="coden-int-empty"><strong>Les intégrations arrivent bientôt.</strong><span>Composio n’est pas encore configuré sur ce serveur. Coden Cloud reste disponible pour la base de données, l’authentification et le stockage.</span></div>';
+      showNotice('Les connexions à ces services ouvrent bientôt. Coden Cloud est déjà disponible pour la base de données, l’authentification et le stockage.');
+      grid.innerHTML = CODEN_CLOUD_CARD + FEATURED.map(item => `
+        <article class="coden-int-card is-soon" data-state="soon">
+          <div class="coden-int-card-head">
+            <div class="coden-int-logo">${logoMarkup({ slug: item.slug, name: item.name, logo: '' })}</div>
+            <div class="coden-int-card-title"><h4>${escapeHtml(item.name)}</h4><small>${escapeHtml(item.category)}</small></div>
+            <span class="coden-int-status" data-state="soon">Bientôt</span>
+          </div>
+          <p>${escapeHtml(item.description)}</p>
+          <div class="coden-int-card-actions"><button type="button" class="coden-int-button" disabled>Connecter</button></div>
+        </article>`).join('');
       return;
     }
     void fetchCategories().then(renderCategories).catch(() => renderCategories([]));
@@ -531,8 +602,14 @@ function installStyles() {
     @keyframes coden-int-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
     @media (prefers-reduced-motion: reduce) { .coden-int-card.is-skeleton { animation: none; } }
     .coden-int-card-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-    .coden-int-logo { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border-subtle, var(--border)); background: var(--surface-soft); color: var(--foreground); font-size: 12px; font-weight: 800; }
-    .coden-int-logo img { width: 24px; height: 24px; object-fit: contain; }
+    /* Brand colours are drawn for a light ground: the tile stays light in both themes. */
+    .coden-int-logo { width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center; overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); background: white; color: var(--syntax-blue, var(--accent)); font-size: 12px; font-weight: 800; box-shadow: var(--shadow-sm); }
+    .coden-int-logo img { width: 22px; height: 22px; object-fit: contain; }
+    .coden-int-logo.is-brand { border: 0; background: none; box-shadow: none; }
+    .coden-int-logo.is-brand svg { width: 36px; height: 36px; }
+    .coden-int-note { color: var(--text-muted); font-size: 12px; font-weight: 600; align-self: center; }
+    .coden-int-card.is-builtin { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+    .coden-int-status[data-state="soon"] { color: var(--text-muted); }
     .coden-int-card-title { min-width: 0; }
     .coden-int-card-title h4 { margin: 0; overflow: hidden; color: var(--foreground); font-size: 14px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
     .coden-int-card-title small { display: block; overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }

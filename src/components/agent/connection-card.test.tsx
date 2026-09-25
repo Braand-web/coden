@@ -30,6 +30,12 @@ describe('a connection question', () => {
     for (const label of ['Coden Cloud', 'Supabase', 'Autre base de données', 'Plus tard']) expect(html).toContain(`>${label}<`);
   });
 
+  it('shows each service with its real logo', () => {
+    const html = renderToStaticMarkup(React.createElement(AgentMessage, { state, onDecisionAnswers: () => undefined }));
+    expect(html).toContain('data-coden-logo="mark"');
+    expect(html).toContain('src="/connector-logos/supabase.svg"');
+  });
+
   it('keeps an ordinary questionnaire for questions without connection actions', () => {
     const plain = reduceAgentMessage({ ...EMPTY_MESSAGE, status: 'streaming' }, {
       type: 'decision_required', decisionId: 'd2', question: 'Laquelle ?', options: [], allowFreeText: true,
