@@ -332,57 +332,6 @@
 .cdn-pub__link:disabled { opacity: .5; cursor: default; }
 .cdn-pub__link--go { color: var(--accent); font-weight: 700; }
 
-.cdn-pub__count {
-  display: inline-grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.cdn-pub__count[data-tone="fail"] { background: var(--danger); color: var(--foreground); }
-.cdn-pub__count[data-tone="warn"] { background: var(--syntax-orange); color: var(--foreground); }
-
-/* ── checks ─────────────────────────────────────────────── */
-
-.cdn-pub__check {
-  display: grid;
-  grid-template-columns: 26px 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--input);
-}
-
-.cdn-pub__check-icon {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 9px;
-}
-
-.cdn-pub__check strong {
-  display: block;
-  color: var(--foreground);
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.cdn-pub__check small {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 /* ── custom domains ─────────────────────────────────────── */
 
 .cdn-dom__form {

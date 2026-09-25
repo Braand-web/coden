@@ -4090,7 +4090,7 @@ function formatPublishDate(value: string | null | undefined) {
   }
 }
 
-let publishPanelMode: 'main' | 'confirm' | 'security' | 'domain' = 'main';
+let publishPanelMode: 'main' | 'confirm' | 'domain' = 'main';
 let publishInFlight: Promise<PublishApiPayload> | null = null;
 
 function publishPanelTitle(status: PublishStatusPayload | null) {
@@ -4395,11 +4395,6 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? 'Réessayer'
         : publishPrimaryLabel(status);
   const effectiveTitle = isPublishing ? 'Publication en cours' : error ? 'Publication interrompue' : title;
-  const passCount = checks.filter(check => check.status === 'pass').length;
-  const warnCount = checks.filter(check => check.status === 'warn').length;
-  const failCount = checks.filter(check => check.status === 'fail').length;
-  const issueCount = failCount + warnCount;
-  const visibleCheckCount = issueCount || passCount;
   const canPublish = Boolean(status?.can_publish && !isPublishing);
   const blockers = status && !status.can_publish ? checks.filter(check => check.status === 'fail') : [];
   const notes = checks.filter(check => check.status === 'warn' && check.key !== 'domain');
@@ -4421,31 +4416,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           ? 'Prête à être mise en ligne sur son adresse Coden.'
           : 'Terminez les contrôles bloquants avant de publier.';
 
-  const securityRows = checks.map(check => {
-    const tone = check.status === 'pass' ? 'var(--success)' : check.status === 'warn' ? 'var(--syntax-orange)' : 'var(--danger)';
-    const iconName = check.status === 'pass' ? 'check' : check.status === 'warn' ? 'warning' : 'fail';
-    return `
-      <div class="cdn-pub__check">
-        <span class="cdn-pub__check-icon" style="color:${tone};background:color-mix(in srgb, ${tone} 10%, var(--surface));">${publishIcon(iconName as 'check' | 'warning' | 'fail')}</span>
-        <span>
-          <strong>${escapeHtml(check.label)}</strong>
-          <small>${escapeHtml(check.detail)}</small>
-        </span>
-      </div>
-    `;
-  }).join('');
-
-  const detailPanel = publishPanelMode === 'security'
-    ? `
-      <div class="cdn-pub__section">
-        <div class="cdn-pub__section-head">
-          <strong>Contrôles avant publication</strong>
-          <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
-        </div>
-        ${securityRows || '<p class="cdn-dom__hint">Aucun contrôle disponible pour l’instant.</p>'}
-      </div>
-    `
-    : publishPanelMode === 'domain'
+  const detailPanel = publishPanelMode === 'domain'
       ? renderDomainSection(status?.can_add_domain !== false)
       : publishPanelMode === 'confirm' && status
         ? `
@@ -4511,15 +4482,6 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           data-publish-action="${statusMissing ? 'reload' : 'publish'}"
           ${statusMissing || canPublish ? '' : 'disabled'}>${escapeHtml(error && canPublish && !isPublishing ? 'Réessayer la publication' : primaryLabel)}</button>
         <div class="cdn-pub__links">
-          <button type="button" class="cdn-pub__link" data-publish-action="security" ${status ? '' : 'disabled'}>
-            ${failCount ? 'Problèmes' : warnCount ? 'À vérifier' : 'Contrôles'}
-            ${/* A bare "0" reads as "zero checks ran", which is the one thing
-                  it never means: buildPublishStatus always returns five. The
-                  count is shown only when it counts something. */''}
-            ${status && visibleCheckCount
-              ? `<span class="cdn-pub__count" data-tone="${failCount ? 'fail' : warnCount ? 'warn' : 'ok'}">${visibleCheckCount}</span>`
-              : ''}
-          </button>
           <button type="button" class="cdn-pub__link" data-publish-action="domain" ${status ? '' : 'disabled'}>Domaine</button>
           <button type="button" class="cdn-pub__link cdn-pub__link--go" data-publish-action="open" ${canOpen ? '' : 'disabled'}>Ouvrir ↗</button>
         </div>
@@ -4563,10 +4525,6 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       if (action === 'close') closePublishPanel();
       if (action === 'main') {
         publishPanelMode = 'main';
-        renderPublishPanel(payload, isPublishing, error);
-      }
-      if (action === 'security') {
-        publishPanelMode = publishPanelMode === 'security' ? 'main' : 'security';
         renderPublishPanel(payload, isPublishing, error);
       }
       if (action === 'domain') {

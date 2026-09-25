@@ -32,6 +32,19 @@ import { readFileSync } from 'node:fs';
 const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
 const panel = live.slice(live.indexOf('function renderPublishPanel('), live.indexOf('async function openPublishPanel('));
 
+// The noisy diagnostics drawer is removed, but server-side readiness gates stay authoritative.
+{
+  assert.doesNotMatch(panel, /data-publish-action="security"|Problèmes|Contrôles avant publication/,
+    'the Problems/checks entry point and its drawer are not rendered');
+  assert.doesNotMatch(live, /publishPanelMode[^\n]*security|action === 'security'/,
+    'the removed drawer has no client-side toggle');
+  assert.match(panel, /const blockers = status && !status\.can_publish \? checks\.filter\(check => check\.status === 'fail'\) : \[\];/,
+    'the server-provided publication safety gates remain in effect');
+  const styles = readFileSync(new URL('./src/styles/publish-panel.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(styles, /cdn-pub__count|cdn-pub__check/,
+    'styles used only by the removed drawer are deleted');
+}
+
 // The three cases are distinguished at all, which they were not before.
 {
   assert.match(panel, /function renderPublishPanel\(payload: PublishApiPayload \| null, isPublishing = false, error = '', loading = false\)/,
