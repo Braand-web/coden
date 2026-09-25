@@ -17,9 +17,7 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
 .pricing-page-hero h1 { max-width: 680px; margin: 24px auto 0; color: var(--foreground); font-family: var(--font-sans); font-size: 48px; font-weight: 700; letter-spacing: -.055em; line-height: 1; text-wrap: balance; }
 .pricing-page-hero h1 span { color: var(--accent); }
 .pricing-page-lede { max-width: 640px; margin: 24px auto 0; color: var(--text-muted); font-size: 18px; line-height: 28px; text-wrap: pretty; }
-.pricing-hero-proof { display: inline-flex; align-items: center; gap: 12px; margin-top: 24px; color: var(--text-muted); font-size: 14px; }
-.pricing-hero-proof i { width: 4px; height: 4px; border-radius: 999px; background: var(--border-strong); }
-.pricing-interval { display: inline-flex; gap: 4px; margin-top: 40px; padding: 4px; border: 1px solid var(--border); border-radius: 9999px; background: var(--surface-soft); }
+.pricing-interval { display: flex; width: fit-content; max-width: 100%; gap: 4px; margin: 40px auto 0; padding: 4px; border: 1px solid var(--border); border-radius: 9999px; background: var(--surface-soft); }
 .pricing-interval button { min-height: 36px; padding: 6px 16px; border: 0; border-radius: 9999px; background: transparent; color: var(--text-muted); font: 600 14px/20px var(--font-sans); cursor: pointer; transition: color var(--transition-control), background-color var(--transition-control), transform var(--transition-control); }
 .pricing-interval button:hover { color: var(--foreground); }
 .pricing-interval button:active { transform: scale(.98); }
@@ -106,7 +104,6 @@ body.coden-pricing-page .coden-react-marketing-header { font-family: var(--font-
   .pricing-page-main { width: min(100% - 32px, 540px); padding-top: 112px; }
   .pricing-page-hero h1 { font-size: 36px; line-height: 40px; }
   .pricing-page-lede { font-size: 16px; line-height: 24px; }
-  .pricing-hero-proof { flex-wrap: wrap; justify-content: center; }
   .pricing-plan-card { padding: 24px; }
   .pricing-statement { margin-top: 64px; padding: 48px 0; }
   .pricing-statement h2, .pricing-section-heading h2, .pricing-final-cta h2 { font-size: 30px; line-height: 36px; }

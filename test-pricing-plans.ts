@@ -12,12 +12,15 @@ const routePolicy = JSON.parse(read('config/public-route-policy.json')) as {
   redirects: Record<string, string>;
 };
 const pricingHtml = read('pricing.html');
+const pricingCss = read('src/pricing-page.css');
 const smokeCheck = read('scripts/production-smoke-check.cjs');
 const server = read('server.ts');
 
 assert(routePolicy.canonicalPublic.includes('/pricing.html'), 'Pricing must be an indexed public route.');
 assert.equal(routePolicy.redirects['/pricing'], '/pricing.html', 'The short pricing URL must redirect to the canonical page.');
 assert.match(pricingHtml, /<h1[^>]*>Transformez votre idée en application web\./, 'Pricing requires a visible page title aligned with Coden positioning.');
+assert.ok(!pricingHtml.includes('pricing-hero-proof'), 'the Build/Cloud/IA proof strip is removed from the hero.');
+assert.match(pricingCss, /\.pricing-interval\s*\{[^}]*margin:\s*40px auto 0/, 'the billing selector stays centered without the proof strip.');
 assert.match(pricingHtml, /data-pricing-tier="pro"/, 'Pro requires a credit tier selector.');
 assert.match(pricingHtml, /data-pricing-tier="business"/, 'Business requires a credit tier selector.');
 assert.match(pricingHtml, /src="\/src\/pricing-page\.ts"/, 'Pricing requires the dynamic catalog adapter.');
