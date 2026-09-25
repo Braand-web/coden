@@ -41,6 +41,7 @@ describe('Coden V4 unified billing', () => {
     expect(priceFor('pro', 100, 'monthly').amountUsd).toBe(25);
     expect(priceFor('pro', 100, 'annual').amountUsd).toBe(240);
     expect(topupPriceFor('pro', 100).amountUsd).toBe(31.25);
+    expect(topupPriceFor('business', 100).amountUsd).toBe(62.5);
   });
 
   it('charges measured complete cost at no less than the target margin', () => {

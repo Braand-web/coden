@@ -8,7 +8,7 @@
  * server's, which validates the tier again.
  */
 import { apiFetch } from '../lib/api';
-import { BILLING_PLANS, priceFor, publicationLimitsFor, type BillingInterval } from '../config/billing-v2';
+import { BILLING_PLANS, FEATURED_PLAN_BADGE, planFeatures, priceFor, type BillingInterval } from '../config/billing-v2';
 import '../styles/plan-chooser.css';
 import { enhanceSelect, type SelectMenu } from '../lib/select-menu';
 
@@ -24,22 +24,17 @@ export type PlanChooserOptions = {
   source: 'upgrade_modal' | 'onboarding';
 };
 
+/* The same words as the landing and the pricing page. */
 const TAGLINES: Record<PaidPlan, string> = {
-  pro: 'Pour publier vos produits et itérer vite.',
-  business: 'Pour les équipes et les agences qui livrent en continu.',
+  pro: 'Pour itérer vite, connecter votre domaine et garder le contrôle sur vos versions.',
+  business: 'Pour les équipes qui ont besoin de rôles, de limites et de capacités avancées.',
 };
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] as string));
 const formatXaf = (value: number) => new Intl.NumberFormat('fr-FR').format(Math.round(value));
 
 function features(plan: PaidPlan, credits: number): string[] {
-  if (plan === 'business') {
-    return [`${formatXaf(credits)} crédits chaque mois`, 'Sites et domaines illimités', 'Rôles et projets internes', 'Modèles premium', 'Support prioritaire'];
-  }
-  const { publishedSites, customDomains } = publicationLimitsFor('pro', credits);
-  const sites = publishedSites === null ? 'Sites publiés illimités' : `${publishedSites} site${publishedSites > 1 ? 's' : ''} publié${publishedSites > 1 ? 's' : ''}`;
-  const domains = customDomains === null ? 'domaines illimités' : `${customDomains} domaine${customDomains > 1 ? 's' : ''} personnalisé${customDomains > 1 ? 's' : ''}`;
-  return [`${formatXaf(credits)} crédits chaque mois`, `${sites} et ${domains}`, 'Édition et export du code', 'Versions et retour arrière', 'Recharges de crédits'];
+  return planFeatures(plan, credits);
 }
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
@@ -55,7 +50,7 @@ export function renderPlanChooser(host: HTMLElement, options: PlanChooserOptions
     const isCurrent = current === plan;
     return `
       <article class="cpc-plan${plan === recommended ? ' is-recommended' : ''}" data-plan="${plan}">
-        ${plan === recommended ? `<span class="cpc-badge">${options.source === 'onboarding' ? 'Recommandé pour vous' : 'Le plus choisi'}</span>` : ''}
+        ${plan === recommended ? `<span class="cpc-badge">${options.source === 'onboarding' ? 'Recommandé pour vous' : FEATURED_PLAN_BADGE}</span>` : ''}
         <header>
           <h3>${name}</h3>
           <p>${TAGLINES[plan]}</p>
