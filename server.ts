@@ -18383,6 +18383,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
     let result: Awaited<ReturnType<typeof publishProjectToVercel>>;
+    let verifiedPublicUrl = '';
     try {
       publishAttemptStarted = true;
       /*
@@ -18417,26 +18418,19 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         buildOnProvider,
       });
       publishProviderResult = result;
-      if (!result.codenUrl) {
-        throw createPublicError(
-          'Le déploiement Vercel est prêt, mais le sous-domaine Coden n’est pas encore confirmé. Vérifiez la configuration du domaine générique dans Vercel puis réessayez.',
-          503,
-          'VERCEL_CODEN_DOMAIN_PENDING',
-          'configure_vercel_domain',
-        );
-      }
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes
             .filter((route: any) => route?.kind === 'public')
             .map((route: any) => String(route.path || '/'))
         : ['/'];
       const deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
-      if (!deploymentVerification.verified || deploymentVerification.baseUrl !== result.codenUrl) {
+      if (!deploymentVerification.verified) {
         const lastCheck = deploymentVerification.checks.at(-1);
         throw new Error(
           `Vercel deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
         );
       }
+      verifiedPublicUrl = deploymentVerification.baseUrl;
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
@@ -18448,7 +18442,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       provider: result.provider,
       provider_deployment_id: result.deploymentId,
       deployment_url: result.deploymentUrl || result.defaultUrl,
-      public_url: result.codenUrl,
+      public_url: verifiedPublicUrl,
       custom_domain: publishStatus.custom_domain || result.customDomain,
       badge_required: publishStatus.badge_required,
       status: 'ready',
@@ -18471,7 +18465,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
           project_id: project.id,
           slug,
           vercel_project: result.projectName,
-          default_url: result.codenUrl,
+          default_url: verifiedPublicUrl,
           coden_subdomain: vercelCodenHostForSlug(slug),
           last_deployment_id: result.deploymentId,
           published_at: createdAt,
@@ -18480,7 +18474,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         {
           project_id: project.id,
           slug,
-          default_url: result.codenUrl,
+          default_url: verifiedPublicUrl,
           last_deployment_id: result.deploymentId,
           published_at: createdAt,
           status: 'ready',
@@ -18503,8 +18497,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     const nextStatus = buildPublishStatus({ ...context, latestDeployment: deploy });
     return res.json({
       success: true,
-      deployment: { ...sanitizeDeploymentForUser(deploy, result.codenUrl || nextStatus.public_url, nextStatus.custom_domain), artifact_hash: artifactHash },
-      publish: { ...nextStatus, public_url: result.codenUrl || nextStatus.public_url },
+      deployment: { ...sanitizeDeploymentForUser(deploy, verifiedPublicUrl, nextStatus.custom_domain), artifact_hash: artifactHash },
+      publish: { ...nextStatus, public_url: verifiedPublicUrl },
     });
   } catch (e: any) {
     const diagnostic = diagnosePublishError(e);

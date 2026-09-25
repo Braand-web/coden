@@ -52,6 +52,22 @@ try {
   assert.equal(result.verified, false, 'deployment protection is not application readiness');
 }
 
+{
+  const headersSeen: Headers[] = [];
+  const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
+    headersSeen.push(new Headers(init?.headers));
+    return new Response('ok', { status: String(input).includes('pending.coden.fun') ? 404 : 200, headers: { 'content-type': 'text/html' } });
+  };
+  const result = await verifyVercelDeployment({
+    codenUrl: 'https://pending.coden.fun',
+    defaultUrl: 'https://shop-production.vercel.app',
+    deploymentUrl: 'https://shop-abc123.vercel.app',
+  }, ['/'], fetchMock as typeof fetch);
+  assert.equal(result.verified, true);
+  assert.equal(result.baseUrl, 'https://shop-production.vercel.app', 'a pending Coden DNS record must fall back to the verified Vercel URL');
+  assert.ok(headersSeen.every(headers => !headers.has('x-vercel-protection-bypass')), 'public checks never depend on a private bypass secret');
+}
+
 assert.deepEqual(sanitizePublicBuildEnv({
   VITE_SUPABASE_URL: 'https://example.supabase.co',
   VITE_SUPABASE_ANON_KEY: 'publishable',

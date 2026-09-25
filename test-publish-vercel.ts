@@ -73,6 +73,7 @@ assert.equal(localBuildAllowed({ NODE_ENV: 'development' }), true);
       if (url.includes('/v2/files')) return new Response('{}', { status: 200 });
       if (url.includes('/v13/deployments') && init?.method === 'POST') return new Response(JSON.stringify({ id: 'dpl_1', url: 'coden-shop-abc.vercel.app' }), { status: 200 });
       if (url.includes('/v13/deployments/dpl_1')) return new Response(JSON.stringify({ id: 'dpl_1', readyState: 'READY', url: 'coden-shop-abc.vercel.app' }), { status: 200 });
+      if (url.includes('/v2/deployments/dpl_1/aliases')) return new Response(JSON.stringify({ aliases: [{ alias: 'shop-production.vercel.app' }] }), { status: 200 });
       return new Response(JSON.stringify({ verified: false }), { status: 404 });
     }) as typeof fetch;
     const result = await publishProjectToVercel({ slug: 'shop', distDir: staticSource, sourceDir: staticSource, runtime: 'static-assets', outputDirectory: 'dist', buildOnProvider: true });
@@ -83,6 +84,7 @@ assert.equal(localBuildAllowed({ NODE_ENV: 'development' }), true);
     const uploaded = create!.body.files.map((file: any) => file.file).sort();
     assert.deepEqual(uploaded, ['index.html', 'package.json', 'src/main.tsx'], 'the source goes up, dependencies never do');
     assert.equal(result.deploymentId, 'dpl_1');
+    assert.equal(result.defaultUrl, 'https://shop-production.vercel.app', 'the public stable URL comes from Vercel, never from a guessed slug');
   } finally {
     globalThis.fetch = previousFetch;
     if (previousToken === undefined) delete process.env.VERCEL_TOKEN; else process.env.VERCEL_TOKEN = previousToken;

@@ -444,9 +444,8 @@ export async function verifyVercelDeployment(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8_000);
       try {
-        const protectionBypass = String(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '').trim();
         const headers: Record<string, string> = { 'user-agent': 'Coden-Vercel-Deployment-Verifier/1.0' };
-        if (protectionBypass) headers['x-vercel-protection-bypass'] = protectionBypass;
+        // A public publication must work for visitors, without private bypass credentials.
         const response = await fetchImpl(url, { redirect: 'follow', signal: controller.signal, headers });
         const redirectedToLogin = /(?:^|\.)vercel\.com\/login/i.test(response.url || '');
         const check = { url, status: response.status, ok: response.status >= 200 && response.status < 300 && !redirectedToLogin };
@@ -521,9 +520,8 @@ export async function publishProjectToVercel(params: {
   if (!deploymentUrl) throw new Error('Vercel did not return a deployment URL.');
 
   const host = vercelCodenHostForSlug(params.slug);
-  // Coden publication is complete only once the platform-owned hostname is
-  // confirmed by Vercel. The vercel.app deployment remains an implementation
-  // detail and is never presented as a successful Coden publication.
+  // DNS propagation is independent of the production build. Keep its state
+  // separate so an available Vercel URL can be published while DNS is pending.
   let domain = { verified: false, verification: [] as any[] };
   try {
     const attached = await attachCodenDomain(projectName, host);
@@ -536,7 +534,23 @@ export async function publishProjectToVercel(params: {
     });
   }
   const codenUrl = domain.verified ? `https://${host}` : null;
-  const defaultUrl = vercelProjectUrlForSlug(params.slug);
+  // Never guess the alias: Vercel can suffix it when the name is unavailable.
+  // A guessed address could even belong to someone else's deployment.
+  let defaultUrl = deploymentUrl;
+  try {
+    const aliases = await vercelRequest<{ aliases?: Array<{ alias?: string }> }>(
+      `/v2/deployments/${encodeURIComponent(ready.id || deployment.id)}/aliases`,
+    );
+    const productionAlias = aliases.aliases?.find(item => /^[a-z0-9-]+\.vercel\.app$/i.test(item.alias || ''))?.alias;
+    if (productionAlias) defaultUrl = asHttpsUrl(productionAlias);
+  } catch (error: any) {
+    // Alias lookup is an enhancement. A ready deployment's own URL is issued
+    // by Vercel and remains the safe public fallback if listing aliases fails.
+    console.warn('[coden:vercel_alias_lookup_skipped]', {
+      project: projectName,
+      status: Number(error?.statusCode || 0) || undefined,
+    });
+  }
 
   return {
     provider: 'vercel',
