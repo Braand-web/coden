@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronRight, Copy, FileText, RotateCcw } from 'lucide-react';
+import { Check, ChevronRight, Copy, FileText, Plug, RotateCcw } from 'lucide-react';
 import { Response } from '../ui/response';
 import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
 import type { AgentMessageState, AgentNotice, AutoChoice, DecisionNotice, ReasoningPart } from './agent-parts';
-import type { DecisionAnswer, DecisionQuestion } from '../../lib/agent-chat-protocol';
+import type { ConnectionChoice, DecisionAnswer, DecisionQuestion } from '../../lib/agent-chat-protocol';
 import { getRuntimeRecoveryPresentation, publicRuntimeErrorMessage } from '../../lib/runtime-error-presentation';
 import '../../styles/agent-message.css';
 
@@ -88,6 +88,78 @@ function AutoChoiceLine({ choices }: { choices: AutoChoice[] }) {
 
 export type DecisionAnswersHandler = (decisionId: string, questions: DecisionQuestion[], answers: Record<number, DecisionAnswer>) => void;
 
+/** What the host did with a connection choice. */
+export type ConnectionOutcome = { status: 'connected' | 'provisioned' | 'cancelled' | 'failed'; message?: string };
+/**
+ * Sent on window when a connection option is picked; the Builder performs the
+ * connection (Composio popup, Coden Cloud provisioning, catalogue) and calls
+ * `resolve`. Unhandled, the card answers with the plain choice.
+ */
+export type ConnectionChoiceEventDetail = { decisionId: string; need: string; label: string; choice: ConnectionChoice; handled: boolean; resolve: (outcome: ConnectionOutcome) => void };
+
+/*
+ * The app needs a service: one button per way to get it.
+ *
+ * Picking one does the connecting — Composio's page, Coden Cloud, or the
+ * catalogue — and only then answers the waiting run, with what actually
+ * happened, so it resumes on a connected service or, if the person backed
+ * out, proposes an alternative instead of pretending.
+ */
+function ConnectionRequestCard({ decisionId, question, onAnswers }: { decisionId: string; question: DecisionQuestion; onAnswers?: DecisionAnswersHandler }) {
+  const [phase, setPhase] = useState<{ state: 'idle' | 'working' | 'done' | 'failed'; index?: number; text?: string }>({ state: 'idle' });
+  const connect = question.connect!;
+  const answer = (selected: number[], custom: string) => onAnswers?.(decisionId, [question], { 0: { selected, custom } });
+
+  const choose = (index: number) => {
+    const choice = connect.choices[index];
+    const label = question.options[index];
+    setPhase({ state: 'working', index, text: choice.kind === 'coden_cloud' ? 'Préparation de Coden Cloud…' : choice.kind === 'toolkit' ? `Connexion à ${label}…` : 'Choisissez un service dans les intégrations…' });
+    const detail: ConnectionChoiceEventDetail = {
+      decisionId, need: connect.need, label, choice, handled: false,
+      resolve: outcome => {
+        if (outcome.status === 'connected' || outcome.status === 'provisioned') {
+          const name = outcome.message || label;
+          setPhase({ state: 'done', index, text: outcome.status === 'provisioned' ? 'Coden Cloud est prêt. Coden reprend le travail.' : `${name} est connecté. Coden reprend le travail.` });
+          answer([index], outcome.status === 'provisioned'
+            ? 'Coden Cloud est provisionné pour ce projet : utilise son backend (base de données, auth, stockage) et reprends la tâche.'
+            : `${name} est maintenant connecté via Composio. Utilise-le pour de vrai (list_integration_tools puis run_integration_tool) et reprends la tâche.`);
+          return;
+        }
+        if (outcome.status === 'cancelled') {
+          setPhase({ state: 'idle' });
+          return;
+        }
+        setPhase({ state: 'failed', index, text: outcome.message || 'La connexion n’a pas abouti. Réessayez ou choisissez une autre option.' });
+      },
+    };
+    window.dispatchEvent(new CustomEvent('coden:connection-choice', { detail }));
+    if (!detail.handled) {
+      setPhase({ state: 'done', index, text: 'Choix envoyé.' });
+      answer([index], '');
+    }
+  };
+
+  const later = () => {
+    setPhase({ state: 'done', text: 'Connexion reportée. Coden propose une alternative.' });
+    answer([], 'Je ne connecte pas de service pour l’instant. Propose une alternative qui fonctionne sans (par exemple Coden Cloud, ou une version sans ce besoin) ou mets la tâche en pause proprement — ne simule pas le service.');
+  };
+
+  const busy = phase.state === 'working' || phase.state === 'done';
+  return <section className="coden-connection-card" aria-label="Connexion requise" data-state={phase.state}>
+    <div className="coden-connection-kicker"><Plug size={13} aria-hidden="true" />Connexion requise</div>
+    <h3>{question.q}</h3>
+    <div className="coden-connection-options">
+      {question.options.map((label, index) => <button key={label} type="button" disabled={busy || !onAnswers} data-selected={phase.index === index || undefined} onClick={() => choose(index)}>
+        <span>{label}</span>
+        {phase.state === 'done' && phase.index === index ? <Check size={14} aria-hidden="true" /> : null}
+        {phase.state === 'working' && phase.index === index ? <span className="coden-connection-spinner" aria-hidden="true" /> : null}
+      </button>)}
+    </div>
+    {phase.text ? <p className="coden-connection-status" role="status">{phase.text}</p> : null}
+    {!busy && onAnswers ? <button type="button" className="coden-connection-later" onClick={later}>Plus tard</button> : null}
+  </section>;
+}
+
 function DecisionNoticeView({ notice, onSelect, onAnswers }: { notice: DecisionNotice; onSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void; onAnswers?: DecisionAnswersHandler }) {
   const [selected, setSelected] = useState<string | null>(null);
   /*
@@ -99,6 +171,9 @@ function DecisionNoticeView({ notice, onSelect, onAnswers }: { notice: DecisionN
    * the card would throw both away to gain nothing.
    */
   const questions = notice.questions;
+  if (questions?.length === 1 && questions[0].connect) {
+    return <ConnectionRequestCard decisionId={notice.id} question={questions[0]} onAnswers={onAnswers} />;
+  }
   if (questions?.length) {
     return <AskCard questions={questions} onSubmitted={onAnswers ? answers => onAnswers(notice.id, questions, answers) : undefined} />;
   }

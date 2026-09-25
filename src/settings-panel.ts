@@ -1,10 +1,12 @@
 import { apiFetch } from './lib/api';
+import { mountIntegrationsGrid } from './integrations';
 import { publicBillingCatalog } from './config/billing-v2';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
 import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
 
 type SettingsTab =
   | 'profile'
+  | 'personalization'
   | 'account'
   | 'privacy'
   | 'appearance'
@@ -150,9 +152,12 @@ let billingReturnNotice: BillingReturn | null = null;
 const SETTINGS_MANAGED_VERSION = '2026-06-12';
 const SETTINGS_PREFS_KEY = 'coden.user.settings.v1';
 const SETTINGS_DIRTY_CLASS = 'settings-dirty';
+/** Same bound as the server (agent-personalization.ts). */
+const MAX_AGENT_INSTRUCTIONS = 4000;
 
 const tabAliases: Record<SettingsTab, string> = {
   profile: 'profil',
+  personalization: 'personnalisation',
   account: 'compte',
   privacy: 'confidentialite',
   appearance: 'apparence',
@@ -166,11 +171,12 @@ const tabAliases: Record<SettingsTab, string> = {
 
 const settingsTabMeta: Record<string, { title: string; description: string }> = {
   profil: { title: 'Profil', description: 'Nom, langue et préférences personnelles.' },
+  personnalisation: { title: 'Personnalisation', description: 'Vos instructions pour l’agent et l’amélioration de Coden.' },
   compte: { title: 'Compte et sécurité', description: 'Identité et session active.' },
   confidentialite: { title: 'Confidentialité', description: 'Mémoire, données et protections.' },
   capacites: { title: 'Capacités', description: 'Ateliers et capacités de l’agent.' },
   automatisations: { title: 'Autonomie de l’agent', description: 'Budgets, validations et sécurité des automatisations.' },
-  connecteurs: { title: 'Intégrations', description: 'Services réellement connectés à votre espace.' },
+  connecteurs: { title: 'Intégrations', description: 'Connectez vos services pour que l’agent puisse les utiliser.' },
   api: { title: 'API', description: 'Webhooks et contrôle des connecteurs.' },
   apparence: { title: 'Apparence', description: 'Thème, densité et animations.' },
   facturation: { title: 'Facturation', description: 'Forfait, crédits, renouvellement et paiements.' },
@@ -293,7 +299,8 @@ function readSettingsForm(): SettingsPreferences {
       language: read('[data-settings-field="language"]'),
       timezone: read('[data-settings-field="timezone"]'),
       role: read('[data-settings-field="role"]'),
-      instructions: read('[data-settings-field="instructions"]'),
+      // No longer edited here: the agent's instructions moved to Personnalisation, saved server-side.
+      instructions: prefs.profile.instructions,
     },
     appearance: {
       theme: document.querySelector<HTMLElement>('[data-settings-theme].active')?.dataset.settingsTheme || prefs.appearance.theme,
@@ -676,6 +683,116 @@ function installSettingsStyle() {
       color: var(--danger);
       border-color: color-mix(in srgb, var(--danger) 24%, transparent);
       background: color-mix(in srgb, var(--danger) 6%, transparent);
+    }
+
+    .settings-footer[hidden] {
+      display: none;
+    }
+
+    .settings-integrations-card [data-settings-integrations] {
+      margin-top: 14px;
+    }
+
+    .personalization-field {
+      margin-top: 14px;
+    }
+
+    .personalization-field textarea {
+      min-height: 176px;
+      line-height: 1.55;
+    }
+
+    .personalization-footer {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .personalization-counter {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .personalization-counter[data-tone="near"] { color: var(--warning, var(--text-secondary)); }
+    .personalization-counter[data-tone="limit"] { color: var(--danger); font-weight: 800; }
+
+    .personalization-state {
+      flex: 1;
+      min-width: 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .personalization-state[data-tone="success"] { color: var(--success); }
+    .personalization-state[data-tone="error"] { color: var(--danger); }
+
+    .settings-action-button.is-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--text-on-accent);
+    }
+
+    .settings-action-button.is-primary:hover:not(:disabled) {
+      background: var(--accent-hover, var(--accent));
+    }
+
+    .settings-action-button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .personalization-share {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      margin-top: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control, 10px);
+      background: var(--surface-soft);
+      cursor: pointer;
+    }
+
+    .personalization-share input {
+      width: 18px;
+      height: 18px;
+      margin: 1px 0 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .personalization-share input:focus-visible {
+      outline: 2px solid var(--ring, var(--accent));
+      outline-offset: 2px;
+    }
+
+    .personalization-share-copy strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--foreground);
+      font-size: 13px;
+    }
+
+    .personalization-share-copy span {
+      display: block;
+      color: var(--text-secondary, var(--text-muted));
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .settings-card p.personalization-note {
+      margin-top: 10px;
+    }
+
+    .personalization-note a {
+      color: var(--accent);
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
     .billing-balance-card {
@@ -1497,11 +1614,12 @@ function installSettingsStyle() {
   settingsStyleInstalled = true;
 }
 
-function settingsIcon(name: 'search' | 'general' | 'account' | 'privacy' | 'billing' | 'usage' | 'capabilities' | 'connectors' | 'api' | 'appearance' | 'danger' | 'close') {
+function settingsIcon(name: 'search' | 'general' | 'personalization' | 'account' | 'privacy' | 'billing' | 'usage' | 'capabilities' | 'connectors' | 'api' | 'appearance' | 'danger' | 'close') {
   const paths: Record<string, string> = {
     search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
     general: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21h-4v-.05a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3v-4h.05A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06L7.06 4.2l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3h4v.05a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21v4h-.05a1.7 1.7 0 0 0-1.55 1Z"></path>',
     account: '<circle cx="12" cy="8" r="4"></circle><path d="M4.5 21a8 8 0 0 1 15 0"></path>',
+    personalization: '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3Z"></path><path d="m14 8 3 3"></path><path d="M19 15v4"></path><path d="M17 17h4"></path>',
     privacy: '<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"></path><rect x="9" y="10" width="6" height="5" rx="1"></rect><path d="M10.5 10V8.8a1.5 1.5 0 0 1 3 0V10"></path>',
     billing: '<rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 10h18"></path><path d="M7 15h3"></path>',
     usage: '<path d="M4 20V10"></path><path d="M9 20V4"></path><path d="M14 20v-7"></path><path d="M19 20V7"></path><path d="M2 20h20"></path>',
@@ -1522,6 +1640,7 @@ function settingsMarkup() {
         <div class="settings-nav-label">Paramètres</div>
         <div class="settings-tabs" role="tablist" aria-label="Paramètres">
           <button class="settings-tab active" type="button" data-tab="profil">${settingsIcon('general')}<span>Profil</span></button>
+          <button class="settings-tab" type="button" data-tab="personnalisation">${settingsIcon('personalization')}<span>Personnalisation</span></button>
           <button class="settings-tab" type="button" data-tab="compte">${settingsIcon('account')}<span>Compte et sécurité</span></button>
           <button class="settings-tab" type="button" data-tab="apparence">${settingsIcon('appearance')}<span>Apparence</span></button>
           <button class="settings-tab" type="button" data-tab="facturation">${settingsIcon('billing')}<span>Facturation</span></button>
@@ -1586,11 +1705,33 @@ function settingsMarkup() {
               <label for="settings-timezone">Fuseau horaire</label>
               <input id="settings-timezone" data-settings-field="timezone" type="text" placeholder="Africa/Douala">
             </div>
-            <div class="settings-field full">
-              <label for="settings-instructions">Instructions pour Coden</label>
-              <textarea id="settings-instructions" data-settings-field="instructions" placeholder="Exemple : répondre en français et préserver le design actuel."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel hidden" id="tab-personnalisation" data-settings-heading="Personnalisation">
+        <div class="settings-card">
+          <h3>Instructions pour l’agent</h3>
+          <p>Coden les applique à chaque session et à chaque modèle, mode Auto compris, avec la priorité la plus haute après ses règles de sécurité.</p>
+          <div class="settings-field full personalization-field">
+            <label for="settings-agent-instructions">Vos instructions</label>
+            <textarea id="settings-agent-instructions" data-personalization-instructions maxlength="${MAX_AGENT_INSTRUCTIONS}" rows="8" spellcheck="true" placeholder="Exemples : Réponds toujours en français. Utilise Tailwind et des composants accessibles. Écris des commentaires courts. Demande-moi avant d’ajouter une dépendance."></textarea>
+            <div class="personalization-footer">
+              <span class="personalization-counter" data-personalization-counter aria-live="polite">0 / ${MAX_AGENT_INSTRUCTIONS}</span>
+              <span class="personalization-state" data-personalization-state></span>
+              <button type="button" class="settings-action-button is-primary" data-settings-action="save-agent-instructions" disabled>Enregistrer</button>
             </div>
           </div>
+        </div>
+        <div class="settings-card">
+          <h3>Amélioration de Coden</h3>
+          <label class="personalization-share" for="settings-share-improvement">
+            <input id="settings-share-improvement" type="checkbox" data-personalization-share checked>
+            <span class="personalization-share-copy">
+              <strong>Aider à améliorer l’agent Coden avec mes données</strong>
+              <span>Les résultats de vos builds (réussite, erreurs corrigées, relances, 👍/👎, versions restaurées) apprennent à Coden quelles corrections et quels modèles fonctionnent. Tout est anonymisé avant d’alimenter la base commune : clés d’API, secrets, e-mails, noms, données de bases de données et contenus privés sont retirés, et un schéma n’est réutilisé que s’il a été observé chez plusieurs personnes.</span>
+            </span>
+          </label>
+          <p class="personalization-note">Décocher prend effet immédiatement : vos données ne servent plus à la base commune et vos contributions passées sont supprimées. Vos instructions et votre mémoire privée restent réservées à vos sessions. <a href="/privacy.html#amelioration-agent" target="_blank" rel="noopener">Politique de confidentialité</a></p>
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-compte" data-settings-heading="Compte et sécurité">
@@ -1737,23 +1878,10 @@ function settingsMarkup() {
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-connecteurs" data-settings-heading="Intégrations">
-        <div class="settings-card">
-          <h3>Services de la plateforme</h3>
-          <p>Les connexions passent par des flux serveur protégés. Aucune valeur secrète n’apparaît dans ce panneau.</p>
-          <div class="settings-integration-grid">
-            <div class="settings-integration"><strong>GitHub</strong><span>Synchronisation du dépôt et collaboration versionnée.</span></div>
-            <div class="settings-integration"><strong>Supabase</strong><span>Authentification et backend des applications générées.</span></div>
-            <div class="settings-integration"><strong>Vercel</strong><span>Déploiement en production et vérification de l’adresse publique.</span></div>
-            <div class="settings-integration"><strong>Saspay</strong><span>Checkout FCFA protégé, paiements FlowPay et webhooks signés.</span></div>
-          </div>
-        </div>
-        <div class="settings-card">
-          <h3>Gérer les connexions</h3>
-          <p>Connectez ou vérifiez les services disponibles pour votre espace.</p>
-          <div class="settings-row">
-            <div><strong>Connecteurs de l’espace</strong><span>Leur disponibilité dépend de votre forfait et de la configuration du serveur.</span></div>
-            <button type="button" class="settings-action-button" data-settings-action="open-integrations">Ouvrir les connecteurs</button>
-          </div>
+        <div class="settings-card settings-integrations-card">
+          <h3>Vos services connectés</h3>
+          <p>Connectez vos comptes (base de données, paiements, e-mail, stockage, outils) : l’agent peut ensuite les utiliser dans vos sessions. La connexion passe par Composio ; aucune clé n’est affichée ni stockée dans votre navigateur.</p>
+          <div data-settings-integrations></div>
         </div>
       </div>
       <div class="tab-panel hidden" id="tab-api" data-settings-heading="API">
@@ -1873,7 +2001,6 @@ function updateSettingsForm(prefs = loadSettingsPreferences()) {
   setFieldValue('[data-settings-field="language"]', prefs.profile.language);
   setFieldValue('[data-settings-field="timezone"]', prefs.profile.timezone);
   setFieldValue('[data-settings-field="role"]', prefs.profile.role);
-  setFieldValue('[data-settings-field="instructions"]', prefs.profile.instructions);
   setFieldValue('[data-settings-field="webhookUrl"]', prefs.api.webhookUrl);
   setFieldValue('[data-settings-field="webhookEvents"]', prefs.api.webhookEvents);
   setSegmentActive('theme', prefs.appearance.theme);
@@ -1986,6 +2113,10 @@ function clearLocalDrafts() {
 }
 
 async function handleSettingsAction(action: string) {
+  if (action === 'save-agent-instructions') {
+    await saveAgentInstructions();
+    return;
+  }
   if (action === 'copy-user-id') {
     await copyText(document.querySelector<HTMLElement>('[data-settings-account-id]')?.textContent || '', 'Identifiant copié');
     return;
@@ -2015,12 +2146,7 @@ async function handleSettingsAction(action: string) {
     return;
   }
   if (action === 'open-integrations') {
-    // The connectors panel lives in the Builder. From anywhere else the
-    // button used to close Settings and open nothing at all.
-    const detail = { handled: false };
-    document.dispatchEvent(new CustomEvent('coden:open-connectors', { detail }));
-    if (detail.handled) { closeSettings(); return; }
-    setSettingsStatus('Ouvrez un projet : les connecteurs se gèrent depuis le Builder.', 'error');
+    activateSettingsTab('connecteurs');
     return;
   }
   if (action === 'open-privacy') {
@@ -2128,8 +2254,26 @@ function activateSettingsTab(tab: string) {
   if (title) title.textContent = meta.title;
   if (description) description.textContent = meta.description;
   if (content) content.scrollTop = 0;
+  // Personnalisation and Intégrations save on their own; the panel-wide
+  // Enregistrer (for local preferences) would be a second, unrelated button.
+  const footer = document.querySelector<HTMLElement>('#settings-panel .settings-footer');
+  if (footer) footer.hidden = id === 'personnalisation' || id === 'connecteurs';
   if (id === 'ia') void loadAiUsageSettings();
   if (id === 'facturation') void loadBillingSettings();
+  if (id === 'personnalisation') void loadPersonalizationSettings();
+  if (id === 'connecteurs') mountSettingsIntegrations();
+}
+
+let refreshSettingsIntegrations: (() => Promise<void>) | null = null;
+function mountSettingsIntegrations() {
+  const root = document.querySelector<HTMLElement>('#settings-panel [data-settings-integrations]');
+  if (!root) return;
+  if (refreshSettingsIntegrations && root.dataset.mounted === 'true') {
+    void refreshSettingsIntegrations();
+    return;
+  }
+  root.dataset.mounted = 'true';
+  refreshSettingsIntegrations = mountIntegrationsGrid(root);
 }
 
 export function openSettings(tab: SettingsTab = 'profile') {
@@ -2163,6 +2307,132 @@ export function closeSettings() {
   if (overlay) overlay.inert = true;
   if (panel) panel.inert = true;
   document.body.style.overflow = '';
+}
+
+type PersonalizationState = { instructions: string; shareImprovement: boolean; updatedAt: string | null };
+let personalizationSaved: PersonalizationState | null = null;
+let personalizationLoading: Promise<void> | null = null;
+
+function instructionsField() {
+  return document.querySelector<HTMLTextAreaElement>('#settings-panel [data-personalization-instructions]');
+}
+
+/** Counter, "not saved" hint and the Save button, from the textarea against what the server holds. */
+function renderInstructionsState(note?: { text: string; tone: 'success' | 'error' | 'idle' }) {
+  const field = instructionsField();
+  if (!field) return;
+  const length = field.value.length;
+  const counter = document.querySelector<HTMLElement>('#settings-panel [data-personalization-counter]');
+  if (counter) {
+    counter.textContent = `${length.toLocaleString('fr-FR')} / ${MAX_AGENT_INSTRUCTIONS.toLocaleString('fr-FR')}`;
+    counter.dataset.tone = length >= MAX_AGENT_INSTRUCTIONS ? 'limit' : length >= MAX_AGENT_INSTRUCTIONS * 0.9 ? 'near' : '';
+  }
+  const dirty = personalizationSaved !== null && field.value.trim() !== personalizationSaved.instructions;
+  const button = document.querySelector<HTMLButtonElement>('#settings-panel [data-settings-action="save-agent-instructions"]');
+  if (button) button.disabled = !dirty || personalizationSaved === null;
+  const state = document.querySelector<HTMLElement>('#settings-panel [data-personalization-state]');
+  if (state) {
+    state.textContent = note?.text || (dirty ? 'Modifications non enregistrées' : '');
+    state.dataset.tone = note?.tone || (dirty ? 'idle' : '');
+  }
+}
+
+function renderPersonalization(value: PersonalizationState) {
+  personalizationSaved = { ...value, instructions: value.instructions.trim() };
+  const field = instructionsField();
+  if (field) {
+    // Instructions typed in the old Profile field lived only in this browser
+    // and never reached the agent. Offered here once, for the person to save.
+    const legacy = !value.instructions ? loadSettingsPreferences().profile.instructions.trim() : '';
+    field.value = value.instructions || legacy;
+    field.disabled = false;
+  }
+  const share = document.querySelector<HTMLInputElement>('#settings-panel [data-personalization-share]');
+  if (share) {
+    share.checked = value.shareImprovement;
+    share.disabled = false;
+  }
+  renderInstructionsState();
+}
+
+async function loadPersonalizationSettings(force = false) {
+  if (personalizationSaved && !force) return renderPersonalization(personalizationSaved);
+  if (personalizationLoading) return personalizationLoading;
+  const field = instructionsField();
+  const share = document.querySelector<HTMLInputElement>('#settings-panel [data-personalization-share]');
+  if (field && !personalizationSaved) field.disabled = true;
+  if (share && !personalizationSaved) share.disabled = true;
+  personalizationLoading = (async () => {
+    try {
+      const response = await apiFetch<{ success: boolean; personalization: PersonalizationState }>('/api/users/me/personalization');
+      renderPersonalization(response.personalization);
+    } catch {
+      if (field) field.disabled = false;
+      if (share) share.disabled = false;
+      renderInstructionsState({ text: 'Chargement impossible. Réessayez dans un instant.', tone: 'error' });
+    } finally {
+      personalizationLoading = null;
+    }
+  })();
+  return personalizationLoading;
+}
+
+async function putPersonalization(patch: Partial<Pick<PersonalizationState, 'instructions' | 'shareImprovement'>>) {
+  const response = await apiFetch<{ success: boolean; personalization: PersonalizationState }>('/api/users/me/personalization', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  });
+  return response.personalization;
+}
+
+async function saveAgentInstructions() {
+  const field = instructionsField();
+  const button = document.querySelector<HTMLButtonElement>('#settings-panel [data-settings-action="save-agent-instructions"]');
+  if (!field) return;
+  if (field.value.length > MAX_AGENT_INSTRUCTIONS) {
+    renderInstructionsState({ text: `Limite de ${MAX_AGENT_INSTRUCTIONS} caractères dépassée.`, tone: 'error' });
+    return;
+  }
+  if (button) { button.disabled = true; button.textContent = 'Enregistrement…'; }
+  try {
+    const saved = await putPersonalization({ instructions: field.value });
+    personalizationSaved = { ...saved, instructions: saved.instructions.trim() };
+    if (field.value.trim() !== saved.instructions) field.value = saved.instructions;
+    // The old browser-only copy has been superseded by the saved one.
+    try {
+      const local = loadSettingsPreferences();
+      if (local.profile.instructions) saveSettingsPreferences({ ...local, profile: { ...local.profile, instructions: '' } });
+    } catch { /* storage unavailable: nothing to clean */ }
+    renderInstructionsState({ text: 'Enregistré · appliqué dès la prochaine demande', tone: 'success' });
+    setSettingsStatus('Instructions enregistrées', 'success');
+  } catch (error: any) {
+    renderInstructionsState({ text: error?.message || 'Enregistrement impossible.', tone: 'error' });
+    setSettingsStatus('Enregistrement impossible', 'error');
+  } finally {
+    if (button) button.textContent = 'Enregistrer';
+    const dirty = personalizationSaved !== null && field.value.trim() !== personalizationSaved.instructions;
+    if (button) button.disabled = !dirty;
+  }
+}
+
+/** Saved the moment it changes; reverted on failure so the box never lies. */
+async function saveShareImprovement(input: HTMLInputElement) {
+  const wanted = input.checked;
+  input.disabled = true;
+  setSettingsStatus(wanted ? 'Activation du partage…' : 'Désactivation du partage…', 'saving');
+  try {
+    const saved = await putPersonalization({ shareImprovement: wanted });
+    if (personalizationSaved) personalizationSaved.shareImprovement = saved.shareImprovement;
+    input.checked = saved.shareImprovement;
+    setSettingsStatus(saved.shareImprovement
+      ? 'Merci : vos builds aident à améliorer Coden'
+      : 'Partage désactivé · vos contributions ont été supprimées', 'success');
+  } catch {
+    input.checked = !wanted;
+    setSettingsStatus('Préférence non enregistrée, réessayez', 'error');
+  } finally {
+    input.disabled = false;
+  }
 }
 
 function bindSettingsPanel() {
@@ -2243,6 +2513,10 @@ function bindSettingsPanel() {
       document.querySelector('#settings-panel .settings-tabs')?.classList.toggle('is-empty', tabs.every(tab => tab.hidden));
       return;
     }
+    if (target?.closest('#settings-panel [data-personalization-instructions]')) {
+      renderInstructionsState();
+      return;
+    }
     if (!target?.closest('#settings-panel [data-settings-field]')) return;
     markSettingsDirty();
     const prefs = readSettingsForm();
@@ -2251,6 +2525,11 @@ function bindSettingsPanel() {
 
   document.addEventListener('change', event => {
     const target = event.target as HTMLElement | null;
+    const share = target?.closest<HTMLInputElement>('#settings-panel [data-personalization-share]');
+    if (share) {
+      void saveShareImprovement(share);
+      return;
+    }
     const billingTier = target?.closest<HTMLSelectElement>('#settings-panel [data-billing-tier]');
     if (billingTier?.dataset.billingTier === 'pro' || billingTier?.dataset.billingTier === 'business') {
       const price = billingPrice(billingTier.dataset.billingTier, Number(billingTier.value));

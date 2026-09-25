@@ -260,7 +260,7 @@ function Sidebar({
           ) : (
             <button type="button" className="coden-dashboard-upgrade-card" onClick={() => openUpgrade(profile)} title="Passer à Pro">
               <span className="coden-dashboard-upgrade-icon" aria-hidden="true"><Sparkles size={15} /></span>
-              <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Crédits et publication</small></span>
+              <span className="coden-dashboard-upgrade-copy"><strong>Passer à Pro</strong><small>Builds et publication</small></span>
               <ArrowRight className="coden-dashboard-upgrade-arrow" size={15} aria-hidden="true" />
             </button>
           ))}

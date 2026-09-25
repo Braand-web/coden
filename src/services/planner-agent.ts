@@ -18,6 +18,7 @@
  * a file gets created.
  */
 
+import { withUserInstructions } from './agent-personalization.ts';
 import type { ChatMessage } from './openrouter-service.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { parseOrRepairStructuredObject } from './structured-output.ts';
@@ -209,7 +210,7 @@ export type PlannerAgentResult = BuildPlan & {
 
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<PlannerAgentResult> {
   const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
-  const systemPrompt = buildPlannerSystemPrompt(input.designPolicy, input.withAcceptance === true);
+  const systemPrompt = withUserInstructions(buildPlannerSystemPrompt(input.designPolicy, input.withAcceptance === true));
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
   const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,preferStructuredOutput:true,effort:input.effort}));
   const runtimeConfig = runtimeFor(modelId);

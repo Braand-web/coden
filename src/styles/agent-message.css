@@ -110,3 +110,24 @@ button.coden-tool-line:focus-visible { outline:2px solid var(--accent); outline-
 .coden-agent-reasoning[data-live] > summary { color:var(--text-secondary); }
 .coden-agent-auto-choice { margin:0; color:var(--text-muted); font-size:12px; letter-spacing:.01em; }
 @media (prefers-reduced-motion: reduce) { .coden-agent-reasoning-chevron { transition:none; } }
+
+/* A connection the app needs: one button per way to get it. */
+.coden-connection-card { display:grid; gap:10px; padding:14px; border:1px solid var(--border); border-radius:var(--radius-lg,14px); background:var(--surface); box-shadow:var(--shadow-sm); }
+.coden-connection-kicker { display:inline-flex; align-items:center; gap:6px; color:var(--accent); font-size:11px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; }
+.coden-connection-card h3 { margin:0; color:var(--foreground); font-size:14.5px; font-weight:650; line-height:1.45; }
+.coden-connection-options { display:flex; flex-wrap:wrap; gap:8px; }
+.coden-connection-options button { display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:0 14px; border:1px solid var(--border); border-radius:var(--radius-control,10px); background:var(--surface-soft); color:var(--foreground); font:inherit; font-size:13px; font-weight:650; cursor:pointer; transition:background var(--transition-micro,120ms ease), border-color var(--transition-micro,120ms ease), transform var(--transition-micro,120ms ease); }
+.coden-connection-options button:hover:not(:disabled) { border-color:var(--accent); background:var(--accent-soft); }
+.coden-connection-options button:active:not(:disabled) { transform:translateY(1px); }
+.coden-connection-options button:focus-visible, .coden-connection-later:focus-visible { outline:2px solid var(--ring,var(--accent)); outline-offset:2px; }
+.coden-connection-options button:disabled { cursor:default; opacity:.55; }
+.coden-connection-options button[data-selected] { opacity:1; border-color:var(--accent); background:var(--accent-soft); }
+.coden-connection-card[data-state="done"] .coden-connection-options button[data-selected] { border-color:var(--success); background:var(--success-background,var(--surface-soft)); color:var(--success); }
+.coden-connection-spinner { width:13px; height:13px; border:2px solid var(--accent-soft); border-top-color:var(--accent); border-radius:50%; animation:coden-connection-spin .8s linear infinite; }
+@keyframes coden-connection-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .coden-connection-spinner { animation:none; } }
+.coden-connection-status { margin:0; color:var(--text-secondary); font-size:12.5px; }
+.coden-connection-card[data-state="failed"] .coden-connection-status { color:var(--danger); }
+.coden-connection-card[data-state="done"] .coden-connection-status { color:var(--success); }
+.coden-connection-later { justify-self:start; padding:0; border:0; background:none; color:var(--text-muted); font:inherit; font-size:12.5px; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+.coden-connection-later:hover { color:var(--foreground); }

@@ -19,6 +19,7 @@
  * error this module cannot characterize would hide what actually happened.
  */
 
+import { withUserInstructions } from './agent-personalization.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
@@ -62,7 +63,7 @@ import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffor
 import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
 import { resolveQualityPolicy } from './quality-tier.ts';
 import { runDesignReview } from './design-review-agent.ts';
-import type { ValidationReport } from './sandbox/validate.ts';
+import type { ValidationProblem, ValidationReport } from './sandbox/validate.ts';
 
 export type { PipelineRoute } from './edit-intent.ts';
 export { resolvePipelineRoute };
@@ -460,7 +461,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: (input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.',
+          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.'),
         },
         ...carried,
         {
@@ -595,6 +596,8 @@ export async function runMultiAgentPipeline(input: {
   harnessContext?: MultiAgentHarnessContext;
   onSandboxEvent?: (event: LaunchEvent) => void;
   onCoderEvent?: (event: RepairEvent) => void;
+  /** Errors a repair round made disappear — what the learning layer learns fixes from. */
+  onErrorsResolved?: (problems: ValidationProblem[], round: number) => void;
   onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void;
   signal?: AbortSignal;
   onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
@@ -832,7 +835,7 @@ export async function runMultiAgentPipeline(input: {
             preferStructuredOutput: false,
           }));
           const result = await input.gateway.chat(specialistModel, [
-            { role: 'system', content: task.systemContext },
+            { role: 'system', content: withUserInstructions(task.systemContext) },
             { role: 'user', content: task.prompt },
           ], {
             maxAttempts: 2,
@@ -969,7 +972,17 @@ export async function runMultiAgentPipeline(input: {
       })
     : null;
 
+  let previousErrors: ValidationProblem[] | null = null;
   const afterRound: NonNullable<Parameters<typeof runCoderLoop>[0]['afterRound']> = async (round, report) => {
+    const errors = report.problems.filter(problem => problem.severity === 'error');
+    if (previousErrors && input.onErrorsResolved) {
+      const open = new Set(errors.map(problem => problem.message.split('\n')[0]));
+      const resolved = previousErrors.filter(problem => !open.has(problem.message.split('\n')[0]));
+      if (resolved.length) {
+        try { input.onErrorsResolved(resolved, round.round); } catch { /* learning never breaks a run */ }
+      }
+    }
+    previousErrors = errors;
     const files = await readAllFiles(sandbox);
     await input.onSnapshot?.(files);
     if (!ctx || !coderItem) return;

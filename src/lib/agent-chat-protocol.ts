@@ -13,7 +13,15 @@ export type DecisionOption = { id: string; label: string; description?: string; 
  * and waits. Both accept free text beside the options, because the useful
  * answer is regularly not on the list.
  */
-export type DecisionQuestion = { q: string; type: 'radio' | 'check'; options: string[] };
+/**
+ * What picking an option of a connection question does: provision Coden
+ * Cloud, open Composio's connect page for one toolkit, or open the
+ * integrations catalogue (pre-searched) to pick another service.
+ */
+export type ConnectionChoice = { kind: 'coden_cloud' | 'toolkit' | 'browse'; toolkit?: string; search?: string };
+/** Present when a question asks which service to connect; `choices[i]` belongs to `options[i]`. */
+export type ConnectionRequest = { need: string; choices: ConnectionChoice[] };
+export type DecisionQuestion = { q: string; type: 'radio' | 'check'; options: string[]; connect?: ConnectionRequest };
 
 /** What the user answered: chosen option indices, plus anything they typed. */
 export type DecisionAnswer = { selected: number[]; custom?: string };

@@ -1,3 +1,4 @@
+import { withUserInstructions } from './agent-personalization.ts';
 import {
   buildProductionBlueprintPromptContext,
   inferProductionBlueprint,
@@ -848,7 +849,9 @@ export function buildGenerationSystemPrompt(input: {
 }) {
   const productionBlueprint = inferProductionBlueprint(input.prompt || '');
   const universalProductContract = buildUniversalProductContract(input.prompt || '');
-  return joinSections([
+  // The user's own instructions come last: after every platform rule, and
+  // framed as outranking every default except those rules.
+  return withUserInstructions(joinSections([
     CODEN_CORE_SYSTEM_CONTRACT,
     CODEN_GENERATION_SECURITY_CONTRACT,
     CODEN_INFRASTRUCTURE_CONTRACT,
@@ -905,5 +908,5 @@ export function buildGenerationSystemPrompt(input: {
     CODEN_SAFETY_POLICY,
     CODEN_ZERO_BUG_GENERATION_POLICY,
     CODEN_JSON_OUTPUT_POLICY,
-  ]);
+  ]));
 }
