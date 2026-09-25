@@ -5,10 +5,11 @@
  * sidebar, and the last step of the welcome onboarding. Prices come from the
  * same versioned catalogue as the pricing page (config/billing-v2), so the
  * figure shown here is the figure Saspay charges; the checkout itself is the
- * server's, which validates the tier again.
+ * server's, which validates the tier again. In the Upgrade modal, the
+ * comparison table of the pricing page follows the cards.
  */
 import { apiFetch } from '../lib/api';
-import { BILLING_PLANS, FEATURED_PLAN_BADGE, planFeatures, priceFor, type BillingInterval } from '../config/billing-v2';
+import { BILLING_PLANS, FEATURED_PLAN_BADGE, planComparisonRows, planFeatures, priceFor, type BillingInterval } from '../config/billing-v2';
 import '../styles/plan-chooser.css';
 import { enhanceSelect, type SelectMenu } from '../lib/select-menu';
 
@@ -38,6 +39,33 @@ function features(plan: PaidPlan, credits: number): string[] {
 }
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>';
+
+const COLUMNS = ['free', 'pro', 'business'] as const;
+
+/**
+ * Every plan, capacity by capacity: the pricing page's table, row for row
+ * (both come from planComparisonRows). The recommended plan's column carries
+ * the accent; the plan someone already has is marked in its header.
+ */
+function comparisonTable(recommended: PaidPlan, current: string): string {
+  const head = COLUMNS.map(plan => {
+    const mark = plan === current ? '<small>Votre forfait</small>' : '';
+    return `<th scope="col"${plan === recommended ? ' class="is-featured"' : ''}><span>${BILLING_PLANS[plan].name}</span>${mark}</th>`;
+  }).join('');
+  const body = planComparisonRows().map(row => `
+          <tr><th scope="row">${escapeHtml(row.label)}</th>${COLUMNS.map(plan => `<td${plan === recommended ? ' class="is-featured"' : ''}>${escapeHtml(row[plan])}</td>`).join('')}</tr>`).join('');
+  return `
+      <section class="cpc-compare" aria-labelledby="cpc-compare-title">
+        <h3 id="cpc-compare-title">Comparer les forfaits</h3>
+        <div class="cpc-compare-scroll" tabindex="0" role="region" aria-labelledby="cpc-compare-title">
+          <table>
+            <thead><tr><th scope="col">Capacité</th>${head}</tr></thead>
+            <tbody>${body}
+            </tbody>
+          </table>
+        </div>
+      </section>`;
+}
 
 export function renderPlanChooser(host: HTMLElement, options: PlanChooserOptions): () => void {
   let interval: BillingInterval = 'monthly';
@@ -75,7 +103,7 @@ export function renderPlanChooser(host: HTMLElement, options: PlanChooserOptions
         <button type="button" data-cpc-interval="annual" aria-pressed="false">Annuel <em>−20 %</em></button>
       </div>
       <div class="cpc-grid">${card('pro')}${card('business')}</div>
-      <p class="cpc-error" role="alert" hidden></p>
+      <p class="cpc-error" role="alert" hidden></p>${options.source === 'upgrade_modal' ? comparisonTable(recommended, current) : ''}
       <div class="cpc-foot">
         ${options.secondary ? `<button type="button" class="cpc-secondary" data-cpc-secondary>${escapeHtml(options.secondary.label)}</button>` : ''}
         <p>Paiement sécurisé en FCFA via Saspay · sans engagement, résiliable à tout moment.</p>

@@ -3,7 +3,7 @@ import './pricing-page.css';
 import { hasStoredSession } from './lib/stored-session';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { enhanceSelect, type SelectMenu } from './lib/select-menu';
-import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, planFeatures, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, topupUnitXaf, type BillingInterval } from './config/billing-v2';
+import { ANNUAL_DISCOUNT, BUSINESS_CREDIT_TIERS, planComparisonRows, planFeatures, PRO_CREDIT_TIERS, priceFor as catalogPriceFor, topupUnitXaf, type BillingInterval } from './config/billing-v2';
 
 type PricingPlan = {
   key: 'free' | 'pro' | 'business';
@@ -168,6 +168,25 @@ function renderTopupUnits() {
   });
 }
 renderTopupUnits();
+
+/* The comparison table, row for row the one in the dashboard's upgrade modal. */
+function renderComparison() {
+  const body = document.querySelector<HTMLTableSectionElement>('[data-pricing-comparison]');
+  if (!body) return;
+  body.replaceChildren(...planComparisonRows().map(row => {
+    const line = document.createElement('tr');
+    const label = document.createElement('th');
+    label.scope = 'row';
+    label.textContent = row.label;
+    line.append(label, ...[row.free, row.pro, row.business].map(value => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      return cell;
+    }));
+    return line;
+  }));
+}
+renderComparison();
 
 function syncTierOptions(plan: 'pro' | 'business', definition?: PricingPlan) {
   const select = document.querySelector<HTMLSelectElement>(`[data-pricing-tier="${plan}"]`);

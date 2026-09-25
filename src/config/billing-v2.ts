@@ -200,6 +200,47 @@ export function topupPriceFor(plan: 'pro' | 'business', credits: number) {
   } as const;
 }
 
+export type PlanComparisonRow = { label: string; free: string; pro: string; business: string };
+
+/**
+ * The comparison table, the same on the pricing page and in the dashboard's
+ * upgrade modal, computed from the catalogue: prices, tiers, publication
+ * limits, e-mails and top-up prices cannot say something the checkout and
+ * the server do not.
+ */
+export function planComparisonRows(): PlanComparisonRow[] {
+  const count = (value: number) => new Intl.NumberFormat('fr-FR').format(value);
+  const decimal = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value);
+  const from = (plan: 'pro' | 'business') => `dès ${count(priceFor(plan, BILLING_PLANS[plan].tiers[0], 'monthly').amount)} FCFA / mois`;
+  const range = (tiers: readonly number[]) => {
+    const small = tiers.filter(tier => tier < 100);
+    const large = tiers.filter(tier => tier >= 100);
+    const span = `${count(large[0])} à ${count(large[large.length - 1])} par mois`;
+    return small.length ? `${small.map(count).join(', ')}, puis ${span}` : span;
+  };
+  const either = (values: Array<number | null>) => {
+    const labels = [...new Set(values.map(value => value === null ? 'illimités' : count(value)))];
+    return labels.length > 1 ? `${labels.slice(0, -1).join(', ')} ou ${labels[labels.length - 1]}` : labels[0].charAt(0).toUpperCase() + labels[0].slice(1);
+  };
+  const proLimits = BILLING_PLANS.pro.tiers.map(tier => publicationLimitsFor('pro', tier));
+  const annual = `−${Math.round(ANNUAL_DISCOUNT * 100)} %`;
+  return [
+    { label: 'Prix', free: '0 FCFA', pro: from('pro'), business: from('business') },
+    { label: 'Crédits', free: `${BILLING_PLANS.free.grants.signupCredits}, une seule fois`, pro: range(BILLING_PLANS.pro.tiers), business: range(BILLING_PLANS.business.tiers) },
+    { label: 'Sites publiés', free: '—', pro: either(proLimits.map(limit => limit.publishedSites)), business: 'Illimités' },
+    { label: 'Domaines personnalisés', free: '—', pro: either(proLimits.map(limit => limit.customDomains)), business: 'Illimités' },
+    { label: 'Preview privée', free: 'Oui', pro: 'Oui', business: 'Oui' },
+    { label: 'Édition et export du code', free: 'Oui', pro: 'Oui', business: 'Oui' },
+    { label: 'Historique des versions et rollback', free: 'Oui', pro: 'Oui', business: 'Oui' },
+    { label: 'E-mails transactionnels', free: '—', pro: `${count(MONTHLY_EMAILS.pro)} par mois`, business: `${count(MONTHLY_EMAILS.business)} par mois` },
+    { label: 'Recharge ponctuelle', free: '—', pro: `${decimal(topupUnitXaf('pro'))} FCFA le crédit`, business: `${decimal(topupUnitXaf('business'))} FCFA le crédit` },
+    { label: 'Paiement annuel', free: '—', pro: annual, business: annual },
+    { label: 'Modèles d’IA', free: 'Essentiels', pro: 'Essentiels et avancés', business: 'Essentiels, avancés et premium' },
+    { label: 'Rôles et projets internes', free: '—', pro: '—', business: 'Oui' },
+    { label: 'Support prioritaire', free: '—', pro: '—', business: 'Oui' },
+  ];
+}
+
 export const PUBLIC_PRICES = (['pro', 'business'] as const).flatMap(plan =>
   BILLING_PLANS[plan].tiers.flatMap(credits => (['monthly', 'annual'] as const).map(interval => priceFor(plan, credits, interval))),
 );
