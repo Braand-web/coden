@@ -8225,12 +8225,19 @@ async function appendDurableProjectSnapshotItem(input: {
   if (readError && isMissingProjectSnapshotTableError(readError)) return false;
   if (readError) throw new Error(`Durable project snapshot read failed: ${readError.message}`);
   const previous = Array.isArray(data?.[input.field]) ? data[input.field] : [];
+  const itemKey = input.item?.ai_message_id ? `ai:${input.item.ai_message_id}` : input.item?.id ? `id:${input.item.id}` : '';
+  const retained = itemKey
+    ? previous.filter((existing: any) => {
+        const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
+        return existingKey !== itemKey;
+      })
+    : previous;
   const row = withoutUndefinedValues({
     project_id: input.projectId,
     owner_id: input.ownerId,
     organization_id: input.organizationId || null,
     revision: Date.now(),
-    [input.field]: redactSecretPayload([...previous, input.item].slice(-input.limit)),
+    [input.field]: redactSecretPayload([...retained, input.item].slice(-input.limit)),
     last_agent_run_id: input.lastAgentRunId === undefined ? undefined : input.lastAgentRunId,
     updated_at: new Date().toISOString(),
   });
@@ -8303,8 +8310,18 @@ function recoverProjectPayloadFromSnapshot(input: {
   const files = Array.from(fileMap.values()).sort((a, b) => a.path.localeCompare(b.path));
   const messageMap = new Map<string, any>();
   [...snapshotMessages, ...input.messages].forEach((message: any, index) => {
-    const key = String(message?.id || `${message?.role || 'unknown'}:${message?.created_at || index}:${message?.content || ''}`);
-    messageMap.set(key, sanitizeProjectMessageForUser(message));
+    const key = String(message?.ai_message_id || message?.id || `${message?.role || 'unknown'}:${message?.created_at || index}:${message?.content || ''}`);
+    const sanitized = sanitizeProjectMessageForUser(message);
+    const previous = messageMap.get(key);
+    if (previous) {
+      // On older schemas the normalized table may omit metadata. Keep the
+      // richer, redacted snapshot for that same message rather than replacing
+      // its durable stream with the compact compatibility row.
+      if (!sanitized?.metadata?.coden_stream && previous?.metadata?.coden_stream) sanitized.metadata = previous.metadata;
+      if ((!sanitized?.parts?.length) && previous?.parts?.length) sanitized.parts = previous.parts;
+      if (!sanitized?.content) sanitized.content = previous.content;
+    }
+    messageMap.set(key, sanitized);
   });
   const messages = Array.from(messageMap.values()).sort((a, b) => String(a?.created_at || '').localeCompare(String(b?.created_at || '')));
   const eventMap = new Map<string, any>();
@@ -9577,6 +9594,7 @@ async function persistProjectMessageRow(client: any, row: any) {
       .maybeSingle();
 
     if (!existing.error && existing.data?.id) {
+      row.id = existing.data.id;
       const { error } = await client
         .from('project_messages')
         .update(row)
@@ -9651,6 +9669,7 @@ function sanitizeProjectMessageForUser(row: any) {
     ...row,
     content: messageTextFromParts(parts, row?.content || ''),
     parts,
+    metadata: redactSecretPayload(row?.metadata || {}),
   };
 }
 
@@ -11410,6 +11429,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         organization_id: project.organization_id,
         project_id: project.id,
         user_id: userId,
+        ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined,
         role: 'user',
         content: prompt,
         intent: decision.intent,
@@ -11442,15 +11462,26 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
 
     const content = redactSecrets(agentText.text || '').trim();
     if (!content) throw new Error('The selected AI model returned an empty response.');
+    await eventStream?.drain().catch(streamError => {
+      console.warn('[coden:assistant_chat_stream_drain_failed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') });
+    });
     if (canPersistConversation) {
       await saveProjectMessage({
         organization_id: project.organization_id,
         project_id: project.id,
         user_id: userId,
+        ai_message_id: String(req.body?.assistantMessageId || requestId).slice(0, 160),
         role: 'assistant',
         content,
         intent: decision.intent,
         requested_mode: requestedMode,
+        metadata: eventStream ? { coden_stream: {
+          version: 1,
+          status: 'done',
+          final_text: content,
+          run_id: requestId,
+          events: eventStream.persistedChatEvents,
+        } } : {},
       });
     }
     const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
@@ -11529,6 +11560,30 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     // Once the stream is open the status line has been sent; the failure
     // travels as the run's own terminal event instead.
     if (eventStream) {
+      await eventStream.drain().catch(streamError => {
+        console.warn('[coden:assistant_chat_stream_drain_failed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') });
+      });
+      if (canPersistConversation) {
+        const partial = eventStream.transcript;
+        const content = [partial, publicMessage].filter(Boolean).join('\n\n');
+        await saveProjectMessage({
+          organization_id: project.organization_id,
+          project_id: project.id,
+          user_id: userId,
+          ai_message_id: String(req.body?.assistantMessageId || requestId).slice(0, 160),
+          role: 'assistant',
+          content,
+          intent: decision.intent,
+          requested_mode: requestedMode,
+          metadata: { coden_stream: {
+            version: 1,
+            status: chatAbort.signal.aborted ? 'cancelled' : 'failed',
+            error: publicMessage,
+            run_id: requestId,
+            events: eventStream.persistedChatEvents,
+          } },
+        }).catch(persistError => console.warn('[coden:assistant_chat_failure_persist_failed]', { request_id: requestId, message: redactSecrets(String(persistError), '[redacted]') }));
+      }
       return eventStream.finish(failure, chatAbort.signal.aborted ? 499 : diagnostic.status >= 400 ? diagnostic.status : 502)
         .catch(streamError => console.warn('[coden:assistant_chat_stream_closed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') }));
     }
@@ -13848,7 +13903,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const frenchActivity = isLikelyFrenchPrompt(prompt);
   const streamRunId = harnessContext?.turn.id || requestId;
-  const streamMessageId = String(req.body?.assistantMessageId || requestId);
+  const streamMessageId = String(req.body?.assistantMessageId || harnessContext?.assistantItemId || requestId).slice(0, 160);
   if (harnessContext && req.headers.accept?.includes('text/event-stream')) {
     res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
     res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
@@ -13956,24 +14011,54 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }
       pipelineRunId = '';
     }
-    if (payload.pipeline === 'multi_agent' && payload.summary) {
-      try {
-        const streamedText = eventStream?.transcript || '';
-        const assistantContent = streamedText.endsWith(payload.summary) ? streamedText : [streamedText, payload.summary].filter(Boolean).join('\n\n');
-        await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'assistant',content:redactSecrets(assistantContent),intent:payload.intent?.intent,requested_mode:requestedMode});
-      } catch (error) {
-        console.error('[coden:assistant_persistence_failed]', {requestId,message:redactSecrets(String(error))});
-        status = 503;
-        payload = {...payload, success:false, diagnostic_code:'CHAT_PERSISTENCE_FAILED', recoverable:true,
-          error:'La réponse n’a pas pu être sauvegardée. Les fichiers existants sont conservés.'};
-      }
-    }
     if (status < 400 && payload.pipeline === 'multi_agent') {
       // Structured verification reports need no extra, unmetered provider call.
       payload.assistant_source = 'verification_report';
       payload.assistant_streamed = Boolean(eventStream);
       if (payload.summary) eventStream?.chat({ type:'text_delta', delta:payload.summary });
       eventStream?.chat({ type:'text_end' });
+    }
+    await eventStream?.drain().catch(streamError => {
+      console.warn('[coden:generate_stream_drain_failed]', { requestId, message: redactSecrets(String(streamError), '[redacted]') });
+    });
+    if ([payload.summary, payload.text, payload.message, payload.error].some(value => typeof value === 'string' && value.trim()) || eventStream?.transcript || eventStream?.persistedChatEvents.length) {
+      try {
+        const streamedText = eventStream?.transcript || '';
+        const finalText = [payload.summary, payload.text, payload.message, payload.error]
+          .find(value => typeof value === 'string' && value.trim())?.trim() || '';
+        const assistantContent = streamedText
+          ? streamedText.trimEnd().endsWith(finalText) || !finalText
+            ? streamedText
+            : `${streamedText.trimEnd()}\n\n${finalText}`
+          : finalText;
+        const streamStatus = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'done';
+        await saveProjectMessage({
+          organization_id: project.organization_id,
+          project_id: project.id,
+          user_id: userId,
+          ai_message_id: streamMessageId,
+          role: 'assistant',
+          content: redactSecrets(assistantContent),
+          intent: payload.intent?.intent,
+          requested_mode: requestedMode,
+          metadata: {
+            ...(payload.diagnostic_code ? { outcome: streamStatus === 'failed' ? 'blocked' : streamStatus, diagnostic_code: payload.diagnostic_code } : {}),
+            ...(eventStream ? { coden_stream: {
+              version: 1,
+              status: streamStatus,
+              ...(streamStatus === 'done' && finalText ? { final_text: finalText } : {}),
+              ...(streamStatus !== 'done' && (payload.error || payload.message) ? { error: redactSecrets(String(payload.error || payload.message)) } : {}),
+              run_id: streamRunId,
+              events: eventStream.persistedChatEvents,
+            } } : {}),
+          },
+        });
+      } catch (error) {
+        console.error('[coden:assistant_persistence_failed]', {requestId,message:redactSecrets(String(error))});
+        status = 503;
+        payload = {...payload, success:false, diagnostic_code:'CHAT_PERSISTENCE_FAILED', recoverable:true,
+          error:'La réponse n’a pas pu être sauvegardée. Les fichiers existants sont conservés.'};
+      }
     }
     if (eventStream) {
       try { await eventStream.finish(payload, status); }
@@ -14008,10 +14093,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     };
     try {
       if (!options.userAlreadyPersisted) {
-        await saveProjectMessage({ ...shared, role: 'user', content: prompt });
+        await saveProjectMessage({ ...shared, ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined, role: 'user', content: prompt });
       }
       await saveProjectMessage({
         ...shared,
+        ai_message_id: streamMessageId,
         role: 'assistant',
         content: safeMessage,
         metadata: { outcome: 'blocked', diagnostic_code: diagnosticCode },
@@ -14851,6 +14937,7 @@ ${resolvedMission}` : resolvedMission;
     organization_id: project.organization_id,
     project_id: project.id,
     user_id: userId,
+    ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined,
     role: 'user',
     content: prompt,
     intent: decision.intent,

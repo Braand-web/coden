@@ -122,7 +122,15 @@ type ProjectPayload = {
     preview_status?: string;
   };
   files: GeneratedFile[];
-  messages?: Array<{ role: string; content: string; parts?: unknown[]; intent?: string }>;
+  messages?: Array<{
+    id?: string;
+    ai_message_id?: string;
+    role: string;
+    content: string;
+    parts?: unknown[];
+    intent?: string;
+    metadata?: { coden_stream?: { events?: unknown[]; status?: 'done' | 'failed' | 'cancelled'; final_text?: string; error?: string; run_id?: string } };
+  }>;
   events?: Array<{ event_type: string; message: string; sequence_number: number; payload?: any; public_payload?: any; status?: string; agent_run_id?: string; created_at?: string }>;
   workspace_state?: WorkspaceState | null;
   preview?: {
@@ -2201,11 +2209,11 @@ function repairTextEncoding(value: unknown): string {
   return text;
 }
 
-function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean } = {}) {
+function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean; id?: string } = {}) {
   const safeBody = repairTextEncoding(redactSecrets(body));
   const api = ensureConversationApi();
   if (api) {
-    const id = api.addMessage({ role: kind, content: safeBody, working: Boolean(options.working) });
+    const id = api.addMessage({ id: options.id, role: kind, content: safeBody, working: Boolean(options.working) });
     return createMessageHandle(id);
   }
 
@@ -5966,10 +5974,12 @@ function restoreMessages(payload: ProjectPayload) {
   const scroll = chatScroll();
   if (!scroll || scroll.dataset.restored === 'true') return;
   scroll.dataset.restored = 'true';
+  let restoredRichStream = false;
   payload.messages
     .filter(message => {
       const text = messageTextFromParts(message.parts, message.content || '');
-      return text && !/^Project (synchronized|ready)\./i.test(text);
+      const hasSavedStream = Boolean(message.metadata?.coden_stream?.events?.length);
+      return (text || hasSavedStream) && !/^Project (synchronized|ready)\./i.test(text);
     })
     .slice(-100)
     .forEach(message => {
@@ -5988,7 +5998,20 @@ function restoreMessages(payload: ProjectPayload) {
         : role === 'assistant'
           ? safeAssistantDisplayText(rawContent, speaksFrench)
           : rawContent;
-      const card = appendMessage(role, content);
+      const storedStream = role === 'assistant' ? message.metadata?.coden_stream : undefined;
+      const card = appendMessage(role, content, { id: message.ai_message_id || message.id });
+      const restoredId = messageHandleId(card);
+      if (storedStream?.events?.length && restoredId && conversationApi?.restoreChat) {
+        conversationApi.restoreChat(
+          restoredId,
+          storedStream.events,
+          storedStream.status || 'done',
+          safeAssistantDisplayText(storedStream.final_text || '', speaksFrench),
+          storedStream.error || '',
+          storedStream.run_id || '',
+        );
+        restoredRichStream = true;
+      }
       if (message.intent === 'plan') {
         lastPlan = rawContent;
       }
@@ -6005,6 +6028,7 @@ function restoreMessages(payload: ProjectPayload) {
         });
       }
     });
+  if (restoredRichStream) scroll.dataset.streamPartsRestored = 'true';
 }
 
 function restoreStreamPartsFromPayloadEvents(payload: ProjectPayload) {
@@ -6896,7 +6920,8 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
        * Max Effort never bought a longer run.
        */
       effort: composerEffort,
-      clientMessageId: messageHandleId(status) || undefined,
+      clientMessageId: messageHandleId(status) ? `${messageHandleId(status)}_user` : undefined,
+      assistantMessageId: messageHandleId(status) || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),
       ...effectiveExtra,
     };

@@ -133,6 +133,7 @@ export type CodenConversationApi = {
   setFlow: (id: string, flow: unknown) => void;
   startLiveRun: (id: string, meta?: { intent?: string; activeText?: string; mode?: AgentMode; model?: string; runId?: string }) => void;
   finishLiveRun: (id: string, summary?: string) => void;
+  restoreChat: (id: string, events: unknown[], status?: 'done' | 'failed' | 'cancelled', finalText?: string, error?: string, runId?: string) => void;
   /**
    * The server's final, sanitised answer for a streamed reply. The streamed
    * text is only a preview of it; where the two differ, this one wins.
@@ -849,6 +850,48 @@ export function createStore(storageKey = conversationStorageKey()) {
       });
       if (pacers.has(id)) startPacing();
       else runAfterDrain(id);
+    },
+    restoreChat(id, events, status = 'done', finalText = '', error = '', runId = '') {
+      // Rehydrate the completed stream in one state update: old messages are
+      // history, not a live animation, but their reasoning and file steps stay
+      // in exactly the same order as they appeared during generation.
+      afterDrain.delete(id);
+      pacers.delete(id);
+      if (!pacers.size) stopPacing();
+      mutate(() => {
+        const message = find(id);
+        if (!message) return;
+        const run = ensureLiveRun(message);
+        let chat: AgentMessageState = { ...EMPTY_MESSAGE, parts: [], notices: [], runId: runId || undefined };
+        for (const candidate of events) {
+          if (!candidate || typeof candidate !== 'object' || typeof (candidate as { type?: unknown }).type !== 'string') continue;
+          const event = candidate as ChatEvent;
+          if (event.type === 'heartbeat' || ['run_finished', 'run_failed', 'run_cancelled'].includes(event.type)) continue;
+          chat = reduceAgentMessage(chat, event);
+        }
+        const streamedText = chat.parts.filter(part => part.type === 'text').map(part => part.text).join('').trim();
+        const completedText = String(finalText || '').trim();
+        if (completedText && !streamedText.includes(completedText)) {
+          chat = reduceAgentMessage(chat, { type: 'text_end' });
+          chat = reduceAgentMessage(chat, { type: 'text_delta', delta: completedText });
+        }
+        if (status === 'failed') {
+          chat = reduceAgentMessage(chat, { type: 'run_failed', message: error || completedText || 'La génération a échoué.' });
+          run.status = 'failed';
+        } else if (status === 'cancelled') {
+          chat = reduceAgentMessage(chat, { type: 'run_cancelled', message: error || undefined });
+          run.status = 'cancelled';
+        } else {
+          chat = reduceAgentMessage(chat, { type: 'run_finished', reason: 'completed' });
+          run.status = 'done';
+        }
+        run.chat = chat;
+        run.summary = completedText || chat.parts.filter(part => part.type === 'text').map(part => part.text).join('\n\n').trim();
+        run.assistantText = run.summary;
+        run.activeText = '';
+        message.working = false;
+        if (!message.content && run.summary) message.content = run.summary;
+      });
     },
     finishLiveRun(id, summary = "") {
       whenDrained(id, () => mutate(() => {
