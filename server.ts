@@ -49,7 +49,18 @@ import {
   retrieveKnowledgeContext,
   saveAgentPreferences,
 } from './src/services/agent-learning-store.ts';
-import { errorFixKnowledge, isPublicPackage, stackFromPackageJson, stackPatternKnowledge, styleMemoryFromFeedback, type UserMemoryRow } from './src/services/agent-learning.ts';
+import {
+  CURATED_KNOWLEDGE,
+  errorFixKnowledge,
+  isPublicPackage,
+  MIN_DISTINCT_CONTRIBUTORS,
+  MIN_RUNS_FOR_ROUTING,
+  smoothedSuccessRate,
+  stackFromPackageJson,
+  stackPatternKnowledge,
+  styleMemoryFromFeedback,
+  type UserMemoryRow,
+} from './src/services/agent-learning.ts';
 import { taskKindForRoute } from './src/services/edit-intent.ts';
 import {
   activeToolkits,
@@ -60,6 +71,7 @@ import {
   executeTool as executeComposioTool,
   getToolkit as getComposioToolkit,
   isOutwardTool,
+  listAllConnections as listAllComposioConnections,
   listConnections as listComposioConnections,
   listToolkitCategories,
   listToolkits as listComposioToolkits,
@@ -11513,11 +11525,18 @@ function sanitizeAdminWallet(row: any) {
 
 function buildAdminHealth() {
   const supabaseDiagnostics = getSupabaseRuntimeDiagnostics();
+  const has = (...names: string[]) => names.every(name => Boolean(String(process.env[name] || '').trim()));
+  const publishReady = has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') || has('VERCEL_TOKEN');
+  const adminCount = getPlatformAdminEmails().size;
   return [
-    { id: 'supabase', label: 'Supabase', status: supabaseDiagnostics.project_refs_match ? 'ok' : 'warning', detail: supabaseDiagnostics.project_refs_match ? 'Frontend/backend refs match' : 'Check Supabase env refs' },
-    { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'API key configured' : 'Missing provider key' },
-    { id: 'saspay', label: 'Saspay', status: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'ok' : 'warning', detail: process.env.SASPAY_API_KEY && process.env.SASPAY_WEBHOOK_SECRET ? 'Billing key and webhook configured' : 'Billing configuration incomplete' },
-    { id: 'admin', label: 'Admin guard', status: 'ok', detail: `${getPlatformAdminEmails().size} admin email${getPlatformAdminEmails().size > 1 ? 's' : ''} configured` },
+    { id: 'supabase', label: 'Supabase', status: supabaseDiagnostics.project_refs_match ? 'ok' : 'warning', detail: supabaseDiagnostics.project_refs_match ? 'Références frontend et backend identiques' : 'Vérifier les variables Supabase' },
+    { id: 'openrouter', label: 'OpenRouter', status: getOpenRouterApiKey() ? 'ok' : 'warning', detail: getOpenRouterApiKey() ? 'Clé API configurée' : 'Clé fournisseur manquante' },
+    { id: 'sandbox', label: 'Sandbox E2B', status: remoteSandboxConfigured() ? 'ok' : 'warning', detail: remoteSandboxConfigured() ? 'MicroVM isolées pour les builds' : 'E2B_API_KEY manquante : builds sans sandbox isolée' },
+    { id: 'composio', label: 'Intégrations Composio', status: composioConfigured() ? 'ok' : 'warning', detail: composioConfigured() ? 'Clé API configurée côté serveur' : 'COMPOSIO_API_KEY manquante' },
+    { id: 'coden_cloud', label: 'Coden Cloud', status: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'ok' : 'warning', detail: has('SUPABASE_MANAGEMENT_TOKEN') || has('SUPABASE_ACCESS_TOKEN') ? 'Provisionnement automatique des backends' : 'Jeton de gestion Supabase manquant' },
+    { id: 'publish', label: 'Publication', status: publishReady ? 'ok' : 'warning', detail: has('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID') ? 'Cloudflare configuré' : has('VERCEL_TOKEN') ? 'Vercel configuré' : 'Aucun hébergeur configuré' },
+    { id: 'saspay', label: 'Saspay', status: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'ok' : 'warning', detail: has('SASPAY_API_KEY', 'SASPAY_WEBHOOK_SECRET') ? 'Clé de paiement et webhook configurés' : 'Configuration de paiement incomplète' },
+    { id: 'admin', label: 'Accès admin', status: 'ok', detail: `${adminCount} e-mail${adminCount > 1 ? 's' : ''} administrateur${adminCount > 1 ? 's' : ''}` },
   ];
 }
 
@@ -11712,18 +11731,184 @@ app.get('/api/admin/security', async (req: any, res) => {
 
 app.get('/api/admin/feature-flags', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  // What this deployment actually runs, read from its environment — not a
+  // hand-written list that drifts from it.
+  const flag = (key: string, label: string, enabled: boolean, rollout: string, risk: 'low' | 'medium' | 'high') => ({ key, label, enabled, rollout, risk });
   res.json({
     success: true,
     flags: [
-      { key: 'coden_media', label: 'Coden Media', enabled: true, rollout: 'beta', risk: 'medium' },
-      { key: 'coden_design', label: 'Coden Design', enabled: false, rollout: 'removed', risk: 'low' },
-      { key: 'coden_decks', label: 'Coden Decks', enabled: true, rollout: 'beta', risk: 'medium' },
-      { key: 'rich_message_parts_stream', label: 'Rich message parts stream', enabled: true, rollout: 'all', risk: 'low' },
-      { key: 'browser_testing', label: 'Browser testing runtime', enabled: true, rollout: 'all', risk: 'medium' },
-      { key: 'auto_model_router', label: 'Auto model router', enabled: true, rollout: 'all', risk: 'medium' },
+      flag('multi_agent_pipeline', 'Pipeline multi-agents (planner, coder, réparation)', CODEN_AGENT_FLAGS.multiAgentPipeline, 'tous', 'high'),
+      flag('live_sandbox', 'Sandbox live E2B', remoteSandboxConfigured(), remoteSandboxConfigured() ? 'tous' : 'désactivé', 'medium'),
+      flag('composio_integrations', 'Intégrations Composio', composioConfigured(), composioConfigured() ? 'tous' : 'clé manquante', 'medium'),
+      flag('agent_learning', 'Apprentissage de l’agent (signaux, base commune, routage)', Boolean(getSupabase()), 'tous', 'medium'),
+      flag('agent_personalization', 'Personnalisation (instructions utilisateur)', Boolean(getSupabase()), 'tous', 'low'),
+      flag('user_steering', 'Instructions pendant un run', CODEN_AGENT_FLAGS.userSteering, 'tous', 'low'),
+      flag('independent_review', 'Relecture indépendante', CODEN_AGENT_FLAGS.independentReview, 'tous', 'medium'),
+      flag('parallel_writers', 'Écritures parallèles', CODEN_AGENT_FLAGS.parallelWriters, 'tous', 'high'),
+      flag('deployment_adapters', 'Adaptateurs de publication', CODEN_AGENT_FLAGS.deploymentAdapters, 'tous', 'medium'),
+      flag('fullstack_preview', 'Aperçu full-stack', CODEN_AGENT_FLAGS.fullstackPreview, 'tous', 'medium'),
+      flag('router_v2', 'Routeur d’intentions v2', CODEN_AGENT_FLAGS.routerV2, 'tous', 'medium'),
+      flag('conversation_ui_v2', 'Conversation v2', CODEN_AGENT_FLAGS.conversationUiV2, 'tous', 'low'),
     ],
-    note: 'Flags are read-only here until rollout mutation endpoints are explicitly enabled.',
+    note: 'Lecture seule : les drapeaux se pilotent par les variables d’environnement Railway.',
   });
+});
+
+/*
+ * The agent's learning layer, for the people who run Coden: what it is
+ * learning from, what the shared base holds, how many people share, and what
+ * the Auto router has measured. Counts and anonymised patterns only — never
+ * a user's instructions, memory or contributor hash.
+ */
+app.get('/api/admin/agent-learning', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin agent learning');
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const [signalsResult, knowledgeResult, preferencesResult, memoryResult, statsResult, usersResult] = await Promise.all([
+    client.from('agent_quality_signals').select('kind,task_type,model_id,success,shared,detail,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(5000),
+    client.from('agent_knowledge').select('contributor,kind,task_type,signature,content,created_at').order('created_at', { ascending: false }).limit(5000),
+    client.from('user_agent_preferences').select('instructions,share_improvement,share_changed_at,updated_at').limit(10000),
+    client.from('user_agent_memory').select('user_id,kind').limit(10000),
+    client.rpc('agent_model_success_stats', { window_days: 30 }),
+    adminAuthUsers(client, 1000),
+  ]);
+  const available = {
+    agent_quality_signals: !signalsResult.error,
+    agent_knowledge: !knowledgeResult.error,
+    user_agent_preferences: !preferencesResult.error,
+    user_agent_memory: !memoryResult.error,
+    agent_model_success_stats: !statsResult.error,
+  };
+  const signals: any[] = signalsResult.data || [];
+  const runs = signals.filter(row => row.kind === 'run');
+  const feedback = signals.filter(row => row.kind === 'feedback');
+  const perDay: Record<string, { runs: number; successes: number }> = {};
+  for (const row of runs) {
+    const day = String(row.created_at || '').slice(0, 10);
+    if (!day) continue;
+    perDay[day] ||= { runs: 0, successes: 0 };
+    perDay[day].runs += 1;
+    if (row.success) perDay[day].successes += 1;
+  }
+
+  const knowledge: any[] = knowledgeResult.data || [];
+  const groups = new Map<string, { kind: string; task_type: string; content: string; contributors: Set<string>; last: string }>();
+  for (const row of knowledge) {
+    const group = groups.get(row.signature) || { kind: row.kind, task_type: row.task_type, content: row.content, contributors: new Set<string>(), last: row.created_at };
+    if (row.contributor) group.contributors.add(row.contributor);
+    groups.set(row.signature, group);
+  }
+  const patterns = [...groups.values()].map(group => ({ kind: group.kind, task_type: group.task_type, content: group.content, contributors: group.contributors.size, visible: group.contributors.size >= MIN_DISTINCT_CONTRIBUTORS, last_seen: group.last }));
+
+  const preferences: any[] = preferencesResult.data || [];
+  const optedOut = preferences.filter(row => row.share_improvement === false).length;
+  const totalUsers = usersResult.users.length || preferences.length;
+  const memoryRows: any[] = memoryResult.data || [];
+
+  const stats = ((statsResult.data || []) as any[]).map(row => {
+    const runsCount = Number(row.runs) || 0;
+    const successes = Number(row.successes) || 0;
+    return {
+      task_type: row.task_type,
+      model_id: row.model_id,
+      runs: runsCount,
+      successes,
+      success_rate: runsCount ? Math.round((successes / runsCount) * 100) : 0,
+      smoothed_rate: Math.round(smoothedSuccessRate({ runs: runsCount, successes }) * 100),
+      reliable: runsCount >= MIN_RUNS_FOR_ROUTING,
+    };
+  }).sort((a, b) => a.task_type.localeCompare(b.task_type) || b.smoothed_rate - a.smoothed_rate);
+
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    window_days: 30,
+    signals: {
+      total: signals.length,
+      shared: signals.filter(row => row.shared).length,
+      by_kind: adminCountBy(signals, 'kind'),
+      runs: runs.length,
+      run_success_rate: runs.length ? Math.round((runs.filter(row => row.success).length / runs.length) * 100) : null,
+      errors_fixed: signals.filter(row => row.kind === 'error_fixed').reduce((sum, row) => sum + (Number(row.detail?.count) || 1), 0),
+      retries: signals.filter(row => row.kind === 'retry').length,
+      reverts: signals.filter(row => row.kind === 'revert').length,
+      feedback_positive: feedback.filter(row => row.success === true).length,
+      feedback_negative: feedback.filter(row => row.success === false).length,
+      per_day: Object.entries(perDay).sort(([a], [b]) => a.localeCompare(b)).map(([day, value]) => ({ day, ...value })),
+    },
+    knowledge: {
+      rows: knowledge.length,
+      patterns: patterns.length,
+      visible_patterns: patterns.filter(pattern => pattern.visible).length,
+      curated: CURATED_KNOWLEDGE.length,
+      min_contributors: MIN_DISTINCT_CONTRIBUTORS,
+      by_kind: adminCountBy(patterns, 'kind'),
+      top: patterns.filter(pattern => pattern.visible).sort((a, b) => b.contributors - a.contributors).slice(0, 12),
+    },
+    personalization: {
+      users: totalUsers,
+      with_preferences: preferences.length,
+      with_instructions: preferences.filter(row => String(row.instructions || '').trim()).length,
+      opted_out: optedOut,
+      share_rate: totalUsers ? Math.round(((totalUsers - optedOut) / totalUsers) * 100) : 100,
+      memory_users: new Set(memoryRows.map(row => row.user_id)).size,
+      memory_by_kind: adminCountBy(memoryRows, 'kind'),
+    },
+    routing: {
+      min_runs: MIN_RUNS_FOR_ROUTING,
+      stats,
+    },
+    availability: available,
+  });
+});
+
+/*
+ * Composio, seen from the platform: whether it is configured, which services
+ * people connect and how many accounts use them. Connection ids and Coden
+ * user ids only; Composio holds the credentials.
+ */
+app.get('/api/admin/integrations', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!composioConfigured()) {
+    return res.json({ success: true, configured: false, connections: [], by_toolkit: [], catalogue_total: null });
+  }
+  try {
+    const [connections, catalogue] = await Promise.all([
+      listAllComposioConnections(1000),
+      listComposioToolkits({ limit: 6 }).catch(() => null),
+    ]);
+    const byToolkit = new Map<string, { toolkit: string; active: number; pending: number; failed: number; users: Set<string> }>();
+    for (const connection of connections) {
+      const entry = byToolkit.get(connection.toolkit) || { toolkit: connection.toolkit, active: 0, pending: 0, failed: 0, users: new Set<string>() };
+      if (connection.status === 'ACTIVE') entry.active += 1;
+      else if (connection.status === 'INITIATED' || connection.status === 'INITIALIZING') entry.pending += 1;
+      else entry.failed += 1;
+      if (connection.codenUserId) entry.users.add(connection.codenUserId);
+      byToolkit.set(connection.toolkit, entry);
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      success: true,
+      configured: true,
+      catalogue_total: catalogue?.total ?? null,
+      totals: {
+        connections: connections.length,
+        active: connections.filter(connection => connection.status === 'ACTIVE').length,
+        users: new Set(connections.map(connection => connection.codenUserId).filter(Boolean)).size,
+        toolkits: byToolkit.size,
+      },
+      by_toolkit: [...byToolkit.values()].map(entry => ({ toolkit: entry.toolkit, active: entry.active, pending: entry.pending, failed: entry.failed, users: entry.users.size })).sort((a, b) => b.active - a.active || b.users - a.users),
+      recent: connections.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 40).map(connection => ({
+        id: connection.id,
+        toolkit: connection.toolkit,
+        status: connection.status,
+        user_id: connection.codenUserId,
+        created_at: connection.createdAt,
+      })),
+    });
+  } catch (error: any) {
+    res.json({ success: false, configured: true, error: error instanceof ComposioError ? error.message : 'Composio ne répond pas.', connections: [], by_toolkit: [] });
+  }
 });
 
 app.get('/api/admin/billing/margins', async (req: any, res) => {

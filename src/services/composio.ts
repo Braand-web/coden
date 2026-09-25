@@ -197,6 +197,28 @@ export async function listConnections(codenUserId: string): Promise<ComposioConn
     .filter((item: ComposioConnection) => item.id && item.toolkit);
 }
 
+/**
+ * Every connection in the Composio project, for the admin panel: which
+ * services are connected and by how many accounts. The Coden account is
+ * recovered from the Composio user id; nothing else about it is read.
+ */
+export async function listAllConnections(limit = 500): Promise<Array<ComposioConnection & { codenUserId: string | null }>> {
+  const payload = await composioRequest<any>('/api/v3.1/connected_accounts', { query: { limit: Math.max(1, Math.min(1000, limit)) } });
+  return (Array.isArray(payload?.items) ? payload.items : [])
+    .map((item: any) => {
+      const composioUser = String(item?.user_id || '');
+      return {
+        id: String(item?.id || ''),
+        toolkit: normalizeToolkitSlug(item?.toolkit?.slug),
+        status: String(item?.status || '').toUpperCase(),
+        createdAt: item?.created_at || null,
+        updatedAt: item?.updated_at || null,
+        codenUserId: composioUser.startsWith('coden_') ? composioUser.slice('coden_'.length) : null,
+      };
+    })
+    .filter((item: ComposioConnection) => item.id && item.toolkit);
+}
+
 const activeToolkitCache = new Map<string, { at: number; value: string[] }>();
 /** The toolkits this person has an ACTIVE connection to; cached briefly, '[]' on any failure. */
 export async function activeToolkits(codenUserId: string, options: { fresh?: boolean } = {}): Promise<string[]> {

@@ -21,7 +21,7 @@ const noindexPages = [
   { file: 'dashboard.html', path: '/dashboard.html', title: 'Coden — Mes projets', description: 'Votre espace de travail privé Coden.' },
   { file: 'builder.html', path: '/builder.html', title: 'Coden — Builder Workspace', description: 'Your private Coden builder workspace.' },
   { file: 'checkout.html', path: '/checkout.html', title: 'Coden — Secure Checkout', description: 'Review your Coden plan before secure payment.' },
-  { file: 'admin.html', path: '/admin.html', title: 'Coden — Admin Console', description: 'Private Coden administration console.' },
+  { file: 'admin.html', path: '/admin.html', title: 'Coden — Administration', description: 'Console d’administration privée de Coden.' },
 ];
 
 const existingPageCopy = {
@@ -487,13 +487,11 @@ function injectHeadMeta(page) {
   const isPrivatePage = noindexPages.some(item => item.file === page.file);
   const robots = isPrivatePage ? '<meta name="robots" content="noindex, nofollow" />' : '<meta name="robots" content="index, follow" />';
   // Private product surfaces stay byte-for-byte outside the public redesign.
-  // Their social metadata is irrelevant because they are noindex, so preserve
-  // the asset contract they already had instead of rewriting Builder/Dashboard.
-  const socialImage = isPrivatePage ? `${siteUrl}/og-coden.svg` : `${siteUrl}/og-coden.png`;
-  const socialImageAlt = isPrivatePage
-    ? 'Coden — AI app builder for building and publishing web apps'
-    : 'Coden — Transformez une idée en application web';
-  const socialImageType = isPrivatePage ? 'image/svg+xml' : 'image/png';
+  // One social card for every page, private ones included: the brand PNG
+  // (public/og-coden.png), in French like the product.
+  const socialImage = `${siteUrl}/og-coden.png`;
+  const socialImageAlt = 'Coden — Transformez une idée en application web';
+  const socialImageType = 'image/png';
   const schema = page.path === '/'
     ? [
       {
@@ -605,12 +603,12 @@ ${copy.sections.map(([title, body]) => `        <h2>${esc(title)}</h2>
 }
 
 function generatePublicAssets(urls) {
+  // favicon.svg and og-coden.* are brand assets drawn from src/lib/coden-logo.ts
+  // and committed; this script must not redraw them in other colours.
   write('public/robots.txt', `User-agent: *\nAllow: /\nDisallow: /auth.html\nDisallow: /dashboard.html\nDisallow: /builder.html\nDisallow: /checkout.html\nDisallow: /admin.html\nSitemap: ${siteUrl}/sitemap.xml\n`);
   write('public/llms.txt', `# Coden\n\nCoden is an AI app builder for creating, previewing, iterating and publishing production-ready web apps.\n\n## Important pages\n- Home: ${siteUrl}/\n- Pricing: ${siteUrl}/pricing.html\n- Features: ${siteUrl}/features.html\n- Documentation: ${siteUrl}/documentation.html\n- Security: ${siteUrl}/security.html\n\n## Product facts\n- Coden supports prompt-to-app generation, project preview, database visibility, publishing workflows and model selection.\n- Coden is designed for founders, agencies, product teams and non-technical builders.\n- Private app routes such as auth, dashboard and builder are not intended for indexing.\n`);
   write('public/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(url => `  <url><loc>${url}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${url === siteUrl + '/' ? '1.0' : '0.8'}</priority></url>`).join('\n')}\n</urlset>\n`);
   write('public/_redirects', `${Object.entries(routePolicy.redirects).map(([from, to]) => `${from} ${to} 301`).join('\n')}\n`);
-  write('public/favicon.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>.icon-bg{fill:#09090b}.icon-fill{fill:#ffffff}@media (prefers-color-scheme:dark){.icon-bg{fill:#ffffff}.icon-fill{fill:#09090b}}</style><rect class="icon-bg" width="32" height="32" rx="8"/><path class="icon-fill" d="M16 8L25 13.5V14.5L16 9.5L7 14.5V13.5L16 8Z"/><path class="icon-fill" d="M7 16.5V24.5L11.5 22V14L7 16.5Z"/><path class="icon-fill" d="M25 16.5V24.5L16 24.5V22H20.5V14L25 16.5Z"/></svg>\n`);
-  write('public/og-coden.svg', `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#ffffff"/><circle cx="1040" cy="100" r="260" fill="#09090b" opacity=".05"/><circle cx="150" cy="540" r="300" fill="#3b7a8c" opacity=".10"/><rect x="84" y="82" width="1032" height="466" rx="42" fill="#ffffff" stroke="#09090b" stroke-opacity=".12"/><text x="138" y="220" font-family="Arial, sans-serif" font-size="64" font-weight="800" fill="#09090b">Coden</text><text x="138" y="310" font-family="Arial, sans-serif" font-size="54" font-weight="700" fill="#09090b">Build apps people can use and find.</text><text x="138" y="386" font-family="Arial, sans-serif" font-size="28" fill="#52525b">AI app builder with database, preview, deploy and SEO-ready output.</text></svg>\n`);
 }
 
 function main() {
