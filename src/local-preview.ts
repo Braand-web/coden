@@ -223,6 +223,9 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
   if (path === '/api/users/me/workspace-state') {
     return { handled: true, payload: { success: true, state: localPreviewState, local_preview: true } };
   }
+  if (path.startsWith('/api/feedback')) {
+    return { handled: true, payload: localPreviewFeedbackPayload(path) };
+  }
   if (path.startsWith('/api/admin/')) {
     return { handled: true, payload: localPreviewAdminPayload(path.replace('/api/admin/', '').split('?')[0]) };
   }
@@ -350,6 +353,10 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
 
 /** Small, obviously sample data so the admin console can be laid out without a backend. */
 function localPreviewAdminPayload(section: string): Record<string, unknown> {
+  if (section === 'feedback') {
+    const sample = localPreviewFeedbackPayload('/api/feedback') as { posts: Array<Record<string, unknown>> };
+    return { success: true, posts: sample.posts.map((post, index) => ({ ...post, paid_vote_count: Math.floor(Number(post.vote_count) / 3), report_count: index === 1 ? 1 : 0, hidden: false, author_id: null })), reports: [{ id: 'r1', post_id: sample.posts[1].id, comment_id: null, reason: 'Hors sujet', created_at: new Date().toISOString(), comment: null }] };
+  }
   const day = (offset: number) => new Date(Date.now() - offset * 86_400_000).toISOString();
   const runs = Array.from({ length: 24 }, (_, index) => ({
     id: `run_${index}`, request_id: `req_${index}`, project_id: LOCAL_PREVIEW_PROJECT_ID, status: index % 8 === 0 ? 'failed' : 'completed',
@@ -519,4 +526,35 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
     };
   }
   return { success: true, local_preview: true, rows: [], users: [], projects: [], deployments: [], domains: [], findings: [], checklist: [], ...(payloads[section] || {}) };
+}
+
+/* Suggestions, with sample posts so the page can be seen without a backend. */
+function localPreviewFeedbackPayload(path: string) {
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+  const post = (id: string, type: 'feature' | 'bug', title: string, body: string, status: string, votes: number, comments: number, hours: number, extra: Record<string, unknown> = {}) => ({
+    id, type, title, body, private: false, status, author_name: 'Marie D.', mine: false, vote_count: votes, comment_count: comments, pinned: false, voted: false, has_attachment: false, created_at: hoursAgo(hours), last_activity_at: hoursAgo(hours / 2), duplicate_of: null, ...extra,
+  });
+  const posts = [
+    post('00000000-0000-4000-8000-00000000f001', 'feature', 'Exporter un projet en ZIP', 'Pouvoir télécharger tout le code d’un projet pour le déployer ailleurs.', 'planned', 42, 8, 70, { pinned: true, voted: true }),
+    post('00000000-0000-4000-8000-00000000f002', 'bug', 'L’aperçu reste blanc après une modification du CSS', 'Après avoir changé une couleur, l’aperçu ne se recharge plus. Il faut rafraîchir la page.', 'in_progress', 17, 5, 20),
+    post('00000000-0000-4000-8000-00000000f003', 'feature', 'Thème sombre pour les applications générées', '', 'new', 9, 2, 5, { author_name: 'Kofi A.' }),
+    post('00000000-0000-4000-8000-00000000f004', 'feature', 'Paiement Mobile Money dans les apps', 'Orange Money et MTN MoMo directement depuis les connecteurs.', 'done', 64, 12, 400, { author_name: 'Aïcha B.' }),
+  ];
+  const route = path.split('?')[0];
+  if (route === '/api/feedback') return { success: true, posts, total: posts.length, next_offset: null, counts: { all: 4, feature: 3, bug: 1 }, is_team: false, local_preview: true };
+  if (route === '/api/feedback/summary') return { success: true, new_posts: 3, unread: 0, local_preview: true };
+  if (route === '/api/feedback/notifications') return { success: true, notifications: [], local_preview: true };
+  if (route === '/api/feedback/similar') return { success: true, posts: posts.slice(0, 1).map(({ id, title, type, status, vote_count }) => ({ id, title, type, status, vote_count })), local_preview: true };
+  const found = posts.find(item => route.endsWith(item.id)) || posts[0];
+  return {
+    success: true,
+    post: { ...found, screenshot_url: null },
+    duplicate_of: null,
+    comments: [
+      { id: 'c1', author_name: 'Équipe Coden · Coden', body: 'Merci ! C’est prévu pour le mois prochain.', is_team: true, pinned: true, mine: false, created_at: hoursAgo(10) },
+      { id: 'c2', author_name: 'Kofi A.', body: 'Oui, indispensable pour héberger chez un client.', is_team: false, pinned: false, mine: false, created_at: hoursAgo(30) },
+    ],
+    is_team: false,
+    local_preview: true,
+  };
 }
