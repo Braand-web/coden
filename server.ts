@@ -1011,7 +1011,7 @@ app.options('/api/analytics/collect', (_req, res) => {
 // idempotent GET open, while every wallet, checkout, portal and top-up route
 // remains behind the normal authenticated billing boundary.
 function requireBillingAuth(req: any, res: any, next: any) {
-  if (req.method === 'GET' && req.path === '/plans') return next();
+  if (req.method === 'GET' && (req.path === '/plans' || req.path === '/pricing')) return next();
   return requireAuth(req, res, next);
 }
 
@@ -10799,7 +10799,39 @@ async function recordUnifiedUsageEvent(input: {
     provider_payload: redactSecretPayload(input.providerPayload || {}),
     occurred_at: new Date().toISOString(),
   };
-  return insertUnifiedUsageEvent(client, row);
+  const usageEventId = await insertUnifiedUsageEvent(client, row);
+  void observeV3Credits(usageEventId, input.category, row.provider_cost_usd, input.providerPayload);
+  return usageEventId;
+}
+
+/*
+ * Billing v3, observation mode: next to what the current grid charges, the
+ * credits the v3 grid would have charged for the same provider cost. Written
+ * after the event, best effort — it never delays or fails the real charge.
+ */
+async function observeV3Credits(usageEventId: string, category: string, providerCostUsd: number, payload: Record<string, unknown> = {}) {
+  const v3Category = meteredCategory(category);
+  if (!v3Category || !usageEventId) return;
+  try {
+    const pricing = await activePricing();
+    const tokens = (value: unknown) => {
+      const number = Math.round(Number(value) || 0);
+      return number > 0 && number < 2_000_000_000 ? number : null;
+    };
+    const client = getSupabase();
+    if (!client) return;
+    const { error } = await client.from('usage_events').update({
+      v3_credits: creditsForCost(providerCostUsd, v3Category, pricing.config),
+      v3_pricing_version: pricing.version,
+      prompt_tokens: tokens((payload as any).prompt_tokens),
+      completion_tokens: tokens((payload as any).completion_tokens),
+    }).eq('id', usageEventId);
+    if (error && !/column .* does not exist|schema cache/i.test(String(error.message || ''))) {
+      console.warn('[coden:v3_observe_failed]', { message: String(error.message || '').slice(0, 160) });
+    }
+  } catch (error: any) {
+    console.warn('[coden:v3_observe_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
 }
 
 async function settleUnifiedUsage(input: {
@@ -12508,6 +12540,131 @@ function invalidateSpendingCaps() {
   monthSpendCache.clear();
 }
 
+/*
+ * Tariffs, read from the active pricing version (billing_pricing_versions).
+ *
+ * Cached 30 seconds: an activation reaches every request within that delay
+ * without a redeploy. When the table cannot be read, the built-in defaults
+ * (section 3 bis) answer, marked as version 0, so pricing never disappears.
+ */
+type ActivePricing = { id: string | null; version: number; config: PricingConfig; activated_at: string | null };
+let activePricingCache: { at: number; value: ActivePricing } | null = null;
+async function activePricing(): Promise<ActivePricing> {
+  if (activePricingCache && Date.now() - activePricingCache.at < 30_000) return activePricingCache.value;
+  let value: ActivePricing = { id: null, version: 0, config: DEFAULT_PRICING_CONFIG, activated_at: null };
+  const client = getSupabase();
+  if (client) {
+    const { data, error } = await client.from('billing_pricing_versions').select('id,version,config,activated_at').eq('status', 'active').maybeSingle();
+    if (!error && data) {
+      const checked = validatePricingConfig(data.config);
+      if (checked.ok) value = { id: data.id, version: data.version, config: checked.config, activated_at: data.activated_at };
+      else console.error('[coden:pricing_active_invalid]', { version: data.version, errors: checked.errors.slice(0, 3) });
+    } else if (error && !isMissingRelationError(error)) {
+      console.warn('[coden:pricing_load_failed]', { message: String(error.message || '').slice(0, 160) });
+    }
+  }
+  activePricingCache = { at: Date.now(), value };
+  return value;
+}
+
+/* Public: plans, prices ($ with FCFA), grants and top-ups — never costs or margins. */
+app.get('/api/billing/pricing', async (_req: any, res: any) => {
+  const pricing = await activePricing();
+  res.setHeader('Cache-Control', 'public, max-age=60');
+  res.json({ success: true, pricing: publicPricing(pricing.config, pricing.version) });
+});
+
+app.get('/api/admin/billing/pricing', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin pricing');
+  const { data, error } = await client.from('billing_pricing_versions').select('id,version,status,config,note,created_by,created_at,activated_by,activated_at').order('version', { ascending: false }).limit(50);
+  if (error) {
+    if (isMissingRelationError(error)) return res.json({ success: true, available: false, versions: [], active: null, defaults: DEFAULT_PRICING_CONFIG });
+    return res.status(500).json({ success: false, error: error.message });
+  }
+  const versions = (data || []).map((row: any) => {
+    const checked = validatePricingConfig(row.config);
+    return { ...row, valid: checked.ok, errors: checked.ok ? [] : checked.errors, profitability: checked.ok ? profitabilityReport(checked.config) : null };
+  });
+  const active = versions.find((row: any) => row.status === 'active') || null;
+  res.json({ success: true, available: true, active, versions, defaults: DEFAULT_PRICING_CONFIG });
+});
+
+/* A draft: validated in full before it is stored; never active until an admin activates it. */
+app.post('/api/admin/billing/pricing/drafts', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
+  const checked = validatePricingConfig(req.body?.config);
+  if (!checked.ok) return res.status(400).json({ success: false, error: 'Configuration invalide.', errors: checked.errors });
+  const note = String(req.body?.note || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
+  if (note.length < 3) return res.status(400).json({ success: false, error: 'Décrivez la modification (3 caractères au moins) : elle est conservée dans l’historique.' });
+  const client = requireSupabase('Admin pricing draft');
+  const latest = await client.from('billing_pricing_versions').select('version').order('version', { ascending: false }).limit(1).maybeSingle();
+  if (latest.error) return res.status(500).json({ success: false, error: latest.error.message });
+  const { data, error } = await client.from('billing_pricing_versions').insert([{
+    version: Number(latest.data?.version || 0) + 1,
+    status: 'draft',
+    config: checked.config,
+    note,
+    created_by: getOptionalAuthState(req).email || getOptionalAuthState(req).userId || null,
+  }]).select('id,version').single();
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  await recordAdminAudit(req, 'pricing.draft_created', { type: 'pricing_version', id: data.id }, { version: data.version, note });
+  res.json({ success: true, draft: data, profitability: profitabilityReport(checked.config) });
+});
+
+app.post('/api/admin/billing/pricing/:id/activate', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
+  const id = String(req.params.id || '');
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ success: false, error: 'Version invalide.' });
+  const client = requireSupabase('Admin pricing activation');
+  const draft = await client.from('billing_pricing_versions').select('config,version,status').eq('id', id).maybeSingle();
+  if (draft.error || !draft.data) return res.status(404).json({ success: false, error: 'Version introuvable.' });
+  if (draft.data.status !== 'draft') return res.status(400).json({ success: false, error: 'Seul un brouillon peut être activé.' });
+  const checked = validatePricingConfig(draft.data.config);
+  if (!checked.ok) return res.status(400).json({ success: false, error: 'Ce brouillon n’est plus valide.', errors: checked.errors });
+  const actor = String(getOptionalAuthState(req).email || getOptionalAuthState(req).userId || 'admin');
+  const { data: version, error } = await client.rpc('coden_activate_pricing_version', { p_id: id, p_actor: actor });
+  if (error) return res.status(400).json({ success: false, error: 'Activation impossible.' });
+  activePricingCache = null;
+  await recordAdminAudit(req, 'pricing.activated', { type: 'pricing_version', id }, { version });
+  res.json({ success: true, version });
+});
+
+/* Observation: the v3 grid measured beside the current one, per category. */
+app.get('/api/admin/billing/pricing/observation', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+  const client = requireSupabase('Admin pricing observation');
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const events = await client.from('usage_events').select('id,category,provider_cost_usd,v3_credits').not('v3_credits', 'is', null).gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
+  if (events.error) {
+    if (/v3_credits|does not exist|schema cache/i.test(String(events.error.message || ''))) return res.json({ success: true, available: false, days, rows: [] });
+    return res.status(500).json({ success: false, error: events.error.message });
+  }
+  const ids = (events.data || []).map((row: any) => row.id);
+  const charged = new Map<string, number>();
+  for (let index = 0; index < ids.length; index += 500) {
+    const settlements = await client.from('usage_settlements').select('usage_event_id,credits_charged').in('usage_event_id', ids.slice(index, index + 500));
+    if (settlements.error) return res.status(500).json({ success: false, error: settlements.error.message });
+    for (const row of settlements.data || []) charged.set(String(row.usage_event_id), Number(row.credits_charged) || 0);
+  }
+  const pricing = await activePricing();
+  const report = shadowComparison((events.data || []).map((row: any) => ({ ...row, cost_credits: charged.get(String(row.id)) || 0 })), pricing.config);
+  res.json({ success: true, available: true, days, truncated: (events.data || []).length >= 5000, ...report });
+});
+
+app.delete('/api/admin/billing/pricing/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
+  const client = requireSupabase('Admin pricing draft deletion');
+  const { data, error } = await client.from('billing_pricing_versions').delete().eq('id', String(req.params.id || '')).eq('status', 'draft').select('id,version').maybeSingle();
+  if (error || !data) return res.status(400).json({ success: false, error: 'Seul un brouillon peut être supprimé.' });
+  await recordAdminAudit(req, 'pricing.draft_deleted', { type: 'pricing_version', id: data.id }, { version: data.version });
+  res.json({ success: true });
+});
+
 /* Real-time overview: polled by the console every few seconds while it is open. */
 app.get('/api/admin/live', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
@@ -12655,7 +12812,7 @@ app.get('/api/admin/users/:id', async (req: any, res) => {
     client.from('admin_audit_log').select('id,actor_email,action,detail,created_at').eq('target_type', 'user').eq('target_id', userId).order('created_at', { ascending: false }).limit(30),
     client.from('credit_wallets').select('*').eq('organization_id', userId).maybeSingle(),
   ]);
-  const adminGrants = await client.from('credit_grants').select('id,usage_restriction,credits_issued,credits_remaining,issued_at,expires_at,frozen_at,metadata').eq('account_id', userId).eq('kind', 'bonus').order('issued_at', { ascending: false }).limit(20);
+  const adminGrants = await client.from('credit_grants').select('id,kind,usage_restriction,credits_issued,credits_remaining,issued_at,expires_at,frozen_at,metadata').eq('account_id', userId).in('kind', ['bonus', 'refund']).order('issued_at', { ascending: false }).limit(20);
   const costs = aggregateCosts((usage.data || []) as UsageEventRow[], { days: 30 });
   const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : NaN;
   const activity = [
@@ -12684,7 +12841,7 @@ app.get('/api/admin/users/:id', async (req: any, res) => {
     ledger: (ledger.data || []).map((row: any) => ({ id: row.id, amount: row.amount ?? row.credits ?? row.delta ?? null, reason: row.reason || row.entry_type || row.kind || null, category: row.category || null, created_at: row.created_at })),
     audit: audit.error ? [] : audit.data || [],
     admin_grants: (adminGrants.data || []).filter((row: any) => row.metadata?.source === 'admin_console').map((row: any) => ({
-      id: row.id, restriction: row.usage_restriction, credits_issued: Number(row.credits_issued), credits_remaining: Number(row.credits_remaining),
+      id: row.id, kind: row.kind, restriction: row.usage_restriction, credits_issued: Number(row.credits_issued), credits_remaining: Number(row.credits_remaining),
       issued_at: row.issued_at, expires_at: row.expires_at, revoked: Boolean(row.frozen_at), reason: String(row.metadata?.reason || ''), granted_by: row.metadata?.granted_by || null,
     })),
     activity,
@@ -12749,7 +12906,9 @@ app.post('/api/admin/users/:id/credits', async (req: any, res) => {
   const actorId = String(getOptionalAuthState(req).userId || '');
   if (!actorId || user.id === actorId) return res.status(400).json({ success: false, error: 'Vous ne pouvez pas créditer votre propre compte.' });
   const credits = Number(req.body?.credits);
-  const restriction = ['general', 'build', 'ai_gateway', 'cloud'].includes(String(req.body?.restriction)) ? String(req.body.restriction) : '';
+  const restriction = ['general', 'agent', 'build', 'ai_gateway', 'cloud'].includes(String(req.body?.restriction)) ? String(req.body.restriction) : '';
+  // A refund is journaled as such in the credit history; a bonus as a grant.
+  const kind = req.body?.kind === 'refund' ? 'refund' : 'bonus';
   const days = Number(req.body?.expires_in_days ?? 90);
   const reason = String(req.body?.reason || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
   const clientKey = String(req.body?.client_key || '');
@@ -12763,10 +12922,10 @@ app.post('/api/admin/users/:id/credits', async (req: any, res) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Le compte de facturation est indisponible.' });
   }
-  const idempotencyKey = `admin_bonus:${user.id}:${clientKey}`;
+  const idempotencyKey = `admin_${kind}:${user.id}:${clientKey}`;
   const { data: grantId, error } = await client.rpc('coden_billing_grant', {
     p_account_id: user.id,
-    p_kind: 'bonus',
+    p_kind: kind,
     p_restriction: restriction,
     p_credits: credits,
     p_net_revenue_usd: 0,
@@ -12781,7 +12940,7 @@ app.post('/api/admin/users/:id/credits', async (req: any, res) => {
     console.warn('[coden:admin_grant_failed]', { message: String(error.message || '').slice(0, 160) });
     return res.status(500).json({ success: false, error: 'Les crédits n’ont pas pu être accordés.' });
   }
-  await recordAdminAudit(req, 'user.credits_granted', { type: 'user', id: user.id }, { email: user.email || null, credits, restriction, expires_in_days: days, reason, grant_id: grantId });
+  await recordAdminAudit(req, kind === 'refund' ? 'user.credits_refunded' : 'user.credits_granted', { type: 'user', id: user.id }, { email: user.email || null, credits, restriction, expires_in_days: days, reason, grant_id: grantId });
   res.json({ success: true, grant_id: grantId });
 });
 
@@ -19173,6 +19332,7 @@ import { describeServerSecrets, isReservedSecretVariable, isValidSecretVariable,
 import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
 import { aggregateCosts, aggregateMargins, alertMessage, eventCostUsd, eventTokens, evaluateCostAlerts, hardCapReached, maskEmail, startOfMonthUtc, type CostAlertRule, type HardCapRule, type SettlementRow, type UsageEventRow } from './src/services/admin-costs.ts';
 import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
+import { DEFAULT_PRICING_CONFIG, creditsForCost, meteredCategory, profitabilityReport, publicPricing, shadowComparison, validatePricingConfig, type PricingConfig } from './src/services/billing/pricing-config.ts';
 import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
