@@ -2,6 +2,7 @@ import { apiFetch } from './lib/api';
 import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
 import { mountAdminPricing } from './admin-pricing';
+import { mountAdminFeedback } from './admin-feedback';
 import { mountDataTable, type DataTable, type DataTableColumn, type DataTableFilter } from './admin-table';
 import { confirmDialog, toast } from './lib/ui-feedback';
 import './styles/admin-console.css';
@@ -77,6 +78,7 @@ const SECTION_LABELS: Record<string, string> = {
   models: 'Modèles',
   costs: 'Coûts',
   pricing: 'Tarifs',
+  feedback: 'Suggestions',
   integrations: 'Intégrations',
   publish: 'Publication',
   security: 'Sécurité',
@@ -835,6 +837,11 @@ const AUDIT_LABELS: Record<string, string> = {
   'pricing.draft_created': 'Brouillon de tarifs créé',
   'pricing.draft_deleted': 'Brouillon de tarifs supprimé',
   'pricing.activated': 'Tarifs activés',
+  'feedback.updated': 'Suggestion modifiée',
+  'feedback.replied': 'Réponse de l’équipe',
+  'feedback.merged': 'Suggestions fusionnées',
+  'feedback.comment_updated': 'Réponse modérée',
+  'feedback.report_dismissed': 'Signalement ignoré',
   'user.credits_revoked': 'Crédits révoqués',
   'alerts.test_sent': 'Test des alertes envoyé',
 };
@@ -1054,8 +1061,18 @@ function ensureAdminPricing() {
   void adminPricing.load();
 }
 
+/* Suggestions reload on every visit: members keep writing while the console is open. */
+let adminFeedback: ReturnType<typeof mountAdminFeedback> | null = null;
+function ensureAdminFeedback() {
+  const root = qs('#admin-feedback');
+  if (!root) return;
+  if (!adminFeedback) adminFeedback = mountAdminFeedback(root);
+  void adminFeedback.load();
+}
+
 function activateSection(tab: string) {
   if (tab === 'library') ensureAdminLibrary();
+  if (tab === 'feedback') ensureAdminFeedback();
   if (tab === 'pricing') ensureAdminPricing();
   if (tab === 'costs' && !state.costs) void loadCosts();
   if (tab === 'audit' && !tables.audit) { renderAudit(); void loadAudit(); }
