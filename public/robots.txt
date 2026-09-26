@@ -1,8 +1,4 @@
 User-agent: *
 Allow: /
-Disallow: /auth.html
-Disallow: /dashboard.html
-Disallow: /builder.html
-Disallow: /checkout.html
-Disallow: /admin.html
+Disallow: /api/
 Sitemap: https://coden.fun/sitemap.xml

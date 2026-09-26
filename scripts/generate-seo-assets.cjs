@@ -3,24 +3,22 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const siteUrl = 'https://coden.fun';
-const now = new Date().toISOString().slice(0, 10);
 const routePolicy = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public-route-policy.json'), 'utf8'));
 
 const existingPages = [
-  { file: 'index.html', path: '/', title: 'Coden — Transformez une idée en application web avec l’IA', description: 'Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.' },
-  { file: 'pricing.html', path: '/pricing.html', title: 'Tarifs Coden — Crédits, publication et domaines', description: 'Comparez les forfaits Coden, les crédits inclus, les droits de publication et les domaines personnalisés.' },
-  { file: 'features.html', path: '/features.html', title: 'Fonctionnalités Coden — Construire, vérifier et publier', description: 'Découvrez les fonctions Coden pour planifier, générer, prévisualiser, corriger, exporter et publier une application web.' },
-  { file: 'documentation.html', path: '/documentation.html', title: 'Documentation Coden — Bien construire avec l’agent', description: 'Apprenez à choisir le bon mode, décrire votre produit, vérifier l’aperçu et publier une version maîtrisée avec Coden.' },
-  { file: 'security.html', path: '/security.html', title: 'Sécurité Coden — Projets, secrets et publication', description: 'Découvrez les limites de sécurité appliquées aux projets, secrets, aperçus et publications dans Coden.' },
-  { file: 'privacy.html', path: '/privacy.html', title: 'Confidentialité Coden — Comptes, prompts et projets', description: 'Comprenez quelles données Coden traite pour fournir les comptes, la génération, les aperçus, la facturation et la publication.' },
-  { file: 'terms.html', path: '/terms.html', title: 'Conditions Coden — Règles d’utilisation du service', description: 'Consultez les règles principales concernant les comptes, contenus générés, crédits, aperçus et publications Coden.' },
+  { file: 'index.html', path: '/', title: 'Coden — Créez une application web avec l’IA', description: 'Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden.' },
+  { file: 'pricing.html', path: '/pricing.html', title: 'Tarifs Coden — Offres et crédits en FCFA', description: 'Comparez les offres Coden, les crédits inclus, les droits de publication et les domaines personnalisés. Tarifs affichés en FCFA.' },
+  { file: 'features.html', path: '/features.html', title: 'Fonctionnalités Coden — Créer une application web', description: 'Découvrez comment créer, prévisualiser, modifier et publier une application web avec Coden.' },
+  { file: 'documentation.html', path: '/documentation.html', title: 'Guide Coden — Créer une application web avec l’IA', description: 'Apprenez à décrire votre application, choisir le mode adapté, vérifier l’aperçu et préparer la publication avec Coden.' },
+  { file: 'security.html', path: '/security.html', title: 'Sécurité Coden — Comptes, projets et publication', description: 'Consultez les informations de Coden sur la protection des comptes, projets, secrets, aperçus et publications.' },
+  { file: 'privacy.html', path: '/privacy.html', title: 'Confidentialité Coden — Données et projets', description: 'Consultez les données traitées par Coden pour les comptes, prompts, projets, paiements et publications.' },
+  { file: 'terms.html', path: '/terms.html', title: 'Conditions Coden — Comptes, crédits et projets', description: 'Consultez les conditions d’utilisation de Coden et les règles relatives aux comptes, crédits, projets et publications.' },
 ];
 
 const noindexPages = [
-  { file: 'auth.html', path: '/auth.html', title: 'Coden — Continue building your web app', description: 'Sign in to Coden to continue turning your idea into a working web app, preview changes and publish verified projects.' },
-  { file: 'dashboard.html', path: '/dashboard.html', title: 'Coden — Mes projets', description: 'Votre espace de travail privé Coden.' },
-  { file: 'builder.html', path: '/builder.html', title: 'Coden — Builder Workspace', description: 'Your private Coden builder workspace.' },
-  { file: 'checkout.html', path: '/checkout.html', title: 'Coden — Secure Checkout', description: 'Review your Coden plan before secure payment.' },
+  { file: 'auth.html', path: '/auth.html', title: 'Connexion à Coden', description: 'Connectez-vous à Coden pour retrouver vos projets et poursuivre la création de vos applications web.' },
+  { file: 'dashboard.html', path: '/dashboard.html', title: 'Coden — Mes projets', description: 'Retrouvez vos projets et gérez votre espace de travail privé dans Coden.' },
+  { file: 'builder.html', path: '/builder.html', title: 'Éditeur Coden', description: 'Espace privé pour créer, prévisualiser et modifier vos applications web avec Coden.' },
   { file: 'admin.html', path: '/admin.html', title: 'Coden — Administration', description: 'Console d’administration privée de Coden.' },
 ];
 
@@ -35,21 +33,21 @@ const existingPageCopy = {
     ]
   },
   'features.html': {
-    h1: 'Features Built Around Real Product Work',
-    subtitle: 'Plan, generate, verify, iterate and publish web apps from one workspace without losing the thread.',
+    h1: 'Créer et améliorer une application web avec Coden',
+    subtitle: 'Décrivez votre besoin, examinez l’aperçu puis faites évoluer votre application dans un même espace.',
     sections: [
-      ['Agent that understands intent', 'Coden separates conversation, strategy, planning, editing, debugging, generation and publishing. Simple questions stay fast. Real build requests trigger the deeper workflow. Ambiguous requests get one useful clarification before files change.'],
-      ['Builder workspace', 'The workspace keeps chat, streaming steps, preview, code, database notes, analysis and publish status together. Users can see what changed, stop a generation, continue iterating and keep the live app stable until they publish.'],
-      ['Quality and launch flow', 'Generated apps are checked for safe paths, usable preview output, basic SEO structure, responsive behavior and obvious runtime issues. Coden then supports publish status, Coden-domain URLs, custom-domain planning and free-plan attribution.']
+      ['Décrire le besoin', 'Précisez les personnes concernées, le problème à résoudre et les principales étapes de l’application. Coden peut clarifier la demande avant de modifier le projet.'],
+      ['Construire et prévisualiser', 'Coden génère les fichiers du projet. Consultez l’aperçu, examinez le code et demandez des modifications ciblées au fil de la conversation.'],
+      ['Vérifier et publier', 'Testez le résultat avant de le rendre public. La publication est une action distincte de l’aperçu et dépend des droits de votre formule.']
     ]
   },
   'documentation.html': {
-    h1: 'Coden Documentation',
-    subtitle: 'A practical guide to getting clear results from Coden: when to chat, when to plan, when to build and when to publish.',
+    h1: 'Guide pratique pour créer une application avec Coden',
+    subtitle: 'Les repères essentiels pour décrire votre projet, choisir un mode de travail et vérifier le résultat.',
     sections: [
-      ['Start with the right intent', 'Use Auto when you want Coden to decide whether to answer, plan or build. Use Plan when scope is unclear. Use Build when the app, page, API or UI change is specific enough to safely modify project files.'],
-      ['Write better prompts', 'Describe the target user, the primary workflow, required screens, data objects, integrations, visual mood and what must not be changed. Coden can ask follow-up questions when the prompt is too vague.'],
-      ['Iterate safely', 'After generation, ask for focused edits like button color, layout density, mobile behavior or form validation. Preview can change freely, but the published app changes only after you click Publish.']
+      ['Choisir un mode', 'Utilisez Auto pour laisser Coden orienter la demande. Choisissez Plan lorsque le périmètre reste à préciser, puis Build lorsque les changements attendus sont assez clairs.'],
+      ['Décrire votre application', 'Indiquez le public visé, le parcours principal, les écrans, les données et le style recherché. Précisez aussi les éléments qui doivent rester inchangés.'],
+      ['Vérifier avant publication', 'Examinez l’aperçu et testez les interactions principales. Les changements préparés dans le Builder ne remplacent pas la version publiée avant votre action de publication.']
     ]
   },
   'enterprise.html': {
@@ -62,12 +60,12 @@ const existingPageCopy = {
     ]
   },
   'security.html': {
-    h1: 'Security and Trust',
-    subtitle: 'Coden keeps the public product experience useful while protecting secrets, internal costs and provider details from user-facing surfaces.',
+    h1: 'Sécurité et contrôle de vos projets Coden',
+    subtitle: 'Repères sur la confidentialité des projets, la gestion des secrets et la publication des applications.',
     sections: [
-      ['Sensitive data boundaries', 'User endpoints must never expose provider cost, platform margin, Stripe fees, raw provider payloads, supplier invoice IDs or secrets. Admin-only data stays behind protected roles.'],
-      ['Safer generated output', 'The builder checks generated paths, blocks dangerous filenames, avoids committing environment files and treats external keys as explicit user-controlled configuration.'],
-      ['Auth, publish and ownership', 'Published apps remain separate from builder preview, free apps can show Coden attribution, and owner-aware links route owners back to the builder while public visitors reach the Coden entry point.']
+      ['Projets et accès', 'Gardez vos identifiants confidentiels et partagez un projet uniquement avec les personnes qui doivent y accéder. Les espaces privés et les applications publiées répondent à des usages distincts.'],
+      ['Clés et secrets', 'Ne placez pas de clé privée dans le code exécuté par le navigateur. Configurez les identifiants d’intégration dans les paramètres prévus à cet effet et vérifiez les permissions accordées.'],
+      ['Aperçu et publication', 'L’aperçu sert à examiner les changements avant leur mise en ligne. La publication est séparée et met à jour l’application publique après validation de la demande.']
     ]
   },
   'showcase.html': {
@@ -372,7 +370,7 @@ const LOGO_MARK = '<span class="coden-logo-mark" data-coden-logo aria-hidden="tr
 
 function sharedPublicFooter(className = 'footer') {
   const legal = (routePolicy.nav?.legal || [])
-    .map(link => `                <a href="${link.href}">${esc(link.label.en || link.label.fr)}</a>`)
+    .map(link => `                <a href="${link.href}">${esc(link.label.fr || link.label.en)}</a>`)
     .join('\n');
   /*
    * The brand mark stays in the served HTML.
@@ -480,87 +478,123 @@ function write(filePath, content) {
 function injectHeadMeta(page) {
   const full = path.join(root, page.file);
   if (!fs.existsSync(full)) return;
-  let html = fs.readFileSync(full, 'utf8');
+  let html = fs.readFileSync(full, 'utf8').replace(/\r\n/g, '\n');
   const url = `${siteUrl}${page.path}`;
-  const markerStart = '<!-- CODEN_SEO_START -->';
-  const markerEnd = '<!-- CODEN_SEO_END -->';
+  const markerStart = '  <!-- CODEN_SEO_START -->';
+  const markerEnd = '  <!-- CODEN_SEO_END -->';
   const isPrivatePage = noindexPages.some(item => item.file === page.file);
   const robots = isPrivatePage ? '<meta name="robots" content="noindex, nofollow" />' : '<meta name="robots" content="index, follow" />';
-  // Private product surfaces stay byte-for-byte outside the public redesign.
-  // One social card for every page, private ones included: the brand PNG
-  // (public/og-coden.png), in French like the product.
   const socialImage = `${siteUrl}/og-coden.png`;
   const socialImageAlt = 'Coden — Transformez une idée en application web';
   const socialImageType = 'image/png';
-  const schema = page.path === '/'
-    ? [
+  const schema = isPrivatePage ? [] : [{
+    '@context': 'https://schema.org',
+    '@graph': [
       {
-        '@context': 'https://schema.org',
         '@type': 'Organization',
+        '@id': `${siteUrl}/#organization`,
         name: 'Coden',
-        url: siteUrl,
-        logo: `${siteUrl}/favicon.svg`,
+        url: `${siteUrl}/`,
+        logo: { '@type': 'ImageObject', url: `${siteUrl}/favicon-512x512.png` },
       },
       {
-        '@context': 'https://schema.org',
-        '@type': 'SoftwareApplication',
+        '@type': 'WebSite',
+        '@id': `${siteUrl}/#website`,
         name: 'Coden',
-        applicationCategory: 'DeveloperApplication',
-        operatingSystem: 'Web',
-        description: page.description,
-        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        url: `${siteUrl}/`,
+        inLanguage: 'fr-FR',
+        publisher: { '@id': `${siteUrl}/#organization` },
       },
       {
-        '@context': 'https://schema.org',
-        '@type': 'Product',
-        name: 'Coden AI App Builder',
+        '@type': 'WebPage',
+        '@id': `${url}#webpage`,
+        url,
+        name: page.title,
         description: page.description,
-        brand: { '@type': 'Brand', name: 'Coden' },
+        inLanguage: 'fr-FR',
+        isPartOf: { '@id': `${siteUrl}/#website` },
+        about: { '@id': `${siteUrl}/#organization` },
       },
-      {
-        '@context': 'https://schema.org',
-        '@type': 'FAQPage',
-        mainEntity: Array.from(html.matchAll(/<details class="cdn-faq"[^>]*><summary>([^<]+)[\s\S]*?<\/summary><p>([^<]+)<\/p><\/details>/g), match => ({
-          '@type': 'Question', name: match[1].trim(),
-          acceptedAnswer: { '@type': 'Answer', text: match[2].trim() },
-        })),
-      },
-    ]
-    : [{
-      '@context': 'https://schema.org',
-      '@type': 'WebPage',
-      name: page.title,
-      description: page.description,
-      url,
-    }];
-  const block = `${markerStart}
-  <meta name="description" content="${esc(page.description)}" />
-  ${robots}
-  <link rel="canonical" href="${url}" />
-${faviconHead()}
-  <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="${esc(page.title)}" />
-  <meta property="og:description" content="${esc(page.description)}" />
-  <meta property="og:url" content="${url}" />
-  <meta property="og:image" content="${socialImage}" />
-  <meta property="og:image:alt" content="${socialImageAlt}" />
-  <meta property="og:image:type" content="${socialImageType}" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${esc(page.title)}" />
-  <meta name="twitter:description" content="${esc(page.description)}" />
-  <meta name="twitter:image" content="${socialImage}" />
-  <meta name="twitter:image:alt" content="${socialImageAlt}" />
-  ${schema.map(jsonLd).join('\n  ')}
-  ${markerEnd}`;
-  html = html.replace(/<title>[^<]*<\/title>/, `<title>${esc(page.title)}</title>`);
-  if (html.includes(markerStart)) {
-    html = html.replace(new RegExp(`${markerStart}[\\s\\S]*?${markerEnd}`), block);
-  } else {
-    html = html.replace(/<\/title>/, `</title>\n  ${block}`);
-  }
+      ...(page.path === '/' ? [] : [{
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Accueil', item: `${siteUrl}/` },
+          { '@type': 'ListItem', position: 2, name: ({
+            '/pricing.html': 'Tarifs',
+            '/features.html': 'Fonctionnalités',
+            '/documentation.html': 'Documentation',
+            '/security.html': 'Sécurité',
+            '/privacy.html': 'Confidentialité',
+            '/terms.html': 'Conditions',
+          })[page.path] || page.title, item: url },
+        ],
+      }]),
+    ],
+  }];
+  const socialTags = isPrivatePage ? [] : [
+    '  <meta property="og:type" content="website" />',
+    '  <meta property="og:locale" content="fr_FR" />',
+    '  <meta property="og:site_name" content="Coden" />',
+    `  <meta property="og:title" content="${esc(page.title)}" />`,
+    `  <meta property="og:description" content="${esc(page.description)}" />`,
+    `  <meta property="og:url" content="${url}" />`,
+    `  <meta property="og:image" content="${socialImage}" />`,
+    `  <meta property="og:image:alt" content="${socialImageAlt}" />`,
+    `  <meta property="og:image:type" content="${socialImageType}" />`,
+    '  <meta property="og:image:width" content="1200" />',
+    '  <meta property="og:image:height" content="630" />',
+    '  <meta name="twitter:card" content="summary_large_image" />',
+    `  <meta name="twitter:title" content="${esc(page.title)}" />`,
+    `  <meta name="twitter:description" content="${esc(page.description)}" />`,
+    `  <meta name="twitter:image" content="${socialImage}" />`,
+    `  <meta name="twitter:image:alt" content="${socialImageAlt}" />`,
+  ];
+  const block = [
+    markerStart,
+    `  <meta name="description" content="${esc(page.description)}" />`,
+    `  ${robots}`,
+    `  <link rel="canonical" href="${url}" />`,
+    ...faviconHead().split('\n'),
+    ...socialTags,
+    ...schema.map(jsonLd),
+    markerEnd,
+  ].join('\n');
+  const readAttribute = (tag, name) => tag.match(new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i'))?.[2]?.toLowerCase() || '';
+  html = html.replace(/<html\b([^>]*)>/i, (_match, attrs) => {
+    const nextAttrs = /\blang\s*=\s*(["'])[^"']*\1/i.test(attrs)
+      ? attrs.replace(/\blang\s*=\s*(["'])[^"']*\1/i, 'lang="fr"')
+      : `${attrs} lang="fr"`;
+    return `<html${nextAttrs}>`;
+  });
+  html = html.replace(/<head\b[^>]*>[\s\S]*?<\/head>/i, head => {
+    const preservedBlocks = [];
+    let cleanHead = head
+      .replace(new RegExp(`${markerStart}[\\s\\S]*?${markerEnd}`, 'g'), '')
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, block => {
+        // HTML-looking strings inside inline app scripts are code, not head
+        // metadata. Keep those blocks intact while normalizing actual tags.
+        const openingTag = block.slice(0, block.indexOf('>') + 1);
+        if (/^<script\b/i.test(openingTag) && /\btype\s*=\s*(["'])application\/ld\+json\1/i.test(openingTag)) return '';
+        const placeholder = `__CODEN_SEO_PRESERVED_${preservedBlocks.length}__`;
+        preservedBlocks.push(block);
+        return placeholder;
+      })
+      .replace(/<meta\b[^>]*>/gi, tag => {
+        const name = readAttribute(tag, 'name');
+        const property = readAttribute(tag, 'property');
+        return ['description', 'robots', 'theme-color'].includes(name) || name.startsWith('twitter:') || property.startsWith('og:') || property.startsWith('twitter:') ? '' : tag;
+      })
+      .replace(/<link\b[^>]*>/gi, tag => {
+        const rel = readAttribute(tag, 'rel').split(/\s+/);
+        return rel.some(value => ['canonical', 'icon', 'apple-touch-icon', 'manifest'].includes(value)) ? '' : tag;
+      })
+      .replace(/^[\t ]*\n/gm, '');
+    preservedBlocks.forEach((block, index) => {
+      cleanHead = cleanHead.replace(`__CODEN_SEO_PRESERVED_${index}__`, block);
+    });
+    cleanHead = cleanHead.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${esc(page.title)}</title>`);
+    return cleanHead.replace(/<\/title>/i, match => `${match}\n${block}`);
+  });
   fs.writeFileSync(full, html, 'utf8');
 }
 
@@ -605,9 +639,9 @@ ${copy.sections.map(([title, body]) => `        <h2>${esc(title)}</h2>
 function generatePublicAssets(urls) {
   // favicon.svg and og-coden.* are brand assets drawn from src/lib/coden-logo.ts
   // and committed; this script must not redraw them in other colours.
-  write('public/robots.txt', `User-agent: *\nAllow: /\nDisallow: /auth.html\nDisallow: /dashboard.html\nDisallow: /builder.html\nDisallow: /checkout.html\nDisallow: /admin.html\nSitemap: ${siteUrl}/sitemap.xml\n`);
-  write('public/llms.txt', `# Coden\n\nCoden is an AI app builder for creating, previewing, iterating and publishing production-ready web apps.\n\n## Important pages\n- Home: ${siteUrl}/\n- Pricing: ${siteUrl}/pricing.html\n- Features: ${siteUrl}/features.html\n- Documentation: ${siteUrl}/documentation.html\n- Security: ${siteUrl}/security.html\n\n## Product facts\n- Coden supports prompt-to-app generation, project preview, database visibility, publishing workflows and model selection.\n- Coden is designed for founders, agencies, product teams and non-technical builders.\n- Private app routes such as auth, dashboard and builder are not intended for indexing.\n`);
-  write('public/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(url => `  <url><loc>${url}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${url === siteUrl + '/' ? '1.0' : '0.8'}</priority></url>`).join('\n')}\n</urlset>\n`);
+  write('public/robots.txt', `User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: ${siteUrl}/sitemap.xml\n`);
+  write('public/llms.txt', `# Coden\n\nCoden est un outil de création d’applications web assistée par IA. Il permet de décrire un projet, d’en générer les fichiers, de consulter un aperçu et, selon l’offre et la configuration, de publier une application.\n\n## Pages publiques\n- Accueil : ${siteUrl}/\n- Tarifs : ${siteUrl}/pricing.html\n- Fonctionnalités : ${siteUrl}/features.html\n- Documentation : ${siteUrl}/documentation.html\n- Sécurité : ${siteUrl}/security.html\n- Confidentialité : ${siteUrl}/privacy.html\n- Conditions : ${siteUrl}/terms.html\n\n## Repères\n- Les projets et espaces de travail des utilisateurs ne sont pas des pages publiques destinées à l’indexation.\n- Les tarifs et droits applicables sont ceux affichés dans l’application au moment de la souscription.\n- Les fonctionnalités dépendent de l’offre, de la configuration du projet et des services connectés.\n`);
+  write('public/sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(url => `  <url><loc>${url}</loc></url>`).join('\n')}\n</urlset>\n`);
   write('public/_redirects', `${Object.entries(routePolicy.redirects).map(([from, to]) => `${from} ${to} 301`).join('\n')}\n`);
 }
 

@@ -3,12 +3,9 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#FFFFFF">
-    <meta name="description" content="Décrivez votre idée, construisez une application web fonctionnelle avec Coden, prévisualisez-la, améliorez-la et publiez-la après vérification.">
-    <link rel="canonical" href="https://coden.fun/">
-    <title>Coden — Transformez une idée en application web avec l’IA</title>
+    <title>Coden — Créez une application web avec l’IA</title>
   <!-- CODEN_SEO_START -->
-  <meta name="description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
+  <meta name="description" content="Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden." />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://coden.fun/" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -18,9 +15,10 @@
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="theme-color" content="#FFFFFF" />
   <meta property="og:type" content="website" />
+  <meta property="og:locale" content="fr_FR" />
   <meta property="og:site_name" content="Coden" />
-  <meta property="og:title" content="Coden — Transformez une idée en application web avec l’IA" />
-  <meta property="og:description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
+  <meta property="og:title" content="Coden — Créez une application web avec l’IA" />
+  <meta property="og:description" content="Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden." />
   <meta property="og:url" content="https://coden.fun/" />
   <meta property="og:image" content="https://coden.fun/og-coden.png" />
   <meta property="og:image:alt" content="Coden — Transformez une idée en application web" />
@@ -28,87 +26,52 @@
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Coden — Transformez une idée en application web avec l’IA" />
-  <meta name="twitter:description" content="Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification." />
+  <meta name="twitter:title" content="Coden — Créez une application web avec l’IA" />
+  <meta name="twitter:description" content="Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden." />
   <meta name="twitter:image" content="https://coden.fun/og-coden.png" />
   <meta name="twitter:image:alt" content="Coden — Transformez une idée en application web" />
-  <script type="application/ld+json">{
+<script type="application/ld+json">{
   "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "Coden",
-  "url": "https://coden.fun",
-  "logo": "https://coden.fun/favicon.svg"
-}</script>
-  <script type="application/ld+json">{
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  "name": "Coden",
-  "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "Web",
-  "description": "Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.",
-  "offers": {
-    "@type": "Offer",
-    "price": "0",
-    "priceCurrency": "USD"
-  }
-}</script>
-  <script type="application/ld+json">{
-  "@context": "https://schema.org",
-  "@type": "Product",
-  "name": "Coden AI App Builder",
-  "description": "Décrivez votre idée, créez une application web fonctionnelle avec l’IA, prévisualisez-la, améliorez-la et publiez-la après vérification.",
-  "brand": {
-    "@type": "Brand",
-    "name": "Coden"
-  }
-}</script>
-  <script type="application/ld+json">{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
+  "@graph": [
     {
-      "@type": "Question",
-      "name": "Faut-il savoir coder ?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Non. Vous décrivez ce que vous voulez en français, Coden écrit le code, l’aperçu et les ajustements que vous demandez."
+      "@type": "Organization",
+      "@id": "https://coden.fun/#organization",
+      "name": "Coden",
+      "url": "https://coden.fun/",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://coden.fun/favicon-512x512.png"
       }
     },
     {
-      "@type": "Question",
-      "name": "Est-ce une vraie application ou une maquette ?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Une vraie application web : des fichiers, des interactions, une base de données si besoin, et un aperçu que vous testez avant de publier."
+      "@type": "WebSite",
+      "@id": "https://coden.fun/#website",
+      "name": "Coden",
+      "url": "https://coden.fun/",
+      "inLanguage": "fr-FR",
+      "publisher": {
+        "@id": "https://coden.fun/#organization"
       }
     },
     {
-      "@type": "Question",
-      "name": "Combien ça coûte ?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "L’inscription est gratuite et comprend 5 crédits. Chaque action affiche son coût avant de s’exécuter, et les formules payantes sont détaillées juste en dessous."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Puis-je utiliser mon propre domaine ?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Oui, avec une formule Pro ou Business. Coden vérifie l’application avant chaque publication."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "Mes données servent-elles à l’entraînement ?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Les données de votre projet restent dans les limites prévues par les pages de confidentialité et les contrôles de votre espace."
+      "@type": "WebPage",
+      "@id": "https://coden.fun/#webpage",
+      "url": "https://coden.fun/",
+      "name": "Coden — Créez une application web avec l’IA",
+      "description": "Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden.",
+      "inLanguage": "fr-FR",
+      "isPartOf": {
+        "@id": "https://coden.fun/#website"
+      },
+      "about": {
+        "@id": "https://coden.fun/#organization"
       }
     }
   ]
 }</script>
   <!-- CODEN_SEO_END -->
+<!-- CODEN_SEO_START -->
+<!-- CODEN_SEO_END -->
     <script>
       (() => {
         try {
@@ -124,7 +87,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" data-coden-fonts/>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null"/>
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=optional" crossorigin="anonymous"/></noscript>
-  </head>
+</head>
   <body data-coden-surface="landing-new">
     <div class="lp-scroll-progress" aria-hidden="true"></div>
     <div id="coden-marketing-header-root" aria-live="off"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>

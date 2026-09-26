@@ -18784,8 +18784,9 @@ app.get('/built-with-coden/:projectId', async (req, res) => {
     const ownerId = JSON.stringify(project.owner_id);
     const projectId = JSON.stringify(project.id);
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     res.send(`<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Built with Coden</title></head>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Redirection du projet — Coden</title></head>
 <body>
 <script>
 (() => {
@@ -19012,7 +19013,6 @@ const privateDocumentPaths = new Set([
   '/auth.html',
   '/dashboard.html',
   '/builder.html',
-  '/checkout.html',
   '/admin.html',
 ]);
 
@@ -20249,13 +20249,26 @@ app.post('/api/projects/:id/sandbox/files', requireAuth, async (req: any, res: a
   }
 });
 
-/**
- * The preview itself.
- *
- * Everything under the token is forwarded to that project's dev server: the
- * document, its modules, its assets, and — through the upgrade handler
- * installed below — its hot-reload socket.
- */
+// Give unknown public URLs a real 404 response and a small French recovery
+// page. API misses stay machine-readable; missing assets never receive HTML.
+app.use((req: any, res: any) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const pathname = String(req.path || '/');
+  if (/^\/api(?:\/|$)/i.test(pathname)) {
+    return res.status(404).json({ success: false, error: 'not_found' });
+  }
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return res.status(404).end();
+  }
+  if (path.extname(pathname)) {
+    return res.status(404).type('text/plain').send('Not found');
+  }
+  return res.status(404).sendFile(path.join(staticDir, '404.html'), (error: any) => {
+    if (error && !res.headersSent) {
+      res.status(404).type('text/plain').send('Page introuvable.');
+    }
+  });
+});
 
 const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
