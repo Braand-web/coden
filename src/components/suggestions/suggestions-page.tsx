@@ -420,6 +420,10 @@ export function SuggestionsPage({ postId, navigate }: { postId: string | null; n
 
   return (
     <div className="coden-suggest">
+      {/* Back to the projects, for when the sidebar is out of reach (mobile). */}
+      <button type="button" className="coden-suggest-back" onClick={() => navigate('')}>
+        <ArrowLeft size={15} aria-hidden="true" /> Accueil
+      </button>
       <header className="coden-suggest-head">
         <div>
           <h1>Suggestions</h1>
