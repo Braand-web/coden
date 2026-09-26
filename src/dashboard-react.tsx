@@ -520,7 +520,11 @@ function DashboardHome() {
       window.scrollTo?.({ top: 0 });
     };
     window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    window.addEventListener('popstate', onHash);
+    return () => {
+      window.removeEventListener('hashchange', onHash);
+      window.removeEventListener('popstate', onHash);
+    };
   }, []);
   const suggestionsQuery = useQuery({
     queryKey: ['coden-suggestions-summary', view.view],
@@ -529,6 +533,13 @@ function DashboardHome() {
     retry: false,
   });
   const navigate = (hash: string) => {
+    // Home drops the hash altogether, so the address stays /dashboard.html.
+    if (!hash) {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+      setView(readDashboardView());
+      mainRef.current?.scrollTo?.({ top: 0 });
+      return;
+    }
     if (window.location.hash === hash) setView(readDashboardView());
     else window.location.hash = hash;
   };
