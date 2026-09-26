@@ -1,6 +1,7 @@
 import { apiFetch } from './lib/api';
 import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
+import { mountAdminPricing } from './admin-pricing';
 import { mountDataTable, type DataTable, type DataTableColumn, type DataTableFilter } from './admin-table';
 import { confirmDialog, toast } from './lib/ui-feedback';
 import './styles/admin-console.css';
@@ -75,6 +76,7 @@ const SECTION_LABELS: Record<string, string> = {
   errors: 'Erreurs',
   models: 'Modèles',
   costs: 'Coûts',
+  pricing: 'Tarifs',
   integrations: 'Intégrations',
   publish: 'Publication',
   security: 'Sécurité',
@@ -829,6 +831,10 @@ const AUDIT_LABELS: Record<string, string> = {
   'error_memory.deleted': 'Règle d’erreur supprimée',
   'cloud.provisioning_checked': 'Test du provisionnement Cloud',
   'user.credits_granted': 'Crédits accordés',
+  'user.credits_refunded': 'Crédits remboursés',
+  'pricing.draft_created': 'Brouillon de tarifs créé',
+  'pricing.draft_deleted': 'Brouillon de tarifs supprimé',
+  'pricing.activated': 'Tarifs activés',
   'user.credits_revoked': 'Crédits révoqués',
   'alerts.test_sent': 'Test des alertes envoyé',
 };
@@ -841,7 +847,7 @@ function renderAudit() {
     label: 'Journal d’audit', exportName: 'journal-audit', initialSort: { key: 'created_at', direction: 'desc' }, emptyMessage: 'Aucune action admin enregistrée pour le moment.',
     filters: [
       { value: 'users', label: 'Utilisateurs', test: row => String(row.action).startsWith('user.') },
-      { value: 'costs', label: 'Coûts et crédits', test: row => /^(cost_alert\.|user\.credits_|alerts\.)/.test(String(row.action)) },
+      { value: 'costs', label: 'Coûts et crédits', test: row => /^(cost_alert\.|user\.credits_|alerts\.|pricing\.)/.test(String(row.action)) },
       { value: 'library', label: 'Bibliothèque', test: row => /^(library|error_memory)\./.test(String(row.action)) },
     ],
     columns: [
@@ -1039,8 +1045,18 @@ function ensureAdminLibrary() {
   void adminLibrary.load();
 }
 
+/* Tariffs load on first visit, then on every return: an activation elsewhere shows up. */
+let adminPricing: ReturnType<typeof mountAdminPricing> | null = null;
+function ensureAdminPricing() {
+  const root = qs('#admin-pricing');
+  if (!root) return;
+  if (!adminPricing) adminPricing = mountAdminPricing(root);
+  void adminPricing.load();
+}
+
 function activateSection(tab: string) {
   if (tab === 'library') ensureAdminLibrary();
+  if (tab === 'pricing') ensureAdminPricing();
   if (tab === 'costs' && !state.costs) void loadCosts();
   if (tab === 'audit' && !tables.audit) { renderAudit(); void loadAudit(); }
   document.querySelectorAll<HTMLElement>('[data-admin-tab]').forEach(item => {
@@ -1080,7 +1096,8 @@ function bindFilters() {
   });
 }
 
-const GRANT_RESTRICTIONS: Record<string, string> = { general: 'Tous usages', build: 'Génération', ai_gateway: 'Discussion', cloud: 'Cloud' };
+const GRANT_RESTRICTIONS: Record<string, string> = { general: 'Tous usages', agent: 'Génération et discussion', build: 'Génération', ai_gateway: 'Discussion', chat: 'Discussion', cloud: 'Cloud' };
+const GRANT_KINDS: Record<string, string> = { bonus: 'Bonus', refund: 'Remboursement' };
 
 /** One key per opened form: a double submit or a retried request grants once. */
 function newClientKey() {
@@ -1132,7 +1149,8 @@ async function openUserDrawer(id: string) {
       ['Tokens (30 j)', formatTokens(Number(costs.prompt_tokens || 0) + Number(costs.completion_tokens || 0))],
     ].map(([label, value]) => drawerField(String(label), value)).join('')}</div>
     <h3 class="drawer-section-title">Crédits accordés par l’administration</h3>
-    ${table(['Crédits', 'Usage', 'Motif', 'Expire', 'Action'], (data.admin_grants || []).map((grant: JsonRecord) => [
+    ${table(['Type', 'Crédits', 'Usage', 'Motif', 'Expire', 'Action'], (data.admin_grants || []).map((grant: JsonRecord) => [
+      escapeHtml(GRANT_KINDS[grant.kind] || 'Bonus'),
       escapeHtml(`${formatNumber(grant.credits_remaining)} / ${formatNumber(grant.credits_issued)}`),
       escapeHtml(GRANT_RESTRICTIONS[grant.restriction] || grant.restriction),
       escapeHtml(grant.reason || '--'),
@@ -1140,8 +1158,9 @@ async function openUserDrawer(id: string) {
       grant.revoked ? pill('disabled', 'Révoqué') : `<button class="admin-button subtle is-danger" type="button" data-revoke-grant="${escapeHtml(grant.id)}" data-user-id="${escapeHtml(user.id)}" data-grant-credits="${escapeHtml(grant.credits_remaining)}">Révoquer</button>`,
     ]), 'Aucun crédit accordé depuis la console.')}
     <form class="admin-alert-form" data-grant-form data-user-id="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email || '')}" data-client-key="${escapeHtml(newClientKey())}">
+      <label>Type<select name="kind">${Object.entries(GRANT_KINDS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}</select></label>
       <label>Crédits<input name="credits" type="number" min="1" max="10000" step="1" required placeholder="50"></label>
-      <label>Usage<select name="restriction">${Object.entries(GRANT_RESTRICTIONS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}</select></label>
+      <label>Usage<select name="restriction">${Object.entries(GRANT_RESTRICTIONS).filter(([value]) => value !== 'chat').map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}</select></label>
       <label>Validité (jours)<input name="days" type="number" min="1" max="365" step="1" value="90" required></label>
       <label class="admin-grant-reason">Motif (conservé dans le journal)<input name="reason" type="text" minlength="5" maxlength="300" required placeholder="Geste commercial après un incident"></label>
       <button class="admin-button primary" type="submit">Accorder</button>
@@ -1326,12 +1345,13 @@ function bindActions() {
       const credits = Number(data.get('credits'));
       const who = grantForm.dataset.userEmail || 'ce compte';
       const restriction = String(data.get('restriction') || 'general');
-      if (!(await confirmDialog({ title: `Accorder ${formatNumber(credits)} crédits à ${who} ?`, body: `Usage : ${GRANT_RESTRICTIONS[restriction] || restriction}, valables ${data.get('days')} jours. L’octroi est inscrit au registre des crédits et au journal d’audit ; il peut être révoqué tant qu’il reste des crédits.`, confirmLabel: 'Accorder' }))) return;
+      const kind = data.get('kind') === 'refund' ? 'refund' : 'bonus';
+      if (!(await confirmDialog({ title: kind === 'refund' ? `Rembourser ${formatNumber(credits)} crédits à ${who} ?` : `Accorder ${formatNumber(credits)} crédits à ${who} ?`, body: `Usage : ${GRANT_RESTRICTIONS[restriction] || restriction}, valables ${data.get('days')} jours. L’octroi est inscrit au registre des crédits et au journal d’audit ; il peut être révoqué tant qu’il reste des crédits.`, confirmLabel: kind === 'refund' ? 'Rembourser' : 'Accorder' }))) return;
       const submit = grantForm.querySelector<HTMLButtonElement>('button[type="submit"]');
       if (submit) submit.disabled = true;
       try {
-        await apiFetch(`/api/admin/users/${encodeURIComponent(grantForm.dataset.userId || '')}/credits`, { method: 'POST', body: JSON.stringify({ credits, restriction, expires_in_days: Number(data.get('days')), reason: String(data.get('reason') || ''), client_key: grantForm.dataset.clientKey }) });
-        toast(`${formatNumber(credits)} crédits accordés à ${who}.`, 'success');
+        await apiFetch(`/api/admin/users/${encodeURIComponent(grantForm.dataset.userId || '')}/credits`, { method: 'POST', body: JSON.stringify({ kind, credits, restriction, expires_in_days: Number(data.get('days')), reason: String(data.get('reason') || ''), client_key: grantForm.dataset.clientKey }) });
+        toast(kind === 'refund' ? `${formatNumber(credits)} crédits remboursés à ${who}.` : `${formatNumber(credits)} crédits accordés à ${who}.`, 'success');
         void openUserDrawer(grantForm.dataset.userId || '');
         if (tables.audit) void loadAudit();
       } catch (error) {
