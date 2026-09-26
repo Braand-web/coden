@@ -682,6 +682,28 @@ function getPlatformAdminEmails() {
  */
 const VERIFIED_SESSION_TTL_MS = 30_000;
 const verifiedSessions = new Map<string, { user: any; until: number }>();
+
+/*
+ * A suspended account is refused from its next request.
+ *
+ * Supabase bans the user, but a token already issued stays valid until it
+ * expires, and this server remembers verified sessions for 30 seconds. The
+ * ban date on the user is therefore checked on every request, and a
+ * suspension made here also drops the remembered sessions of that account.
+ */
+const suspendedUserIds = new Set<string>();
+function isSuspendedUser(user: any) {
+  if (!user?.id) return false;
+  if (suspendedUserIds.has(String(user.id))) return true;
+  const until = user.banned_until ? Date.parse(String(user.banned_until)) : NaN;
+  return Number.isFinite(until) && until > Date.now();
+}
+function forgetVerifiedSessionsOf(userId: string) {
+  for (const [key, entry] of verifiedSessions) if (String(entry.user?.id) === userId) verifiedSessions.delete(key);
+}
+function suspendedResponse(res: any) {
+  return res.status(403).json({ success: false, error: 'Ce compte est suspendu. Contactez le support de Coden.', diagnostic_code: 'ACCOUNT_SUSPENDED' });
+}
 function tokenExpiryMs(token: string): number {
   try {
     const payload = JSON.parse(Buffer.from(token.split('.')[1] || '', 'base64url').toString('utf8'));
@@ -705,6 +727,7 @@ async function requireAuth(req: any, res: any, next: any) {
   const sessionKey = verifiedSessionKey(token);
   const remembered = verifiedSessions.get(sessionKey);
   if (remembered && remembered.until > Date.now()) {
+    if (isSuspendedUser(remembered.user)) return suspendedResponse(res);
     req.user = remembered.user;
     req.auth = { user: remembered.user, userId: String(remembered.user.id), email: String(remembered.user.email || '') };
     return next();
@@ -738,6 +761,7 @@ async function requireAuth(req: any, res: any, next: any) {
     return res.status(401).json(authSessionUnavailablePayload(undefined, 'Invalid or expired session'));
   }
 
+  if (isSuspendedUser(user)) return suspendedResponse(res);
   rememberUnlimitedTestCreditUser(user);
   const expiresAt = tokenExpiryMs(token);
   const until = Math.min(Date.now() + VERIFIED_SESSION_TTL_MS, expiresAt || Date.now());
@@ -10245,6 +10269,7 @@ async function loadProjectServerSecrets(projectId: string): Promise<Record<strin
  * of adding a second row the application could not choose between.
  */
 async function saveProjectSecret(project: GeneratedProject, service: string, variable: string, value: string, status = 'configured') {
+  if (typeof variable === 'string' && /^[A-Z][A-Z0-9_]{1,79}$/.test(variable) && isReservedSecretVariable(variable)) throw new SecretInputError(`« ${variable} » est réservé par l’environnement d’exécution (ou serait exposé au navigateur) : choisissez un autre nom.`);
   if (!isValidSecretVariable(variable)) throw new SecretInputError('Nom de variable invalide : majuscules, chiffres et « _ » uniquement (ex. RESEND_API_KEY).');
   if (status === 'configured' && !value) throw new SecretInputError('La valeur du secret ne peut pas être vide.');
   if (value.length > 8_000) throw new SecretInputError('La valeur du secret dépasse 8 000 caractères.');
@@ -11465,6 +11490,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
    * Asking the debiting ledger first costs one read and makes the honest
    * answer, CREDITS_REQUIRED, the one the customer actually sees.
    */
+  const spendingCap = await spendingCapGate(userId);
+  if (spendingCap) return res.status(402).json(spendingCap);
   const aiCredits = await unifiedCategoryCredits(userId, 'ai_gateway');
   if (wallet < estimate.finalCredits || aiCredits < estimate.finalCredits) {
     return res.status(402).json({
@@ -12403,6 +12430,84 @@ function isMissingRelationError(error: any) {
   return /does not exist|schema cache|relation .* not found|42P01/i.test(String(error?.message || error?.code || ''));
 }
 
+/** A ceiling on admin actions that change things, per admin: a stolen session cannot act in bulk. */
+function adminMutationAllowed(req: any, res: any, bucket: string, limit: number, windowMs = 60 * 60_000) {
+  const actor = String(getOptionalAuthState(req).userId || 'unknown');
+  if (enforceRateLimit(`admin:${bucket}:${actor}`, limit, windowMs)) return true;
+  res.status(429).json({ success: false, error: 'Trop d’actions de ce type en peu de temps. Réessayez plus tard.', diagnostic_code: 'ADMIN_RATE_LIMITED' });
+  return false;
+}
+
+function userIsPlatformAdmin(user: any) {
+  const metadata = user?.app_metadata || {};
+  return getPlatformAdminEmails().has(normalizeAdminEmail(user?.email)) || metadata.role === 'platform_admin' || (Array.isArray(metadata.roles) && metadata.roles.includes('platform_admin'));
+}
+
+/*
+ * Hard monthly budgets, checked before any paid work starts.
+ *
+ * Rules are read at most every 30 seconds and spend at most every 30 seconds
+ * per account, so the check costs nothing on the hot path. A read failure
+ * lets the request through (and is logged): a budget is a cost guard, and a
+ * database hiccup must not lock every customer out.
+ */
+let hardCapRulesCache: { at: number; rules: HardCapRule[] } | null = null;
+const monthSpendCache = new Map<string, { at: number; value: number }>();
+async function monthSpendUsd(client: any, accountId: string | null): Promise<number> {
+  const key = accountId || '*';
+  const cached = monthSpendCache.get(key);
+  if (cached && Date.now() - cached.at < 30_000) return cached.value;
+  let query = client.from('usage_events').select('provider_cost_usd,complete_cost_usd,cost_usd').gte('created_at', startOfMonthUtc()).limit(50_000);
+  if (accountId) query = query.eq('organization_id', accountId);
+  const { data, error } = await query;
+  if (error) throw error;
+  const value = (data || []).reduce((sum: number, row: any) => sum + eventCostUsd(row), 0);
+  if (monthSpendCache.size > 5_000) monthSpendCache.clear();
+  monthSpendCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function spendingCapGate(accountId: string, french = true) {
+  const client = getSupabase();
+  if (!client || !accountId) return null;
+  try {
+    if (!hardCapRulesCache || Date.now() - hardCapRulesCache.at > 30_000) {
+      const { data, error } = await client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled,hard_limit').eq('enabled', true).eq('hard_limit', true);
+      if (error) throw error;
+      hardCapRulesCache = { at: Date.now(), rules: (data || []) as HardCapRule[] };
+    }
+    const rules = hardCapRulesCache.rules;
+    if (!rules.length) return null;
+    const needsAccount = rules.some(rule => rule.scope === 'user' && rule.target_id === accountId);
+    const needsGlobal = rules.some(rule => rule.scope === 'global');
+    const reached = hardCapReached(rules, accountId, {
+      account: needsAccount ? await monthSpendUsd(client, accountId) : 0,
+      global: needsGlobal ? await monthSpendUsd(client, null) : 0,
+    });
+    if (!reached) return null;
+    console.warn('[coden:spending_cap_reached]', { account_id: accountId, scope: reached.scope });
+    return {
+      success: false,
+      diagnostic_code: 'SPENDING_CAP_REACHED',
+      suggested_action: 'contact_support',
+      error: french
+        ? 'La limite de consommation mensuelle de ce compte est atteinte. La génération reprendra le mois prochain ou après relèvement de la limite par le support Coden.'
+        : 'This account reached its monthly usage limit. Generation resumes next month or once support raises the limit.',
+      message: french
+        ? 'La limite de consommation mensuelle de ce compte est atteinte. La génération reprendra le mois prochain ou après relèvement de la limite par le support Coden.'
+        : 'This account reached its monthly usage limit.',
+    };
+  } catch (error: any) {
+    if (!isMissingRelationError(error)) console.warn('[coden:spending_cap_check_failed]', { message: String(error?.message || error).slice(0, 160) });
+    return null;
+  }
+}
+
+function invalidateSpendingCaps() {
+  hardCapRulesCache = null;
+  monthSpendCache.clear();
+}
+
 /* Real-time overview: polled by the console every few seconds while it is open. */
 app.get('/api/admin/live', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
@@ -12457,9 +12562,9 @@ app.get('/api/admin/costs', async (req: any, res) => {
   const now = new Date();
   const since = new Date(Math.min(now.getTime() - days * 86_400_000, Date.parse(startOfMonthUtc(now)))).toISOString();
   const [usage, usersResult, rules] = await Promise.all([
-    client.from('usage_events').select('organization_id,account_id,model,model_used,category,provider,provider_cost_usd,complete_cost_usd,cost_usd,provider_payload,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(20000),
+    client.from('usage_events').select('id,organization_id,account_id,model,model_used,category,provider,provider_cost_usd,complete_cost_usd,cost_usd,provider_payload,created_at').gte('created_at', since).order('created_at', { ascending: false }).limit(20000),
     adminAuthUsers(client, 1000),
-    client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled,created_by,created_at,updated_at').order('created_at', { ascending: true }),
+    client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled,hard_limit,created_by,created_at,updated_at').order('created_at', { ascending: true }),
   ]);
   if (usage.error) return res.status(500).json({ success: false, error: usage.error.message });
   const windowStart = new Date(now.getTime() - days * 86_400_000).toISOString();
@@ -12469,6 +12574,14 @@ app.get('/api/admin/costs', async (req: any, res) => {
   const monthCosts = aggregateCosts(all.filter(row => String(row.created_at || '') >= startOfMonthUtc(now)), { days: 1, now });
   const emails = new Map(usersResult.users.map((user: any) => [user.id, user.email]));
   const label = (bucket: any) => ({ ...bucket, email: emails.get(bucket.key) || null });
+  const eventIds = windowRows.map((row: any) => row.id).filter(Boolean);
+  const settlements: SettlementRow[] = [];
+  for (let index = 0; index < eventIds.length; index += 500) {
+    const chunk = await client.from('usage_settlements').select('usage_event_id,credits_charged,realized_revenue_usd,complete_cost_usd').in('usage_event_id', eventIds.slice(index, index + 500));
+    if (chunk.error) break;
+    settlements.push(...(chunk.data || []));
+  }
+  const margins = aggregateMargins(windowRows as any, settlements);
   const ruleRows = rules.error ? [] : (rules.data || []);
   res.json({
     success: true,
@@ -12476,6 +12589,7 @@ app.get('/api/admin/costs', async (req: any, res) => {
     totals: { ...costs.totals, month_usd: monthCosts.totals.month_usd, today_usd: monthCosts.totals.today_usd },
     by_user: costs.by_user.map(label),
     by_model: costs.by_model,
+    margins: margins.map(label),
     by_day: costs.by_day,
     alerts: {
       available: !rules.error,
@@ -12489,6 +12603,7 @@ app.get('/api/admin/costs', async (req: any, res) => {
 
 app.post('/api/admin/cost-alerts', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'cost_alerts', 60)) return;
   const client = requireSupabase('Admin cost alerts');
   const scope = ['global', 'user', 'model'].includes(String(req.body?.scope)) ? String(req.body.scope) : '';
   const budget = Number(req.body?.monthly_budget_usd);
@@ -12499,21 +12614,26 @@ app.post('/api/admin/cost-alerts', async (req: any, res) => {
   const now = new Date().toISOString();
   const existing = await client.from('admin_cost_alerts').select('id').eq('scope', scope).filter('target_id', targetId === null ? 'is' : 'eq', targetId === null ? null : targetId).maybeSingle();
   if (existing.error && isMissingRelationError(existing.error)) return res.status(503).json({ success: false, error: 'La table des alertes n’existe pas encore : appliquez la migration admin.' });
-  const row = { scope, target_id: targetId, monthly_budget_usd: budget, enabled: req.body?.enabled !== false, created_by: getOptionalAuthState(req).email || null, updated_at: now };
+  // A hard limit stops paid work: for one user, or for everyone. A model-wide stop is not offered.
+  const hardLimit = req.body?.hard_limit === true && scope !== 'model';
+  const row = { scope, target_id: targetId, monthly_budget_usd: budget, enabled: req.body?.enabled !== false, hard_limit: hardLimit, created_by: getOptionalAuthState(req).email || null, updated_at: now };
   const result = existing.data?.id
     ? await client.from('admin_cost_alerts').update(row).eq('id', existing.data.id).select('*').single()
     : await client.from('admin_cost_alerts').insert([{ ...row, created_at: now }]).select('*').single();
   if (result.error) return res.status(500).json({ success: false, error: result.error.message });
-  await recordAdminAudit(req, existing.data?.id ? 'cost_alert.updated' : 'cost_alert.created', { type: 'cost_alert', id: result.data?.id }, { scope, target_id: targetId, monthly_budget_usd: budget });
+  invalidateSpendingCaps();
+  await recordAdminAudit(req, existing.data?.id ? 'cost_alert.updated' : 'cost_alert.created', { type: 'cost_alert', id: result.data?.id }, { scope, target_id: targetId, monthly_budget_usd: budget, hard_limit: hardLimit });
   res.json({ success: true, rule: result.data });
 });
 
 app.delete('/api/admin/cost-alerts/:id', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'cost_alerts', 60)) return;
   const client = requireSupabase('Admin cost alerts');
   const { data, error } = await client.from('admin_cost_alerts').delete().eq('id', String(req.params.id)).select('id,scope,target_id,monthly_budget_usd').maybeSingle();
   if (error) return res.status(500).json({ success: false, error: error.message });
   if (!data) return res.status(404).json({ success: false, error: 'Alerte introuvable.' });
+  invalidateSpendingCaps();
   await recordAdminAudit(req, 'cost_alert.deleted', { type: 'cost_alert', id: data.id }, data);
   res.json({ success: true });
 });
@@ -12535,6 +12655,7 @@ app.get('/api/admin/users/:id', async (req: any, res) => {
     client.from('admin_audit_log').select('id,actor_email,action,detail,created_at').eq('target_type', 'user').eq('target_id', userId).order('created_at', { ascending: false }).limit(30),
     client.from('credit_wallets').select('*').eq('organization_id', userId).maybeSingle(),
   ]);
+  const adminGrants = await client.from('credit_grants').select('id,usage_restriction,credits_issued,credits_remaining,issued_at,expires_at,frozen_at,metadata').eq('account_id', userId).eq('kind', 'bonus').order('issued_at', { ascending: false }).limit(20);
   const costs = aggregateCosts((usage.data || []) as UsageEventRow[], { days: 30 });
   const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : NaN;
   const activity = [
@@ -12552,7 +12673,7 @@ app.get('/api/admin/users/:id', async (req: any, res) => {
       last_sign_in_at: user.last_sign_in_at || null,
       confirmed_at: user.confirmed_at || user.email_confirmed_at || null,
       provider: user.app_metadata?.provider || null,
-      is_platform_admin: getPlatformAdminEmails().has(normalizeAdminEmail(user.email)) || user.app_metadata?.role === 'platform_admin' || (Array.isArray(user.app_metadata?.roles) && user.app_metadata.roles.includes('platform_admin')),
+      is_platform_admin: userIsPlatformAdmin(user),
       suspended: Number.isFinite(bannedUntil) && bannedUntil > Date.now(),
       banned_until: user.banned_until || null,
     },
@@ -12562,6 +12683,10 @@ app.get('/api/admin/users/:id', async (req: any, res) => {
     costs: { totals: costs.totals, by_model: costs.by_model },
     ledger: (ledger.data || []).map((row: any) => ({ id: row.id, amount: row.amount ?? row.credits ?? row.delta ?? null, reason: row.reason || row.entry_type || row.kind || null, category: row.category || null, created_at: row.created_at })),
     audit: audit.error ? [] : audit.data || [],
+    admin_grants: (adminGrants.data || []).filter((row: any) => row.metadata?.source === 'admin_console').map((row: any) => ({
+      id: row.id, restriction: row.usage_restriction, credits_issued: Number(row.credits_issued), credits_remaining: Number(row.credits_remaining),
+      issued_at: row.issued_at, expires_at: row.expires_at, revoked: Boolean(row.frozen_at), reason: String(row.metadata?.reason || ''), granted_by: row.metadata?.granted_by || null,
+    })),
     activity,
   });
 });
@@ -12576,32 +12701,207 @@ async function adminTargetUser(req: any, res: any) {
 
 app.post('/api/admin/users/:id/suspend', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'suspend', 30)) return;
   const target = await adminTargetUser(req, res);
   if (!target) return;
   const { client, user } = target;
   if (user.id === getOptionalAuthState(req).userId) return res.status(400).json({ success: false, error: 'Vous ne pouvez pas suspendre votre propre compte.' });
-  if (getPlatformAdminEmails().has(normalizeAdminEmail(user.email)) || user.app_metadata?.role === 'platform_admin') return res.status(400).json({ success: false, error: 'Un administrateur de la plateforme ne peut pas être suspendu depuis la console.' });
+  if (userIsPlatformAdmin(user)) return res.status(400).json({ success: false, error: 'Un administrateur de la plateforme ne peut pas être suspendu depuis la console.' });
   const reason = String(req.body?.reason || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300);
   const { error } = await (client.auth as any).admin.updateUserById(user.id, { ban_duration: '876000h' });
   if (error) return res.status(500).json({ success: false, error: error.message || 'Suspension impossible.' });
+  suspendedUserIds.add(String(user.id));
+  forgetVerifiedSessionsOf(String(user.id));
   await recordAdminAudit(req, 'user.suspended', { type: 'user', id: user.id }, { email: user.email || null, reason });
   res.json({ success: true, suspended: true });
 });
 
 app.post('/api/admin/users/:id/unsuspend', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'suspend', 30)) return;
   const target = await adminTargetUser(req, res);
   if (!target) return;
   const { client, user } = target;
   const { error } = await (client.auth as any).admin.updateUserById(user.id, { ban_duration: 'none' });
   if (error) return res.status(500).json({ success: false, error: error.message || 'Réactivation impossible.' });
+  suspendedUserIds.delete(String(user.id));
+  forgetVerifiedSessionsOf(String(user.id));
   await recordAdminAudit(req, 'user.unsuspended', { type: 'user', id: user.id }, { email: user.email || null });
   res.json({ success: true, suspended: false });
 });
 
+/*
+ * Credits granted from the admin console.
+ *
+ * Through the same ledger function as every other grant (`coden_billing_grant`):
+ * one row, one ledger entry, idempotent on a key the console generates once
+ * per form, so a double click or a retried request grants once. Bounded
+ * amount and validity, a written reason, never to one's own account, and
+ * recorded in the audit log with the admin's identity.
+ */
+const ADMIN_GRANT_MAX_CREDITS = 10_000;
+app.post('/api/admin/users/:id/credits', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'credits', 20)) return;
+  const target = await adminTargetUser(req, res);
+  if (!target) return;
+  const { client, user } = target;
+  const actorId = String(getOptionalAuthState(req).userId || '');
+  if (!actorId || user.id === actorId) return res.status(400).json({ success: false, error: 'Vous ne pouvez pas créditer votre propre compte.' });
+  const credits = Number(req.body?.credits);
+  const restriction = ['general', 'build', 'ai_gateway', 'cloud'].includes(String(req.body?.restriction)) ? String(req.body.restriction) : '';
+  const days = Number(req.body?.expires_in_days ?? 90);
+  const reason = String(req.body?.reason || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  const clientKey = String(req.body?.client_key || '');
+  if (!Number.isInteger(credits) || credits < 1 || credits > ADMIN_GRANT_MAX_CREDITS) return res.status(400).json({ success: false, error: `Le nombre de crédits doit être un entier entre 1 et ${ADMIN_GRANT_MAX_CREDITS.toLocaleString('fr-FR')}.` });
+  if (!restriction) return res.status(400).json({ success: false, error: 'Usage invalide (général, génération, discussion ou Cloud).' });
+  if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(400).json({ success: false, error: 'La validité doit être comprise entre 1 et 365 jours.' });
+  if (reason.length < 5 || reason.length > 300) return res.status(400).json({ success: false, error: 'Indiquez un motif (5 à 300 caractères) : il est conservé dans le journal d’audit.' });
+  if (!/^[a-z0-9-]{16,64}$/i.test(clientKey)) return res.status(400).json({ success: false, error: 'Requête invalide : rechargez la fiche et réessayez.' });
+  try {
+    await ensureUnifiedBillingAccount(user.id);
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'Le compte de facturation est indisponible.' });
+  }
+  const idempotencyKey = `admin_bonus:${user.id}:${clientKey}`;
+  const { data: grantId, error } = await client.rpc('coden_billing_grant', {
+    p_account_id: user.id,
+    p_kind: 'bonus',
+    p_restriction: restriction,
+    p_credits: credits,
+    p_net_revenue_usd: 0,
+    // What these credits may cost Coden at the provider: the same ceiling per credit as a paid credit at the target margin.
+    p_max_cogs_usd: Math.round(credits * 0.05 * 10_000) / 10_000,
+    p_expires_at: new Date(Date.now() + days * 86_400_000).toISOString(),
+    p_source_reference: idempotencyKey,
+    p_idempotency_key: idempotencyKey,
+    p_metadata: { source: 'admin_console', granted_by: getOptionalAuthState(req).email || actorId, reason, version: BILLING_V2_VERSION },
+  });
+  if (error) {
+    console.warn('[coden:admin_grant_failed]', { message: String(error.message || '').slice(0, 160) });
+    return res.status(500).json({ success: false, error: 'Les crédits n’ont pas pu être accordés.' });
+  }
+  await recordAdminAudit(req, 'user.credits_granted', { type: 'user', id: user.id }, { email: user.email || null, credits, restriction, expires_in_days: days, reason, grant_id: grantId });
+  res.json({ success: true, grant_id: grantId });
+});
+
+app.post('/api/admin/users/:id/credits/:grantId/revoke', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'credits', 20)) return;
+  const target = await adminTargetUser(req, res);
+  if (!target) return;
+  const { client, user } = target;
+  const grantId = String(req.params.grantId || '');
+  if (!/^[0-9a-f-]{36}$/i.test(grantId)) return res.status(400).json({ success: false, error: 'Octroi invalide.' });
+  const owned = await client.from('credit_grants').select('id').eq('id', grantId).eq('account_id', user.id).maybeSingle();
+  if (owned.error || !owned.data) return res.status(404).json({ success: false, error: 'Octroi introuvable pour ce compte.' });
+  const { data: revoked, error } = await client.rpc('coden_admin_revoke_bonus', { p_grant_id: grantId, p_idempotency_key: `admin_bonus_revoke:${grantId}` });
+  if (error) return res.status(400).json({ success: false, error: 'Seul un bonus accordé depuis la console, et encore actif, peut être révoqué.' });
+  await recordAdminAudit(req, 'user.credits_revoked', { type: 'user', id: user.id }, { email: user.email || null, grant_id: grantId, credits_removed: Number(revoked || 0) });
+  res.json({ success: true, credits_removed: Number(revoked || 0) });
+});
+
+/* Coden Cloud backends: every app backend, its state, and what the catalogue says it costs. */
+app.get('/api/admin/cloud/backends', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin cloud backends');
+  const [rows, catalog] = await Promise.all([
+    client.from('coden_cloud_projects').select('project_id,provider,mode,status,region,supabase_project_ref,public_runtime_config,created_at,updated_at').order('updated_at', { ascending: false }).limit(1000),
+    client.from('provider_cost_catalog').select('resource,unit,unit_cost_usd,effective_from,effective_until').eq('provider', 'supabase').in('resource', ['project_month', 'compute_month']).order('effective_from', { ascending: false }),
+  ]);
+  if (rows.error) return res.status(500).json({ success: false, error: rows.error.message });
+  const now = new Date().toISOString();
+  const monthly = (catalog.data || []).filter((row: any) => (!row.effective_until || row.effective_until > now) && row.effective_from <= now);
+  const unitCost = monthly.length ? monthly.reduce((sum: number, row: any) => sum + Number(row.unit_cost_usd || 0), 0) : null;
+  const projectIds = (rows.data || []).map((row: any) => row.project_id).filter(Boolean);
+  const projects = projectIds.length ? await client.from('projects').select('id,name,owner_id').in('id', projectIds.slice(0, 1000)) : { data: [] };
+  const byId = new Map((projects.data || []).map((project: any) => [project.id, project]));
+  const backends = (rows.data || []).map((row: any) => {
+    const project: any = byId.get(row.project_id) || {};
+    const active = Boolean(row.supabase_project_ref) && /active|ready|provisioned/i.test(String(row.status || ''));
+    return {
+      project_id: row.project_id,
+      project_name: project.name || null,
+      owner_id: project.owner_id || null,
+      status: row.status,
+      mode: row.mode,
+      region: row.region,
+      supabase_ref: row.supabase_project_ref || null,
+      last_error: row.public_runtime_config?.last_error || null,
+      last_attempt_at: row.public_runtime_config?.last_attempt_at || null,
+      monthly_cost_usd: active && unitCost !== null ? unitCost : null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  });
+  const activeCount = backends.filter((row: any) => row.supabase_ref && /active|ready|provisioned/i.test(String(row.status || ''))).length;
+  res.json({
+    success: true,
+    backends,
+    totals: { total: backends.length, active: activeCount, failed: backends.filter((row: any) => /fail/.test(String(row.status))).length, monthly_cost_usd: unitCost === null ? null : Math.round(unitCost * activeCount * 100) / 100 },
+    pricing: { source: 'provider_cost_catalog', configured: unitCost !== null, unit_cost_usd: unitCost, note: 'Tarif du catalogue (supabase / project_month + compute_month), pas une facture.' },
+  });
+});
+
+/* Which channels would receive a cost alert — booleans only, never the addresses or the webhook. */
+app.get('/api/admin/alerts/channels', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const channels = notifierChannels(readNotifierConfig());
+  res.json({ success: true, slack: channels.includes('slack'), email: channels.includes('email') });
+});
+
+app.post('/api/admin/alerts/test', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'alert_test', 5)) return;
+  const config = readNotifierConfig();
+  if (!notifierChannels(config).length) return res.status(400).json({ success: false, error: 'Aucun canal configuré : définissez CODEN_ALERTS_SLACK_WEBHOOK_URL ou CODEN_ALERTS_EMAIL_TO, CODEN_ALERTS_EMAIL_FROM et RESEND_API_KEY.' });
+  const delivered = await sendCostAlert('Test des alertes de coût Coden : ce canal les recevra.', config);
+  await recordAdminAudit(req, 'alerts.test_sent', { type: 'platform', id: 'cost_alerts' }, { delivered });
+  res.json({ success: delivered.length > 0, delivered, error: delivered.length ? undefined : 'Aucun canal n’a accepté le message : vérifiez la configuration.' });
+});
+
+/*
+ * Cost alerts, delivered once per rule, month and level.
+ *
+ * The row in admin_cost_alert_notifications is claimed before sending (a
+ * unique key), so two instances or a restart never send the same alert
+ * twice; if every channel fails the claim is released and retried later.
+ */
+async function deliverCostAlerts() {
+  const client = getSupabase();
+  if (!client) return;
+  const config = readNotifierConfig();
+  if (!notifierChannels(config).length) return;
+  try {
+    const rules = await client.from('admin_cost_alerts').select('id,scope,target_id,monthly_budget_usd,enabled,hard_limit').eq('enabled', true);
+    if (rules.error || !rules.data?.length) return;
+    const usage = await client.from('usage_events').select('organization_id,account_id,model,model_used,provider_cost_usd,complete_cost_usd,cost_usd,created_at').gte('created_at', startOfMonthUtc()).limit(50_000);
+    if (usage.error) return;
+    const month = aggregateCosts((usage.data || []) as UsageEventRow[], { days: 1 });
+    const alerts = evaluateCostAlerts(rules.data as CostAlertRule[], { total: month.totals.month_usd, byUser: month.month_by_user, byModel: month.month_by_model });
+    if (!alerts.length) return;
+    const period = startOfMonthUtc().slice(0, 7);
+    for (const alert of alerts) {
+      const claim = await client.from('admin_cost_alert_notifications').insert([{ rule_id: alert.rule_id, period, level: alert.level }]).select('id').maybeSingle();
+      if (claim.error || !claim.data?.id) continue;
+      let label = alert.target_id || '';
+      if (alert.scope === 'user' && alert.target_id) {
+        const found = await (client.auth as any).admin.getUserById(alert.target_id).catch(() => null);
+        label = maskEmail(found?.data?.user?.email);
+      }
+      const delivered = await sendCostAlert(alertMessage(alert, label), config);
+      if (delivered.length) await client.from('admin_cost_alert_notifications').update({ channels: delivered }).eq('id', claim.data.id);
+      else await client.from('admin_cost_alert_notifications').delete().eq('id', claim.data.id);
+    }
+  } catch (error: any) {
+    console.warn('[coden:cost_alert_delivery_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
+}
+
 /* Sends the person the standard reset e-mail; no password is ever set or seen by an admin. */
 app.post('/api/admin/users/:id/reset-password', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'reset_password', 10)) return;
   const target = await adminTargetUser(req, res);
   if (!target) return;
   const { user } = target;
@@ -12629,6 +12929,7 @@ app.get('/api/admin/audit-log', async (req: any, res) => {
 /* Read-only check that Coden Cloud can create backends: lists organizations, creates nothing. */
 app.post('/api/admin/cloud/provisioning-check', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'provisioning_check', 10)) return;
   const result = await checkProvisioningAccess();
   await recordAdminAudit(req, 'cloud.provisioning_checked', { type: 'platform', id: 'coden_cloud' }, { ok: result.ok, reason: result.reason || null });
   res.json({ success: true, ...result, message: result.ok ? `Jeton accepté : ${result.organizations} organisation${result.organizations === 1 ? '' : 's'} Supabase accessible${result.organizations === 1 ? '' : 's'}.` : provisionReasonText(result.reason) });
@@ -13199,6 +13500,8 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
     };
 
     const initialEstimate = costEstimator.calculateRequiredCredits(actionCostComp);
+    const gatewayCap = await spendingCapGate(orgId);
+    if (gatewayCap) return res.status(402).json(gatewayCap);
     if (balance < initialEstimate.finalCredits) {
       return res.status(402).json(publicCreditGateResponse(true, normalizeModelSelectionId(customModelId || 'auto') !== 'auto'));
     }
@@ -14659,6 +14962,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const billingAccountId = project.organization_id || userId;
     const pipelineCost = estimateActionCost(prompt, decision, requestedModelSelection);
     let pipelineReservation: UnifiedUsageReservation | null = null;
+    const pipelineCap = await spendingCapGate(billingAccountId, frenchActivity);
+    if (pipelineCap) return respondJson(402, pipelineCap);
     if (CODEN_MONETIZATION_ENABLED && pipelineCost.finalCredits > 0) {
       const spendable = await unifiedCategoryCredits(billingAccountId, 'build');
       if (spendable < pipelineCost.finalCredits) {
@@ -15348,6 +15653,11 @@ ${resolvedMission}` : resolvedMission;
     }
     const billingAccountId = project.organization_id || userId;
     let textReservation: UnifiedUsageReservation | null = null;
+    const textCap = await spendingCapGate(billingAccountId, frenchActivity);
+    if (textCap) {
+      await persistRejectedAgentTurn(textCap.message, textCap.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
+      return respondJson(402, textCap);
+    }
     if (CODEN_MONETIZATION_ENABLED && cost.finalCredits > 0) {
       const spendable = await unifiedCategoryCredits(billingAccountId, 'ai_gateway');
       if (spendable < cost.finalCredits) {
@@ -15548,6 +15858,11 @@ ${resolvedMission}` : resolvedMission;
   const wallet = walletForRouting;
   const cost = estimateActionCost(prompt, decision, effectiveModelSelection);
   const billingAccountId = project.organization_id || userId;
+  const generationCap = await spendingCapGate(billingAccountId, frenchActivity);
+  if (generationCap) {
+    await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'SPENDING_CAP_REACHED', suggested_action: 'contact_support' });
+    return respondJson(402, generationCap);
+  }
   const buildSpendable = CODEN_MONETIZATION_ENABLED
     ? await unifiedCategoryCredits(billingAccountId, 'build')
     : Number.POSITIVE_INFINITY;
@@ -18854,9 +19169,10 @@ import { prepareRemoteTemplate, remoteSandboxConfigured } from './src/services/s
 import { warmScaffoldDependencies } from './src/services/sandbox/dependency-cache.ts';
 import { loadProjectMemoryContext, saveArchitectureDecisions } from './src/services/project-memory-store.ts';
 import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/project-backend-store.ts';
-import { describeServerSecrets, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
+import { describeServerSecrets, isReservedSecretVariable, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
 import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
-import { aggregateCosts, eventTokens, evaluateCostAlerts, startOfMonthUtc, type CostAlertRule, type UsageEventRow } from './src/services/admin-costs.ts';
+import { aggregateCosts, aggregateMargins, alertMessage, eventCostUsd, eventTokens, evaluateCostAlerts, hardCapReached, maskEmail, startOfMonthUtc, type CostAlertRule, type HardCapRule, type SettlementRow, type UsageEventRow } from './src/services/admin-costs.ts';
+import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
 import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
@@ -20101,6 +20417,11 @@ const httpServer = app.listen(port, () => {
         planExpiryTimer.unref?.();
       }
     }
+    // Cost alerts to Slack / e-mail, when configured: first pass shortly after boot, then every 15 minutes.
+    const costAlertStartTimer = setTimeout(() => void deliverCostAlerts(), 60_000);
+    costAlertStartTimer.unref?.();
+    const costAlertTimer = setInterval(() => void deliverCostAlerts(), 15 * 60_000);
+    costAlertTimer.unref?.();
     if (CODEN_SKILL_FLAGS.scheduledRuns) {
       const workerId = `workflow_scheduler_${randomUUID()}`;
       setInterval(async () => {

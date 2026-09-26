@@ -100,3 +100,12 @@ th[aria-sort="descending"] .admin-dt-sort span { opacity: 1; color: var(--accent
 @media (prefers-reduced-motion: reduce) {
   .admin-live-dot { animation: none; }
 }
+
+/* Credits, budgets and margins */
+.admin-check { display: inline-flex !important; grid-auto-flow: column; align-items: center; gap: 8px !important; min-height: 34px; color: var(--foreground) !important; font-weight: 500 !important; }
+.admin-check input { min-width: 0 !important; width: 16px !important; min-height: 16px !important; accent-color: var(--danger); }
+.admin-check:has(input:disabled) { opacity: .5; }
+.admin-grant-reason { flex: 1 1 260px; }
+.admin-grant-reason input { width: 100%; }
+.admin-channels { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.admin-negative { color: var(--danger); }

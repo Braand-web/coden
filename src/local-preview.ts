@@ -475,6 +475,21 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
       triggered: [{ rule_id: 'r2', scope: 'user', target_id: users[1].id, email: users[1].email, budget_usd: 10, spent_usd: 11.4, ratio: 1.14, level: 'exceeded' }],
     },
   };
+  (payloads.costs as any).margins = users.slice(0, 10).map((user, index) => {
+    const revenue = Math.round((12 - index) * 70) / 100;
+    const cost = Math.round((14 - index * 1.4) * 60) / 100;
+    return { key: user.id, email: user.email, revenue_usd: revenue, cost_usd: cost, margin_usd: Math.round((revenue - cost) * 100) / 100, margin_pct: revenue ? Math.round(((revenue - cost) / revenue) * 1000) / 10 : null, credits_charged: 40 - index * 3 };
+  });
+  payloads['cloud/backends'] = {
+    backends: [
+      { project_id: 'lp-project-2', project_name: 'Pulseboard', owner_id: users[1].id, status: 'active', mode: 'dedicated', region: 'eu-west-2', supabase_ref: 'abcd1234efgh5678ijkl', last_error: null, monthly_cost_usd: 10, updated_at: day(2) },
+      { project_id: 'lp-project-5', project_name: 'CRM Immobilier', owner_id: users[4].id, status: 'failed', mode: 'dedicated', region: 'auto', supabase_ref: null, last_error: 'quota_reached', monthly_cost_usd: null, updated_at: day(1) },
+      { project_id: 'lp-project-7', project_name: 'Agenda Kiné 7', owner_id: users[6].id, status: 'planned', mode: 'dedicated', region: 'auto', supabase_ref: null, last_error: null, monthly_cost_usd: null, updated_at: day(6) },
+    ],
+    totals: { total: 3, active: 1, failed: 1, monthly_cost_usd: 10 },
+    pricing: { source: 'provider_cost_catalog', configured: true, unit_cost_usd: 10 },
+  };
+  payloads['alerts/channels'] = { slack: true, email: false };
   payloads['audit-log'] = { available: true, entries: [
     { id: 'e1', actor_email: 'admin@coden.fun', action: 'user.suspended', target_type: 'user', target_id: users[9].id, detail: { email: users[9].email, reason: 'Abus de génération' }, created_at: day(1) },
     { id: 'e2', actor_email: 'admin@coden.fun', action: 'cost_alert.created', target_type: 'cost_alert', target_id: 'r2', detail: { scope: 'user', monthly_budget_usd: 10 }, created_at: day(4) },
@@ -491,6 +506,10 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
       runs: runs.slice(0, 6).map(run => ({ ...run, user_id: user.id })),
       costs: { totals: { cost_usd: 4.21, requests: 37, prompt_tokens: 812_000, completion_tokens: 96_000 }, by_model: [{ key: models[0], cost_usd: 3.1, requests: 20 }, { key: models[1], cost_usd: 1.11, requests: 17 }] },
       ledger: [], audit: [],
+      admin_grants: [
+        { id: '6f1c2d3e-0000-4000-8000-000000000001', restriction: 'general', credits_issued: 100, credits_remaining: 64, issued_at: day(8), expires_at: day(-82), revoked: false, reason: 'Geste commercial après un incident', granted_by: 'admin@coden.fun' },
+        { id: '6f1c2d3e-0000-4000-8000-000000000002', restriction: 'build', credits_issued: 20, credits_remaining: 0, issued_at: day(30), expires_at: day(-60), revoked: true, reason: 'Test', granted_by: 'admin@coden.fun' },
+      ],
       activity: [
         { at: day(0), kind: 'login', label: 'Dernière connexion', detail: '' },
         { at: day(1), kind: 'run', label: 'Run build_app · completed', detail: models[0] },

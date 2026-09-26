@@ -124,3 +124,83 @@ export function evaluateCostAlerts(rules: CostAlertRule[], month: { total: numbe
   }
   return triggered.sort((a, b) => b.ratio - a.ratio);
 }
+
+export type SettlementRow = {
+  usage_event_id?: string | null;
+  credits_charged?: number | string | null;
+  realized_revenue_usd?: number | string | null;
+  complete_cost_usd?: number | string | null;
+};
+
+export type MarginBucket = { key: string; revenue_usd: number; cost_usd: number; margin_usd: number; margin_pct: number | null; credits_charged: number };
+
+/**
+ * Revenue against cost, per user: what the settled credits brought in
+ * (`usage_settlements.realized_revenue_usd`) against everything the provider
+ * charged for that user — settled or not, since a failed run that was never
+ * billed still cost money.
+ */
+export function aggregateMargins(events: Array<UsageEventRow & { id?: string | null }>, settlements: SettlementRow[]): MarginBucket[] {
+  const ownerOf = new Map<string, string>();
+  const buckets = new Map<string, MarginBucket>();
+  const bucket = (key: string) => {
+    let entry = buckets.get(key);
+    if (!entry) { entry = { key, revenue_usd: 0, cost_usd: 0, margin_usd: 0, margin_pct: null, credits_charged: 0 }; buckets.set(key, entry); }
+    return entry;
+  };
+  for (const event of events) {
+    const owner = eventUser(event);
+    if (event.id) ownerOf.set(String(event.id), owner);
+    bucket(owner).cost_usd += eventCostUsd(event);
+  }
+  for (const settlement of settlements) {
+    const owner = settlement.usage_event_id ? ownerOf.get(String(settlement.usage_event_id)) : undefined;
+    if (!owner) continue;
+    const entry = bucket(owner);
+    entry.revenue_usd += Math.max(0, Number(settlement.realized_revenue_usd || 0));
+    entry.credits_charged += Math.max(0, Number(settlement.credits_charged || 0));
+  }
+  return [...buckets.values()].map(entry => {
+    const margin = entry.revenue_usd - entry.cost_usd;
+    return {
+      ...entry,
+      revenue_usd: round(entry.revenue_usd),
+      cost_usd: round(entry.cost_usd),
+      credits_charged: round(entry.credits_charged, 2),
+      margin_usd: round(margin),
+      margin_pct: entry.revenue_usd > 0 ? Math.round((margin / entry.revenue_usd) * 1000) / 10 : null,
+    };
+  }).sort((a, b) => a.margin_usd - b.margin_usd);
+}
+
+export type HardCapRule = CostAlertRule & { hard_limit?: boolean };
+
+/**
+ * Whether paid work must stop for this account: an enabled hard budget on
+ * the user, or on the whole platform, is reached for the current month.
+ */
+export function hardCapReached(rules: HardCapRule[], accountId: string, spend: { account: number; global: number }): { scope: 'user' | 'global'; budget_usd: number; spent_usd: number } | null {
+  for (const rule of rules) {
+    if (!rule.enabled || !rule.hard_limit) continue;
+    const budget = Number(rule.monthly_budget_usd);
+    if (!Number.isFinite(budget) || budget <= 0) continue;
+    if (rule.scope === 'user' && rule.target_id === accountId && spend.account >= budget) return { scope: 'user', budget_usd: budget, spent_usd: round(spend.account) };
+    if (rule.scope === 'global' && spend.global >= budget) return { scope: 'global', budget_usd: budget, spent_usd: round(spend.global) };
+  }
+  return null;
+}
+
+/** An address shown to a third-party channel keeps its domain and its first letter only. */
+export function maskEmail(email: string | null | undefined): string {
+  const text = String(email || '');
+  const at = text.indexOf('@');
+  if (at < 1) return text ? `${text.slice(0, 1)}***` : 'utilisateur inconnu';
+  return `${text.slice(0, 1)}***${text.slice(at)}`;
+}
+
+export function alertMessage(alert: TriggeredAlert, label: string): string {
+  const percent = Math.round(alert.ratio * 100);
+  const head = alert.level === 'exceeded' ? 'Budget OpenRouter dépassé' : 'Budget OpenRouter bientôt atteint';
+  const scope = alert.scope === 'global' ? 'toute la plateforme' : alert.scope === 'user' ? `l’utilisateur ${label}` : `le modèle ${label}`;
+  return `${head} pour ${scope} : ${alert.spent_usd.toFixed(2)} $ dépensés ce mois sur ${alert.budget_usd.toFixed(2)} $ (${percent} %).`;
+}

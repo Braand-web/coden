@@ -132,6 +132,8 @@ export type TeamDeps = {
   designPolicy?: string;
   onSubagents?: (views: SubagentView[]) => void;
   onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>;
+  /** Scrubs the project's secret values from every tool result a sub-agent reads. */
+  redact?: (text: string) => string;
 };
 
 export type SandboxAccess = {
@@ -206,6 +208,7 @@ export function createAgentTeam(deps: TeamDeps) {
         modelId,
         messages,
         handlers,
+        redact: deps.redact,
         runtimeConfig: {
           ...deps.runtimeFor(modelId),
           tools: schemas.map(schema => ({ type: 'function', function: { name: schema.name, description: schema.description, parameters: schema.parameters } })),
