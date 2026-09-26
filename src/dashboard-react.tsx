@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   createRootRoute,
@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileCode2,
+  Lightbulb,
   LogOut,
   Menu,
   Plus,
@@ -44,6 +45,7 @@ import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
 import { maybeOpenOnboarding } from './lib/onboarding-launcher';
+import { fetchSuggestionsSummary, suggestionsBadge, type SuggestionsSummary } from './lib/suggestions-summary';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
@@ -76,6 +78,16 @@ const queryClient = new QueryClient({
 });
 
 const isLocal = isLocalPreviewEnabled();
+
+// Loaded on first visit: most sessions never open it.
+const SuggestionsPage = lazy(() => import('./components/suggestions/suggestions-page'));
+
+/* #suggestions and #suggestions/<id>: the page lives inside the dashboard. */
+function readDashboardView() {
+  const hash = window.location.hash || '';
+  const match = /^#suggestions(?:\/([0-9a-f-]{36}))?$/i.exec(hash);
+  return match ? { view: 'suggestions' as const, postId: match[1] || null } : { view: 'projects' as const, postId: null };
+}
 
 // The dashboard is a React entrypoint, so it does not pass through the public
 // page bootstrap. Install the same motion, navigation and theme contract here
@@ -181,6 +193,8 @@ function projectState(project: DashboardProject) {
 }
 
 function Sidebar({
+  suggestionsActive,
+  suggestions,
   open,
   collapsed,
   projects,
@@ -188,6 +202,8 @@ function Sidebar({
   onClose,
   onToggleCollapsed,
 }: {
+  suggestionsActive: boolean;
+  suggestions?: SuggestionsSummary | null;
   open: boolean;
   collapsed: boolean;
   projects: DashboardProject[];
@@ -199,6 +215,7 @@ function Sidebar({
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const displayName = accountDisplayName(profile);
   const email = profile?.user?.email || 'Compte Coden';
+  const badge = suggestionsActive ? null : suggestionsBadge(suggestions);
 
   useEffect(() => {
     const closeMenu = (event: MouseEvent) => {
@@ -234,6 +251,22 @@ function Sidebar({
         <a className="coden-dashboard-new-project" href={builderUrl()} aria-label="Nouveau projet" onClick={onClose}>
           <Plus size={17} aria-hidden="true" />
           <span>Nouveau projet</span>
+        </a>
+
+        {/*
+          * Suggestions, lightly set apart: a tinted row and a badge for what
+          * changed since the last visit — never an animation.
+          */}
+        <a
+          className={`coden-dashboard-suggest-link${suggestionsActive ? ' is-active' : ''}`}
+          href="#suggestions"
+          aria-current={suggestionsActive ? 'page' : undefined}
+          title="Suggestions : proposez, votez, suivez"
+          onClick={onClose}
+        >
+          <Lightbulb size={16} aria-hidden="true" />
+          <span>Suggestions</span>
+          {badge && <em className={`coden-dashboard-suggest-badge${/\d/.test(badge) ? '' : ' is-new'}`} aria-label={/\d/.test(badge) ? `${badge} nouveauté${badge === '1' ? '' : 's'}` : 'Nouveau'}>{badge}</em>}
         </a>
 
         <nav className="coden-dashboard-project-nav" aria-label="Projets récents">
@@ -479,6 +512,26 @@ function DashboardHome() {
   const mainRef = useRef<HTMLElement>(null);
   const wasSidebarOpen = useRef(false);
   const { data: profile } = useQuery({ queryKey: ['coden-profile'], queryFn: fetchProfile });
+  const [view, setView] = useState(readDashboardView);
+  useEffect(() => {
+    const onHash = () => {
+      setView(readDashboardView());
+      mainRef.current?.scrollTo?.({ top: 0 });
+      window.scrollTo?.({ top: 0 });
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const suggestionsQuery = useQuery({
+    queryKey: ['coden-suggestions-summary', view.view],
+    queryFn: fetchSuggestionsSummary,
+    refetchInterval: 5 * 60_000,
+    retry: false,
+  });
+  const navigate = (hash: string) => {
+    if (window.location.hash === hash) setView(readDashboardView());
+    else window.location.hash = hash;
+  };
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
   const projects = projectsQuery.data?.projects || [];
   const ownerName = accountDisplayName(profile);
@@ -600,6 +653,8 @@ function DashboardHome() {
   return (
     <div className="coden-dashboard-shell">
       <Sidebar
+        suggestionsActive={view.view === 'suggestions'}
+        suggestions={suggestionsQuery.data}
         open={sidebarOpen}
         collapsed={sidebarCollapsed}
         projects={projects}
@@ -617,6 +672,13 @@ function DashboardHome() {
           <a className="coden-dashboard-mobile-new" href={builderUrl()}><Plus size={16} aria-hidden="true" /> Nouveau projet</a>
         </header>
 
+        {view.view === 'suggestions' ? (
+          <div className="coden-dashboard-content">
+            <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement des suggestions…</div>}>
+              <SuggestionsPage postId={view.postId} navigate={navigate} />
+            </Suspense>
+          </div>
+        ) : (
         <div className="coden-dashboard-content">
           <section className="coden-dashboard-create" aria-labelledby="dashboard-create-title">
             <button type="button" className="coden-dashboard-tools-badge" onClick={() => { void openIntegrationsModal(); }}>
@@ -739,6 +801,7 @@ function DashboardHome() {
             </section>
           )}
         </div>
+        )}
       </main>
     </div>
   );

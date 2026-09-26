@@ -1584,3 +1584,53 @@ html[data-theme="dark"] .coden-dashboard-sidebar .coden-dashboard-upgrade-icon {
   .coden-dashboard-upgrade-card, .coden-dashboard-upgrade-arrow { transition: none; }
   .coden-dashboard-upgrade-card:hover, .coden-dashboard-upgrade-card:hover .coden-dashboard-upgrade-arrow { transform: none; }
 }
+
+/*
+ * Suggestions, in the sidebar: one row above the projects, set apart by a
+ * light accent tint and a badge — visible without competing with "Nouveau
+ * projet" or pulling the eye with motion.
+ */
+.coden-dashboard-suggest-link {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 0 9px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-control), border-color var(--transition-control);
+}
+.coden-dashboard-suggest-link svg { flex: 0 0 auto; color: var(--accent); }
+html[data-theme="dark"] .coden-dashboard-sidebar .coden-dashboard-suggest-link svg { color: var(--foreground); }
+.coden-dashboard-suggest-link span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coden-dashboard-suggest-link:hover,
+.coden-dashboard-suggest-link.is-active {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.coden-dashboard-suggest-link:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.coden-dashboard-suggest-badge {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  color: var(--background);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.coden-dashboard-suggest-badge.is-new { letter-spacing: .02em; }
+html[data-theme="dark"] .coden-dashboard-sidebar .coden-dashboard-suggest-badge { color: var(--accent); background: var(--foreground); }
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-suggest-link { position: relative; justify-content: center; padding-inline: 0; }
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-suggest-link span { display: none; }
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-suggest-badge { position: absolute; top: -5px; right: -5px; min-width: 16px; padding: 0 4px; font-size: 9.5px; line-height: 14px; }
+.coden-dashboard-sidebar.is-collapsed .coden-dashboard-suggest-badge.is-new { width: 9px; min-width: 9px; height: 9px; padding: 0; overflow: hidden; color: transparent; }

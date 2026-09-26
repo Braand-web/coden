@@ -236,7 +236,8 @@ import {
 import { inspectVisualPreview } from './src/services/visual-preview-inspector.ts';
 import { scanGeneratedSecurity } from './src/services/generated-security-scanner.ts';
 import { createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
-import { AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
+import { ATTACHMENT_BUCKET, AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
+import { FEEDBACK_LIMITS, FEEDBACK_STATUSES, canSeePost, cleanText, publicDisplayName, publicPost, similarPosts, sortPosts, validateComment, validatePost, type FeedbackPostRow, type FeedbackSort, type FeedbackStatus } from './src/services/feedback/feedback-core.ts';
 import { createMediaHelpers } from './src/services/attachments/media-helpers.ts';
 import { AgentLibraryStore } from './src/services/agent-library/store.ts';
 import { createErrorSummarizer, openRunLibrary, settleRunLibrary, type RunLibrary } from './src/services/agent-library/run-library.ts';
@@ -1052,6 +1053,7 @@ app.use('/api/projects', requireProjectAuthWithTemporaryGeneration);
 app.use('/api/integrations', requireAuth);
 app.use('/api/attachments', requireAuth);
 app.use('/api/links', requireAuth);
+app.use('/api/feedback', requireAuth);
 
 /*
  * The person's own instructions and private memory, for every agent call made
@@ -12662,6 +12664,368 @@ app.delete('/api/admin/billing/pricing/:id', async (req: any, res) => {
   const { data, error } = await client.from('billing_pricing_versions').delete().eq('id', String(req.params.id || '')).eq('status', 'draft').select('id,version').maybeSingle();
   if (error || !data) return res.status(400).json({ success: false, error: 'Seul un brouillon peut être supprimé.' });
   await recordAdminAudit(req, 'pricing.draft_deleted', { type: 'pricing_version', id: data.id }, { version: data.version });
+  res.json({ success: true });
+});
+
+/*
+ * Suggestions: ideas and bugs from signed-in members, public votes and
+ * replies. Every read and write goes through here with the service key; the
+ * tables grant nothing to browsers. Private security bugs are shown to their
+ * author and the team only, hidden posts to the team only.
+ */
+const FEEDBACK_POST_COLUMNS = 'id,author_id,author_name,type,title,body,private,status,duplicate_of,attachment_path,vote_count,paid_vote_count,comment_count,report_count,pinned,hidden_at,status_changed_at,last_activity_at,created_at';
+
+function feedbackViewer(req: any) {
+  const auth = getOptionalAuthState(req);
+  return { id: String(auth.userId || ''), admin: isPlatformAdmin(req), user: auth.user };
+}
+
+async function loadVisibleFeedbackPosts(client: any, viewer: { id: string; admin: boolean }): Promise<FeedbackPostRow[]> {
+  let query = client.from('feedback_posts').select(FEEDBACK_POST_COLUMNS).order('last_activity_at', { ascending: false }).limit(1000);
+  if (!viewer.admin) {
+    query = query.is('hidden_at', null);
+    query = isUuid(viewer.id) ? query.or(`private.eq.false,author_id.eq.${viewer.id}`) : query.eq('private', false);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return ((data || []) as FeedbackPostRow[]).filter(post => canSeePost(post, viewer));
+}
+
+async function loadFeedbackPost(client: any, id: string, viewer: { id: string; admin: boolean }): Promise<FeedbackPostRow | null> {
+  if (!isUuid(id)) return null;
+  const { data, error } = await client.from('feedback_posts').select(FEEDBACK_POST_COLUMNS).eq('id', id).maybeSingle();
+  if (error || !data) return null;
+  return canSeePost(data, viewer) ? data : null;
+}
+
+async function feedbackVotedIds(client: any, userId: string, postIds: string[]): Promise<Set<string>> {
+  const voted = new Set<string>();
+  for (let index = 0; index < postIds.length; index += 300) {
+    const { data } = await client.from('feedback_votes').select('post_id').eq('user_id', userId).in('post_id', postIds.slice(index, index + 300));
+    for (const row of data || []) voted.add(String(row.post_id));
+  }
+  return voted;
+}
+
+function feedbackUnavailable(res: any, error: any) {
+  if (isMissingRelationError(error)) return res.status(503).json({ success: false, error: 'Les suggestions arrivent bientôt.' });
+  console.warn('[coden:feedback_failed]', { message: String(error?.message || error).slice(0, 160) });
+  return res.status(500).json({ success: false, error: 'Les suggestions sont momentanément indisponibles.' });
+}
+
+app.get('/api/feedback', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const client = requireSupabase('Feedback list');
+  try {
+    const sort = (['trending', 'top', 'discussed', 'recent'].includes(String(req.query.sort)) ? String(req.query.sort) : 'trending') as FeedbackSort;
+    const type = ['feature', 'bug'].includes(String(req.query.type)) ? String(req.query.type) : '';
+    const status = String(req.query.status || '');
+    const q = cleanText(req.query.q, 100).toLocaleLowerCase('fr');
+    const mine = req.query.mine === '1';
+    const offset = Math.max(0, Math.min(5000, Number(req.query.offset) || 0));
+    const all = await loadVisibleFeedbackPosts(client, viewer);
+    let posts = all.filter(post => post.status !== 'duplicate' || status === 'duplicate');
+    if (type) posts = posts.filter(post => post.type === type);
+    if (status === 'open') posts = posts.filter(post => ['new', 'under_review', 'planned', 'in_progress'].includes(post.status));
+    else if (status && status in FEEDBACK_STATUSES) posts = posts.filter(post => post.status === status);
+    if (mine) posts = posts.filter(post => post.author_id === viewer.id);
+    if (q) posts = posts.filter(post => `${post.title}\n${post.body}`.toLocaleLowerCase('fr').includes(q));
+    const sorted = sortPosts(posts, sort);
+    const page = sorted.slice(offset, offset + 30);
+    const voted = await feedbackVotedIds(client, viewer.id, page.map(post => post.id));
+    const counts: Record<string, number> = { all: 0, feature: 0, bug: 0 };
+    for (const post of all) {
+      if (post.status === 'duplicate') continue;
+      counts.all += 1;
+      counts[post.type] += 1;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      success: true,
+      posts: page.map(post => publicPost(post, { ...viewer, voted: voted.has(post.id) })),
+      total: sorted.length,
+      next_offset: offset + page.length < sorted.length ? offset + page.length : null,
+      counts,
+      is_team: viewer.admin,
+    });
+  } catch (error: any) {
+    return feedbackUnavailable(res, error);
+  }
+});
+
+/* The sidebar badge: new posts since the member's last visit, and unread status changes. */
+app.get('/api/feedback/summary', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const client = requireSupabase('Feedback summary');
+  const since = Date.parse(String(req.query.since || ''));
+  const [posts, unread] = await Promise.all([
+    Number.isFinite(since)
+      ? client.from('feedback_posts').select('id', { count: 'exact', head: true }).is('hidden_at', null).eq('private', false).neq('status', 'duplicate').gt('created_at', new Date(since).toISOString()).neq('author_id', viewer.id)
+      : Promise.resolve({ count: 0, error: null }),
+    client.from('feedback_notifications').select('id', { count: 'exact', head: true }).eq('user_id', viewer.id).is('read_at', null),
+  ]);
+  if (posts.error && isMissingRelationError(posts.error)) return res.json({ success: true, new_posts: 0, unread: 0 });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, new_posts: Math.min(99, posts.count || 0), unread: Math.min(99, unread.count || 0) });
+});
+
+app.get('/api/feedback/similar', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const title = cleanText(req.query.title, 120);
+  if (title.length < 4) return res.json({ success: true, posts: [] });
+  try {
+    const posts = await loadVisibleFeedbackPosts(requireSupabase('Feedback similar'), viewer);
+    res.json({ success: true, posts: similarPosts(title, posts).map(post => ({ id: post.id, title: post.title, type: post.type, status: post.status, vote_count: post.vote_count })) });
+  } catch (error: any) {
+    return feedbackUnavailable(res, error);
+  }
+});
+
+app.get('/api/feedback/notifications', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const client = requireSupabase('Feedback notifications');
+  const { data, error } = await client.from('feedback_notifications').select('id,post_id,status,read_at,created_at,feedback_posts(title)').eq('user_id', viewer.id).order('created_at', { ascending: false }).limit(20);
+  if (error) return isMissingRelationError(error) ? res.json({ success: true, notifications: [] }) : feedbackUnavailable(res, error);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, notifications: (data || []).map((row: any) => ({ id: row.id, post_id: row.post_id, status: row.status, title: row.feedback_posts?.title || '', read: Boolean(row.read_at), created_at: row.created_at })) });
+});
+
+app.post('/api/feedback/notifications/read', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const { error } = await requireSupabase('Feedback notifications').from('feedback_notifications').update({ read_at: new Date().toISOString() }).eq('user_id', viewer.id).is('read_at', null);
+  if (error) return feedbackUnavailable(res, error);
+  res.json({ success: true });
+});
+
+app.get('/api/feedback/:id', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  const client = requireSupabase('Feedback detail');
+  const post = await loadFeedbackPost(client, String(req.params.id || ''), viewer);
+  if (!post) return res.status(404).json({ success: false, error: 'Suggestion introuvable.' });
+  let comments = client.from('feedback_comments').select('id,author_id,author_name,body,is_team,pinned,hidden_at,created_at').eq('post_id', post.id).order('created_at', { ascending: true }).limit(500);
+  if (!viewer.admin) comments = comments.is('hidden_at', null);
+  const [commentRows, voted, duplicate] = await Promise.all([
+    comments,
+    feedbackVotedIds(client, viewer.id, [post.id]),
+    post.duplicate_of ? loadFeedbackPost(client, post.duplicate_of, viewer) : Promise.resolve(null),
+  ]);
+  if (commentRows.error) return feedbackUnavailable(res, commentRows.error);
+  let screenshot: string | null = null;
+  if (post.attachment_path) {
+    const signed = await client.storage.from(ATTACHMENT_BUCKET).createSignedUrl(post.attachment_path, 3600).catch(() => ({ data: null }));
+    screenshot = signed?.data?.signedUrl || null;
+  }
+  const ordered = [...(commentRows.data || [])].sort((a: any, b: any) => Number(b.pinned) - Number(a.pinned) || Date.parse(a.created_at) - Date.parse(b.created_at));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    post: { ...publicPost(post, { ...viewer, voted: voted.has(post.id) }), screenshot_url: screenshot },
+    duplicate_of: duplicate ? { id: duplicate.id, title: duplicate.title } : null,
+    comments: ordered.map((row: any) => ({
+      id: row.id,
+      author_name: row.author_name,
+      body: row.body,
+      is_team: row.is_team,
+      pinned: row.pinned,
+      mine: Boolean(row.author_id && row.author_id === viewer.id),
+      created_at: row.created_at,
+      ...(viewer.admin ? { hidden: Boolean(row.hidden_at) } : {}),
+    })),
+    is_team: viewer.admin,
+  });
+});
+
+app.post('/api/feedback', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  if (!enforceRateLimit(`feedback-post:${viewer.id}`, FEEDBACK_LIMITS.postsPerDay, 24 * 3_600_000)) {
+    return res.status(429).json({ success: false, error: `Vous avez publié ${FEEDBACK_LIMITS.postsPerDay} suggestions aujourd’hui. Revenez demain, ou votez pour celles qui existent.` });
+  }
+  const checked = validatePost(req.body);
+  if (!checked.ok) return res.status(400).json({ success: false, error: checked.error });
+  const client = requireSupabase('Feedback create');
+  // A screenshot must be the member's own uploaded image.
+  let attachmentPath: string | null = null;
+  if (checked.value.attachment_id) {
+    const attachment = await attachmentService().get(checked.value.attachment_id, viewer.id).catch(() => null);
+    if (!attachment || attachment.kind !== 'image' || !attachment.storage_path) return res.status(400).json({ success: false, error: 'La capture d’écran doit être une image que vous avez envoyée.' });
+    attachmentPath = attachment.storage_path;
+  }
+  const { data, error } = await client.from('feedback_posts').insert([{
+    author_id: viewer.id,
+    author_name: publicDisplayName(viewer.user),
+    type: checked.value.type,
+    title: checked.value.title,
+    body: checked.value.body,
+    private: checked.value.private,
+    attachment_id: checked.value.attachment_id,
+    attachment_path: attachmentPath,
+  }]).select('id').single();
+  if (error) return feedbackUnavailable(res, error);
+  // The author supports their own suggestion.
+  const paid = (normalizePlanKey(await getOrganizationPlan(viewer.id).catch(() => 'free')) || 'free') !== 'free';
+  await client.from('feedback_votes').insert([{ post_id: data.id, user_id: viewer.id, is_paid: paid }]);
+  res.status(201).json({ success: true, id: data.id });
+});
+
+app.post('/api/feedback/:id/vote', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  if (!enforceRateLimit(`feedback-vote:${viewer.id}`, FEEDBACK_LIMITS.votesPerMinute, 60_000)) return res.status(429).json({ success: false, error: 'Trop de votes en une minute.' });
+  const client = requireSupabase('Feedback vote');
+  const post = await loadFeedbackPost(client, String(req.params.id || ''), viewer);
+  if (!post || post.hidden_at) return res.status(404).json({ success: false, error: 'Suggestion introuvable.' });
+  if (post.status === 'duplicate') return res.status(400).json({ success: false, error: 'Cette suggestion a été fusionnée : votez pour l’originale.' });
+  const wanted = req.body?.voted !== false;
+  if (wanted) {
+    const paid = (normalizePlanKey(await getOrganizationPlan(viewer.id).catch(() => 'free')) || 'free') !== 'free';
+    const { error } = await client.from('feedback_votes').insert([{ post_id: post.id, user_id: viewer.id, is_paid: paid }]);
+    if (error && error.code !== '23505') return feedbackUnavailable(res, error);
+  } else {
+    const { error } = await client.from('feedback_votes').delete().eq('post_id', post.id).eq('user_id', viewer.id);
+    if (error) return feedbackUnavailable(res, error);
+  }
+  const fresh = await client.from('feedback_posts').select('vote_count').eq('id', post.id).maybeSingle();
+  res.json({ success: true, voted: wanted, vote_count: Number(fresh.data?.vote_count ?? post.vote_count) });
+});
+
+app.post('/api/feedback/:id/comments', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  if (!enforceRateLimit(`feedback-comment:${viewer.id}`, FEEDBACK_LIMITS.commentsPerDay, 24 * 3_600_000)) {
+    return res.status(429).json({ success: false, error: `Vous avez publié ${FEEDBACK_LIMITS.commentsPerDay} réponses aujourd’hui. Revenez demain.` });
+  }
+  const checked = validateComment(req.body);
+  if (!checked.ok) return res.status(400).json({ success: false, error: checked.error });
+  const client = requireSupabase('Feedback comment');
+  const post = await loadFeedbackPost(client, String(req.params.id || ''), viewer);
+  if (!post || (post.hidden_at && !viewer.admin)) return res.status(404).json({ success: false, error: 'Suggestion introuvable.' });
+  const { data, error } = await client.from('feedback_comments').insert([{
+    post_id: post.id,
+    author_id: viewer.id,
+    author_name: viewer.admin ? `${publicDisplayName(viewer.user)} · Coden` : publicDisplayName(viewer.user),
+    body: checked.value,
+    is_team: viewer.admin,
+    // A team reply sits at the top of the thread.
+    pinned: viewer.admin,
+  }]).select('id').single();
+  if (error) return feedbackUnavailable(res, error);
+  if (viewer.admin) await recordAdminAudit(req, 'feedback.replied', { type: 'feedback_post', id: post.id }, { title: post.title });
+  res.status(201).json({ success: true, id: data.id });
+});
+
+app.post('/api/feedback/:id/report', async (req: any, res: any) => {
+  const viewer = feedbackViewer(req);
+  if (!enforceRateLimit(`feedback-report:${viewer.id}`, FEEDBACK_LIMITS.reportsPerHour, 3_600_000)) return res.status(429).json({ success: false, error: 'Trop de signalements en une heure.' });
+  const client = requireSupabase('Feedback report');
+  const post = await loadFeedbackPost(client, String(req.params.id || ''), viewer);
+  if (!post) return res.status(404).json({ success: false, error: 'Suggestion introuvable.' });
+  const commentId = req.body?.comment_id ? String(req.body.comment_id) : null;
+  if (commentId) {
+    if (!isUuid(commentId)) return res.status(400).json({ success: false, error: 'Réponse invalide.' });
+    const found = await client.from('feedback_comments').select('id').eq('id', commentId).eq('post_id', post.id).maybeSingle();
+    if (!found.data) return res.status(404).json({ success: false, error: 'Réponse introuvable.' });
+  }
+  const { error } = await client.from('feedback_reports').insert([{ post_id: post.id, comment_id: commentId, reporter_id: viewer.id, reason: cleanText(req.body?.reason, 300) }]);
+  if (error && error.code !== '23505') return feedbackUnavailable(res, error);
+  res.json({ success: true });
+});
+
+/* Admin: every post, moderation, statuses (which notify), merges. */
+app.get('/api/admin/feedback', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = requireSupabase('Admin feedback');
+  try {
+    const viewer = { ...feedbackViewer(req), admin: true };
+    const posts = await loadVisibleFeedbackPosts(client, viewer);
+    const reports = await client.from('feedback_reports').select('id,post_id,comment_id,reason,created_at,feedback_comments(body,author_name)').is('resolved_at', null).order('created_at', { ascending: false }).limit(200);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      success: true,
+      posts: posts.map(post => publicPost(post, { ...viewer, voted: false })),
+      reports: (reports.data || []).map((row: any) => ({ id: row.id, post_id: row.post_id, comment_id: row.comment_id, reason: row.reason, created_at: row.created_at, comment: row.feedback_comments ? { body: String(row.feedback_comments.body || '').slice(0, 300), author_name: row.feedback_comments.author_name } : null })),
+    });
+  } catch (error: any) {
+    return feedbackUnavailable(res, error);
+  }
+});
+
+app.patch('/api/admin/feedback/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'feedback', 200)) return;
+  const client = requireSupabase('Admin feedback update');
+  const post = await loadFeedbackPost(client, String(req.params.id || ''), { id: '', admin: true });
+  if (!post) return res.status(404).json({ success: false, error: 'Suggestion introuvable.' });
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const status = req.body?.status as FeedbackStatus | undefined;
+  if (status !== undefined) {
+    if (!(status in FEEDBACK_STATUSES) || status === 'duplicate') return res.status(400).json({ success: false, error: 'Statut invalide (utilisez la fusion pour un doublon).' });
+    patch.status = status;
+    patch.status_changed_at = new Date().toISOString();
+    if (post.status === 'duplicate') patch.duplicate_of = null;
+  }
+  if (typeof req.body?.pinned === 'boolean') patch.pinned = req.body.pinned;
+  if (typeof req.body?.hidden === 'boolean') {
+    patch.hidden_at = req.body.hidden ? new Date().toISOString() : null;
+    patch.hidden_by = req.body.hidden ? String(getOptionalAuthState(req).email || 'admin') : null;
+  }
+  if (Object.keys(patch).length === 1) return res.status(400).json({ success: false, error: 'Rien à modifier.' });
+  const { error } = await client.from('feedback_posts').update(patch).eq('id', post.id);
+  if (error) return feedbackUnavailable(res, error);
+  // A status that moves things forward reaches the author and every voter; a refusal, the author.
+  if (status && status !== post.status && ['planned', 'in_progress', 'done', 'declined'].includes(status)) {
+    const recipients = new Set<string>(post.author_id ? [post.author_id] : []);
+    if (status !== 'declined') {
+      const votes = await client.from('feedback_votes').select('user_id').eq('post_id', post.id).limit(5000);
+      for (const row of votes.data || []) recipients.add(String(row.user_id));
+    }
+    const rows = [...recipients].map(userId => ({ user_id: userId, post_id: post.id, status }));
+    for (let index = 0; index < rows.length; index += 500) {
+      await client.from('feedback_notifications').upsert(rows.slice(index, index + 500), { onConflict: 'user_id,post_id,status', ignoreDuplicates: true });
+    }
+  }
+  if (req.body?.hidden === true) await client.from('feedback_reports').update({ resolved_at: new Date().toISOString(), resolved_by: 'hidden' }).eq('post_id', post.id).is('comment_id', null).is('resolved_at', null);
+  await recordAdminAudit(req, 'feedback.updated', { type: 'feedback_post', id: post.id }, { title: post.title, ...(status ? { status } : {}), ...(typeof req.body?.pinned === 'boolean' ? { pinned: req.body.pinned } : {}), ...(typeof req.body?.hidden === 'boolean' ? { hidden: req.body.hidden } : {}) });
+  res.json({ success: true });
+});
+
+app.post('/api/admin/feedback/:id/merge', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'feedback', 200)) return;
+  const source = String(req.params.id || '');
+  const target = String(req.body?.target_id || '');
+  if (!isUuid(source) || !isUuid(target) || source === target) return res.status(400).json({ success: false, error: 'Choisissez une autre suggestion comme originale.' });
+  const { data: moved, error } = await requireSupabase('Admin feedback merge').rpc('coden_feedback_merge', { p_source: source, p_target: target });
+  if (error) return res.status(400).json({ success: false, error: 'Fusion impossible : l’originale doit exister et être ouverte.' });
+  await recordAdminAudit(req, 'feedback.merged', { type: 'feedback_post', id: source }, { into: target, votes_moved: moved });
+  res.json({ success: true, votes_moved: moved });
+});
+
+app.patch('/api/admin/feedback/comments/:id', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'feedback', 200)) return;
+  const id = String(req.params.id || '');
+  if (!isUuid(id)) return res.status(400).json({ success: false, error: 'Réponse invalide.' });
+  const patch: Record<string, unknown> = {};
+  if (typeof req.body?.pinned === 'boolean') patch.pinned = req.body.pinned;
+  if (typeof req.body?.hidden === 'boolean') {
+    patch.hidden_at = req.body.hidden ? new Date().toISOString() : null;
+    patch.hidden_by = req.body.hidden ? String(getOptionalAuthState(req).email || 'admin') : null;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ success: false, error: 'Rien à modifier.' });
+  const client = requireSupabase('Admin feedback comment');
+  const { data, error } = await client.from('feedback_comments').update(patch).eq('id', id).select('id,post_id').maybeSingle();
+  if (error || !data) return res.status(404).json({ success: false, error: 'Réponse introuvable.' });
+  if (req.body?.hidden === true) await client.from('feedback_reports').update({ resolved_at: new Date().toISOString(), resolved_by: 'hidden' }).eq('comment_id', id).is('resolved_at', null);
+  await recordAdminAudit(req, 'feedback.comment_updated', { type: 'feedback_comment', id }, patch.hidden_at !== undefined ? { hidden: req.body.hidden } : { pinned: req.body.pinned });
+  res.json({ success: true });
+});
+
+app.post('/api/admin/feedback/reports/:id/resolve', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'feedback', 200)) return;
+  const id = String(req.params.id || '');
+  if (!isUuid(id)) return res.status(400).json({ success: false, error: 'Signalement invalide.' });
+  const { data, error } = await requireSupabase('Admin feedback report').from('feedback_reports').update({ resolved_at: new Date().toISOString(), resolved_by: String(getOptionalAuthState(req).email || 'admin') }).eq('id', id).is('resolved_at', null).select('id').maybeSingle();
+  if (error || !data) return res.status(404).json({ success: false, error: 'Signalement introuvable ou déjà traité.' });
+  await recordAdminAudit(req, 'feedback.report_dismissed', { type: 'feedback_report', id }, {});
   res.json({ success: true });
 });
 
