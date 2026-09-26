@@ -32,6 +32,8 @@ type AdminState = {
   integrations: JsonRecord | null;
   live: JsonRecord | null;
   costs: JsonRecord | null;
+  backends: JsonRecord | null;
+  channels: JsonRecord | null;
   audit: JsonRecord[];
   loading: boolean;
 };
@@ -50,6 +52,8 @@ const state: AdminState = {
   integrations: null,
   live: null,
   costs: null,
+  backends: null,
+  channels: null,
   audit: [],
   loading: true,
 };
@@ -133,6 +137,9 @@ const STATUS_LABELS: Record<string, string> = {
   medium: 'Moyenne',
   low: 'Faible',
   critical: 'Critique',
+  planned: 'Prévu',
+  provisioning: 'Activation',
+  required: 'À activer',
 };
 
 function pill(value: unknown, label?: string) {
@@ -697,7 +704,9 @@ function renderCosts() {
     <div class="admin-grid admin-metric-row" data-costs-metrics></div>
     <div data-costs-alerts class="admin-card full"></div>
     <article class="admin-card full"><span class="panel-label">Par modèle</span><div data-costs-models></div></article>
-    <article class="admin-card full"><span class="panel-label">Par utilisateur</span><div data-costs-users></div></article>`);
+    <article class="admin-card full"><span class="panel-label">Par utilisateur</span><div data-costs-users></div></article>
+    <article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Marge par utilisateur</span><p class="metric-note">Revenu des crédits réglés face à tout le coût fournisseur de l’utilisateur (y compris les runs non facturés). Les marges négatives apparaissent en premier.</p></div></div><div data-costs-margins></div></article>
+    <article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Backends Coden Cloud</span><p class="metric-note" data-backends-note>Chargement…</p></div></div><div data-costs-backends></div></article>`);
   root.querySelector<HTMLSelectElement>('[data-cost-days]')!.value = String(costDays);
   const data = state.costs;
   const metricsHost = root.querySelector<HTMLElement>('[data-costs-metrics]');
@@ -722,14 +731,16 @@ function renderCosts() {
     <div class="admin-panel-head"><div><span class="panel-label">Alertes de dépassement</span><p class="metric-note">Budget mensuel en dollars : alerte à 80 %, dépassement à 100 %. Les alertes s’affichent ici et sur la vue d’ensemble.</p></div></div>
     ${alerts.available === false ? '<div class="admin-error">La table des alertes n’existe pas encore : la migration admin doit être appliquée.</div>' : ''}
     ${(alerts.triggered || []).map((alert: JsonRecord) => `<div class="admin-alert" data-level="${alert.level}"><strong>${alert.level === 'exceeded' ? 'Dépassé' : 'Bientôt atteint'}</strong><span>${escapeHtml(scopeLabel({ ...alert, email: alert.email }))} : ${escapeHtml(formatUsd(alert.spent_usd))} sur ${escapeHtml(formatUsd(alert.budget_usd))} (${Math.round(Number(alert.ratio) * 100)} %)</span></div>`).join('')}
-    ${table(['Portée', 'Budget mensuel', 'Créée par', 'Action'], (alerts.rules || []).map((rule: JsonRecord) => [escapeHtml(scopeLabel(rule)), escapeHtml(formatUsd(rule.monthly_budget_usd)), escapeHtml(rule.created_by || '--'), `<button class="admin-button subtle is-danger" type="button" data-delete-alert="${escapeHtml(rule.id)}" data-alert-label="${escapeHtml(scopeLabel(rule))}">Supprimer</button>`]), 'Aucun budget défini.')}
+    ${table(['Portée', 'Budget mensuel', 'Type', 'Créée par', 'Action'], (alerts.rules || []).map((rule: JsonRecord) => [escapeHtml(scopeLabel(rule)), escapeHtml(formatUsd(rule.monthly_budget_usd)), rule.hard_limit ? pill('failed', 'Limite stricte') : pill('warning', 'Alerte'), escapeHtml(rule.created_by || '--'), `<button class="admin-button subtle is-danger" type="button" data-delete-alert="${escapeHtml(rule.id)}" data-alert-label="${escapeHtml(scopeLabel(rule))}">Supprimer</button>`]), 'Aucun budget défini.')}
     <form class="admin-alert-form" data-alert-form>
       <label>Portée<select name="scope"><option value="global">Global</option><option value="user">Utilisateur</option><option value="model">Modèle</option></select></label>
       <label data-target="user" hidden>Utilisateur<select name="user">${userOptions}</select></label>
       <label data-target="model" hidden>Modèle<select name="model">${modelOptions}</select></label>
       <label>Budget mensuel ($)<input name="budget" type="number" min="0.01" step="0.01" required placeholder="50"></label>
+      <label class="admin-check" data-hard-limit><input name="hard_limit" type="checkbox"> Limite stricte : bloquer la génération une fois atteint</label>
       <button class="admin-button primary" type="submit">Enregistrer le budget</button>
-    </form>`;
+    </form>
+    <div class="admin-channels" data-alert-channels>${renderChannels()}</div>`;
   tableIn('costs-models', root.querySelector<HTMLElement>('[data-costs-models]'), {
     label: 'Coûts par modèle', exportName: 'couts-par-modele', initialSort: { key: 'cost_usd', direction: 'desc' }, emptyMessage: 'Aucun coût mesuré sur la période.',
     columns: [
@@ -751,10 +762,57 @@ function renderCosts() {
       { key: 'actions', label: 'Action', exportable: false, render: row => detailsButton('user', row.key) },
     ],
   })?.setRows(data.by_user || []);
+  tableIn('costs-margins', root.querySelector<HTMLElement>('[data-costs-margins]'), {
+    label: 'Marge par utilisateur', exportName: 'marges-par-utilisateur', initialSort: { key: 'margin_usd', direction: 'asc' }, emptyMessage: 'Aucune donnée de facturation sur la période.',
+    filters: [{ value: 'negative', label: 'Marge négative', test: row => Number(row.margin_usd) < 0 }],
+    columns: [
+      { key: 'email', label: 'Utilisateur', sortable: true, value: row => row.email || userLabel(row.key) },
+      { key: 'revenue_usd', label: 'Revenu', sortable: true, align: 'end', render: row => escapeHtml(formatUsd(row.revenue_usd)) },
+      { key: 'cost_usd', label: 'Coût', sortable: true, align: 'end', render: row => escapeHtml(formatUsd(row.cost_usd)) },
+      { key: 'margin_usd', label: 'Marge', sortable: true, align: 'end', render: row => `<strong class="${Number(row.margin_usd) < 0 ? 'admin-negative' : ''}">${escapeHtml(formatUsd(row.margin_usd))}</strong>` },
+      { key: 'margin_pct', label: 'Taux', sortable: true, align: 'end', render: row => row.margin_pct === null || row.margin_pct === undefined ? '--' : escapeHtml(`${row.margin_pct} %`) },
+      { key: 'credits_charged', label: 'Crédits facturés', sortable: true, align: 'end' },
+    ],
+  })?.setRows(data.margins || []);
+  const backends = state.backends;
+  const note = root.querySelector<HTMLElement>('[data-backends-note]');
+  if (note) note.textContent = !backends ? 'Chargement…' : backends.success === false ? String(backends.error || 'Backends indisponibles.') : `${formatNumber(backends.totals?.active ?? 0)} actif(s) sur ${formatNumber(backends.totals?.total ?? 0)} · ${formatNumber(backends.totals?.failed ?? 0)} en échec · ${backends.pricing?.configured ? `coût catalogue ${formatUsd(backends.totals?.monthly_cost_usd)} / mois` : 'tarif Supabase absent du catalogue (provider_cost_catalog : supabase / project_month)'}`;
+  if (backends?.success !== false) tableIn('costs-backends', root.querySelector<HTMLElement>('[data-costs-backends]'), {
+    label: 'Backends Coden Cloud', exportName: 'backends-cloud', initialSort: { key: 'updated_at', direction: 'desc' }, emptyMessage: 'Aucun backend Cloud.',
+    filters: [
+      { value: 'active', label: 'Actifs', test: row => Boolean(row.supabase_ref) },
+      { value: 'failed', label: 'En échec', test: row => /fail/.test(String(row.status)) },
+    ],
+    columns: [
+      { key: 'project_name', label: 'Projet', sortable: true, value: row => row.project_name || row.project_id, render: row => `<strong>${escapeHtml(row.project_name || 'Sans nom')}</strong><br><span class="admin-mono">${escapeHtml(row.project_id)}</span>` },
+      { key: 'owner', label: 'Propriétaire', sortable: true, value: row => userLabel(row.owner_id) },
+      { key: 'status', label: 'Statut', sortable: true, render: row => pill(row.status) },
+      { key: 'last_error', label: 'Dernière erreur', sortable: true, value: row => row.last_error || '' },
+      { key: 'supabase_ref', label: 'Réf. Supabase', sortable: true },
+      { key: 'monthly_cost_usd', label: 'Coût / mois', sortable: true, align: 'end', render: row => row.monthly_cost_usd === null || row.monthly_cost_usd === undefined ? '--' : escapeHtml(formatUsd(row.monthly_cost_usd)) },
+      { key: 'updated_at', label: 'Mis à jour', sortable: true, render: row => escapeHtml(formatDate(row.updated_at)) },
+    ],
+  })?.setRows(backends?.backends || []);
+}
+
+function renderChannels() {
+  const channels = state.channels;
+  if (!channels) return '';
+  const on = [channels.slack ? 'Slack' : '', channels.email ? 'e-mail' : ''].filter(Boolean);
+  return on.length
+    ? `<span class="metric-note">Notifications envoyées par ${escapeHtml(on.join(' et '))} (une fois par budget, mois et niveau).</span> <button class="admin-button subtle" type="button" data-alert-test>Envoyer un test</button>`
+    : '<span class="metric-note">Aucune notification externe : définissez CODEN_ALERTS_SLACK_WEBHOOK_URL, ou CODEN_ALERTS_EMAIL_TO + CODEN_ALERTS_EMAIL_FROM + RESEND_API_KEY dans Railway.</span>';
 }
 
 async function loadCosts() {
-  state.costs = await safeAdminFetch(`/api/admin/costs?days=${costDays}`, { totals: {}, by_user: [], by_model: [], by_day: [], alerts: { rules: [], triggered: [] } });
+  const [costs, backends, channels] = await Promise.all([
+    safeAdminFetch(`/api/admin/costs?days=${costDays}`, { totals: {}, by_user: [], by_model: [], by_day: [], margins: [], alerts: { rules: [], triggered: [] } }),
+    safeAdminFetch('/api/admin/cloud/backends', { backends: [], totals: {}, pricing: {} }),
+    safeAdminFetch('/api/admin/alerts/channels', { slack: false, email: false }),
+  ]);
+  state.costs = costs;
+  state.backends = backends;
+  state.channels = channels;
   renderCosts();
 }
 
@@ -770,6 +828,9 @@ const AUDIT_LABELS: Record<string, string> = {
   'error_memory.updated': 'Règle d’erreur modifiée',
   'error_memory.deleted': 'Règle d’erreur supprimée',
   'cloud.provisioning_checked': 'Test du provisionnement Cloud',
+  'user.credits_granted': 'Crédits accordés',
+  'user.credits_revoked': 'Crédits révoqués',
+  'alerts.test_sent': 'Test des alertes envoyé',
 };
 
 function renderAudit() {
@@ -780,7 +841,7 @@ function renderAudit() {
     label: 'Journal d’audit', exportName: 'journal-audit', initialSort: { key: 'created_at', direction: 'desc' }, emptyMessage: 'Aucune action admin enregistrée pour le moment.',
     filters: [
       { value: 'users', label: 'Utilisateurs', test: row => String(row.action).startsWith('user.') },
-      { value: 'costs', label: 'Coûts', test: row => String(row.action).startsWith('cost_alert.') },
+      { value: 'costs', label: 'Coûts et crédits', test: row => /^(cost_alert\.|user\.credits_|alerts\.)/.test(String(row.action)) },
       { value: 'library', label: 'Bibliothèque', test: row => /^(library|error_memory)\./.test(String(row.action)) },
     ],
     columns: [
@@ -1019,6 +1080,13 @@ function bindFilters() {
   });
 }
 
+const GRANT_RESTRICTIONS: Record<string, string> = { general: 'Tous usages', build: 'Génération', ai_gateway: 'Discussion', cloud: 'Cloud' };
+
+/** One key per opened form: a double submit or a retried request grants once. */
+function newClientKey() {
+  try { return crypto.randomUUID(); } catch { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}-${Math.random().toString(36).slice(2, 14)}`; }
+}
+
 const ACTIVITY_ICONS: Record<string, string> = { run: 'Run', project: 'Projet', admin: 'Admin', login: 'Connexion' };
 
 /**
@@ -1063,6 +1131,21 @@ async function openUserDrawer(id: string) {
       ['Coût OpenRouter (30 j)', formatUsd(costs.cost_usd)],
       ['Tokens (30 j)', formatTokens(Number(costs.prompt_tokens || 0) + Number(costs.completion_tokens || 0))],
     ].map(([label, value]) => drawerField(String(label), value)).join('')}</div>
+    <h3 class="drawer-section-title">Crédits accordés par l’administration</h3>
+    ${table(['Crédits', 'Usage', 'Motif', 'Expire', 'Action'], (data.admin_grants || []).map((grant: JsonRecord) => [
+      escapeHtml(`${formatNumber(grant.credits_remaining)} / ${formatNumber(grant.credits_issued)}`),
+      escapeHtml(GRANT_RESTRICTIONS[grant.restriction] || grant.restriction),
+      escapeHtml(grant.reason || '--'),
+      escapeHtml(formatDate(grant.expires_at)),
+      grant.revoked ? pill('disabled', 'Révoqué') : `<button class="admin-button subtle is-danger" type="button" data-revoke-grant="${escapeHtml(grant.id)}" data-user-id="${escapeHtml(user.id)}" data-grant-credits="${escapeHtml(grant.credits_remaining)}">Révoquer</button>`,
+    ]), 'Aucun crédit accordé depuis la console.')}
+    <form class="admin-alert-form" data-grant-form data-user-id="${escapeHtml(user.id)}" data-user-email="${escapeHtml(user.email || '')}" data-client-key="${escapeHtml(newClientKey())}">
+      <label>Crédits<input name="credits" type="number" min="1" max="10000" step="1" required placeholder="50"></label>
+      <label>Usage<select name="restriction">${Object.entries(GRANT_RESTRICTIONS).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}</select></label>
+      <label>Validité (jours)<input name="days" type="number" min="1" max="365" step="1" value="90" required></label>
+      <label class="admin-grant-reason">Motif (conservé dans le journal)<input name="reason" type="text" minlength="5" maxlength="300" required placeholder="Geste commercial après un incident"></label>
+      <button class="admin-button primary" type="submit">Accorder</button>
+    </form>
     <h3 class="drawer-section-title">Historique d’activité</h3>
     ${activity.length ? `<ol class="admin-timeline">${activity.slice(0, 30).map(item => `<li data-kind="${escapeHtml(item.kind)}"><span class="admin-timeline-kind">${escapeHtml(ACTIVITY_ICONS[item.kind] || item.kind)}</span><div><strong>${escapeHtml(item.label)}</strong>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ''}</div><time>${escapeHtml(formatDate(item.at))}</time></li>`).join('')}</ol>` : empty('Aucune activité enregistrée.')}
     <h3 class="drawer-section-title">Projets</h3>
@@ -1231,9 +1314,32 @@ function bindActions() {
       const form = target.closest('form')!;
       const scope = (target as HTMLSelectElement).value;
       form.querySelectorAll<HTMLElement>('[data-target]').forEach(label => { label.hidden = label.dataset.target !== scope; });
+      const hard = form.querySelector<HTMLInputElement>('[data-hard-limit] input');
+      if (hard) { hard.disabled = scope === 'model'; if (scope === 'model') hard.checked = false; }
     }
   });
   document.addEventListener('submit', async event => {
+    const grantForm = (event.target as HTMLElement).closest<HTMLFormElement>('[data-grant-form]');
+    if (grantForm) {
+      event.preventDefault();
+      const data = new FormData(grantForm);
+      const credits = Number(data.get('credits'));
+      const who = grantForm.dataset.userEmail || 'ce compte';
+      const restriction = String(data.get('restriction') || 'general');
+      if (!(await confirmDialog({ title: `Accorder ${formatNumber(credits)} crédits à ${who} ?`, body: `Usage : ${GRANT_RESTRICTIONS[restriction] || restriction}, valables ${data.get('days')} jours. L’octroi est inscrit au registre des crédits et au journal d’audit ; il peut être révoqué tant qu’il reste des crédits.`, confirmLabel: 'Accorder' }))) return;
+      const submit = grantForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (submit) submit.disabled = true;
+      try {
+        await apiFetch(`/api/admin/users/${encodeURIComponent(grantForm.dataset.userId || '')}/credits`, { method: 'POST', body: JSON.stringify({ credits, restriction, expires_in_days: Number(data.get('days')), reason: String(data.get('reason') || ''), client_key: grantForm.dataset.clientKey }) });
+        toast(`${formatNumber(credits)} crédits accordés à ${who}.`, 'success');
+        void openUserDrawer(grantForm.dataset.userId || '');
+        if (tables.audit) void loadAudit();
+      } catch (error) {
+        if (submit) submit.disabled = false;
+        toast(error instanceof Error ? error.message : 'Les crédits n’ont pas pu être accordés.', 'error');
+      }
+      return;
+    }
     const form = (event.target as HTMLElement).closest<HTMLFormElement>('[data-alert-form]');
     if (!form) return;
     event.preventDefault();
@@ -1243,7 +1349,9 @@ function bindActions() {
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
     if (submit) submit.disabled = true;
     try {
-      await apiFetch('/api/admin/cost-alerts', { method: 'POST', body: JSON.stringify({ scope, target_id, monthly_budget_usd: Number(data.get('budget')) }) });
+      const hardLimit = data.get('hard_limit') === 'on' && scope !== 'model';
+      if (hardLimit && !(await confirmDialog({ title: 'Activer une limite stricte ?', body: scope === 'global' ? 'Une fois le budget global atteint, plus aucun utilisateur ne pourra lancer de génération ni discuter avec l’agent jusqu’au mois suivant ou jusqu’au relèvement du budget.' : 'Une fois ce budget atteint, cet utilisateur ne pourra plus lancer de génération ni discuter avec l’agent jusqu’au mois suivant.', confirmLabel: 'Activer la limite', danger: true }))) { if (submit) submit.disabled = false; return; }
+      await apiFetch('/api/admin/cost-alerts', { method: 'POST', body: JSON.stringify({ scope, target_id, monthly_budget_usd: Number(data.get('budget')), hard_limit: hardLimit }) });
       toast('Budget enregistré.', 'success');
       await loadCosts();
       void refreshLive();
@@ -1270,6 +1378,28 @@ function bindActions() {
         try { await apiFetch(`/api/admin/cost-alerts/${encodeURIComponent(deleteAlert.dataset.deleteAlert || '')}`, { method: 'DELETE' }); toast('Budget supprimé.', 'success'); await loadCosts(); }
         catch (error) { toast(error instanceof Error ? error.message : 'Suppression impossible.', 'error'); }
       })();
+      return;
+    }
+    const revoke = target.closest<HTMLButtonElement>('[data-revoke-grant]');
+    if (revoke) {
+      void (async () => {
+        if (!(await confirmDialog({ title: 'Révoquer ce bonus ?', body: `Les ${revoke.dataset.grantCredits || ''} crédits restants de cet octroi seront retirés du compte. Cette action est inscrite au registre et au journal d’audit.`, confirmLabel: 'Révoquer', danger: true }))) return;
+        revoke.disabled = true;
+        try {
+          const result = await apiFetch<JsonRecord>(`/api/admin/users/${encodeURIComponent(revoke.dataset.userId || '')}/credits/${encodeURIComponent(revoke.dataset.revokeGrant || '')}/revoke`, { method: 'POST', body: JSON.stringify({}) });
+          toast(`${formatNumber(result.credits_removed ?? 0)} crédits révoqués.`, 'success');
+          void openUserDrawer(revoke.dataset.userId || '');
+        } catch (error) { revoke.disabled = false; toast(error instanceof Error ? error.message : 'Révocation impossible.', 'error'); }
+      })();
+      return;
+    }
+    const alertTest = target.closest<HTMLButtonElement>('[data-alert-test]');
+    if (alertTest) {
+      alertTest.disabled = true;
+      void apiFetch<JsonRecord>('/api/admin/alerts/test', { method: 'POST', body: JSON.stringify({}) })
+        .then(result => toast(result.success ? `Test envoyé (${(result.delivered || []).join(', ')}).` : String(result.error || 'Test en échec.'), result.success ? 'success' : 'error'))
+        .catch(error => toast(error instanceof Error ? error.message : 'Test impossible.', 'error'))
+        .finally(() => { alertTest.disabled = false; });
       return;
     }
     const healthTest = target.closest<HTMLButtonElement>('[data-health-test]');
