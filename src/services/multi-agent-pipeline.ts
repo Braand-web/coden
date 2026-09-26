@@ -20,7 +20,7 @@
  */
 
 import { withUserInstructions } from './agent-personalization.ts';
-import { describeServerSecrets } from '../lib/project-secrets.ts';
+import { createSecretRedactor, describeServerSecrets } from '../lib/project-secrets.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
@@ -354,7 +354,7 @@ function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity 
   return complexity === 'simple' ? 'complex' : 'extreme';
 }
 
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
+function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; redact?: (text: string) => string; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
   /**
    * The model and reasoning level for the next round. Read at the start of
    * every round, so Auto can escalate between rounds; absent, the model is
@@ -414,7 +414,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    */
   const rounds: ChatMessage[][] = [];
   const CARRIED_ROUNDS = 3;
-  const team = input.team ? createAgentTeam({ ...input.team, gateway: input.gateway, runtimeFor, deadline: input.deadline, signal: input.signal }) : null;
+  const team = input.team ? createAgentTeam({ ...input.team, gateway: input.gateway, runtimeFor, deadline: input.deadline, signal: input.signal, redact: input.redact }) : null;
 
   return async ({ instruction, tools, call, maxToolCalls }) => {
     const carried = compactTranscript(rounds.slice(-CARRIED_ROUNDS).flat(), 10)
@@ -479,6 +479,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     ]));
     const runRound = (modelId: AllowedModelId, carried: ChatMessage[]) => runLlmToolLoop({
       gateway: input.gateway,
+      redact: input.redact,
       modelId,
       messages: [
         {
@@ -758,6 +759,8 @@ export async function runMultiAgentPipeline(input: {
   // an app written against one that is not there.
   const backendBriefing = [describeProjectBackend(input.backendEnv || {}), describeServerSecrets(Object.keys(input.serverSecrets || {}))].filter(Boolean).join('\n\n') || undefined;
   const runtimeEnv = { ...(input.serverSecrets || {}), ...(input.backendEnv || {}) };
+  // Tool results never carry a secret's value back to the model.
+  const secretRedactor = createSecretRedactor(input.serverSecrets || {});
 
   // The spend counter starts before specialist analysis: those calls are real
   // provider work and must never disappear from billing or observability.
@@ -1121,6 +1124,7 @@ export async function runMultiAgentPipeline(input: {
     maxToolCallsPerRound: routeBudget.maxToolCallsPerRound,
     maxStalledRounds: routeBudget.maxStalledRounds,
     turn: buildToolLoopTurn({
+      redact: secretRedactor,
       gateway: input.gateway,
       modelId,
       sandbox,

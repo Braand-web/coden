@@ -24,7 +24,7 @@ export function encryptSecret(plaintext: string, secretsKey: string): string {
 }
 
 /** The plaintext, or '' when the value or the key is missing or wrong — never a throw. */
-export function decryptSecret(sealed: string | undefined, secretsKey: string | undefined): string {
+export function decryptSecret(sealed: string | undefined, secretsKey: string | undefined, options: { quiet?: boolean } = {}): string {
   if (!sealed || !secretsKey || !sealed.startsWith(PREFIX)) return '';
   try {
     const packed = Buffer.from(sealed.slice(PREFIX.length), 'base64');
@@ -33,6 +33,7 @@ export function decryptSecret(sealed: string | undefined, secretsKey: string | u
     decipher.setAuthTag(packed.subarray(12, 28));
     return Buffer.concat([decipher.update(packed.subarray(28)), decipher.final()]).toString('utf8');
   } catch {
+    if (options.quiet) return '';
     console.error('[coden:secret_decrypt_failed]', { hint: 'A sealed secret does not open with the configured key (CODEN_SECRETS_KEY).' });
     return '';
   }

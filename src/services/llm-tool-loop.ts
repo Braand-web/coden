@@ -276,6 +276,8 @@ export async function runLlmToolLoop(input: {
   deadline?: number;
   /** Called when the transcript is digested, so a caller can report it. */
   onCompacted?: (info: { chars: number }) => void;
+  /** Scrubs a tool result before the model sees it (the project's secret values). */
+  redact?: (text: string) => string;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void;
   /** The model's reasoning, as it streams. Shown in a collapsible block. */
@@ -506,7 +508,7 @@ export async function runLlmToolLoop(input: {
         role: 'tool',
         tool_call_id: call.id,
         name: call.function.name,
-        content: safeToolResult(output),
+        content: input.redact ? input.redact(safeToolResult(output)) : safeToolResult(output),
       });
     }
     /*
