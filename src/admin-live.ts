@@ -1,4 +1,5 @@
-import { apiFetch } from './lib/api';
+import { ApiError, apiFetch } from './lib/api';
+import { adminLoadFailureCopy, classifyAdminLoadFailure } from './admin-access-state';
 import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
 import { mountAdminPricing } from './admin-pricing';
@@ -60,6 +61,7 @@ const state: AdminState = {
   loading: true,
 };
 
+let adminDataAvailable = false;
 let allUsers: JsonRecord[] = [];
 let allProjects: JsonRecord[] = [];
 let allRuns: JsonRecord[] = [];
@@ -184,10 +186,14 @@ async function safeAdminFetch<T extends JsonRecord>(path: string, fallback: T): 
     return await apiFetch<T>(path);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Données admin indisponibles.';
+    const apiError = error instanceof ApiError ? error : null;
+    const payload = apiError?.payload && typeof apiError.payload === 'object' ? apiError.payload as JsonRecord : {};
     return {
       ...fallback,
       success: false,
       error: message,
+      http_status: apiError?.status ?? null,
+      diagnostic_code: typeof payload.diagnostic_code === 'string' ? payload.diagnostic_code : null,
       availability: {
         ...(fallback.availability || {}),
         endpoint: false,
@@ -361,7 +367,7 @@ function renderOverview() {
     `<section class="admin-card full admin-live" aria-labelledby="admin-live-title"><div class="admin-panel-head"><div><span class="panel-label" id="admin-live-title"><span class="admin-live-dot" aria-hidden="true"></span>En direct</span><p class="metric-note">Actualisé toutes les 15 secondes tant que cette page est ouverte.</p></div><span class="metric-note" id="admin-live-updated"></span></div><div id="admin-live-body">${renderLiveBody()}</div></section>`,
     metric('Utilisateurs', formatNumber(metrics.users ?? 0), `${formatNumber(metrics.active_today ?? 0)} actifs aujourd’hui`),
     metric('Projets', formatNumber(metrics.projects ?? 0), `${formatNumber(metrics.previews_ready ?? 0)} aperçus vérifiés`),
-    metric('Réussite des runs', `${metrics.success_rate ?? 100} %`, `${formatNumber(metrics.failed_runs ?? 0)} runs en échec`, dailyBars(allRuns.map(run => run.created_at))),
+    metric('Réussite des runs', metrics.success_rate === null || metrics.success_rate === undefined ? '--' : `${metrics.success_rate} %`, `${formatNumber(metrics.failed_runs ?? 0)} runs en échec`, dailyBars(allRuns.map(run => run.created_at))),
     metric('Publications', formatNumber(metrics.publish_success ?? 0), 'Déploiements réussis'),
     metric('Apprentissage', formatNumber(learning?.signals?.total ?? 0), learning ? `${formatNumber(learning.knowledge?.visible_patterns ?? 0)} schémas partagés · ${learning.personalization?.share_rate ?? 100} % partagent` : 'Signaux des 30 derniers jours'),
     metric('Intégrations', integrations?.configured ? formatNumber(integrations?.totals?.active ?? 0) : 'Inactives', integrations?.configured ? `${formatNumber(integrations?.totals?.users ?? 0)} comptes · ${formatNumber(integrations?.totals?.toolkits ?? 0)} services` : 'COMPOSIO_API_KEY manquante'),
@@ -369,6 +375,37 @@ function renderOverview() {
     `<article class="admin-card"><span class="panel-label">Données</span>${renderAvailability(overview.availability || {})}</article>`,
     `<article class="admin-card full"><span class="panel-label">Derniers runs en échec</span>${renderFailedRuns(overview.recent?.failed_runs || [])}</article>`,
   ].join('');
+}
+
+function renderAdminLoadFailure(result: JsonRecord) {
+  const root = qs<HTMLElement>('#admin-overview');
+  if (!root) return;
+  const failure = classifyAdminLoadFailure(result);
+  if (!failure) return;
+  const copy = adminLoadFailureCopy(failure, result.error);
+  root.innerHTML = `
+    <article class="admin-card full admin-access-state" role="alert" aria-live="polite">
+      <span class="admin-access-icon" aria-hidden="true">${failure === 'forbidden' ? '!' : '↻'}</span>
+      <div>
+        <p class="panel-label">${failure === 'forbidden' ? 'Accès sécurisé' : 'Connexion au service'}</p>
+        <h2>${escapeHtml(copy.title)}</h2>
+        <p>${escapeHtml(copy.message)}</p>
+        <div class="admin-access-actions">
+          <button class="admin-button primary" type="button" data-admin-retry>Réessayer</button>
+          <a class="admin-button subtle" href="/dashboard.html">Retour au dashboard</a>
+        </div>
+      </div>
+    </article>`;
+  root.querySelector<HTMLButtonElement>('[data-admin-retry]')?.addEventListener('click', () => void loadAdminData());
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]').forEach(button => {
+    button.disabled = button.dataset.adminTab !== 'overview';
+    if (button.disabled) button.setAttribute('aria-disabled', 'true');
+    else button.removeAttribute('aria-disabled');
+  });
+  const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
+  if (copyButton) copyButton.hidden = true;
+  const status = qs<HTMLElement>('#admin-live-status');
+  if (status) status.textContent = failure === 'forbidden' ? 'Accès administrateur requis' : 'Données indisponibles';
 }
 
 const TASK_LABELS: Record<string, string> = {
@@ -523,13 +560,14 @@ function renderLive() {
 
 let livePoll: number | null = null;
 async function refreshLive() {
+  if (!adminDataAvailable) return;
   const data = await safeAdminFetch('/api/admin/live', { live: {}, alerts: [], recent_errors: [] });
   state.live = data;
   renderLive();
 }
 function syncLivePolling() {
   const overviewActive = qs('[data-section="overview"]')?.classList.contains('active');
-  const shouldPoll = Boolean(overviewActive && document.visibilityState === 'visible');
+  const shouldPoll = Boolean(adminDataAvailable && overviewActive && document.visibilityState === 'visible');
   if (shouldPoll && livePoll === null) livePoll = window.setInterval(() => void refreshLive(), 15_000);
   if (!shouldPoll && livePoll !== null) { window.clearInterval(livePoll); livePoll = null; }
 }
@@ -961,7 +999,7 @@ function buildSupportSummary() {
     `Généré le : ${new Date().toLocaleString('fr-FR')}`,
     `Utilisateurs : ${overview.users ?? 0}`,
     `Projets : ${overview.projects ?? 0}`,
-    `Réussite des runs : ${overview.success_rate ?? 100} %`,
+    `Réussite des runs : ${overview.success_rate === null || overview.success_rate === undefined ? '--' : `${overview.success_rate} %`}`,
     `Runs en échec : ${overview.failed_runs ?? 0}`,
     failed ? `Dernier échec : ${failed.request_id || failed.id} / ${failed.diagnostic_code || failed.status}` : 'Dernier échec : aucun',
     learning ? `Apprentissage : ${learning.signals?.total ?? 0} signaux (30 j), ${learning.knowledge?.visible_patterns ?? 0} schémas partagés, ${learning.personalization?.share_rate ?? 100} % de partage` : 'Apprentissage : indisponible',
@@ -998,8 +1036,30 @@ async function loadAdminData() {
     qs('#admin-overview')!.innerHTML = skeleton(6);
     const liveStatus = qs('#admin-live-status');
     if (liveStatus) liveStatus.textContent = 'Actualisation…';
-    const [overview, users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live] = await Promise.all([
-      safeAdminFetch('/api/admin/overview', { metrics: {}, health: [], availability: {}, distributions: {}, recent: { failed_runs: [] } }),
+    const overview = await safeAdminFetch<JsonRecord>('/api/admin/overview', { metrics: {}, health: [], availability: {}, distributions: {}, recent: { failed_runs: [] } });
+    if (classifyAdminLoadFailure(overview)) {
+      adminDataAvailable = false;
+      state.overview = overview;
+      state.live = { success: false, error: overview.error };
+      document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]').forEach(button => {
+        button.disabled = button.dataset.adminTab !== 'overview';
+        if (button.disabled) button.setAttribute('aria-disabled', 'true');
+        else button.removeAttribute('aria-disabled');
+      });
+      const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
+      if (copyButton) copyButton.hidden = true;
+      activateSection('overview');
+      renderAdminLoadFailure(overview);
+      return;
+    }
+    adminDataAvailable = true;
+    document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]').forEach(button => {
+      button.disabled = false;
+      button.removeAttribute('aria-disabled');
+    });
+    const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
+    if (copyButton) copyButton.hidden = false;
+    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live] = await Promise.all([
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
       safeAdminFetch('/api/admin/runs', { runs: [], distributions: {}, availability: {} }),
@@ -1035,11 +1095,17 @@ async function loadAdminData() {
     if (state.costs) void loadCosts();
     if (liveStatus) liveStatus.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
   } catch (error) {
+    adminDataAvailable = false;
     const message = error instanceof Error ? error.message : 'Impossible de charger les données admin.';
-    const root = qs('#admin-overview');
-    if (root) root.innerHTML = `<div class="admin-error">${escapeHtml(message)}</div>`;
-    const liveStatus = qs('#admin-live-status');
-    if (liveStatus) liveStatus.textContent = 'Données indisponibles';
+    document.querySelectorAll<HTMLButtonElement>('[data-admin-tab]').forEach(button => {
+      button.disabled = button.dataset.adminTab !== 'overview';
+      if (button.disabled) button.setAttribute('aria-disabled', 'true');
+      else button.removeAttribute('aria-disabled');
+    });
+    const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
+    if (copyButton) copyButton.hidden = true;
+    activateSection('overview');
+    renderAdminLoadFailure({ success: false, error: message });
   }
 }
 
@@ -1071,6 +1137,7 @@ function ensureAdminFeedback() {
 }
 
 function activateSection(tab: string) {
+  if (!adminDataAvailable && tab !== 'overview') return;
   if (tab === 'library') ensureAdminLibrary();
   if (tab === 'feedback') ensureAdminFeedback();
   if (tab === 'pricing') ensureAdminPricing();

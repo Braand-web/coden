@@ -129,3 +129,102 @@ th[aria-sort="descending"] .admin-dt-sort span { opacity: 1; color: var(--accent
 .admin-feedback-detail textarea { width: 100%; min-height: 72px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 13px; resize: vertical; }
 .admin-table tr.is-muted td { opacity: .6; }
 .admin-dt-toolbar select { min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--foreground); font: inherit; font-size: 13px; }
+
+/* Keep the operations console on the same Coden shell, palette and geometry. */
+body[data-coden-surface="admin"] {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+body[data-coden-surface="admin"]::before {
+  background:
+    radial-gradient(ellipse at 78% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 48%),
+    var(--background);
+  opacity: 1;
+}
+
+body[data-coden-surface="admin"]::after { display: none; }
+
+body[data-coden-surface="admin"] .admin-shell {
+  width: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  grid-template-columns: 236px minmax(0, 1fr);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body[data-coden-surface="admin"] .admin-sidebar {
+  background: color-mix(in srgb, var(--sidebar) 88%, transparent);
+  border-color: var(--border-subtle);
+  backdrop-filter: none;
+}
+
+body[data-coden-surface="admin"] .admin-nav-index { display: none; }
+
+body[data-coden-surface="admin"] .admin-nav button.active {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+body[data-coden-surface="admin"] .admin-nav button.active .admin-nav-icon {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+body[data-coden-surface="admin"] .admin-main { background: transparent; }
+
+body[data-coden-surface="admin"] .admin-appbar {
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(14px);
+}
+
+body[data-coden-surface="admin"] .admin-card {
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+body[data-coden-surface="admin"] .admin-card.clickable:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  box-shadow: var(--shadow-md);
+}
+
+body[data-coden-surface="admin"] .admin-access-state {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  max-width: 760px;
+  margin: clamp(24px, 8vh, 80px) auto;
+  padding: 24px;
+}
+
+.admin-access-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--syntax-orange) 32%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--syntax-orange) 10%, var(--surface));
+  color: var(--syntax-orange);
+  font-weight: 750;
+}
+
+.admin-access-state h2 { margin: 2px 0 8px; font-size: 20px; letter-spacing: -.03em; }
+.admin-access-state p:not(.panel-label) { margin: 0; color: var(--text-secondary); line-height: 1.6; }
+.admin-access-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.admin-access-actions a { display: inline-flex; align-items: center; text-decoration: none; }
+.admin-nav button:disabled { opacity: .42; cursor: not-allowed; }
+
+@media (max-width: 980px) {
+  body[data-coden-surface="admin"] .admin-shell { grid-template-columns: 1fr; }
+}

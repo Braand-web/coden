@@ -11954,7 +11954,7 @@ app.get('/api/admin/overview', async (req: any, res) => {
       active_today: usersResult.users.filter((user: any) => adminIsRecent(user.last_sign_in_at, 1)).length,
       runs: runs.length,
       failed_runs: failedRuns.length,
-      success_rate: runs.length ? Math.round(((runs.length - failedRuns.length) / runs.length) * 100) : 100,
+      success_rate: runs.length ? Math.round(((runs.length - failedRuns.length) / runs.length) * 100) : null,
       previews_ready: projects.filter((project: any) => project.preview_status === 'verified').length,
       publish_success: successfulDeployments.length,
       ai_requests: aiRequestsResult.rows.length,
