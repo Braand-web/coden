@@ -43,10 +43,13 @@ describe('agent web access', () => {
       search: async (query: string) => ({ status: 'completed' as const, query, provider: 'tavily' as const, message: 'ok', results: [{ title: 'Doc', url: 'https://d.example', snippet: 'x' }] }),
     };
     const configured = await createAgentWebProvider({ research }).search('vite env variables');
-    expect(configured).toMatchObject({ ok: true, provider: 'tavily' });
+    expect(configured).toMatchObject({ ok: true, results: [{ url: 'https://d.example' }] });
+    expect(configured).not.toHaveProperty('provider');
 
     const unconfigured = createAgentWebProvider({ research: { ...research, isConfigured: () => false }, modelSearch: async query => `Sources for ${query}` });
-    expect(await unconfigured.search('vite env')).toMatchObject({ ok: true, provider: 'openrouter-web', summary: 'Sources for vite env' });
+    const fallback = await unconfigured.search('vite env');
+    expect(fallback).toMatchObject({ ok: true, summary: 'Sources for vite env' });
+    expect(fallback).not.toHaveProperty('provider');
     expect(await createAgentWebProvider({}).search('x')).toMatchObject({ ok: false });
   });
 
@@ -65,7 +68,9 @@ describe('agent web access', () => {
       lookup: publicLookup,
       fetchImpl: (async () => new Response('', { status: 403 })) as typeof fetch,
     });
-    expect(await provider.fetch('https://docs.example/page')).toMatchObject({ ok: true, provider: 'firecrawl', text: 'Readable dynamic page' });
+    const fetched = await provider.fetch('https://docs.example/page');
+    expect(fetched).toMatchObject({ ok: true, text: 'Readable dynamic page' });
+    expect(fetched).not.toHaveProperty('provider');
     expect(scrapeCalls).toBe(1);
     expect((await provider.fetch('http://127.0.0.1/private')).ok).toBe(false);
     expect(scrapeCalls).toBe(1);

@@ -1,6 +1,10 @@
 .coden-agent-message { display:grid; gap:10px; width:100%; min-width:0; color:var(--foreground); }
 .coden-agent-message .coden-response { font-size:14px; line-height:1.62; text-wrap:pretty; }
 .coden-thinking-line { font-size:14px; min-height:22px; }
+.coden-research-sources { display:flex; flex-wrap:wrap; align-items:center; gap:8px; color:var(--text-muted); font-size:12px; }
+.coden-research-sources a { color:var(--text-muted); text-decoration:none; border-radius:var(--radius-sm); padding:2px 4px; }
+.coden-research-sources a:hover { color:var(--foreground); background:var(--input); }
+.coden-research-sources a:focus-visible { outline:var(--focus-outline); outline-offset:2px; }
 
 /*
  * A reply is a chat message, not a document.

@@ -29,6 +29,7 @@ export type DecisionAnswer = { selected: number[]; custom?: string };
 export type ChatEvent =
   | { type: 'run_started'; messageId: string }
   | { type: 'activity'; label: string }
+  | { type: 'research_sources'; sources: Array<{ title: string; url: string }> }
   | { type: 'text_delta'; delta: string }
   | { type: 'text_end' }
   /** The model's reasoning as it streams; shown folded, never mixed into the answer. */

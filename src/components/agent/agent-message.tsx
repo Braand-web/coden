@@ -27,6 +27,13 @@ import '../../styles/agent-message.css';
  */
 const UI_LOCALE = 'fr' as const;
 
+function publicSourceHost(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.hostname.replace(/^www\./, '') : null;
+  } catch { return null; }
+}
+
 function failureCopy(state: AgentMessageState): { title: string; body: string } {
   const code = state.diagnosticCode?.trim();
   if (code) {
@@ -262,6 +269,13 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
       : part.type === 'reasoning'
         ? <ReasoningBlock key={part.id} part={part} streaming={streaming} />
         : <AgentToolLine key={part.id} part={part} />)}
+    {state.researchSources?.length ? <div className="coden-research-sources" aria-label="Sources consultées">
+      <span>Sources</span>
+      {state.researchSources.map(source => {
+        const host = publicSourceHost(source.url);
+        return host ? <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" title={source.title}>{host}</a> : null;
+      })}
+    </div> : null}
     {(state.notices || []).map(notice => <StreamNotice key={`${notice.type}-${notice.id}`} notice={notice} onDecisionSelect={onDecisionSelect} onDecisionAnswers={onDecisionAnswers} onArtifactOpen={onArtifactOpen} />)}
     {/*
       * Keyed on the label, not on the slot.

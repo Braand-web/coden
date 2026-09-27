@@ -5,6 +5,7 @@ import type { ChatMessage } from './src/services/openrouter-service.ts';
 import { getAgentToolDefinition, toolNeedsApproval } from './src/services/agent-tools.ts';
 
 const calls: ChatMessage[][] = [];
+const startedToolBatches: string[][] = [];
 const gateway = {
   async chat(_modelId: string, messages: ChatMessage[]) {
     calls.push(messages.map(message => ({ ...message })));
@@ -37,11 +38,13 @@ const result = await runLlmToolLoop({
   handlers: {
     inspect_project_files: ({ paths }) => ({ paths, content: 'export default function App() {}' }),
   },
+  onToolsStarted: names => startedToolBatches.push(names),
 });
 
 assert.equal(result.result.text, 'I inspected the file and can continue.');
 assert.equal(result.toolExecutions.length, 1);
 assert.equal(result.toolExecutions[0].ok, true);
+assert.deepEqual(startedToolBatches, [['inspect_project_files']]);
 assert.ok(calls[1].some(message => message.role === 'tool' && message.tool_call_id === 'tool_1'));
 
 assert.equal(getAgentToolDefinition('apply_migration')?.needsApproval, true);

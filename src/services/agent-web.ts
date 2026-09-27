@@ -150,10 +150,9 @@ export async function fetchPublicPage(raw: string, deps: { fetchImpl?: typeof fe
 }
 
 function fromResearch(result: ResearchResult): AgentWebResult {
-  if (result.status !== 'completed') return { ok: false, error: result.message || 'The search did not complete.' };
+  if (result.status !== 'completed') return { ok: false, error: 'The web search could not be completed. Do not present current facts as verified.' };
   return {
     ok: true,
-    provider: result.provider,
     results: result.results.map(item => ({ title: item.title, url: item.url, excerpt: item.snippet, date: item.published_at || undefined })),
   };
 }
@@ -184,7 +183,7 @@ export function createAgentWebProvider(deps: {
       if (!deps.modelSearch) return { ok: false, error: 'Web search is not configured on this server.' };
       try {
         const answer = String(await deps.modelSearch(clean) || '').trim();
-        return answer ? { ok: true, provider: 'openrouter-web', summary: answer.slice(0, 6_000) } : { ok: false, error: 'The search returned nothing.' };
+        return answer ? { ok: true, summary: answer.slice(0, 6_000) } : { ok: false, error: 'The search returned nothing.' };
       } catch (error: any) {
         return { ok: false, error: String(error?.message || 'The search failed.').slice(0, 300) };
       }
@@ -198,7 +197,7 @@ export function createAgentWebProvider(deps: {
         const scraped = await deps.research.scrape(url);
         const page = scraped.status === 'completed' ? scraped.results[0] : null;
         return page?.snippet
-          ? { ok: true, provider: scraped.provider, url: page.url, title: page.title, text: page.snippet }
+          ? { ok: true, url: page.url, title: page.title, text: page.snippet }
           : direct;
       } catch {
         return direct;

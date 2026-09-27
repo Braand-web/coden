@@ -283,7 +283,7 @@ export async function runLlmToolLoop(input: {
   /** The model's reasoning, as it streams. Shown in a collapsible block. */
   onReasoningDelta?: (delta: string) => void;
   onTextEnd?: () => void;
-  onToolsStarted?: () => void;
+  onToolsStarted?: (names: string[]) => void;
   onToolsCompleted?: () => void;
 }): Promise<LlmToolLoopResult> {
   let messages = [...input.messages];
@@ -390,7 +390,7 @@ export async function runLlmToolLoop(input: {
     const assistantIndex = messages.length - 1;
     const applied = new Set<string>();
 
-    input.onToolsStarted?.();
+    input.onToolsStarted?.(result.tool_calls.map(call => call.function.name));
     /*
      * Reads run together.
      *

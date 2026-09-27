@@ -13,6 +13,7 @@ export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextTh
 export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice;
 export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
+  researchSources?: Array<{ title: string; url: string }>;
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider' | 'credits';
   autoChoices?: AutoChoice[];
@@ -31,6 +32,9 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
   switch (event.type) {
     case 'run_started': next.thinking = true; break;
     case 'activity': closeText(); next.activity = event.label; next.thinking = true; break;
+    case 'research_sources': next.researchSources = [...new Map(
+      [...(prev.researchSources || []), ...event.sources].map(source => [source.url, source]),
+    ).values()].slice(0, 3); break;
     case 'reasoning_delta': {
       const last = next.parts.at(-1);
       const open = last?.type === 'reasoning' && !last.done;

@@ -529,7 +529,12 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // The model has finished explaining and the tools now run: reading,
       // writing, installing. Without this the interface went still for the
       // longest part of each step, right after saying what it was about to do.
-      onToolsStarted: () => input.onChatEvent?.({ type: 'activity', label: input.activityLabel }),
+      onToolsStarted: names => input.onChatEvent?.({
+        type: 'activity',
+        label: names.some(name => name === 'web_search' || name === 'fetch_url')
+          ? 'Coden consulte le web…'
+          : input.activityLabel,
+      }),
       onToolsCompleted: () => {
         for (const [action, paths] of touched) {
           input.onChatEvent?.({ type: 'files_touched', action, paths: [...paths] });

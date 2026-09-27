@@ -47,3 +47,16 @@ describe('credits pause', () => {
     expect(finished.thinking).toBe(false);
   });
 });
+
+describe('research sources', () => {
+  it('retains only a small set of public citations in the message', () => {
+    const state = reduceAgentMessage({ ...EMPTY_MESSAGE }, { type: 'research_sources', sources: [
+      { title: 'Guide', url: 'https://docs.example/guide' },
+      { title: 'Release', url: 'https://docs.example/release' },
+    ] }, 1);
+    expect(state.researchSources).toHaveLength(2);
+    expect(state.researchSources?.[0].url).toBe('https://docs.example/guide');
+    const continued = reduceAgentMessage(state, { type: 'research_sources', sources: [{ title: 'Guide', url: 'https://docs.example/guide' }, { title: 'FAQ', url: 'https://docs.example/faq' }] }, 2);
+    expect(continued.researchSources?.map(source => source.url)).toEqual(['https://docs.example/guide', 'https://docs.example/release', 'https://docs.example/faq']);
+  });
+});
