@@ -1,3 +1,5 @@
+import './meta-pixel-consent';
+
 export type ConversionMetadata = Record<string, unknown>;
 
 const STORAGE_KEY = 'coden-landing-conversion-events';

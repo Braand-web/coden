@@ -2,8 +2,10 @@ import { codenLogoSvg } from './lib/coden-logo';
 import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV } from './config/public-routes';
 import { applySignedInLinks, hasStoredSession } from './lib/stored-session';
 import { trackFunnelEvent } from './conversion-events';
+import { initMetaPixelConsentUi } from './meta-pixel-consent';
 import { initThemeController } from './theme-controller';
 import './styles/public-shell.css';
+import './styles/meta-pixel-consent.css';
 
 let mounted = false;
 
@@ -256,7 +258,11 @@ function mountFooter() {
   theme.append(themeIcon('dark'), themeIcon('light'), lightLabel, darkLabel);
   const copyright = element('span', 'coden-public-footer-copyright');
   copyright.textContent = `@coden${new Date().getFullYear()}`;
-  bottom.append(theme, copyright);
+  const cookiePreferences = element('button', 'coden-public-cookie-preferences');
+  cookiePreferences.type = 'button';
+  cookiePreferences.dataset.codenOpenConsent = '';
+  cookiePreferences.textContent = 'Préférences cookies';
+  bottom.append(theme, cookiePreferences, copyright);
 
   footer.append(brand, columns, bottom);
   frame.appendChild(footer);
@@ -286,5 +292,6 @@ export function mountPublicShell() {
   // The page's own sign-up buttons (pricing cards, final call to action).
   if (hasStoredSession()) applySignedInLinks(document);
   initThemeController();
+  initMetaPixelConsentUi();
   bindConversionTracking();
 }

@@ -101,6 +101,9 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
 .coden-public-theme-toggle:hover { border-color: var(--border-strong); color: var(--foreground); }
 .coden-public-theme-toggle:active { transform: scale(.97); }
 .coden-public-theme-toggle svg { width: 16px; height: 16px; }
+.coden-public-cookie-preferences { min-height: 36px; padding: 0 8px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.coden-public-cookie-preferences:hover { color: var(--foreground); }
+.coden-public-cookie-preferences:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
 :root[data-theme='dark'] .coden-public-theme-toggle [data-theme-icon='light'], :root:not([data-theme='dark']) .coden-public-theme-toggle [data-theme-icon='dark'],
 :root[data-theme='dark'] .coden-public-theme-toggle [data-theme-label='light'], :root:not([data-theme='dark']) .coden-public-theme-toggle [data-theme-label='dark'] { display: none; }
 
@@ -118,6 +121,8 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
   .coden-public-header { width: calc(100% - 24px); padding-left: 12px; }
   .coden-public-footer-frame { padding-top: 96px; padding-bottom: 32px; }
   .coden-public-footer { padding: 32px 24px 20px; border-radius: var(--radius-lg); }
+  .coden-public-footer-bottom { flex-wrap: wrap; }
+  .coden-public-cookie-preferences { padding-inline: 2px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
