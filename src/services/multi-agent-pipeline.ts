@@ -1053,36 +1053,9 @@ export async function runMultiAgentPipeline(input: {
    */
 
   let latestScreenshots: Array<{ width: number; dataUrl: string }> = [];
-  /*
-   * A journey that keeps failing stops blocking.
-   *
-   * A scenario is the planner's guess at the interface, written before the
-   * interface existed; now and then it names a label the app legitimately
-   * does not have. Failing the run on it forever would spend every remaining
-   * round rewriting a working app to match a guess. After two repair rounds
-   * that did not fix it, it is reported as unverified instead of blocking.
-   */
-  const behaviourStreak = new Map<string, number>();
-  const capBehaviourChurn = (report: ValidationReport) => {
-    const seen = new Set<string>();
-    for (const problem of report.problems) {
-      if (problem.severity !== 'error' || !/^(SCENARIO|FUNCTIONALITY)\b/.test(problem.message)) continue;
-      const key = /^SCENARIO "([^"]+)"/.exec(problem.message)?.[1] || problem.message.slice(0, 48);
-      seen.add(key);
-      const streak = (behaviourStreak.get(key) || 0) + 1;
-      behaviourStreak.set(key, streak);
-      // A control the journey cannot even find, after the coder was shown the
-      // journey up front and had one repair to add it, is most likely a label
-      // the planner guessed — not a missing feature. It stops blocking sooner.
-      const unfound = /no visible (element|field|select)/i.test(problem.message);
-      if (streak >= (unfound ? 2 : 3)) {
-        problem.severity = 'warning';
-        problem.message = `UNVERIFIED after ${streak - 1} repair attempts: ${problem.message}`;
-      }
-    }
-    for (const key of [...behaviourStreak.keys()]) if (!seen.has(key)) behaviourStreak.delete(key);
-    report.ok = report.problems.every(problem => problem.severity !== 'error');
-  };
+  // Browser failures remain blocking across repair rounds. The loop already
+  // has a bounded round/time budget; hiding an unfixed journey as a warning
+  // made a broken app look verified merely because it failed repeatedly.
   /*
    * One look at the finished result, by a designer's eye, while there is
    * still a round to act on it. Only where the budget allows it.
@@ -1216,7 +1189,6 @@ export async function runMultiAgentPipeline(input: {
       // checkpoint or returned in a payload.
       latestScreenshots = preview.evidence?.screenshots || [];
       if (preview.evidence) delete preview.evidence.screenshots;
-      capBehaviourChurn(preview);
       const files = await readAllFiles(sandbox);
       const appType = classifyGeneratedAppType(input.prompt);
       /*
