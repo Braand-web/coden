@@ -2,6 +2,7 @@ import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
 import { enhanceSelect } from './lib/select-menu';
 import { mountPublicShell } from './public-shell';
+import { mountBrandMesh } from './lib/brand-mesh';
 import { hasStoredSession } from './lib/stored-session';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { initCodenNavigationTransitions } from './navigation-transitions';
@@ -436,6 +437,9 @@ function init() {
   setupTyping();
   setupPublishChecks();
   setupPricing();
+  // The animated mesh behind the hero and the finale (composer + footer).
+  mountBrandMesh(document.querySelector<HTMLElement>('.lp-hero-mesh'), 'hero');
+  mountBrandMesh(document.querySelector<HTMLElement>('.lp-finale-mesh'), 'footer');
   installReveal();
   installScrollMotion();
 }
