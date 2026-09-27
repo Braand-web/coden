@@ -395,12 +395,18 @@ function previewDocumentWithStorageShim(html: string): string {
  */
 const ERROR_PREVIEW = /data-coden-preview-error\s*=\s*["']true|vite-error-overlay|failed to render|\[plugin:vite|Internal Server Error|Failed to resolve import/i;
 
+/*
+ * Cover hues: blues, cyans, teals, greens, ambers, oranges, corals — never
+ * violet or purple, which Coden does not use.
+ */
+const COVER_HUES = [214, 200, 188, 174, 156, 40, 26, 10];
+
 /** A stable hue per project, so each cover keeps its colour from one visit to the next. */
 function projectHue(seed: string) {
   // FNV-1a: close ids ("…-003", "…-004") still land far apart on the wheel.
   let hash = 2166136261;
   for (const char of seed) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
-  return hash % 360;
+  return COVER_HUES[hash % COVER_HUES.length];
 }
 
 function projectInitials(name: string) {

@@ -56,17 +56,17 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
 /* ---------------------------------------------------------------------------
  * Footer
  *
- * One card on the product's light: the ambient's blue, carried through violet
+ * One card on the product's light: the ambient's blue, carried through a deeper blue
  * and a warm edge at the very bottom. The light is a custom property so a page
  * that wants it to start higher (the landing, behind its last composer) paints
  * the same thing rather than a copy of it.
  * ------------------------------------------------------------------------- */
 :root {
   --footer-hue-1: var(--accent);
-  --footer-hue-2: var(--syntax-purple);
+  --footer-hue-2: color-mix(in srgb, var(--accent) 60%, var(--syntax-cyan));
   --footer-hue-3: var(--syntax-cyan);
   --footer-hue-4: var(--syntax-orange);
-  --footer-hue-5: color-mix(in srgb, var(--syntax-purple) 55%, var(--danger));
+  --footer-hue-5: color-mix(in srgb, var(--syntax-orange) 55%, var(--danger));
   --coden-footer-light:
     radial-gradient(60% 42% at 16% 58%, color-mix(in srgb, var(--footer-hue-1) 88%, transparent), transparent 70%),
     radial-gradient(55% 40% at 84% 52%, color-mix(in srgb, var(--footer-hue-1) 76%, transparent), transparent 70%),
