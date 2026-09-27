@@ -65,4 +65,22 @@ assert.match(resume, /sandbox\/status/, 'by asking the status route');
 assert.match(resume, /status\?\.state !== 'running'/, 'and only when a server is actually up');
 assert.match(resume, /\} catch \{/, 'a server without the live sandbox answers 503; that is not an error to report');
 
+// Generation gets the requested animated word-and-ring loader in the preview
+// iframe; the idle, unverified state keeps its explanatory Coden message.
+const previewLoaderStart = builder.indexOf('function centeredPreviewLoaderHtml(');
+const previewLoaderEnd = builder.indexOf('\nfunction setEmptyPreviewState(', previewLoaderStart);
+const previewLoader = builder.slice(previewLoaderStart, previewLoaderEnd);
+assert.ok(previewLoaderStart >= 0 && previewLoaderEnd > previewLoaderStart, 'the centered preview loader exists');
+assert.match(previewLoader, /const loaderContent = isWorking\s*\?/, 'the animated loader is scoped to generation');
+assert.match(previewLoader, /'Generating'\s*\.split\(''\)/, 'Generating is animated letter by letter');
+assert.match(previewLoader, /class="ai-loader-circle"/, 'the loader includes its blue circle');
+assert.match(previewLoader, /animation: loaderCircle 5s linear infinite;/, 'the circle keeps the supplied rotation timing');
+assert.match(previewLoader, /animation: loaderLetter 3s infinite;/, 'the letters keep their staggered pulse');
+assert.match(previewLoader, /prefers-reduced-motion: reduce[\s\S]*?\.ai-loader-circle, \.ai-loader-letter/,
+  'the custom animations respect reduced-motion');
+assert.match(previewLoader, /<strong class="loader-title">Aperçu Coden<\/strong>/,
+  'the idle preview state remains intact');
+assert.match(previewLoader, /<span class="loader-status">\$\{letters\}<\/span>/,
+  'the idle preview status remains visible');
+
 console.log('unverified preview visibility tests passed');
