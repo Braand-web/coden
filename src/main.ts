@@ -63,7 +63,8 @@ function init() {
         window.addEventListener('load', liftCurtain);
     }
 
-    const savedTheme = localStorage.getItem('coden-theme') || 'light';
+    const storedTheme = localStorage.getItem('coden-theme');
+    const savedTheme = storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
     if (moonIcon && sunIcon) {
         if (savedTheme === 'dark') {

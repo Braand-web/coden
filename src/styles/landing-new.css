@@ -417,38 +417,6 @@ html[data-theme="dark"] .lp-finale-mesh.is-ready { opacity: .85; }
 .lp-mini-cloud span.is-active { background: var(--surface-hover); color: var(--foreground); font-weight: 600; }
 
 /* ---------------------------------------------------------------------------
- * Model choice — real providers from the Builder's model catalogue
- * ------------------------------------------------------------------------- */
-.lp-models-panel {
-  display: grid;
-  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
-  align-items: center;
-  gap: 48px;
-  padding: 40px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  box-shadow: var(--lp-shadow-card);
-}
-.lp-models-copy { display: grid; justify-items: start; gap: 16px; }
-.lp-models-kicker { margin: 0; color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.lp-models-copy h2 { max-width: 520px; margin: 0; color: var(--text-strong); font-size: 36px; font-weight: 600; letter-spacing: -.035em; line-height: 40px; text-wrap: balance; }
-.lp-models-copy > p:not(.lp-models-kicker):not(.lp-models-note) { max-width: 480px; margin: 0; color: var(--text-muted); font-size: 16px; line-height: 24px; text-wrap: pretty; }
-.lp-models-note { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 20px; }
-.lp-models-showcase { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-soft); }
-.lp-models-showcase-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--text-muted); font-size: 12px; font-weight: 600; }
-.lp-models-showcase-head span:last-child { padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-full); color: var(--text-secondary); font-size: 11px; font-weight: 500; }
-.lp-models-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.lp-model-provider { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); transition: transform var(--transition-panel), border-color var(--transition-control), box-shadow var(--transition-panel); }
-.lp-model-provider:hover { transform: translateY(-2px); border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
-.lp-model-mark { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-soft); color: var(--text-strong); font-size: 14px; font-weight: 600; }
-.lp-model-provider-copy { display: grid; min-width: 0; gap: 2px; }
-.lp-model-provider-copy strong { color: var(--text-strong); font-size: 14px; font-weight: 600; line-height: 20px; }
-.lp-model-provider-copy small { overflow: hidden; color: var(--text-muted); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.lp-model-chevron { margin-left: auto; color: var(--text-muted); font-size: 16px; transition: transform var(--transition-control), color var(--transition-control); }
-.lp-model-provider:hover .lp-model-chevron { transform: translate(2px, -2px); color: var(--accent); }
-
-/* ---------------------------------------------------------------------------
  * Verification — the one inverted surface
  *
  * Same move as .public-page-cta: the light theme inverts onto --foreground,
@@ -815,15 +783,12 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
  * ------------------------------------------------------------------------- */
 @media (max-width: 1080px) {
   .lp-verify { padding: 56px; gap: 48px; }
-  .lp-models-panel { gap: 32px; padding: 32px; }
   .lp-examples { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
   .lp-cards { grid-template-columns: 1fr; max-width: 520px; margin-inline: auto; }
   .lp-verify { grid-template-columns: 1fr; }
-  .lp-models-panel { grid-template-columns: 1fr; gap: 24px; max-width: 680px; margin-inline: auto; }
-  .lp-models-copy h2 { max-width: 620px; }
   .lp-faq { grid-template-columns: 1fr; gap: 32px; }
   .lp-plans { grid-template-columns: 1fr; grid-template-rows: none; row-gap: 16px; max-width: 520px; margin-inline: auto; }
   .lp-plan { grid-row: auto; grid-template-rows: none; }
@@ -839,11 +804,6 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
   .lp-heading { margin-bottom: 32px; }
   .lp-card-visual { height: 184px; }
   .lp-verify { gap: 40px; padding: 40px 24px 24px; border-radius: var(--radius-lg); }
-  .lp-models-panel { gap: 24px; padding: 20px; }
-  .lp-models-copy { gap: 12px; }
-  .lp-models-copy h2 { font-size: 30px; line-height: 36px; }
-  .lp-models-showcase { padding: 16px; }
-  .lp-model-provider-copy small { white-space: normal; }
   .lp-publish { padding: 16px; }
   .lp-publish-steps li { font-size: 13px; }
   .lp-marquee { --lp-marquee-gap: 32px; }
@@ -876,7 +836,6 @@ body[data-coden-surface="landing-new"] #coden-marketing-footer-root { margin-top
   html[data-lp-reveal="on"] [data-lp-reveal] .lp-word { opacity: 1; transform: none; transition: none; }
   .lp-caret, .lp-mini-selected, .lp-mini-cursor, .lp-publish-steps li.is-running i, .lp-composer-host.is-filled .coden-prompt-input > div:last-of-type { animation: none; }
   .lp-card, .lp-example, .lp-button, .lp-faq-list summary span, .lp-plan, .lp-segmented button, .lp-segmented-thumb { transition: none; }
-  .lp-model-provider, .lp-model-chevron { transition: none; }
   .lp-aurora span { animation: none; }
   .lp-marquee { flex-wrap: wrap; justify-content: center; width: 100%; -webkit-mask-image: none; mask-image: none; }
   .lp-marquee-track { flex-wrap: wrap; justify-content: center; flex-shrink: 1; gap: 16px 32px; animation: none; }

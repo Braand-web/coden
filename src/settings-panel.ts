@@ -220,7 +220,7 @@ function defaultSettingsPreferences(): SettingsPreferences {
       instructions: '',
     },
     appearance: {
-      theme: 'system',
+      theme: 'light',
       density: 'comfortable',
       motion: 'normal',
       accent: 'coden-blue',

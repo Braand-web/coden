@@ -6,16 +6,12 @@ function isTheme(value: string | null): value is CodenTheme {
   return value === 'dark' || value === 'light';
 }
 
-function getSystemTheme(): CodenTheme {
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 export function getInitialTheme(): CodenTheme {
   try {
     const stored = localStorage.getItem(CODEN_THEME_KEY);
-    return isTheme(stored) ? stored : getSystemTheme();
+    return isTheme(stored) ? stored : 'light';
   } catch {
-    return getSystemTheme();
+    return 'light';
   }
 }
 

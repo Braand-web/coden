@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="fr" data-theme="light">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,7 @@
     <title>Page introuvable | Coden</title>
     <style>
       :root {
-        color-scheme: light dark;
+        color-scheme: light;
         font-family: Geist, system-ui, sans-serif;
         --page: #f8f9fb;
         --surface: #ffffff;
@@ -19,17 +19,6 @@
         --focus: #91baff;
         background: var(--page);
         color: var(--ink);
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --page: #111111;
-          --surface: #1c1c1c;
-          --border: #313131;
-          --ink: #fcfcfc;
-          --muted: #a5a5a5;
-          --accent: #3a83f7;
-          --focus: #8ab5ff;
-        }
       }
       *, *::before, *::after { box-sizing: border-box; }
       body {
