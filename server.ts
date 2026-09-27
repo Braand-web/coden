@@ -9142,9 +9142,12 @@ async function loadSessionMemory(projectId: string, required = false): Promise<S
   }
 }
 
-/** Never throws: losing memory must not fail a turn that otherwise worked. */
-async function saveSessionMemory(project: GeneratedProject, userId: string, memory: SessionMemory) {
-  if (!getSupabase() || !isUuid(project.id)) return;
+/** A generation must wait for compaction to persist before relying on it. */
+async function saveSessionMemory(project: GeneratedProject, userId: string, memory: SessionMemory, required = false) {
+  if (!getSupabase() || !isUuid(project.id)) {
+    if (required) throw new Error('Session memory persistence is unavailable.');
+    return;
+  }
   try {
     const client = requireSupabase('Session memory persistence');
     const { error } = await client.from('agent_memories').upsert([{
@@ -9157,9 +9160,10 @@ async function saveSessionMemory(project: GeneratedProject, userId: string, memo
       recent_decisions: redactAgentPayload(memory.runs),
       updated_at: new Date().toISOString(),
     }], { onConflict: 'project_id,memory_type' });
-    if (error && !isMissingAgentV2TableError(error)) console.warn('[coden:session_memory_save_failed]', { message: error.message });
+    if (error) throw error;
   } catch (error: any) {
-    console.warn('[coden:session_memory_save_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+    if (!isMissingAgentV2TableError(error)) console.warn('[coden:session_memory_save_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+    if (required) throw new Error('Session memory could not be saved.');
   }
 }
 
@@ -9209,9 +9213,10 @@ async function loadConversationContext(input: {
         return result.text;
       },
     });
-    void saveSessionMemory(input.project, input.userId, memory);
+    await saveSessionMemory(input.project, input.userId, memory, true);
   } else if (pending.length) {
     memory = await compactConversation({ memory: stored, turns: pending, complete: async () => '' });
+    await saveSessionMemory(input.project, input.userId, memory, true);
   }
   return {
     turns: recent.map(turn => ({ role: turn.role, content: turn.content })),

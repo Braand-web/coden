@@ -106,6 +106,7 @@ import { readFileSync } from 'node:fs';
 {
   const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   const memoryLoader = server.slice(server.indexOf('async function loadSessionMemory('), server.indexOf('async function saveSessionMemory('));
+  const memorySaver = server.slice(server.indexOf('async function saveSessionMemory('), server.indexOf('async function loadConversationContext('));
   const conversationLoader = server.slice(server.indexOf('async function loadConversationContext('), server.indexOf('function dropCurrentPrompt('));
   const route = server.slice(server.indexOf('let existingFiles: GeneratedFile[];'), server.indexOf('const recentHistory = dropCurrentPrompt('));
 
@@ -113,6 +114,10 @@ import { readFileSync } from 'node:fs';
     'the Builder must not quietly replace a failed memory read with an empty summary');
   assert.match(conversationLoader, /loadSessionMemory\(input\.project\.id, true\)/,
     'the Builder requires its saved memory');
+  assert.match(memorySaver, /if \(required\) throw new Error\('Session memory could not be saved\.'\)/,
+    'compaction persistence must fail visibly when its write fails');
+  assert.equal((conversationLoader.match(/await saveSessionMemory\(input\.project, input\.userId, memory, true\)/g) || []).length, 2,
+    'both model and deterministic compaction paths persist memory before generation');
   assert.match(conversationLoader, /listProjectMessagesPage\(input\.project\.id, 80, null, true\)/,
     'generation must treat a missing message table as an unavailable conversation');
   assert.doesNotMatch(conversationLoader, /listProjectMessagesPage\([^\n]+\.catch\(\(\) => \[\]\)/,
