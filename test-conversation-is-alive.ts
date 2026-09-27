@@ -99,4 +99,26 @@ import { readFileSync } from 'node:fs';
   assert.match(builder, /assistantMessageId: messageHandleId\(status\)/, 'generation sends the stable assistant message id');
 }
 
+/*
+ * If Supabase cannot return the conversation, an empty array is not a valid
+ * substitute. The next build must be retriable, not act on forgotten choices.
+ */
+{
+  const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
+  const memoryLoader = server.slice(server.indexOf('async function loadSessionMemory('), server.indexOf('async function saveSessionMemory('));
+  const conversationLoader = server.slice(server.indexOf('async function loadConversationContext('), server.indexOf('function dropCurrentPrompt('));
+  const route = server.slice(server.indexOf('let existingFiles: GeneratedFile[];'), server.indexOf('const recentHistory = dropCurrentPrompt('));
+
+  assert.match(memoryLoader, /if \(required\) throw new Error\('Session memory could not be loaded\.'\)/,
+    'the Builder must not quietly replace a failed memory read with an empty summary');
+  assert.match(conversationLoader, /loadSessionMemory\(input\.project\.id, true\)/,
+    'the Builder requires its saved memory');
+  assert.match(conversationLoader, /listProjectMessagesPage\(input\.project\.id, 80, null, true\)/,
+    'generation must treat a missing message table as an unavailable conversation');
+  assert.doesNotMatch(conversationLoader, /listProjectMessagesPage\([^\n]+\.catch\(\(\) => \[\]\)/,
+    'a failed message read must not become an empty conversation');
+  assert.match(route, /diagnostic_code: 'PROJECT_CONTEXT_UNAVAILABLE'/,
+    'the user receives a recoverable project-context error instead of a context-free build');
+}
+
 console.log('conversation is alive tests passed');

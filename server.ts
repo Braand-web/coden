@@ -9121,9 +9121,12 @@ async function upsertAgentTypedMemory(project: GeneratedProject, userId: string,
 
 const SESSION_MEMORY_TYPE = 'session';
 
-async function loadSessionMemory(projectId: string): Promise<SessionMemory> {
+async function loadSessionMemory(projectId: string, required = false): Promise<SessionMemory> {
   const client = getSupabase();
-  if (!client || !isUuid(projectId)) return { ...EMPTY_SESSION };
+  if (!client || !isUuid(projectId)) {
+    if (required) throw new Error('Session memory is unavailable.');
+    return { ...EMPTY_SESSION };
+  }
   try {
     const { data, error } = await client.from('agent_memories')
       .select('summary,architecture,recent_decisions')
@@ -9134,6 +9137,7 @@ async function loadSessionMemory(projectId: string): Promise<SessionMemory> {
     return sessionMemoryFromRow(data);
   } catch (error: any) {
     if (!isMissingAgentV2TableError(error)) console.warn('[coden:session_memory_load_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+    if (required) throw new Error('Session memory could not be loaded.');
     return { ...EMPTY_SESSION };
   }
 }
@@ -9173,8 +9177,8 @@ async function loadConversationContext(input: {
   signal?: AbortSignal;
 }): Promise<{ turns: RecentHistoryMessage[]; memory: SessionMemory; sessionContext: string }> {
   const [rows, stored] = await Promise.all([
-    isUuid(input.project.id) ? listProjectMessagesPage(input.project.id, 80, null).catch(() => []) : Promise.resolve([]),
-    loadSessionMemory(input.project.id),
+    isUuid(input.project.id) ? listProjectMessagesPage(input.project.id, 80, null, true) : Promise.resolve([]),
+    loadSessionMemory(input.project.id, true),
   ]);
   const turns: SessionTurn[] = (rows as any[]).map(row => ({
     role: row?.role === 'assistant' ? 'assistant' as const : 'user' as const,
@@ -9747,13 +9751,13 @@ async function listProjectMessages(projectId: string) {
   return (data || []).map(sanitizeProjectMessageForUser);
 }
 
-async function listProjectMessagesPage(projectId: string, limitValue: any, beforeValue: any) {
+async function listProjectMessagesPage(projectId: string, limitValue: any, beforeValue: any, required = false) {
   const limit = Math.min(100, Math.max(1, Number(limitValue || 100)));
   const client = requireSupabase('Project message page listing');
   let query = client.from('project_messages').select('*').eq('project_id', projectId).order('created_at', { ascending: false }).limit(limit);
   if (beforeValue) query = query.lt('created_at', String(beforeValue));
   const { data, error } = await query;
-  if (error && /project_messages|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error.message || '')) return [];
+  if (error && /project_messages|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error.message || '') && !required) return [];
   if (error) throw new Error(`Supabase project message page failed: ${error.message}`);
   return (data || []).reverse().map(sanitizeProjectMessageForUser);
 }
@@ -15372,21 +15376,30 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    */
   const requestedEffort = normalizeAgentEffort(req.body?.effort);
   // Three independent reads; one round trip instead of three.
-  const [existingFiles, lastPlan, conversation] = await Promise.all([
-    loadProjectFiles(project.id),
-    getLastProjectPlan(project.id),
-    /*
-     * The conversation, kept the way Claude Code keeps one: every recent turn
-     * whole, and a summary of the rest. This was the last six messages cut to
-     * 1,200 characters each, so a project discussed over twenty turns lost
-     * everything but the tail — and any long message lost its middle.
-     */
-    loadConversationContext({
-      project,
-      userId,
-      modelId: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection),
-    }),
-  ]);
+  let existingFiles: GeneratedFile[];
+  let lastPlan: string;
+  let conversation: Awaited<ReturnType<typeof loadConversationContext>>;
+  try {
+    [existingFiles, lastPlan, conversation] = await Promise.all([
+      loadProjectFiles(project.id),
+      getLastProjectPlan(project.id),
+      loadConversationContext({
+        project,
+        userId,
+        modelId: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection),
+      }),
+    ]);
+  } catch (error: any) {
+    // An empty history after a failed read is not an empty conversation. Do
+    // not let the agent edit the project without its previous constraints.
+    console.warn('[coden:project_context_load_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+    const message = frenchActivity
+      ? 'Coden ne peut pas relire ce projet pour le moment. Réessaie dans quelques instants.'
+      : 'Coden cannot read this project right now. Please retry shortly.';
+    await persistRejectedAgentTurn(message, 'PROJECT_CONTEXT_UNAVAILABLE');
+    return respondJson(503, { success: false, needs_fix: true, recoverable: true, error: message, message,
+      diagnostic_code: 'PROJECT_CONTEXT_UNAVAILABLE', request_id: requestId, suggested_action: 'retry_later' });
+  }
   const recentHistory = dropCurrentPrompt(conversation.turns, prompt);
   const sessionContext = conversation.sessionContext;
   let initialDecision: IntentDecision;
