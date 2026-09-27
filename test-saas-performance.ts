@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs';
 const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
 const island = readFileSync(new URL('./src/builder-conversation-island.tsx', import.meta.url), 'utf8');
 const builder = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8');
+const navigation = readFileSync(new URL('./src/navigation-transitions.ts', import.meta.url), 'utf8');
+const notFound = readFileSync(new URL('./404.html', import.meta.url), 'utf8');
 
 // Responses go out compressed (event streams and previews excepted, see the unit test).
 assert.match(server, /app\.use\(responseCompression\(\)\);/, 'responses are compressed');
@@ -26,5 +28,20 @@ assert.match(island, /import\("katex"\)/, 'it is loaded on demand');
 
 // The conversation renders before the preview runtime is resolved.
 assert.ok(builder.indexOf('restoreMessages(payload);') < builder.indexOf('const resumedLive = await resumeLivePreview();'), 'messages first');
+
+// Navigation animations never hold a link click while the document changes.
+assert.match(navigation, /@view-transition\s*\{\s*navigation:\s*auto;/, 'supported browsers use native page transitions');
+assert.doesNotMatch(navigation, /preventDefault\(|setTimeout\(/, 'navigation never waits on a JavaScript timer');
+assert.doesNotMatch(navigation, /filter:\s*blur/, 'page transitions avoid costly filter animation');
+
+// A missing public route is a real, self-contained Coden recovery page.
+assert.match(notFound, /<meta name="robots" content="noindex, nofollow">/);
+assert.match(notFound, /<title>Page introuvable \| Coden<\/title>/);
+assert.match(notFound, /<main\b[^>]*aria-labelledby="page-title"/);
+assert.match(notFound, /href="\/"/);
+assert.match(notFound, /href="\/pricing\.html"/);
+assert.match(notFound, /prefers-reduced-motion:\s*reduce/);
+assert.doesNotMatch(notFound, /<script\b|https?:\/\//i, 'the error page has no third-party or script dependency');
+assert.match(server, /res\.status\(404\)\.sendFile\(path\.join\(staticDir, '404\.html'\)/, 'unknown public routes receive an HTTP 404 and the branded page');
 
 console.log('saas performance checks passed');
