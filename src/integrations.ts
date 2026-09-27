@@ -584,10 +584,10 @@ function installStyles() {
     .coden-int-search svg { position: absolute; left: 12px; width: 16px; height: 16px; fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
     .coden-int-search input { width: 100%; height: var(--control-height, 38px); padding: 0 12px 0 36px; border: 1px solid var(--border); border-radius: var(--radius-control, 10px); background: var(--surface); color: var(--foreground); font: inherit; font-size: 13px; outline: none; transition: border-color var(--transition-control, 140ms ease), box-shadow var(--transition-control, 140ms ease); }
     .coden-int-search input:focus { outline: none; border-color: var(--field-focus-border); box-shadow: var(--ring); }
-    .coden-int-categories { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .coden-int-categories { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 38px; box-sizing: border-box; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 4px 1px; scrollbar-width: none; }
     .coden-int-categories::-webkit-scrollbar { display: none; }
     .coden-int-categories[hidden] { display: none; }
-    .coden-int-chip { flex: none; height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-full, 999px); background: var(--surface); color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; transition: background var(--transition-micro, 120ms ease), color var(--transition-micro, 120ms ease), border-color var(--transition-micro, 120ms ease); }
+    .coden-int-chip { flex: 0 0 auto; height: 30px; min-height: 30px; box-sizing: border-box; margin: 0; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-full, 999px); background: var(--surface); color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 650; line-height: 28px; white-space: nowrap; cursor: pointer; transition: background var(--transition-micro, 120ms ease), color var(--transition-micro, 120ms ease), border-color var(--transition-micro, 120ms ease); }
     .coden-int-chip:hover { background: var(--surface-hover, var(--surface-soft)); color: var(--foreground); }
     .coden-int-chip.is-active { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
     .coden-int-chip:focus-visible, .coden-int-button:focus-visible, .coden-int-icon-button:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
