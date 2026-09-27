@@ -211,6 +211,43 @@ html[data-theme="dark"] .lp-hero-dots { background-image: radial-gradient(circle
   .lp-hero-orb.is-c { width: 76vw; }
 }
 
+/*
+ * The animated mesh (src/lib/brand-mesh.ts): a WebGL gradient in Coden's
+ * blues and cyans, drawn over the CSS light above once it has rendered, so
+ * the page never waits for it and still has its light without it.
+ */
+.lp-hero-mesh,
+.lp-finale-mesh {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1400ms var(--ease-standard);
+}
+.lp-hero-mesh {
+  top: 0;
+  left: 50%;
+  width: 100vw;
+  height: 100%;
+  /* Centred, and sinking a little as the hero scrolls away. */
+  translate: -50% calc(var(--lp-hero-p) * 80px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 64%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 64%, transparent 100%);
+}
+.lp-finale-mesh {
+  inset: 0;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 34%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 34%);
+}
+.lp-hero-mesh.is-ready { opacity: 1; }
+.lp-finale-mesh.is-ready { opacity: .92; }
+html[data-theme="dark"] .lp-finale-mesh.is-ready { opacity: .85; }
+.lp-hero-mesh canvas,
+.lp-finale-mesh canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/* The drawn mesh replaces the drifting orbs; they stay only as its fallback. */
+.lp-hero:has(.lp-hero-mesh.is-ready) .lp-hero-glow { opacity: 0; transition: opacity 1400ms var(--ease-standard); }
+@media (prefers-reduced-motion: reduce) { .lp-hero-mesh, .lp-finale-mesh { transition: none; } }
+
 /* One line at every width: the sentence runs about 12.2 times its font size
    in Geist at this tracking, so the size follows the column with room to
    spare instead of wrapping. */
@@ -262,7 +299,7 @@ html[data-theme="dark"] .lp-hero-dots { background-image: radial-gradient(circle
 
 /* Hero entrance: title, subtitle, composer, note, one after the other. */
 @media (prefers-reduced-motion: no-preference) {
-  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-glow) { animation: lp-rise 1000ms var(--ease-standard) backwards; }
+  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-glow):not(.lp-hero-mesh) { animation: lp-rise 1000ms var(--ease-standard) backwards; }
   .lp-hero-subtitle { animation-delay: 90ms !important; }
   .lp-composer { animation-delay: 180ms !important; }
   .lp-hero-note { animation-delay: 270ms !important; }
