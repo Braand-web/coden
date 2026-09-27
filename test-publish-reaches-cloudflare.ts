@@ -30,7 +30,7 @@ try {
   const requested: string[] = [];
   const fetchMock = async (input: string | URL | Request) => {
     requested.push(String(input));
-    return new Response('ok', { status: 200, headers: { 'content-type': 'text/html' } });
+    return new Response('<!doctype html><html><body><main>Ready</main></body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
   };
   const result = await verifyVercelDeployment({
     codenUrl: 'https://demo.coden.fun',
@@ -56,7 +56,7 @@ try {
   const headersSeen: Headers[] = [];
   const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
     headersSeen.push(new Headers(init?.headers));
-    return new Response('ok', { status: String(input).includes('pending.coden.fun') ? 404 : 200, headers: { 'content-type': 'text/html' } });
+    return new Response('<!doctype html><html><body><main>Ready</main></body></html>', { status: String(input).includes('pending.coden.fun') ? 404 : 200, headers: { 'content-type': 'text/html' } });
   };
   const result = await verifyVercelDeployment({
     codenUrl: 'https://pending.coden.fun',

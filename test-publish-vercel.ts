@@ -38,12 +38,43 @@ const verification = await verifyVercelDeployment(
   ['/'],
   (async (input: string | URL) => {
     urls.push(String(input));
-    return new Response('<!doctype html><title>Coden app</title>', { status: 200 });
+    return new Response('<!doctype html><html><title>Coden app</title><body><main>Ready</main></body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
   }) as typeof fetch,
 );
 
 assert.equal(verification.verified, true);
 assert.ok(urls.every(url => /^https:\/\/.+\.vercel\.app\/$/.test(url)));
+const published = { defaultUrl: 'https://example.vercel.app', deploymentUrl: 'https://example-build.vercel.app', codenUrl: null };
+for (const [body, reason] of [
+  ['', 'NON_HTML_RESPONSE'],
+  ['ok', 'EMPTY_HTML_DOCUMENT'],
+  ['<!doctype html><html><body></body></html>', 'EMPTY_HTML_DOCUMENT'],
+  ['<!doctype html><html><head><title>404: NOT_FOUND</title></head></html>', 'ERROR_DOCUMENT'],
+] as const) {
+  const result = await verifyVercelDeployment(published, ['/'], (async () =>
+    new Response(body, { status: 200, headers: { 'content-type': 'text/html' } })) as typeof fetch);
+  assert.equal(result.verified, false, `HTTP 200 must not hide ${reason}`);
+  assert.equal(result.checks[0]?.error, reason);
+}
+{
+  const result = await verifyVercelDeployment(published, ['/'], (async (input: string | URL) =>
+    String(input).endsWith('/assets/app.js')
+      ? new Response('<!doctype html><html><body>SPA fallback</body></html>', { status: 200, headers: { 'content-type': 'text/html' } })
+      : new Response('<!doctype html><html><body><div id="root"></div><script src="/assets/app.js"></script></body></html>', { status: 200, headers: { 'content-type': 'text/html' } })) as typeof fetch);
+  assert.equal(result.verified, false, 'a missing JS bundle must not be verified through a 200 SPA fallback');
+  assert.equal(result.checks[0]?.error, 'MISSING_APP_ASSET');
+}
+{
+  const requested: string[] = [];
+  const result = await verifyVercelDeployment(published, ['/', '/about'], (async (input: string | URL) => {
+    requested.push(String(input));
+    return String(input).endsWith('/assets/app.js')
+      ? new Response('console.log("ready")', { status: 200, headers: { 'content-type': 'application/javascript' } })
+      : new Response('<!doctype html><html><body><div id="root"></div><script src="/assets/app.js"></script></body></html>', { status: 200, headers: { 'content-type': 'text/html' } });
+  }) as typeof fetch);
+  assert.equal(result.verified, true, 'a real HTML page with a reachable JS bundle is publishable');
+  assert.equal(requested.filter(url => url.endsWith('/assets/app.js')).length, 1, 'shared assets are checked once');
+}
 // Production may not build generated code in the Coden process.
 assert.equal(localBuildAllowed({ NODE_ENV: 'production' }), false);
 assert.equal(localBuildAllowed({ NODE_ENV: 'production', CODEN_BUILD_RUNNER_ISOLATION: 'container' }), true);

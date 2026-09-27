@@ -1441,18 +1441,24 @@ export function applyCodenFullstackKit(input: FullstackKitInput): FullstackGener
 
   const packageFile = fileByPath(input.files, 'package.json');
   upsertFile(byPath, 'package.json', mergePackageJson(packageFile?.content || '{}'), 'json');
+  const keepCompatible = (filePath: string, compatible: RegExp, fallback: string, language: string) => {
+    const existing = byPath.get(filePath);
+    // Iterations must retain agent-authored pages, styles, routes and plugins.
+    // Only an absent or incompatible scaffold needs the deterministic fallback.
+    if (!existing || !compatible.test(existing.content)) upsertFile(byPath, filePath, fallback, language);
+  };
   // Normalize every data-backed generation to the same tested TanStack Start
   // runtime. The model remains responsible for the product UI in App.tsx;
   // Coden supplies only the framework, routing and deployment contract.
-  upsertFile(byPath, 'vite.config.ts', buildTanStackViteConfig(), 'ts');
-  upsertFile(byPath, 'tsconfig.json', buildTanStackTsconfig(), 'json');
+  keepCompatible('vite.config.ts', /\btanstackStart\s*\(/, buildTanStackViteConfig(), 'ts');
+  keepCompatible('tsconfig.json', /"moduleResolution"\s*:\s*"Bundler"/i, buildTanStackTsconfig(), 'json');
   byPath.delete('wrangler.jsonc');
   byPath.delete('wrangler.toml');
   upsertFile(byPath, 'vercel.json', buildVercelConfig(), 'json');
-  upsertFile(byPath, 'src/router.tsx', buildTanStackRouter(), 'tsx');
-  upsertFile(byPath, 'src/routeTree.gen.ts', buildTanStackRouteTree(), 'ts');
-  upsertFile(byPath, 'src/routes/__root.tsx', buildTanStackRootRoute(input.projectName), 'tsx');
-  upsertFile(byPath, 'src/routes/index.tsx', buildTanStackIndexRoute(), 'tsx');
+  keepCompatible('src/router.tsx', /\bcreateRouter\s*\(/, buildTanStackRouter(), 'tsx');
+  keepCompatible('src/routeTree.gen.ts', /\brootRoute\.addChildren\s*\(/, buildTanStackRouteTree(), 'ts');
+  keepCompatible('src/routes/__root.tsx', /\bcreateRootRoute(?:WithContext)?\s*(?:<[^>]+>)?\s*\(/, buildTanStackRootRoute(input.projectName), 'tsx');
+  keepCompatible('src/routes/index.tsx', /\bcreateFileRoute\s*\(\s*['"]\/['"]\s*\)/, buildTanStackIndexRoute(), 'tsx');
   upsertFile(byPath, 'src/vite-env.d.ts', '/// <reference types="vite/client" />\n', 'ts');
   upsertFile(byPath, 'src/lib/codenCloud.ts', buildCodenCloudClient(), 'ts');
   upsertFile(byPath, 'src/lib/appData.ts', buildAppDataLayer(input.requirement), 'ts');
@@ -1552,9 +1558,9 @@ export function validateCodenFullstackFiles(files: FullstackGeneratedFile[], req
   checks.push(edgeSecurity ? pass('fullstack_edge_security_present', 'Generated app includes Edge Function security helpers.', 'supabase/functions/_shared/security.ts') : fail('fullstack_edge_security_present', 'Missing Edge Function security helpers.', 'supabase/functions/_shared/security.ts'));
   checks.push(schema ? pass('fullstack_schema_present', 'Generated app includes a Supabase migration schema.', 'supabase/schema.sql') : fail('fullstack_schema_present', 'Missing supabase/schema.sql migration.', 'supabase/schema.sql'));
   checks.push(
-    routeTree && /rootRoute\.addChildren\(\[indexRoute\]\)/.test(routeTree.content) && /routes\/index/.test(routeTree.content)
-      ? pass('fullstack_route_tree_present', 'Generated app includes the deterministic TanStack route tree.', routeTree.path)
-      : fail('fullstack_route_tree_present', 'Missing deterministic TanStack route tree required by src/router.tsx.', 'src/routeTree.gen.ts'),
+    routeTree && /rootRoute\.addChildren\s*\(/.test(routeTree.content) && /routes\/index/.test(routeTree.content)
+      ? pass('fullstack_route_tree_present', 'Generated app includes a TanStack route tree with its index route.', routeTree.path)
+      : fail('fullstack_route_tree_present', 'Missing TanStack route tree required by src/router.tsx.', 'src/routeTree.gen.ts'),
   );
 
   if (schema) {

@@ -115,6 +115,20 @@ assert.match(byPath.get('package.json') || '', /"nitro"/);
 assert.doesNotMatch(byPath.get('package.json') || '', /wrangler|@cloudflare\/vite-plugin/);
 assert.match(byPath.get('vercel.json') || '', /"framework": "tanstack-start"/);
 assert.match(byPath.get('src/routeTree.gen.ts') || '', /rootRoute\.addChildren\(\[indexRoute\]\)/);
+// An iteration may edit the real TanStack page and plugin configuration. The
+// kit must not turn that finished UI back into the stock App route.
+{
+  const editedIndex = "import { createFileRoute } from '@tanstack/react-router'; export const Route = createFileRoute('/')({ component: () => <main className='custom-design'>My booking app</main> });";
+  const editedVite = `${byPath.get('vite.config.ts')}\n// Keep the app's Tailwind/theme plugin wiring.`;
+  const editedRoutes = files.map(file => file.path === 'src/routes/index.tsx'
+    ? { ...file, content: editedIndex }
+    : file.path === 'vite.config.ts' ? { ...file, content: editedVite } : file);
+  const iterated = applyCodenFullstackKit({ files: editedRoutes, projectName: 'CRM', prompt, requirement });
+  const iteratedByPath = new Map(iterated.map(file => [file.path, file.content]));
+  assert.equal(iteratedByPath.get('src/routes/index.tsx'), editedIndex, 'agent-authored route and design survive the next run');
+  assert.equal(iteratedByPath.get('vite.config.ts'), editedVite, 'existing compatible frontend plugins survive the next run');
+  assert.equal(validateCodenFullstackFiles(iterated, requirement).filter(check => check.status === 'fail').length, 0);
+}
 assert.equal(resolveGeneratedAppProfile({ prompt, files, requirement }), 'tanstack-fullstack');
 assert.match(byPath.get('package.json') || '', /@types\/node/);
 assert.match(byPath.get('package.json') || '', /"zod"/);

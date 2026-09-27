@@ -437,6 +437,39 @@ export async function verifyVercelDeployment(
     .filter(route => /^\/(?!\/)/.test(route) && !/[\\:*]/.test(route))
     .slice(0, 4);
   const checks: Array<{ url: string; status: number; ok: boolean; error?: string }> = [];
+  const verifiedAssets = new Set<string>();
+  const readHtmlSample = async (response: Response): Promise<string> => {
+    const reader = response.body?.getReader();
+    if (!reader) return '';
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (size < 128 * 1024) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) { chunks.push(value); size += value.byteLength; }
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, 128 * 1024));
+  };
+  const assetPaths = (html: string, documentUrl: string): string[] => {
+    const paths: string[] = [];
+    for (const tag of html.match(/<(?:script|link)\b[^>]*>/gi) || []) {
+      const isScript = /^<script\b/i.test(tag);
+      if (!isScript && !/\brel\s*=\s*["']?stylesheet\b/i.test(tag)) continue;
+      const attribute = isScript ? 'src' : 'href';
+      const value = new RegExp(`\\b${attribute}\\s*=\\s*["']([^"']+)["']`, 'i').exec(tag)?.[1];
+      if (!value) continue;
+      try {
+        const asset = new URL(value, documentUrl);
+        if (asset.origin === new URL(documentUrl).origin) paths.push(asset.toString());
+      } catch { /* Invalid references are handled by the browser, not fetched here. */ }
+      if (paths.length >= 3) break;
+    }
+    return paths;
+  };
   for (const base of bases) {
     const attemptChecks: Array<{ url: string; status: number; ok: boolean; error?: string }> = [];
     for (const route of routes) {
@@ -448,9 +481,31 @@ export async function verifyVercelDeployment(
         // A public publication must work for visitors, without private bypass credentials.
         const response = await fetchImpl(url, { redirect: 'follow', signal: controller.signal, headers });
         const redirectedToLogin = /(?:^|\.)vercel\.com\/login/i.test(response.url || '');
-        const check = { url, status: response.status, ok: response.status >= 200 && response.status < 300 && !redirectedToLogin };
+        const contentType = response.headers.get('content-type') || '';
+        const html = response.ok && !redirectedToLogin && /(?:text\/html|application\/xhtml\+xml)/i.test(contentType)
+          ? await readHtmlSample(response)
+          : '';
+        const hasDocument = /<!doctype\s+html|<html\b|<body\b/i.test(html);
+        const body = /<body\b[^>]*>([\s\S]*)/i.exec(html)?.[1] || '';
+        const hasAppContent = /<script\b|<(?:main|h[1-6]|p|button|input|img|svg|canvas|iframe|form|a)\b/i.test(body)
+          || /[^\s<>][^<>]*</.test(body.replace(/<(?:style|script)\b[\s\S]*?<\/\s*(?:style|script)\s*>/gi, ''));
+        const providerError = /<title[^>]*>\s*(?:404:\s*NOT_FOUND|Application Error|Internal Server Error)\s*<\/title>/i.test(html);
+        let error = !response.ok ? `HTTP ${response.status}` : redirectedToLogin ? 'VERCEL_LOGIN_REDIRECT'
+          : !html ? 'NON_HTML_RESPONSE' : providerError ? 'ERROR_DOCUMENT' : !hasDocument || !hasAppContent ? 'EMPTY_HTML_DOCUMENT' : undefined;
+        if (!error) {
+          for (const assetUrl of assetPaths(html, response.url || url)) {
+            if (verifiedAssets.has(assetUrl)) continue;
+            const assetResponse = await fetchImpl(assetUrl, { redirect: 'follow', signal: controller.signal, headers });
+            const assetType = assetResponse.headers.get('content-type') || '';
+            if (!assetResponse.ok || /text\/html/i.test(assetType)) error = 'MISSING_APP_ASSET';
+            await assetResponse.body?.cancel();
+            if (error) break;
+            verifiedAssets.add(assetUrl);
+          }
+        }
+        const check = { url, status: response.status, ok: !error, ...(error ? { error } : {}) };
         attemptChecks.push(check);
-        await response.body?.cancel();
+        if (!html) await response.body?.cancel();
       } catch (error: any) {
         attemptChecks.push({ url, status: 0, ok: false, error: String(error?.message || error) });
       } finally {
