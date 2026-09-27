@@ -26,7 +26,7 @@ assert.match(pricingHtml, /data-pricing-tier="business"/, 'Business requires a c
 assert.match(pricingHtml, /src="\/src\/pricing-page\.ts"/, 'Pricing requires the dynamic catalog adapter.');
 assert.match(smokeCheck, /['"]\/pricing\.html['"]/, 'Production smoke checks must include the pricing page.');
 assert.match(smokeCheck, /['"]\/pricing['"]/, 'Production smoke checks must include the short pricing redirect.');
-assert.match(server, /function requireBillingAuth[\s\S]*?req\.method === 'GET' && req\.path === '\/plans'/, 'Only the public pricing catalog may bypass billing authentication.');
+assert.match(server, /function requireBillingAuth[\s\S]*?req\.method === 'GET' && \(req\.path === '\/plans' \|\| req\.path === '\/pricing'\)/, 'Only the two public pricing catalogs may bypass billing authentication.');
 assert.match(server, /app\.use\('\/api\/billing', requireBillingAuth\)/, 'All other billing routes must remain authenticated.');
 
 assert.equal(priceFor('pro', 100, 'monthly').amountUsd, 25, 'Pro 100 monthly must match the public V2 price.');

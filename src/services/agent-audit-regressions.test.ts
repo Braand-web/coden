@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { sandboxRegistry, SandboxRegistry } from './sandbox/sandbox-registry.ts';
 import { launchProjectPreview } from './sandbox/launch.ts';
 import { issuePreviewToken } from './sandbox/preview-token.ts';
@@ -89,6 +90,39 @@ describe('Agent audit regressions', () => {
     const result = await runCoderLoop({ sandbox:sandbox as any, mode:'build', initialInstruction:'Make the button blue', maxRounds:2, initialReport:clean(), turn:async()=>({toolCalls:0}), verifyPreview:async()=>clean() });
     expect(result.ok).toBe(false);
     expect(result.finalReport.problems.some(problem=>problem.message.includes('NO_CHANGES'))).toBe(true);
+  });
+  it('keeps repeatedly failing browser journeys blocking instead of reporting a false success', async () => {
+    const pipeline = readFileSync(new URL('./multi-agent-pipeline.ts', import.meta.url), 'utf8');
+    expect(pipeline).not.toContain('capBehaviourChurn');
+    expect(pipeline).not.toMatch(/problem\.severity\s*=\s*['"]warning['"]/);
+
+    let checks = 0;
+    const failure = () => ({
+      ok: false,
+      problems: [
+        { source: 'runtime' as const, severity: 'error' as const, message: 'FUNCTIONALITY dead link: /checkout 404' },
+        { source: 'runtime' as const, severity: 'error' as const, message: 'SCENARIO "complete checkout" failed: no visible element' },
+      ],
+      ran: { devServer: true, typecheck: true, build: false, browser: true },
+      durationMs: 1,
+    });
+    const result = await runCoderLoop({
+      sandbox: sandbox as any,
+      mode: 'build',
+      initialInstruction: 'Make checkout work',
+      maxRounds: 4,
+      maxStalledRounds: 4,
+      initialReport: clean(),
+      turn: async ({ call }) => {
+        await call('write_file', { path: 'src/App.tsx', content: `attempt ${checks + 1}` });
+        return { toolCalls: 1 };
+      },
+      verifyPreview: async () => { checks += 1; return failure(); },
+    });
+    expect(checks).toBeGreaterThanOrEqual(3);
+    expect(result.ok).toBe(false);
+    expect(result.finalReport.problems).toContainEqual(expect.objectContaining({ severity: 'error', message: expect.stringContaining('FUNCTIONALITY dead link') }));
+    expect(result.finalReport.problems).toContainEqual(expect.objectContaining({ severity: 'error', message: expect.stringContaining('SCENARIO "complete checkout"') }));
   });
   it('preserves the original mission and previous steering in repair rounds', async () => {
     const instructions:string[]=[];
