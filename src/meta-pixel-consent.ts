@@ -160,7 +160,8 @@ function mountConsentBanner() {
 
 export function initMetaPixelConsentUi() {
   if (typeof window === 'undefined' || typeof document === 'undefined' || !isMetaPixelPublicPath(window.location.pathname)) return;
-  mountConsentBanner();
+  // Keep preferences available on demand without interrupting the first visit.
+  // Without an existing opt-in, advertising measurement remains off.
   if (readConsent() === 'accepted') loadMetaPixel()?.('consent', 'grant');
 
   if (consentUiBound) return;

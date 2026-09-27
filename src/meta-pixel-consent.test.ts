@@ -22,13 +22,23 @@ describe('Coden Meta Pixel consent', () => {
   it('does not load the third-party script before an explicit choice', () => {
     resetBrowserState();
     initMetaPixelConsentUi();
+    expect(document.getElementById('coden-meta-consent')).toBeNull();
     expect(document.querySelector('script[data-coden-meta-pixel]')).toBeNull();
     expect(localStorage.getItem(META_PIXEL_CONSENT_KEY)).toBeNull();
+  });
+
+  it('keeps an earlier opt-in active without showing preferences automatically', () => {
+    resetBrowserState();
+    localStorage.setItem(META_PIXEL_CONSENT_KEY, 'accepted');
+    initMetaPixelConsentUi();
+    expect(document.getElementById('coden-meta-consent')).toBeNull();
+    expect(document.querySelector('script[data-coden-meta-pixel]')).not.toBeNull();
   });
 
   it('keeps tracking disabled after refusal and lets the visitor reopen preferences', () => {
     resetBrowserState();
     initMetaPixelConsentUi();
+    document.querySelector<HTMLButtonElement>('[data-coden-open-consent]')?.click();
     document.querySelector<HTMLButtonElement>('.coden-meta-consent-button')?.click();
     expect(localStorage.getItem(META_PIXEL_CONSENT_KEY)).toBe('rejected');
     expect(document.querySelector('script[data-coden-meta-pixel]')).toBeNull();
@@ -40,6 +50,7 @@ describe('Coden Meta Pixel consent', () => {
   it('revokes an earlier choice and stops sending events after withdrawal', () => {
     resetBrowserState();
     initMetaPixelConsentUi();
+    document.querySelector<HTMLButtonElement>('[data-coden-open-consent]')?.click();
     document.querySelectorAll<HTMLButtonElement>('.coden-meta-consent-button')[1]?.click();
     document.querySelector<HTMLButtonElement>('[data-coden-open-consent]')?.click();
     document.querySelector<HTMLButtonElement>('.coden-meta-consent-button')?.click();
@@ -56,6 +67,7 @@ describe('Coden Meta Pixel consent', () => {
   it('loads the configured pixel only after acceptance and starts with one page view', () => {
     resetBrowserState();
     initMetaPixelConsentUi();
+    document.querySelector<HTMLButtonElement>('[data-coden-open-consent]')?.click();
     document.querySelectorAll<HTMLButtonElement>('.coden-meta-consent-button')[1]?.click();
 
     expect(localStorage.getItem(META_PIXEL_CONSENT_KEY)).toBe('accepted');
@@ -70,6 +82,7 @@ describe('Coden Meta Pixel consent', () => {
   it('forwards only the whitelisted event name and not Coden conversion metadata', () => {
     resetBrowserState();
     initMetaPixelConsentUi();
+    document.querySelector<HTMLButtonElement>('[data-coden-open-consent]')?.click();
     document.querySelectorAll<HTMLButtonElement>('.coden-meta-consent-button')[1]?.click();
     window.dispatchEvent(new CustomEvent('coden:conversion', {
       detail: { event_name: 'start_building_click', metadata: { email: 'private@example.com', prompt: 'private project idea' } },
