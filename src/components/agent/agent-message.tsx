@@ -308,6 +308,9 @@ export function AgentMessage({ state, onCopy, onRetry, onDecisionSelect, onDecis
     {state.pausedReason === 'decision' && state.status !== 'error' ? (
       <p className="coden-agent-message-waiting" role="status">Coden attend votre décision pour continuer. Votre travail est enregistré.</p>
     ) : null}
+    {state.pausedReason === 'credits' && state.status !== 'error' ? (
+      <p className="coden-agent-message-waiting" role="status">Session en pause. Votre demande et votre travail sont conservés. Rechargez vos crédits, puis relancez la demande pour continuer.</p>
+    ) : null}
     {state.status === 'cancelled' ? <p className="coden-agent-message-note">Exécution annulée.</p> : null}
     {!streaming && (onCopy || onRetry) ? <div className="coden-message-actions">
       {onCopy ? <button type="button" aria-label="Copier" title="Copier" onClick={onCopy}><Copy size={15} aria-hidden="true" /></button> : null}

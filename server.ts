@@ -6274,11 +6274,11 @@ function sanitizeAiUsageRow(row: any) {
 function publicCreditGateResponse(french = true, autoCanHelp = false) {
   const message = french
     ? autoCanHelp
-      ? 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde, ou choisissez le mode Auto qui sélectionne un modèle moins coûteux.'
-      : 'Il ne reste pas assez de crédits pour cette action. Rechargez votre solde pour continuer.'
+      ? 'La session est en pause : il ne reste pas assez de crédits pour continuer. Votre travail est conservé. Rechargez votre solde, ou choisissez le mode Auto.'
+      : 'La session est en pause : il ne reste pas assez de crédits pour continuer. Votre travail est conservé. Rechargez votre solde pour reprendre.'
     : autoCanHelp
-      ? 'There are not enough credits left for this action. Top up your balance, or use Auto, which picks a cheaper model.'
-      : 'There are not enough credits left for this action. Top up your balance to continue.';
+      ? 'This session is paused because there are not enough credits to continue. Your work is saved. Top up your balance or switch to Auto.'
+      : 'This session is paused because there are not enough credits to continue. Your work is saved. Top up your balance to resume.';
   return {
     success: false,
     event: 'credits_insufficient',
@@ -10774,8 +10774,21 @@ async function reserveUnifiedUsage(input: {
     p_idempotency_key: input.idempotencyKey,
     p_expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
   });
-  if (error || !data) throw new Error(`Unified usage reservation failed: ${error?.message || 'no reservation returned'}`);
+  if (error || !data) {
+    const detail = String(error?.message || 'no reservation returned');
+    if (/insufficient eligible credits or cogs capacity/i.test(detail)) {
+      const refusal = new Error('Insufficient eligible credits to reserve this action.') as Error & { diagnosticCode: string };
+      refusal.diagnosticCode = 'CREDITS_REQUIRED';
+      throw refusal;
+    }
+    throw new Error(`Unified usage reservation failed: ${detail}`);
+  }
   return { ...input, credits, estimatedCogsUsd, id: String(data) };
+}
+
+function isCreditReservationRequired(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object'
+    && (error as { diagnosticCode?: unknown }).diagnosticCode === 'CREDITS_REQUIRED');
 }
 
 async function recordUnifiedUsageEvent(input: {
@@ -14047,13 +14060,19 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
     const refId = `req_${Math.random().toString(36).substring(2, 13)}`;
     let unifiedReservation: UnifiedUsageReservation | null = null;
     if (CODEN_MONETIZATION_ENABLED) {
-      unifiedReservation = await reserveUnifiedUsage({
-        accountId: orgId,
-        category: 'ai_gateway',
-        credits: initialEstimate.finalCredits,
-        estimatedCogsUsd: Math.max(Number(actionCostComp.openrouter_cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0), 0.000001),
-        idempotencyKey: `${refId}:reserve`,
-      });
+      try {
+        unifiedReservation = await reserveUnifiedUsage({
+          accountId: orgId,
+          category: 'ai_gateway',
+          credits: initialEstimate.finalCredits,
+          estimatedCogsUsd: Math.max(Number(actionCostComp.openrouter_cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0), 0.000001),
+          idempotencyKey: `${refId}:reserve`,
+        });
+      } catch (error: any) {
+        if (isCreditReservationRequired(error)) return res.status(402).json(publicCreditGateResponse(true, false));
+        console.error('[coden:compatibility_reservation_unavailable]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+        return res.status(503).json({ success: false, diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE', error: 'Le service de crédits est temporairement indisponible. Réessayez dans un instant.' });
+      }
     }
 
     // 4. Call OpenRouter
@@ -15156,7 +15175,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           && [payload.summary, payload.text, payload.message].some(value => typeof value === 'string' && value.trim())) {
           await harnessContext.harness.settleDefinitionOfDone(harnessContext.turn.id, { answer_complete:{status:'passed', evidence:'A provider response was generated and persisted for the resolved conversational task.'} });
         }
-        let terminal: 'cancelled' | 'failed' | 'completed' | 'blocked' = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
+        const creditPaused = status === 402 && payload.diagnostic_code === 'CREDITS_REQUIRED';
+        let terminal: 'cancelled' | 'failed' | 'completed' | 'blocked' = status === 499 ? 'cancelled' : creditPaused ? 'blocked' : status >= 400 || payload.success === false ? 'failed' : 'completed';
         const current = await harnessContext.harness.store.getTurn(harnessContext.turn.id);
         const pendingChecks = current?.definitionOfDone.filter(check => check.required && check.status !== 'passed') || [];
         if (terminal === 'completed' && pendingChecks.length) {
@@ -15239,17 +15259,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     await eventStream?.drain().catch(streamError => {
       console.warn('[coden:generate_stream_drain_failed]', { requestId, message: redactSecrets(String(streamError), '[redacted]') });
     });
+    const creditPaused = status === 402 && payload.diagnostic_code === 'CREDITS_REQUIRED';
     if ([payload.summary, payload.text, payload.message, payload.error].some(value => typeof value === 'string' && value.trim()) || eventStream?.transcript || eventStream?.persistedChatEvents.length) {
       try {
         const streamedText = eventStream?.transcript || '';
-        const finalText = [payload.summary, payload.text, payload.message, payload.error]
+        const finalText = creditPaused ? '' : [payload.summary, payload.text, payload.message, payload.error]
           .find(value => typeof value === 'string' && value.trim())?.trim() || '';
         const assistantContent = streamedText
           ? streamedText.trimEnd().endsWith(finalText) || !finalText
             ? streamedText
             : `${streamedText.trimEnd()}\n\n${finalText}`
           : finalText;
-        const streamStatus = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'done';
+        const streamStatus = status === 499 ? 'cancelled' : creditPaused ? 'done' : status >= 400 || payload.success === false ? 'failed' : 'done';
         await saveProjectMessage({
           organization_id: project.organization_id,
           project_id: project.id,
@@ -15260,7 +15281,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           intent: payload.intent?.intent,
           requested_mode: requestedMode,
           metadata: {
-            ...(payload.diagnostic_code ? { outcome: streamStatus === 'failed' ? 'blocked' : streamStatus, diagnostic_code: payload.diagnostic_code } : {}),
+            ...(payload.diagnostic_code ? { outcome: creditPaused || streamStatus === 'failed' ? 'blocked' : streamStatus, diagnostic_code: payload.diagnostic_code } : {}),
             ...(eventStream ? { coden_stream: {
               version: 1,
               status: streamStatus,
@@ -15512,7 +15533,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     if (CODEN_MONETIZATION_ENABLED && pipelineCost.finalCredits > 0) {
       const spendable = await unifiedCategoryCredits(billingAccountId, 'build');
       if (spendable < pipelineCost.finalCredits) {
-        return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
+        const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+        await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
+        return respondJson(402, creditGate);
       }
       try {
         pipelineReservation = await reserveUnifiedUsage({
@@ -15528,7 +15551,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           project_id: project.id,
           message: redactSecrets(error?.message || String(error), '[redacted]'),
         });
-        return respondJson(402, publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto'));
+        if (isCreditReservationRequired(error)) {
+          const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+          await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
+          return respondJson(402, creditGate);
+        }
+        return respondJson(503, {
+          success: false,
+          recoverable: true,
+          diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE',
+          error: frenchActivity ? 'Le service de crédits est temporairement indisponible. Votre demande est conservée, réessayez dans un instant.' : 'The credit service is temporarily unavailable. Your request is saved; please retry shortly.',
+        });
       }
     }
     try {
@@ -16220,7 +16253,17 @@ ${resolvedMission}` : resolvedMission;
         });
       } catch (error: any) {
         console.warn('[coden:text_reservation_refused]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
-        return respondJson(402, publicCreditGateResponse(frenchActivity, false));
+        if (isCreditReservationRequired(error)) {
+          const creditGate = publicCreditGateResponse(frenchActivity, false);
+          await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
+          return respondJson(402, creditGate);
+        }
+        return respondJson(503, {
+          success: false,
+          recoverable: true,
+          diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE',
+          error: frenchActivity ? 'Le service de crédits est temporairement indisponible. Votre demande est conservée, réessayez dans un instant.' : 'The credit service is temporarily unavailable. Your request is saved; please retry shortly.',
+        });
       }
     }
     let agentText: any;
@@ -16428,15 +16471,31 @@ ${resolvedMission}` : resolvedMission;
   let measuredProviderCostUsd = 0;
   let generationUsageFinalized = false;
   if (CODEN_MONETIZATION_ENABLED) {
-    unifiedGenerationReservation = await reserveUnifiedUsage({
-      accountId: billingAccountId,
-      category: 'build',
-      // The public action table is the contract. Model choice and effort may
-      // affect Coden's COGS, never the credits silently charged to the user.
-      credits: cost.finalCredits,
-      estimatedCogsUsd: Math.max(cost.finalCredits * 0.02, 0.000001),
-      idempotencyKey: `${refId}:reserve`,
-    });
+    try {
+      unifiedGenerationReservation = await reserveUnifiedUsage({
+        accountId: billingAccountId,
+        category: 'build',
+        // The public action table is the contract. Model choice and effort may
+        // affect Coden's COGS, never the credits silently charged to the user.
+        credits: cost.finalCredits,
+        estimatedCogsUsd: Math.max(cost.finalCredits * 0.02, 0.000001),
+        idempotencyKey: `${refId}:reserve`,
+      });
+    } catch (error: any) {
+      if (isCreditReservationRequired(error)) {
+        const autoCanHelp = requestedModelSelection !== 'auto';
+        await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
+        return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
+      }
+      console.error('[coden:generation_reservation_unavailable]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE', suggested_action: 'retry_later' });
+      return respondJson(503, {
+        success: false,
+        recoverable: true,
+        diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE',
+        error: frenchActivity ? 'Le service de crédits est temporairement indisponible. Votre demande est conservée, réessayez dans un instant.' : 'The credit service is temporarily unavailable. Your request is saved; please retry shortly.',
+      });
+    }
   }
 
   const releaseFailedGenerationUsage = async (resource: string) => {

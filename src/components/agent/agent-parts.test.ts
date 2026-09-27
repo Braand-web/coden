@@ -35,3 +35,15 @@ describe('decision_required', () => {
     }
   });
 });
+
+describe('credits pause', () => {
+  it('closes the stream as paused, not failed, and retains the reason', () => {
+    const paused = reduceAgentMessage({ ...EMPTY_MESSAGE }, { type: 'run_paused', reason: 'credits' }, 1);
+    const finished = reduceAgentMessage(paused, { type: 'run_finished', reason: 'completed' }, 2);
+
+    expect(finished.status).toBe('done');
+    expect(finished.pausedReason).toBe('credits');
+    expect(finished.error).toBeUndefined();
+    expect(finished.thinking).toBe(false);
+  });
+});

@@ -4,6 +4,8 @@ import { publicRuntimeErrorMessage } from './src/services/ai-model-runtime.ts';
 
 // Keep source assertions portable across Git's LF/CRLF checkout setting.
 const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const stream = readFileSync(new URL('./src/services/agent-event-stream.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+const builder = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 /*
  * What production showed, and what must never come back.
@@ -137,6 +139,16 @@ assert.doesNotMatch(
   // Never HTTP 200 for a refusal.
   assert.doesNotMatch(server, /respondJson\(200, publicCreditGateResponse\(/, 'a refusal must not answer with a success status');
   assert.doesNotMatch(server, /respondJson\(200, \{\s*\.\.\.publicCreditGateResponse\(\),?\s*\}\)/, 'nor spread into one');
+  assert.match(gate, /session est en pause/i, 'the public refusal describes a saved pause rather than a failed run');
+  assert.match(stream, /status === 402 && payload\.diagnostic_code === 'CREDITS_REQUIRED'[\s\S]*?type: 'run_paused', reason: 'credits'/, 'the stream carries a credits pause instead of a failure');
+  assert.match(server, /const creditPaused = status === 402 && payload\.diagnostic_code === 'CREDITS_REQUIRED';[\s\S]*?creditPaused \? 'blocked'/, 'the durable harness turn is blocked, not failed, when credits run out');
+  assert.match(builder, /function isCreditsRequired\(error: unknown\)/, 'the client recognizes the server-owned credit diagnostic');
+  assert.match(builder, /function showCreditsModal\([^)]*\)[\s\S]*?Voir les offres[\s\S]*?Plus tard/, 'the pause offers billing or safe dismissal');
+  assert.doesNotMatch(builder, /lastWalletBalance === 0 && !attach/, 'a stale browser balance cannot override the server ledger');
+  const reservation = server.slice(server.indexOf('async function reserveUnifiedUsage('), server.indexOf('async function recordUnifiedUsageEvent('));
+  assert.match(reservation, /insufficient eligible credits or cogs capacity/i, 'only the ledger’s insufficient-credit refusal is classified as a credit pause');
+  assert.match(reservation, /diagnosticCode = 'CREDITS_REQUIRED'/, 'the atomic reservation race returns the same public diagnostic');
+  assert.match(server, /isCreditReservationRequired\(error\)[\s\S]*?respondJson\(402, publicCreditGateResponse\(frenchActivity, autoCanHelp\)\)[\s\S]*?BILLING_RESERVATION_UNAVAILABLE/, 'ledger outages remain technical errors rather than false upgrade prompts');
 }
 
 // A run that wrote files but did not verify is a failure the harness can name.

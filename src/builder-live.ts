@@ -2947,6 +2947,10 @@ function runtimeDiagnosticCodeFromError(error: unknown) {
   return '';
 }
 
+function isCreditsRequired(error: unknown) {
+  return runtimeDiagnosticCodeFromError(error) === 'CREDITS_REQUIRED';
+}
+
 function safeBuilderFailureText(error: unknown, _speaksFrench: boolean) {
   const diagnostic = runtimeDiagnosticCodeFromError(error);
   const recovery = getRuntimeRecoveryPresentation(diagnostic, UI_LOCALE);
@@ -3298,6 +3302,10 @@ async function answerSimpleConversationFromProvider(card: HTMLElement | null, pr
     if (error instanceof ApiError && error.status === 409 && (payload?.diagnostic_code === 'PROJECT_RUN_REQUIRED' || payload?.requires_project)) {
       return 'project_run';
     }
+    if (isCreditsRequired(error)) {
+      pauseRunForCredits(card, speaksFrench, 'Session en pause. Votre demande est conservée dans le chat. Rechargez vos crédits, puis relancez-la pour continuer.');
+      return 'failed';
+    }
     /*
      * Every exit closes the run.
      *
@@ -3516,6 +3524,16 @@ function openUpgradeSettings(): void {
   closeProjectMenu();
   (window as any).codenTrackFunnelEvent?.('upgrade_modal_opened', { surface: 'builder', recommended_plan: 'pro' });
   document.dispatchEvent(new CustomEvent('coden:open-settings', { detail: { tab: 'billing' } }));
+}
+
+function pauseRunForCredits(card: HTMLElement | null, speaksFrench = true, message = '') {
+  const pauseMessage = message || (speaksFrench
+    ? 'Session en pause. Votre demande est conservée dans le chat. Rechargez vos crédits, puis relancez-la pour continuer.'
+    : 'Session paused. Your request is saved in the chat. Top up your credits, then send it again to continue.');
+  clearMessageShimmer(card);
+  finishLiveRun(card, pauseMessage);
+  void refreshCreditCounter();
+  showCreditsModal(speaksFrench);
 }
 
 function openProjectMenu() {
@@ -6585,15 +6603,10 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   }
 
   // Intent gate (state 2 -> state 3): reaching here means promptUiContext is the
-  // build/edit run path (conversation/plan/clarify/critical returned earlier). If
-  // we are not already in the workspace, reveal the builder before running — unless
-  // credits are known-empty client-side, in which case show the upgrade prompt and
-  // do not reveal/run.
+  // build/edit run path (conversation/plan/clarify/critical returned earlier).
+  // Credit availability is decided by the canonical server ledger, never a
+  // possibly stale client-side balance.
   const revealsWorkspace = Boolean(currentBuilderLayout() && currentBuilderLayout() !== 'workspace');
-  if (revealsWorkspace && lastWalletBalance === 0 && !attach) {
-    showCreditsModal();
-    return;
-  }
 
   stopRequested = false;
   setBusy(true);
@@ -7152,6 +7165,26 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       failLiveRun(status, stoppedText, 'cancelled');
       if (generationTouchesPreview) setEmptyPreviewState('idle', stopRequested ? 'Generation stopped' : 'Build cancelled');
     } else {
+      if (isCreditsRequired(error)) {
+        const pausedText = 'Session en pause. Votre demande et votre travail sont conservés. Rechargez vos crédits, puis relancez la demande pour continuer.';
+        clearMessageShimmer(status);
+        if (useAgentFlow) {
+          flowStatus = 'done';
+          flowIsStreaming = false;
+          flowStreamingText = '';
+          flowSummary = pausedText;
+          flowPhase = say('En pause', 'Paused');
+          flushFlow();
+        }
+        journal.status = 'done';
+        journal.activeText = '';
+        journal.finalText = '';
+        scheduleJournal(true);
+        finishLiveRun(status);
+        void refreshCreditCounter();
+        if (generationTouchesPreview) setEmptyPreviewState('idle', 'Session en pause');
+        showCreditsModal(speaksFrench);
+      } else {
       const errorText = safeBuilderFailureText(error, speaksFrench);
       const runStatus = 'failed';
       clearMessageShimmer(status);
@@ -7181,6 +7214,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
       };
       showRuntimeRecovery(status, error, speaksFrench, { retry, useAuto });
       if (generationTouchesPreview) setEmptyPreviewState('idle', 'Preview non vérifiée');
+      }
     }
   } finally {
     if (journalTimer !== null) window.clearInterval(journalTimer);
@@ -8692,22 +8726,24 @@ async function resumeFromClarification(answer: string, originalPrompt: string, r
   await generateFromPrompt(response.prompt || `${safeOriginalPrompt}\n\nClarification answer: ${safeAnswer}`, response.requestedMode || requestedMode, false, {}, safeAnswer);
 }
 
-function showCreditsModal() {
-  showMiniModal('Upgrade required', `
-    <p>Your current balance or plan does not support this action with the selected model.</p>
-    <div class="coden-modal-actions">
-      <button data-action="upgrade">Upgrade plan</button>
-      <button data-action="topup">Buy credits</button>
-      <button data-action="auto">Use Auto</button>
-      <button data-action="cancel">Cancel</button>
+function showCreditsModal(speaksFrench = true) {
+  const title = speaksFrench ? 'Session en pause' : 'Session paused';
+  const headline = speaksFrench ? 'Il ne reste pas assez de crédits pour continuer.' : 'There are not enough credits to continue.';
+  const explanation = speaksFrench
+    ? 'Votre demande et votre travail sont conservés. Rechargez votre solde ou choisissez une offre, puis relancez la demande.'
+    : 'Your request and work are saved. Top up your balance or choose a plan, then send the request again.';
+  showMiniModal(title, `
+    <div class="coden-credit-pause">
+      <div class="coden-credit-pause-mark" aria-hidden="true">↗</div>
+      <p class="coden-credit-pause-title">${headline}</p>
+      <p class="coden-credit-pause-copy">${explanation}</p>
+      <div class="coden-credit-pause-actions">
+        <button data-action="upgrade" class="coden-credit-pause-primary" type="button">${speaksFrench ? 'Voir les offres' : 'View plans'}</button>
+        <button data-action="close" class="coden-credit-pause-secondary" type="button">${speaksFrench ? 'Plus tard' : 'Not now'}</button>
+      </div>
     </div>
-  `, (action) => {
-    if (action === 'upgrade') ((document.getElementById('btn-upgrade') as HTMLElement | null) || document.querySelector<HTMLElement>('.btn-upgrade'))?.click();
-    if (action === 'auto') {
-      applySelectedModel('auto', { persist: true, saveWorkspace: true });
-      const label = document.getElementById('current-model-label');
-      if (label) label.textContent = 'Auto';
-    }
+  `, action => {
+    if (action === 'upgrade') openUpgradeSettings();
   });
 }
 
@@ -8772,10 +8808,11 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
   root.id = 'coden-live-modal';
   root.className = 'coden-live-modal';
   root.setAttribute('role', 'presentation');
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   root.innerHTML = `
-    <div class="coden-live-modal-panel" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" tabindex="-1">
+    <div class="coden-live-modal-panel" role="dialog" aria-modal="true" aria-labelledby="coden-live-modal-title" tabindex="-1">
       <div class="coden-live-modal-head">
-        <h3>${escapeHtml(title)}</h3>
+        <h3 id="coden-live-modal-title">${escapeHtml(title)}</h3>
         <button data-action="close" class="coden-live-modal-close" type="button" aria-label="Fermer">&times;</button>
       </div>
       <div class="coden-live-modal-body">${html}</div>
@@ -8784,9 +8821,22 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
   const close = () => {
     document.removeEventListener('keydown', onKeyDown);
     root.remove();
+    previousFocus?.focus();
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') close();
+    if (event.key === 'Tab') {
+      const focusable = [...root.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      if (!focusable.length) { event.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    }
   };
   root.querySelectorAll('button[data-action]').forEach(button => {
     button.addEventListener('click', async () => {
@@ -8801,7 +8851,7 @@ function showMiniModal(title: string, html: string, onAction: (action: string, r
   });
   document.addEventListener('keydown', onKeyDown);
   document.body.appendChild(root);
-  (root.querySelector('.coden-live-modal-panel') as HTMLElement | null)?.focus();
+  (root.querySelector<HTMLElement>('[data-action="upgrade"]') || root.querySelector<HTMLElement>('.coden-live-modal-panel'))?.focus();
 }
 
 function bindChat() {

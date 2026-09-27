@@ -55,11 +55,11 @@ const agentMode = readFileSync(new URL('./src/services/agent-mode.ts', import.me
     'the Auto clause is opt-in and defaults to off');
 
   // Both messages exist, and the short one carries no mode advice at all.
-  assert.match(fn, /'Il ne reste pas assez de crédits pour cette action\. Rechargez votre solde pour continuer\.'/,
+  assert.match(fn, /'La session est en pause : il ne reste pas assez de crédits pour continuer\. Votre travail est conservé\. Rechargez votre solde pour reprendre\.'/,
     'the default French message stops after the remedy that works');
-  assert.match(fn, /'There are not enough credits left for this action\. Top up your balance to continue\.'/,
+  assert.match(fn, /'This session is paused because there are not enough credits to continue\. Your work is saved\. Top up your balance to resume\.'/,
     'and the English one');
-  const defaultAt = fn.indexOf('Rechargez votre solde pour continuer');
+  const defaultAt = fn.indexOf('Rechargez votre solde pour reprendre');
   assert.ok(defaultAt > 0, 'the default branch is reachable in the source');
   assert.doesNotMatch(fn.slice(defaultAt), /mode Auto/,
     'no mode advice survives past the default branch');

@@ -14,7 +14,7 @@ export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice;
 export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
   status: 'streaming' | 'done' | 'error' | 'cancelled';
-  error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider';
+  error?: string; diagnosticCode?: string; lastSequence?: number; runId?: string; notices?: AgentNotice[]; pausedReason?: 'decision' | 'cost' | 'user' | 'provider' | 'credits';
   autoChoices?: AutoChoice[];
   /** The master's sub-agents, as the last snapshot described them. */
   subagents?: SubagentSnapshot[];
@@ -83,11 +83,12 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
        * ended, and clearing it would erase the card a second before the person
        * could answer it, leaving a reply that simply stops.
        */
-      const awaitingDecision = next.pausedReason === 'decision';
+      const waitingReason = next.pausedReason;
+      const awaitingDecision = waitingReason === 'decision';
       next.status = event.reason === 'cancelled' ? 'cancelled' : 'done';
       next.thinking = false;
       next.activity = null;
-      next.pausedReason = awaitingDecision ? 'decision' : undefined;
+      next.pausedReason = awaitingDecision || waitingReason === 'credits' ? waitingReason : undefined;
       next.notices = next.notices?.filter(notice => notice.type === 'artifact' || (awaitingDecision && notice.type === 'decision'));
       break;
     }

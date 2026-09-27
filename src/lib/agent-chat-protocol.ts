@@ -41,7 +41,7 @@ export type ChatEvent =
   | { type: 'decision_required'; decisionId: string; question: string; options: DecisionOption[]; allowFreeText: boolean; questions?: DecisionQuestion[] }
   | { type: 'artifact_ready'; artifactId: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number }
   | { type: 'cost_checkpoint'; checkpointId: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number }
-  | { type: 'run_paused'; reason: 'decision' | 'cost' | 'user' | 'provider' }
+  | { type: 'run_paused'; reason: 'decision' | 'cost' | 'user' | 'provider' | 'credits' }
   | { type: 'run_resumed' }
   | { type: 'run_finished'; reason: 'completed' | 'cancelled' }
   | { type: 'run_failed'; message: string; diagnosticCode?: string; recoverable?: boolean }

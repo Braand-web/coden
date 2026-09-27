@@ -43,6 +43,42 @@ describe('agent event stream', () => {
     expect(stream.transcript).toBe('Plan');
   });
 
+  it('ends an insufficient-credit response as a pause, not a failed run', async () => {
+    const response = new ResponseStub();
+    const stream = createAgentEventStream(response as any, 'run');
+
+    await stream.finish({
+      success: false,
+      diagnostic_code: 'CREDITS_REQUIRED',
+      message: 'La session est en pause. Votre travail est conservé.',
+    }, 402);
+
+    const chat = envelopes(response).filter(envelope => envelope.channel === 'chat').map(envelope => envelope.payload.type);
+    expect(chat).toEqual(['run_paused', 'run_finished']);
+    expect(stream.persistedChatEvents).toEqual([
+      { type: 'run_paused', reason: 'credits' },
+      { type: 'run_finished', reason: 'completed' },
+    ]);
+  });
+
+  it('ends an insufficient-credit response as a pause, not a failed run', async () => {
+    const response = new ResponseStub();
+    const stream = createAgentEventStream(response as any, 'run');
+
+    await stream.finish({
+      success: false,
+      diagnostic_code: 'CREDITS_REQUIRED',
+      message: 'La session est en pause. Votre travail est conservé.',
+    }, 402);
+
+    const chat = envelopes(response).filter(envelope => envelope.channel === 'chat').map(envelope => envelope.payload.type);
+    expect(chat).toEqual(['run_paused', 'run_finished']);
+    expect(stream.persistedChatEvents).toEqual([
+      { type: 'run_paused', reason: 'credits' },
+      { type: 'run_finished', reason: 'completed' },
+    ]);
+  });
+
   it('keeps a compact, ordered copy of the full chat stream for project history', async () => {
     const response = new ResponseStub();
     const stream = createAgentEventStream(response as any, 'run');

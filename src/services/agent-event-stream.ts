@@ -238,9 +238,14 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
       if (answer && payload.assistant_source === 'model' && !payload.assistant_streamed) { chat({ type: 'text_delta', delta: answer }); endText(); }
       chat(status === 499
         ? { type: 'run_cancelled', message: String(payload.message || '') || undefined }
+        : status === 402 && payload.diagnostic_code === 'CREDITS_REQUIRED'
+          ? { type: 'run_paused', reason: 'credits' }
         : status >= 400 || payload.success === false
           ? { type: 'run_failed', message: String(payload.error || payload.message || 'La génération nécessite une correction. Les résultats disponibles sont conservés.'), diagnosticCode: payload.diagnostic_code, recoverable: Boolean(payload.recoverable) }
           : { type: 'run_finished', reason: 'completed' });
+      if (status === 402 && payload.diagnostic_code === 'CREDITS_REQUIRED') {
+        chat({ type: 'run_finished', reason: 'completed' });
+      }
       try {
         await settled();
         if (transportOpen && !res.destroyed && !res.writableEnded) res.end();

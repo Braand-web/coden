@@ -87,13 +87,22 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}, readR
 
   let response = await fetch(`${API_BASE_URL}${path}`, buildRequest(verified.session.access_token));
   if (response.ok && readResponse) return readResponse(response);
-  let payload = await response.json().catch(() => ({}));
+  const readErrorPayload = async (failedResponse: Response): Promise<unknown> => {
+    // Streaming endpoints can return a durable terminal event with an HTTP
+    // error status (for example CREDITS_REQUIRED). Consume that protocol before
+    // converting the response to ApiError so callers retain the real diagnostic.
+    if (readResponse && failedResponse.headers.get('content-type')?.includes('text/event-stream')) {
+      return readResponse(failedResponse);
+    }
+    return failedResponse.json().catch(() => ({}));
+  };
+  let payload = await readErrorPayload(response);
   if (!response.ok && isAuthSessionUnavailable(payload, response.status)) {
     verified = await refreshVerifiedSession();
     if (verified?.session?.access_token) {
       response = await fetch(`${API_BASE_URL}${path}`, buildRequest(verified.session.access_token));
       if (response.ok && readResponse) return readResponse(response);
-      payload = await response.json().catch(() => ({}));
+      payload = await readErrorPayload(response);
     }
   }
 

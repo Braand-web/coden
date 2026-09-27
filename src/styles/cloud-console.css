@@ -714,10 +714,81 @@ input.cloud-filter { flex: 1 1 240px; }
 .db-enduser-msg:empty { display: none; }
 .cloud-row-actions .cloud-status { margin-right: 4px; }
 
+/* Compact, product-native dialogs shared by Builder actions. */
+.coden-live-modal {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, #05070a 62%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: coden-modal-fade-in 140ms ease-out both;
+}
+.coden-live-modal-panel {
+  width: min(100%, 420px);
+  max-height: min(82vh, 680px);
+  overflow: auto;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl, 24px);
+  box-shadow: var(--shadow-overlay);
+  animation: coden-modal-rise-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+.coden-live-modal-panel:focus { outline: none; }
+.coden-live-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px 12px; }
+.coden-live-modal-head h3 { margin: 0; color: var(--foreground); font-size: 16px; font-weight: 650; line-height: 22px; }
+.coden-live-modal-close {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 21px;
+  cursor: pointer;
+}
+.coden-live-modal-body { padding: 0 18px 18px; color: var(--text-secondary); font-size: 14px; line-height: 1.55; }
+.coden-live-modal button:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.coden-credit-pause { padding-top: 4px; }
+.coden-credit-pause-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 14px;
+  place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 650;
+}
+.coden-credit-pause-title { margin: 0; color: var(--foreground); font-size: 15px; font-weight: 600; line-height: 22px; }
+.coden-credit-pause-copy { margin: 7px 0 0; color: var(--text-secondary); }
+.coden-credit-pause-actions { display: flex; align-items: center; gap: 9px; margin-top: 18px; }
+.coden-credit-pause-actions button { min-height: 38px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius-control, 12px); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: transform var(--transition-micro), background var(--transition-control), border-color var(--transition-control); }
+.coden-credit-pause-actions button:active { transform: scale(.98); }
+.coden-credit-pause-primary { color: #fff; background: var(--accent); }
+.coden-credit-pause-primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+.coden-credit-pause-secondary { color: var(--foreground); background: var(--surface); border-color: var(--border) !important; }
+.coden-credit-pause-secondary:hover { background: var(--surface-hover); }
+@keyframes coden-modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes coden-modal-rise-in { from { opacity: 0; transform: translateY(5px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
 @media (max-width: 720px) {
   .cloud-console-nav-foot { display: none; }
   .cloud-state-banner { flex-direction: column; align-items: stretch; }
   .cloud-state-banner .cloud-console-action { align-self: flex-start; }
+  .coden-credit-pause-actions { align-items: stretch; flex-direction: column; }
+  .coden-credit-pause-actions button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -727,4 +798,6 @@ input.cloud-filter { flex: 1 1 240px; }
     animation: none !important;
     transition: none !important;
   }
+  .coden-live-modal,
+  .coden-live-modal-panel { animation: none !important; }
 }
