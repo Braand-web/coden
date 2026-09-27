@@ -76,10 +76,10 @@
       (() => {
         try {
           const saved = localStorage.getItem('coden-theme');
-          const theme = saved === 'dark' || saved === 'light' ? saved : 'light';
+          const theme = saved === 'dark' || saved === 'light' ? saved : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
           document.documentElement.dataset.theme = theme;
           document.documentElement.style.colorScheme = theme;
-        } catch { document.documentElement.dataset.theme = 'light'; }
+        } catch { document.documentElement.dataset.theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />

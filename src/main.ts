@@ -9,7 +9,7 @@ import { initPromptInputActions } from './prompt-input-actions';
 import { formatCreateProjectFlowStatus, startCreateProjectFlow } from './services/create-project-flow';
 import { installPublicPageEnhancements } from './public-page-enhancements';
 import { initLandingI18n, getLandingLang } from './landing-i18n';
-import { initThemeController } from './theme-controller';
+import { getInitialTheme, initThemeController } from './theme-controller';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { getProductPositioning, type ProductLocale } from './product-positioning';
 import { mountMarketingReactShell } from './surface-react';
@@ -63,8 +63,7 @@ function init() {
         window.addEventListener('load', liftCurtain);
     }
 
-    const storedTheme = localStorage.getItem('coden-theme');
-    const savedTheme = storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : 'light';
+    const savedTheme = getInitialTheme();
     document.documentElement.setAttribute('data-theme', savedTheme);
     if (moonIcon && sunIcon) {
         if (savedTheme === 'dark') {

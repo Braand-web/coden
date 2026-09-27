@@ -1,11 +1,31 @@
 <!doctype html>
-<html lang="fr" data-theme="light">
+<html lang="fr">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#f8f9fb">
     <title>Page introuvable | Coden</title>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const key = 'coden-theme';
+        const system = window.matchMedia?.('(prefers-color-scheme: dark)');
+        const storedTheme = () => {
+          try {
+            const value = localStorage.getItem(key);
+            return value === 'dark' || value === 'light' ? value : null;
+          } catch { return null; }
+        };
+        const applyTheme = (theme = storedTheme() || (system?.matches ? 'dark' : 'light')) => {
+          root.dataset.theme = theme;
+          root.style.colorScheme = theme;
+        };
+        applyTheme();
+        system?.addEventListener('change', () => { if (!storedTheme()) applyTheme(); });
+        window.addEventListener('storage', (event) => { if (!event.key || event.key === key) applyTheme(); });
+      })();
+    </script>
     <style>
       :root {
         color-scheme: light;
@@ -19,6 +39,15 @@
         --focus: #91baff;
         background: var(--page);
         color: var(--ink);
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --page: #111111;
+        --surface: #1c1c1c;
+        --border: #313131;
+        --ink: #fcfcfc;
+        --muted: #9f9f9f;
+        --focus: #8dbbff;
       }
       *, *::before, *::after { box-sizing: border-box; }
       body {

@@ -4,6 +4,7 @@ import { enhanceSelect } from './lib/select-menu';
 import { FEATURED_PLAN_BADGE, planFeatures, publicBillingCatalog, topupUnitXaf } from './config/billing-v2';
 import { refreshVerifiedSession, signOutCurrentDevice } from './lib/supabase-browser';
 import { readBillingReturn, readPlanChoice, wantsBillingSettings, withoutPlanParams, type BillingReturn, type PaidPlan } from './lib/plan-choice';
+import { CODEN_THEME_KEY, setThemePreference } from './theme-controller';
 
 type SettingsTab =
   | 'profile'
@@ -106,15 +107,6 @@ type BillingWalletResponse = {
     credits_remaining: number;
     expires_at: string;
   }>;
-};
-
-type UserWorkspaceStateResponse = {
-  success: boolean;
-  state?: {
-    theme?: 'light' | 'dark' | null;
-    builder_selected_model?: string | null;
-    updated_at?: string | null;
-  } | null;
 };
 
 type SettingsPreferences = {
@@ -220,7 +212,7 @@ function defaultSettingsPreferences(): SettingsPreferences {
       instructions: '',
     },
     appearance: {
-      theme: 'light',
+      theme: 'system',
       density: 'comfortable',
       motion: 'normal',
       accent: 'coden-blue',
@@ -257,7 +249,17 @@ function mergePreferences(value: any): SettingsPreferences {
 
 function loadSettingsPreferences(): SettingsPreferences {
   try {
-    return mergePreferences(JSON.parse(localStorage.getItem(SETTINGS_PREFS_KEY) || '{}'));
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_PREFS_KEY) || '{}');
+    const preferences = mergePreferences(stored);
+    const hasExplicitTheme = ['light', 'dark'].includes(localStorage.getItem(CODEN_THEME_KEY) || '');
+    // Older releases wrote the default "light" settings preference when saving
+    // unrelated settings. Without an explicit theme override, migrate that
+    // implicit default to system so existing users also follow their device.
+    if (stored?.appearance?.theme === 'light' && !hasExplicitTheme) {
+      preferences.appearance.theme = 'system';
+      saveSettingsPreferences(preferences);
+    }
+    return preferences;
   } catch {
     return defaultSettingsPreferences();
   }
@@ -285,9 +287,7 @@ function resolveThemePreference(theme: SettingsPreferences['appearance']['theme'
 
 function applyAppearancePreferences(value = loadSettingsPreferences(), options: { theme?: boolean } = {}) {
   if (options.theme !== false) {
-    const theme = resolveThemePreference(value.appearance.theme);
-    document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('coden-theme', theme); } catch { /* the theme still applies for this page */ }
+    setThemePreference(value.appearance.theme);
   }
   document.documentElement.dataset.codenDensity = value.appearance.density;
   document.documentElement.dataset.codenMotion = value.appearance.motion;
@@ -2062,20 +2062,10 @@ async function hydrateSettingsPanel() {
   renderAuthSummary(currentAuthSummary, prefs);
   setSettingsStatus('Chargement…', 'saving');
   try {
-    const [auth, state] = await Promise.all([
-      apiFetch<AuthMeResponse>('/api/auth/me'),
-      apiFetch<UserWorkspaceStateResponse>('/api/users/me/workspace-state').catch(() => null),
-    ]);
-    const merged = mergePreferences({
-      ...prefs,
-      appearance: {
-        ...prefs.appearance,
-        theme: prefs.appearance.theme === 'system' && state?.state?.theme ? state.state.theme : prefs.appearance.theme,
-      },
-    });
-    updateSettingsForm(merged);
+    const auth = await apiFetch<AuthMeResponse>('/api/auth/me');
+    updateSettingsForm(prefs);
     currentAuthSummary = auth;
-    renderAuthSummary(currentAuthSummary, merged);
+    renderAuthSummary(currentAuthSummary, prefs);
     setSettingsStatus('Enregistré', 'success');
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
   } catch (error) {
@@ -2090,11 +2080,12 @@ async function saveSettingsFromPanel() {
   applyAppearancePreferences(prefs);
   setSettingsStatus('Enregistrement…', 'saving');
   try {
-    const theme = resolveThemePreference(prefs.appearance.theme);
-    await apiFetch('/api/users/me/workspace-state', {
-      method: 'PATCH',
-      body: JSON.stringify({ theme }),
-    }).catch(() => null);
+    if (prefs.appearance.theme !== 'system') {
+      await apiFetch('/api/users/me/workspace-state', {
+        method: 'PATCH',
+        body: JSON.stringify({ theme: prefs.appearance.theme }),
+      }).catch(() => null);
+    }
     renderAuthSummary(currentAuthSummary, prefs);
     document.getElementById('settings-panel')?.classList.remove(SETTINGS_DIRTY_CLASS);
     setSettingsStatus('Enregistré', 'success');
@@ -2117,6 +2108,7 @@ function resetLocalPreferences() {
   localStorage.removeItem(SETTINGS_PREFS_KEY);
   const prefs = defaultSettingsPreferences();
   saveSettingsPreferences(prefs);
+  setThemePreference('system');
   updateSettingsForm(prefs);
   setSettingsStatus('Préférences réinitialisées', 'success');
 }

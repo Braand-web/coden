@@ -2,17 +2,33 @@ export type CodenTheme = 'dark' | 'light';
 
 export const CODEN_THEME_KEY = 'coden-theme';
 
+export type CodenThemePreference = CodenTheme | 'system';
+
+let systemThemeListenerBound = false;
+
 function isTheme(value: string | null): value is CodenTheme {
   return value === 'dark' || value === 'light';
 }
 
-export function getInitialTheme(): CodenTheme {
+function getStoredTheme(): CodenTheme | null {
   try {
     const stored = localStorage.getItem(CODEN_THEME_KEY);
-    return isTheme(stored) ? stored : 'light';
+    return isTheme(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getSystemTheme(): CodenTheme {
+  try {
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   } catch {
     return 'light';
   }
+}
+
+export function getInitialTheme(): CodenTheme {
+  return getStoredTheme() || getSystemTheme();
 }
 
 export function applyTheme(theme: CodenTheme): void {
@@ -59,19 +75,39 @@ export function toggleTheme(): CodenTheme {
   return next;
 }
 
+export function setThemePreference(preference: CodenThemePreference): CodenTheme {
+  try {
+    if (preference === 'system') localStorage.removeItem(CODEN_THEME_KEY);
+    else localStorage.setItem(CODEN_THEME_KEY, preference);
+  } catch { /* the selected theme still applies for this page */ }
+
+  const theme = preference === 'system' ? getSystemTheme() : preference;
+  applyTheme(theme);
+  return theme;
+}
+
 export function initThemeController(): CodenTheme {
   const initial = getInitialTheme();
   applyTheme(initial);
+
+  if (!systemThemeListenerBound) {
+    systemThemeListenerBound = true;
+    try {
+      window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+        if (!getStoredTheme()) applyTheme(event.matches ? 'dark' : 'light');
+      });
+    } catch { /* system preference still applies on the next page load */ }
+
+    window.addEventListener('storage', (event) => {
+      if (event.key && event.key !== CODEN_THEME_KEY) return;
+      applyTheme(getStoredTheme() || getSystemTheme());
+    });
+  }
 
   document.querySelectorAll<HTMLElement>('[data-theme-toggle], #theme-btn, #theme-btn-dashboard').forEach((button) => {
     if (button.dataset.themeBound === 'true') return;
     button.dataset.themeBound = 'true';
     button.addEventListener('click', () => toggleTheme());
-  });
-
-  window.addEventListener('storage', (event) => {
-    if (event.key && event.key !== CODEN_THEME_KEY) return;
-    if (isTheme(event.newValue)) applyTheme(event.newValue);
   });
 
   return initial;
