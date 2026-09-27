@@ -195,6 +195,7 @@ import {
   publicBillingCatalog,
 } from './src/config/billing-v2.ts';
 import { classifyBillableAction } from './src/services/billable-action.ts';
+import { publicProductHelpFor } from './src/services/coden-product-help.ts';
 import { AuditLogService, BillingAlertService, UsageMeteringService, MemberLimitService } from './src/services/platform-support.ts';
 import { buildWorldClassUiPolicy } from './src/services/design-generation-policy.ts';
 import {
@@ -5735,6 +5736,9 @@ function buildAgentTextMessages(input: {
         hasResearchContext: Boolean(researchContext),
         executionContext,
         projectContext,
+        publicProductContext: decision.intent === 'conversation' || decision.intent === 'deploy_assist'
+          ? publicProductHelpFor(prompt, (input.history || []).filter(turn => turn.role === 'user' && turn.content.trim() !== prompt.trim()).at(-1)?.content || '')
+          : '',
       });
 
   /*
