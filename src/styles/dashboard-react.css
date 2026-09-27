@@ -1,8 +1,8 @@
 :root {
 
   /*
-   * Coden's ground: the blue of the mark, carried round through indigo,
-   * violet and a cold cyan. Four corner blooms over a deep navy base, and
+   * Coden's ground: the blue of the mark, carried round through deeper
+   * blues and a cold cyan — never violet. Four corner blooms over a deep navy base, and
    * saturated enough to actually be a background — a wash at .2 alpha over
    * near-var(--foreground) is indistinguishable from the flat fill it replaced.
    *
@@ -934,8 +934,8 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   text-align: center;
   background:
     radial-gradient(120% 90% at 0% 0%, hsl(var(--project-hue) 85% 68% / .95), transparent 60%),
-    radial-gradient(110% 100% at 100% 100%, hsl(calc(var(--project-hue) + 48) 80% 56% / .95), transparent 62%),
-    linear-gradient(135deg, hsl(var(--project-hue) 70% 58%), hsl(calc(var(--project-hue) + 32) 72% 48%));
+    radial-gradient(110% 100% at 100% 100%, hsl(calc(var(--project-hue) + 16) 80% 50% / .95), transparent 62%),
+    linear-gradient(135deg, hsl(var(--project-hue) 72% 56%), hsl(calc(var(--project-hue) + 10) 74% 44%));
 }
 
 .coden-dashboard-project-fallback::after {

@@ -72,7 +72,8 @@
   --danger: #BA2623;
   --danger-background: #FBE6E2;
 
-  --syntax-purple: #751ED9;
+  /* Historic name: no violet anywhere in Coden — this is a deep blue. */
+  --syntax-purple: #2250C8;
   --syntax-orange: #BD5800;
   --syntax-green: #008809;
   --syntax-cyan: #25B4CA;
@@ -108,7 +109,7 @@
   --danger: #E02E2A;
   --danger-background: #381C17;
 
-  --syntax-purple: #B06DFF;
+  --syntax-purple: #7AA7FF;
   --syntax-orange: #FA994C;
   --syntax-green: #85DF7B;
   --syntax-blue: #5E51FF;

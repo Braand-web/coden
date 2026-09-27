@@ -12,7 +12,7 @@
 body[data-coden-surface="landing-new"] {
   --lp-width: min(var(--shell-max), calc(100% - 48px));
   /* The ambient's second and third hues, aliased so gradients name a role. */
-  --lp-hue-2: var(--syntax-purple);
+  --lp-hue-2: color-mix(in srgb, var(--accent) 60%, var(--syntax-cyan));
   --lp-hue-3: var(--syntax-cyan);
   --lp-section-gap: 64px;
   --lp-shadow-card: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent), 0 12px 32px -12px color-mix(in srgb, var(--foreground) 10%, transparent);
@@ -181,7 +181,7 @@ html[data-theme="dark"] .lp-composer-host .coden-prompt-input .coden-prompt-fade
   will-change: transform;
 }
 .lp-hero-orb.is-a { background: radial-gradient(circle at 50% 50%, var(--accent) 0%, transparent 68%); translate: -78% -46%; }
-.lp-hero-orb.is-b { background: radial-gradient(circle at 50% 50%, #8b5cf6 0%, transparent 68%); translate: -18% -30%; opacity: .32; }
+.lp-hero-orb.is-b { background: radial-gradient(circle at 50% 50%, #60a5fa 0%, transparent 68%); translate: -18% -30%; opacity: .32; }
 .lp-hero-orb.is-c { background: radial-gradient(circle at 50% 50%, #22d3ee 0%, transparent 66%); translate: -52% 4%; width: min(460px, 60vw); opacity: .28; }
 .lp-hero-dots {
   position: absolute;
@@ -474,7 +474,7 @@ html[data-theme="dark"] .lp-verify {
  * Examples — each card writes its brief into the hero composer
  * ------------------------------------------------------------------------- */
 /* The examples sit on a slow aurora in the product's own hues: the accent
-   blue, its soft tint, the violet and the cyan of the Dashboard's ambient.
+   blue, its soft tint, a deeper blue and the cyan of the Dashboard's ambient.
    Full bleed, faded at the top and bottom so it rises out of the page and
    sinks back into it; the cards stay solid on top of it. */
 .lp-examples-section { position: relative; padding-block: 112px; isolation: isolate; }
