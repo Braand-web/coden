@@ -1,4 +1,6 @@
 import { redactSecrets } from './secret-redaction.ts';
+import { isIP } from 'node:net';
+import { isPrivateAddress } from './agent-web.ts';
 
 export type ResearchStatus = 'completed' | 'skipped' | 'failed';
 
@@ -65,7 +67,9 @@ export class WebResearchGateway {
     if (this.firecrawlKey) {
       try {
         if (plan.action === 'scrape' || looksLikeUrl(normalizedQuery)) {
-          return await this.scrapeFirecrawl(normalizeScrapeUrl(normalizedQuery), options.timeoutMs || 12_000);
+          const target = normalizeScrapeUrl(normalizedQuery);
+          if (!target) return skipped(normalizedQuery, 'WEB_RESEARCH_URL_INVALID', 'Only public websites can be scraped.');
+          return await this.scrapeFirecrawl(target, options.timeoutMs || 12_000);
         }
         const result = await this.searchFirecrawl(normalizedQuery, maxResults, options.timeoutMs || 12_000);
         if (hasUsefulResults(result) || (!this.tavilyKey && !this.braveKey)) return result;
@@ -116,19 +120,24 @@ export class WebResearchGateway {
         body: JSON.stringify({
           query,
           limit: maxResults,
-          maxResults,
+          sources: ['web'],
+          safe: true,
         }),
         signal: controller.signal as any,
       });
-      if (!response.ok) throw new Error(`Firecrawl Search HTTP ${response.status}`);
+      if (!response.ok) throw firecrawlHttpError('Search', response.status);
       const data: any = await response.json();
-      const rawResults = Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data?.results)
-          ? data.results
-          : Array.isArray(data?.items)
-            ? data.items
-            : [];
+      if (data?.success === false) throw new Error('Firecrawl Search did not complete.');
+      const rawResults = Array.isArray(data?.data?.web)
+        ? data.data.web
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data?.results)
+            ? data.results
+            : Array.isArray(data?.items)
+              ? data.items
+              : null;
+      if (!rawResults) throw new Error('Firecrawl Search returned an unexpected response.');
       const results = normalizeResults(rawResults.map(firecrawlItemToResult), maxResults);
       return {
         status: 'completed',
@@ -152,13 +161,16 @@ export class WebResearchGateway {
           authorization: `Bearer ${this.firecrawlKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, maxAge: 300_000 }),
         signal: controller.signal as any,
       });
-      if (!response.ok) throw new Error(`Firecrawl Scrape HTTP ${response.status}`);
+      if (!response.ok) throw firecrawlHttpError('Scrape', response.status);
       const data: any = await response.json();
+      if (data?.success === false || !data?.data || typeof data.data !== 'object') {
+        throw new Error('Firecrawl Scrape returned an unexpected response.');
+      }
       const item = data?.data || data;
-      const result = firecrawlItemToResult({ ...item, url: item?.url || item?.metadata?.sourceURL || url });
+      const result = firecrawlItemToResult({ ...item, url: item?.url || item?.metadata?.sourceURL || url }, 6_000);
       return {
         status: 'completed',
         query: url,
@@ -313,6 +325,13 @@ function failed(query: string, provider: 'firecrawl' | 'tavily' | 'brave', error
   return { status: 'failed', query, provider, diagnostic_code: 'WEB_RESEARCH_FAILED', message, results: [] };
 }
 
+function firecrawlHttpError(action: 'Search' | 'Scrape', status: number) {
+  if (status === 401 || status === 403) return new Error('Firecrawl rejected the server API key.');
+  if (status === 402) return new Error('Firecrawl provider credits are exhausted.');
+  if (status === 429) return new Error('Firecrawl provider rate limit was reached.');
+  return new Error(`Firecrawl ${action} HTTP ${status}`);
+}
+
 function clean(value: unknown) {
   return String(value || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
 }
@@ -343,9 +362,22 @@ function looksLikeUrl(value: string) {
 
 function normalizeScrapeUrl(value: unknown) {
   const url = clean(value);
-  if (/^https?:\/\//i.test(url)) return safeUrl(url);
-  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#][^\s]*)?$/i.test(url)) return `https://${url}`.slice(0, 500);
-  return '';
+  const candidate = /^https?:\/\//i.test(url)
+    ? url
+    : /^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#][^\s]*)?$/i.test(url)
+      ? `https://${url}`
+      : '';
+  if (!candidate || candidate.length > 500) return '';
+  try {
+    const parsed = new URL(candidate);
+    const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password) return '';
+    if (!host || /^(localhost|.*\.(local|internal))$/i.test(host) || (isIP(host) && isPrivateAddress(host))) return '';
+    if (parsed.port && parsed.port !== '80' && parsed.port !== '443') return '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
 }
 
 function buildSearchQuery(value: string) {
@@ -401,7 +433,7 @@ function normalizeResults(items: ResearchResultItem[], maxResults: number) {
   return normalized;
 }
 
-function firecrawlItemToResult(item: any): ResearchResultItem {
+function firecrawlItemToResult(item: any, snippetLimit = 520): ResearchResultItem {
   const metadata = item?.metadata || {};
   const url = safeUrl(item?.url || item?.sourceURL || metadata?.sourceURL || metadata?.url);
   const title = item?.title || metadata?.title || url || 'Untitled result';
@@ -409,7 +441,7 @@ function firecrawlItemToResult(item: any): ResearchResultItem {
   return {
     title: truncate(title, 120),
     url,
-    snippet: truncate(snippet, 520),
+    snippet: truncate(snippet, snippetLimit),
     published_at: item?.publishedDate || item?.published_at || metadata?.publishedTime || metadata?.published_at || null,
     source: 'firecrawl',
   };

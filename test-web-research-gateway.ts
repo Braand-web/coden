@@ -15,7 +15,7 @@ const urlPlan = buildWebResearchPlan({
 });
 assert.equal(urlPlan.shouldResearch, true);
 assert.equal(urlPlan.action, 'scrape');
-assert.equal(urlPlan.query, 'https://firecrawl.dev');
+assert.equal(urlPlan.query, 'https://firecrawl.dev/');
 
 const simpleBuildDecision = decideWebResearch({
   prompt: 'crée une application web de livraison avec suivi des commandes',
@@ -60,6 +60,7 @@ assert.equal(skipped.diagnostic_code, 'WEB_RESEARCH_NOT_CONFIGURED');
 assert.equal(skipped.results.length, 0);
 
 const calls: Array<{ url: string; body?: any }> = [];
+const scrapeMarkdown = `Firecrawl clean markdown ${'x'.repeat(1_000)}`;
 const mockFetch: any = async (url: string, init: any) => {
   calls.push({ url, body: init?.body ? JSON.parse(init.body) : undefined });
   return {
@@ -67,9 +68,9 @@ const mockFetch: any = async (url: string, init: any) => {
     status: 200,
     async json() {
       if (url.includes('/scrape')) {
-        return { data: { url: 'https://firecrawl.dev', markdown: 'Firecrawl clean markdown', metadata: { title: 'Firecrawl' } } };
+        return { success: true, data: { url: 'https://firecrawl.dev', markdown: scrapeMarkdown, metadata: { title: 'Firecrawl' } } };
       }
-      return { data: [{ url: 'https://docs.firecrawl.dev', title: 'Firecrawl Docs', markdown: 'Search result markdown' }] };
+      return { success: true, data: { web: [{ url: 'https://docs.firecrawl.dev', title: 'Firecrawl Docs', description: 'Search result markdown' }] } };
     },
   };
 };
@@ -82,21 +83,31 @@ assert.equal(firecrawlSearch.status, 'completed');
 assert.equal(firecrawlSearch.provider, 'firecrawl');
 assert.equal(firecrawlSearch.results[0]?.source, 'firecrawl');
 assert.ok(calls.some(call => call.url.includes('/search')));
+assert.deepEqual(calls.find(call => call.url.includes('/search'))?.body.sources, ['web']);
+assert.equal(calls.find(call => call.url.includes('/search'))?.body.maxResults, undefined);
 
 const firecrawlScrape = await firecrawlGateway.search('https://firecrawl.dev');
 assert.equal(firecrawlScrape.status, 'completed');
 assert.equal(firecrawlScrape.provider, 'firecrawl');
 assert.ok(firecrawlScrape.results[0]?.snippet.includes('Firecrawl clean markdown'));
+assert.ok((firecrawlScrape.results[0]?.snippet.length || 0) > 520);
 assert.ok(calls.some(call => call.url.includes('/scrape')));
+assert.deepEqual(calls.find(call => call.url.includes('/scrape'))?.body.formats, ['markdown']);
 
 const bareDomainScrape = await firecrawlGateway.scrape('firecrawl.dev');
 assert.equal(bareDomainScrape.status, 'completed');
-assert.equal(calls.at(-1)?.body.url, 'https://firecrawl.dev');
+assert.equal(calls.at(-1)?.body.url, 'https://firecrawl.dev/');
 
 const embeddedUrlScrape = await firecrawlGateway.search('Coden import context:\nSource URL: firecrawl.dev\nUser request: analyse ce site web');
 assert.equal(embeddedUrlScrape.status, 'completed');
 assert.equal(embeddedUrlScrape.provider, 'firecrawl');
-assert.equal(calls.at(-1)?.body.url, 'https://firecrawl.dev');
+assert.equal(calls.at(-1)?.body.url, 'https://firecrawl.dev/');
+
+const callCountBeforeRejectedUrls = calls.length;
+for (const url of ['http://localhost:3000/', 'http://127.0.0.1/', 'http://169.254.169.254/', 'https://user:password@firecrawl.dev/', 'https://firecrawl.dev:3000/']) {
+  assert.equal((await firecrawlGateway.scrape(url)).diagnostic_code, 'WEB_RESEARCH_URL_INVALID');
+}
+assert.equal(calls.length, callCountBeforeRejectedUrls);
 
 const fallbackCalls: Array<{ url: string; body?: any }> = [];
 const fallbackFetch: any = async (url: string, init: any) => {
@@ -105,7 +116,7 @@ const fallbackFetch: any = async (url: string, init: any) => {
     ok: true,
     status: 200,
     async json() {
-      if (url.includes('firecrawl.dev')) return { data: [] };
+      if (url.includes('firecrawl.dev')) return { success: true, data: { web: [] } };
       return {
         results: [{
           url: 'https://docs.tavily.com',
@@ -123,6 +134,11 @@ assert.equal(fallbackResult.provider, 'tavily');
 assert.equal(fallbackResult.results[0]?.url, 'https://docs.tavily.com');
 assert.ok(fallbackCalls.some(call => call.url.includes('firecrawl.dev')));
 assert.ok(fallbackCalls.some(call => call.url.includes('tavily.com')));
+
+const limitedGateway = new WebResearchGateway({ FIRECRAWL_API_KEY: 'fc-test' }, (async () => ({ ok: false, status: 429 })) as any);
+const limited = await limitedGateway.search('latest API documentation');
+assert.equal(limited.status, 'failed');
+assert.match(limited.message, /provider rate limit/i);
 
 const context = researchToPromptContext({
   status: 'completed',

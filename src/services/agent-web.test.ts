@@ -49,4 +49,25 @@ describe('agent web access', () => {
     expect(await unconfigured.search('vite env')).toMatchObject({ ok: true, provider: 'openrouter-web', summary: 'Sources for vite env' });
     expect(await createAgentWebProvider({}).search('x')).toMatchObject({ ok: false });
   });
+
+  it('uses Firecrawl only when a public page cannot be read directly', async () => {
+    let scrapeCalls = 0;
+    const research = {
+      isConfigured: () => true,
+      search: async () => ({ status: 'completed' as const, query: '', provider: 'firecrawl' as const, message: 'ok', results: [] }),
+      scrape: async (url: string) => {
+        scrapeCalls += 1;
+        return { status: 'completed' as const, query: url, provider: 'firecrawl' as const, message: 'ok', results: [{ title: 'Docs', url, snippet: 'Readable dynamic page' }] };
+      },
+    };
+    const provider = createAgentWebProvider({
+      research,
+      lookup: publicLookup,
+      fetchImpl: (async () => new Response('', { status: 403 })) as typeof fetch,
+    });
+    expect(await provider.fetch('https://docs.example/page')).toMatchObject({ ok: true, provider: 'firecrawl', text: 'Readable dynamic page' });
+    expect(scrapeCalls).toBe(1);
+    expect((await provider.fetch('http://127.0.0.1/private')).ok).toBe(false);
+    expect(scrapeCalls).toBe(1);
+  });
 });

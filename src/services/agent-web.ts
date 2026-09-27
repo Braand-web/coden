@@ -163,7 +163,11 @@ function fromResearch(result: ResearchResult): AgentWebResult {
  * web search otherwise, and the page reader for `fetch_url`.
  */
 export function createAgentWebProvider(deps: {
-  research?: { isConfigured(): boolean; search(query: string, options?: { maxResults?: number }): Promise<ResearchResult> };
+  research?: {
+    isConfigured(): boolean;
+    search(query: string, options?: { maxResults?: number }): Promise<ResearchResult>;
+    scrape?(url: string): Promise<ResearchResult>;
+  };
   /** A model call with web search enabled, returning its answer with sources. */
   modelSearch?: (query: string) => Promise<string>;
   fetchImpl?: typeof fetch;
@@ -185,8 +189,20 @@ export function createAgentWebProvider(deps: {
         return { ok: false, error: String(error?.message || 'The search failed.').slice(0, 300) };
       }
     },
-    fetch(url) {
-      return fetchPublicPage(url, { fetchImpl: deps.fetchImpl, lookup: deps.lookup });
+    async fetch(url) {
+      const direct = await fetchPublicPage(url, { fetchImpl: deps.fetchImpl, lookup: deps.lookup });
+      if (direct.ok || !deps.research?.isConfigured() || !deps.research.scrape) return direct;
+      // The Firecrawl fallback must never bypass the direct reader's public URL guard.
+      try { await assertPublicUrl(url, deps.lookup || defaultLookup); } catch { return direct; }
+      try {
+        const scraped = await deps.research.scrape(url);
+        const page = scraped.status === 'completed' ? scraped.results[0] : null;
+        return page?.snippet
+          ? { ok: true, provider: scraped.provider, url: page.url, title: page.title, text: page.snippet }
+          : direct;
+      } catch {
+        return direct;
+      }
     },
   };
 }
