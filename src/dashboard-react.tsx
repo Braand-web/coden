@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   createRootRoute,
@@ -133,6 +133,8 @@ async function fetchProjects() {
           updated_at: new Date().toISOString(),
         },
         { id: 'local-preview-project-002', name: 'TaskFlow', status: 'draft', updated_at: new Date(Date.now() - 86_400_000).toISOString() },
+        { id: 'local-preview-project-003', name: 'Monde 3D', preview_status: 'needs_fix', preview_html: '<!doctype html><html><body><vite-error-overlay></vite-error-overlay><pre>Vite server failed to render</pre></body></html>', updated_at: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+        { id: 'local-preview-project-004', name: 'Calculatrice', status: 'generating', updated_at: new Date(Date.now() - 3 * 86_400_000).toISOString() },
       ],
     } as ProjectsResponse;
   }
@@ -386,34 +388,51 @@ function previewDocumentWithStorageShim(html: string): string {
   return PREVIEW_STORAGE_SHIM + html;
 }
 
-function ProjectCard({ project, owner }: { project: DashboardProject; owner: { initial: string; name: string } }) {
+/*
+ * A preview that is really an error page — the dev server's overlay, a build
+ * that failed to render — must not be shown as the project's picture: the
+ * card falls back to its cover and says the preview needs fixing.
+ */
+const ERROR_PREVIEW = /data-coden-preview-error\s*=\s*["']true|vite-error-overlay|failed to render|\[plugin:vite|Internal Server Error|Failed to resolve import/i;
+
+/** A stable hue per project, so each cover keeps its colour from one visit to the next. */
+function projectHue(seed: string) {
+  // FNV-1a: close ids ("…-003", "…-004") still land far apart on the wheel.
+  let hash = 2166136261;
+  for (const char of seed) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
+  return hash % 360;
+}
+
+function projectInitials(name: string) {
+  const words = name.trim().split(/[\s_-]+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] || '?').slice(0, 2);
+  return letters.toLocaleUpperCase('fr');
+}
+
+function ProjectCard({ project }: { project: DashboardProject }) {
   const previewHtml = project.preview_html?.trim();
-  const isErrorPreview = Boolean(previewHtml && /data-coden-preview-error\s*=\s*["']true/i.test(previewHtml));
+  const isErrorPreview = Boolean(previewHtml && ERROR_PREVIEW.test(previewHtml.slice(0, 20_000)));
   const hasRenderedPreview = Boolean(previewHtml && !isErrorPreview);
   const liveUrl = project.live_url?.trim();
   const hasLivePreview = Boolean(!hasRenderedPreview && liveUrl && /^https?:\/\//i.test(liveUrl));
-  const state = isErrorPreview ? { key: 'issue', label: 'À vérifier' } : projectState(project);
-  const fallbackMessage = /building|generating|running/i.test(`${project.status || ''} ${project.preview_status || ''}`)
+  const state = isErrorPreview ? { key: 'issue', label: 'À corriger' } : projectState(project);
+  const fallbackMessage = state.key === 'building'
     ? 'Aperçu en préparation'
-    : isErrorPreview
+    : isErrorPreview || state.key === 'issue'
       ? 'Aperçu à corriger'
-      : 'Générez le projet pour afficher son aperçu';
+      : 'Pas encore d’aperçu';
+  const cover = { '--project-hue': String(projectHue(project.id || project.name)) } as CSSProperties;
   return (
     <article className="coden-dashboard-project-card">
       <a className="coden-dashboard-project-card-link" href={builderUrl(project.id)} aria-label={`Ouvrir le projet ${project.name}`}>
-        <span className="coden-dashboard-project-preview">
+        <span className="coden-dashboard-project-preview" style={cover}>
           {/*
-            * The placeholder is the floor, not the alternative.
-            *
-            * It used to render only when there was no preview, so a card whose
-            * iframe came up blank — an app whose scripts cannot run under this
-            * sandbox, a document that paints nothing above the fold — showed a
-            * dark hole with a badge floating in it, and read as broken rather
-            * than as pending. Drawing it underneath means the worst a failed
-            * preview can look is the same as one that has not been generated.
+            * The cover is the floor, not the alternative: drawn underneath the
+            * preview, so a frame that paints nothing shows the project's own
+            * colour and initials instead of a hole.
             */}
           <span className="coden-dashboard-project-fallback" aria-hidden="true">
-            <span><FileCode2 size={25} /></span>
+            <span className="coden-dashboard-project-monogram">{projectInitials(project.name)}</span>
             <small>{fallbackMessage}</small>
           </span>
           {hasRenderedPreview ? (
@@ -434,34 +453,15 @@ function ProjectCard({ project, owner }: { project: DashboardProject; owner: { i
               tabIndex={-1}
             />
           ) : null}
-          {/*
-            * One badge, one axis: where the project is, never what the tile
-            * happens to be showing. It used to read 'Aperçu' whenever a preview
-            * rendered and the lifecycle state otherwise, so two cards side by
-            * side answered different questions — one told you it had a picture,
-            * the other that it was a draft.
-            */}
+          {/* One badge, one axis: where the project is in its life. */}
           <span className={`coden-dashboard-project-badge is-${state.key}`}>{state.label}</span>
         </span>
         <span className="coden-dashboard-project-card-meta">
-          {/*
-            * The circle holds the OWNER, not the project.
-            *
-            * It used to hold `project.name`'s first letter, nine pixels from
-            * the full name it was the first letter of — the card said the same
-            * thing twice and truncated "High-end Premium Minimalist Ui" to pay
-            * for it. Whose project it is, is a different fact from what it is
-            * called, so the slot survives with the answer to the other
-            * question.
-            */}
-          <span className="coden-dashboard-project-card-avatar" title={`Projet de ${owner.name}`} aria-hidden="true">
-            {owner.initial}
-          </span>
           <span className="coden-dashboard-project-card-copy">
-            <strong>{project.name}</strong>
+            <strong title={project.name}>{project.name}</strong>
             <small>Modifié {relativeTime(project.updated_at || project.created_at)}</small>
           </span>
-          <ArrowRight size={17} aria-hidden="true" />
+          <span className="coden-dashboard-project-open" aria-hidden="true"><ArrowRight size={15} /></span>
         </span>
       </a>
     </article>
@@ -487,7 +487,6 @@ function ProjectCardSkeleton() {
     <article className="coden-dashboard-project-card" aria-hidden="true">
       <span className="coden-dashboard-project-preview coden-skeleton" />
       <span className="coden-dashboard-project-card-meta">
-        <span className="coden-skeleton coden-dashboard-skeleton-avatar" />
         <span className="coden-dashboard-project-card-copy">
           <span className="coden-skeleton coden-dashboard-skeleton-line" />
           <span className="coden-skeleton coden-dashboard-skeleton-line is-short" />
@@ -545,11 +544,6 @@ function DashboardHome() {
   };
   const projectsQuery = useQuery({ queryKey: ['coden-projects'], queryFn: fetchProjects });
   const projects = projectsQuery.data?.projects || [];
-  const ownerName = accountDisplayName(profile);
-  const owner = useMemo(
-    () => ({ name: ownerName, initial: ownerName.slice(0, 1).toLocaleUpperCase('fr') }),
-    [ownerName],
-  );
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('fr');
     return projects.filter((project) => {
@@ -784,7 +778,7 @@ function DashboardHome() {
               </div>
             )}
             {!projectsQuery.isLoading && !projectsQuery.isError && visibleProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} owner={owner} />
+              <ProjectCard key={project.id} project={project} />
             ))}
             {!projectsQuery.isLoading && !projectsQuery.isError && !filteredProjects.length && (
               <div className="coden-dashboard-empty">

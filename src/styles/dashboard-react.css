@@ -858,9 +858,9 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   margin-top: 20px;
 }
 
-/* The card carries no frame of its own: the thumbnail is the rounded object
-   and the line beneath it sits on the panel, so a row of cards reads as
-   pictures with their captions rather than as a row of outlined boxes. */
+/* The card is one framed object: the thumbnail inset in a soft panel, the
+   caption beneath it inside the same frame, so a row reads as a shelf of
+   projects rather than floating pictures. */
 .coden-dashboard-project-card {
   min-width: 0;
   margin: 0;
@@ -872,41 +872,54 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   display: flex;
   min-width: 0;
   flex-direction: column;
+  gap: 2px;
+  padding: 7px;
   color: var(--foreground);
   text-decoration: none;
-  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
   outline: 0;
-  transition: color var(--transition-control);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 6%, transparent);
+  transition: transform 260ms var(--ease-out, ease), border-color 260ms ease, box-shadow 260ms ease, background-color 260ms ease;
+}
+
+.coden-dashboard-project-card-link:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-subtle));
+  box-shadow: 0 18px 40px -18px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px color-mix(in srgb, var(--foreground) 8%, transparent);
+  transform: translateY(-3px);
 }
 
 .coden-dashboard-project-preview {
+  --project-hue: 214;
   position: relative;
   display: block;
   aspect-ratio: 16 / 10;
   overflow: hidden;
   background: var(--surface-soft);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  transition: transform var(--transition-control), border-color var(--transition-control), box-shadow var(--transition-control);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-radius: 12px;
+  isolation: isolate;
 }
 
-.coden-dashboard-project-card-link:hover .coden-dashboard-project-preview {
-  border-color: var(--border);
-  box-shadow: 0 16px 36px color-mix(in srgb, var(--foreground) 26%, transparent);
-  transform: translateY(-2px);
-}
-
+/* Four times the tile, scaled to a quarter: the page renders at a desktop
+   width and always fills the tile exactly, whatever the column width. */
 .coden-dashboard-project-preview iframe {
-  width: 1600px;
-  height: 1000px;
+  position: relative;
+  z-index: 1;
+  width: 400%;
+  height: 400%;
   border: 0;
+  /* A page that sets no background is white, as in a browser, not see-through. */
+  background: #fff;
   pointer-events: none;
-  transform: scale(.2);
+  transform: scale(.25);
   transform-origin: top left;
+  transition: transform 500ms var(--ease-out, ease);
 }
 
-/* Sits underneath the iframe rather than instead of it, so a preview that
-   paints nothing falls back to this instead of to a hole. */
+/* The project's own cover: its colour, its initials. Under the preview, so a
+   frame that paints nothing falls back to this instead of to a hole. */
 .coden-dashboard-project-fallback {
   position: absolute;
   inset: 0;
@@ -915,132 +928,122 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 18px;
-  color: var(--text-muted);
-  background: var(--surface);
+  color: #fff;
   text-align: center;
+  background:
+    radial-gradient(120% 90% at 0% 0%, hsl(var(--project-hue) 85% 68% / .95), transparent 60%),
+    radial-gradient(110% 100% at 100% 100%, hsl(calc(var(--project-hue) + 48) 80% 56% / .95), transparent 62%),
+    linear-gradient(135deg, hsl(var(--project-hue) 70% 58%), hsl(calc(var(--project-hue) + 32) 72% 48%));
 }
 
-/* The rendered preview covers it when there is one. */
-.coden-dashboard-project-preview iframe {
+.coden-dashboard-project-fallback::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .22) 1px, transparent 1.3px);
+  background-size: 14px 14px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, #000, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, #000, transparent 75%);
+  opacity: .7;
+}
+
+.coden-dashboard-project-monogram {
   position: relative;
   z-index: 1;
-}
-
-.coden-dashboard-project-fallback > span {
-  display: inline-flex;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: var(--radius-md);
-}
-
-.coden-dashboard-project-fallback strong {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--foreground);
-  font-size: 13px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  color: #fff;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  background: rgba(255, 255, 255, .16);
+  border: 1px solid rgba(255, 255, 255, .34);
+  border-radius: 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .3);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: transform 400ms var(--ease-out, ease);
 }
 
 .coden-dashboard-project-fallback small {
-  font-size: 10px;
+  position: relative;
+  z-index: 1;
+  color: rgba(255, 255, 255, .88);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .01em;
 }
 
-/* Bottom-left, where a reader's eye already is after the thumbnail, and a
-   light pill so it stays legible over whatever the preview happens to paint
-   underneath it — a dark chip disappeared into every dark generated app. */
+.coden-dashboard-project-card-link:hover .coden-dashboard-project-monogram { transform: scale(1.06); }
+.coden-dashboard-project-card-link:hover .coden-dashboard-project-preview iframe { transform: scale(.255); }
+
+/* Status: a small frosted pill, top-left, with a coloured dot. */
 .coden-dashboard-project-badge {
   position: absolute;
+  top: 9px;
   left: 9px;
-  bottom: 9px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  color: var(--foreground);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .01em;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 7%, transparent);
+  gap: 6px;
+  padding: 3px 9px 3px 8px;
+  color: #1f2937;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 16px;
+  background: rgba(255, 255, 255, .88);
+  border: 1px solid rgba(15, 23, 42, .06);
   border-radius: 999px;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 16%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .12);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
 
-/* The dot carries the colour so the label keeps its contrast on the pill. */
 .coden-dashboard-project-badge::before {
   content: "";
-  width: 5px;
-  height: 5px;
-  flex: 0 0 5px;
-  background: currentColor;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  background: #94a3b8;
   border-radius: 50%;
-  opacity: .55;
+}
+
+.coden-dashboard-project-badge.is-published::before,
+.coden-dashboard-project-badge.is-ready::before { background: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, .16); }
+.coden-dashboard-project-badge.is-issue::before { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, .18); }
+.coden-dashboard-project-badge.is-building::before { background: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .18); animation: coden-dashboard-pulse 1.6s ease-in-out infinite; }
+@keyframes coden-dashboard-pulse { 50% { opacity: .35; } }
+
+html[data-theme="dark"] .coden-dashboard-project-badge {
+  color: #e5e7eb;
+  background: rgba(15, 23, 42, .72);
+  border-color: rgba(255, 255, 255, .1);
 }
 
 .coden-dashboard-project-card-link:focus-visible {
   outline: var(--focus-outline);
-  outline-offset: 4px;
+  outline-offset: 3px;
 }
 
-/* Read on a var(--surface) pill, so these are the dark ends of the same hues the
-   dark-chip version used, not the light ends. */
-.coden-dashboard-project-badge.is-published {
-  color: var(--success);
-}
-
-.coden-dashboard-project-badge.is-issue {
-  color: var(--danger);
-}
-
-.coden-dashboard-project-badge.is-building {
-  color: var(--accent);
-}
-
-.coden-dashboard-project-badge.is-ready {
-  color: var(--accent);
-}
-
-/* Avatar, copy, chevron. The avatar column came back once it had something to
-   say that the name beside it does not: whose account the project is in. */
+/* Caption: the name and when it last changed; the arrow comes forward on hover. */
 .coden-dashboard-project-card-meta {
   display: grid;
   min-width: 0;
-  grid-template-columns: 36px minmax(0, 1fr) 17px;
+  grid-template-columns: minmax(0, 1fr) 30px;
   align-items: center;
-  gap: 11px;
-  padding: 13px 2px 0;
-}
-
-.coden-dashboard-project-card-avatar {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 700;
-  background: var(--surface);
-  border-radius: 50%;
-  user-select: none;
+  gap: 10px;
+  padding: 10px 6px 5px 8px;
 }
 
 .coden-dashboard-project-card-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .coden-dashboard-project-card-copy strong,
@@ -1051,7 +1054,7 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
 }
 
 .coden-dashboard-project-card-copy strong {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 650;
   letter-spacing: -.012em;
 }
@@ -1061,8 +1064,30 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
   font-size: 12px;
 }
 
-.coden-dashboard-project-card-meta > svg {
+.coden-dashboard-project-open {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
   color: var(--text-muted);
+  background: var(--surface-soft);
+  border-radius: 50%;
+  transition: color 220ms ease, background-color 220ms ease, transform 260ms var(--ease-out, ease);
+}
+
+.coden-dashboard-project-card-link:hover .coden-dashboard-project-open {
+  color: var(--background);
+  background: var(--accent);
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-dashboard-project-card-link,
+  .coden-dashboard-project-card-link:hover,
+  .coden-dashboard-project-card-link:hover .coden-dashboard-project-monogram,
+  .coden-dashboard-project-card-link:hover .coden-dashboard-project-open,
+  .coden-dashboard-project-card-link:hover .coden-dashboard-project-preview iframe { transform: none; transition: none; }
+  .coden-dashboard-project-badge.is-building::before { animation: none; }
 }
 
 .coden-dashboard-project-more {
