@@ -76,7 +76,7 @@ html[data-lp-reveal="on"] [data-lp-reveal].is-visible .lp-word { opacity: 1; tra
  *
  * A reading bar along the top of the window, and depth in the hero: the
  * copy drifts up faster than the page and fades, the light behind lags, the
- * sphere grows as it is passed. --lp-hero-p runs 0 → 1 across the hero and
+ * glow sinks and dims as it is passed. --lp-hero-p runs 0 → 1 across the hero and
  * is written by installScrollMotion() — without it every value is at rest.
  * ------------------------------------------------------------------------- */
 .lp-scroll-progress {
@@ -98,7 +98,7 @@ html[data-lp-reveal="on"] [data-lp-reveal].is-visible .lp-word { opacity: 1; tra
 .lp-hero-title { translate: 0 calc(var(--lp-hero-p) * -90px); opacity: calc(1 - var(--lp-hero-p) * .9); }
 .lp-hero-subtitle { translate: 0 calc(var(--lp-hero-p) * -60px); opacity: calc(1 - var(--lp-hero-p) * .9); }
 .lp-hero-ambient { translate: 0 calc(var(--lp-hero-p) * 120px); }
-.lp-hero-sphere { scale: calc(1 + var(--lp-hero-p) * .18); }
+.lp-hero-glow { translate: 0 calc(var(--lp-hero-p) * 80px); opacity: calc(1 - var(--lp-hero-p) * .6); }
 
 /* ---------------------------------------------------------------------------
  * Hero
@@ -152,37 +152,64 @@ html[data-theme="dark"] .lp-composer-host .coden-prompt-input > div:last-of-type
 html[data-theme="dark"] .lp-composer-host .coden-prompt-input .coden-prompt-fade { background: transparent; }
 
 /*
- * The sphere of rings rising from the foot of the hero, turning slowly: the
- * one moving thing on the first screen, behind everything and never under
- * the text. White on the blue stage, the accent on the light page.
+ * The hero's light: three soft orbs of the brand's blues drifting slowly
+ * behind the composer, over a fine dot grid that breathes. Transforms and
+ * opacity only (GPU-composited, no canvas, no script), long ease-in-out
+ * loops so nothing ever snaps; still when motion is reduced.
  */
-.lp-hero-sphere {
-  --sphere-ring: color-mix(in srgb, var(--accent) 55%, transparent);
-  --sphere-dot: var(--accent);
+.lp-hero-glow {
   position: absolute;
   z-index: -1;
-  left: 50%;
-  /* Only its top rises into view, under the composer, like a planet at dawn. */
-  top: calc(100% - 190px);
-  width: min(820px, 96vw);
-  aspect-ratio: 1;
-  transform: translateX(-50%);
-  opacity: .55;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, transparent 26%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, transparent 26%);
+  inset: 0 50% auto auto;
+  width: 100vw;
+  height: 100%;
+  transform: translateX(50%);
+  overflow: hidden;
   pointer-events: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
 }
-html[data-theme="dark"] .lp-hero-sphere {
-  --sphere-ring: rgba(255, 255, 255, .55);
-  --sphere-dot: #ffffff;
-  opacity: .5;
+.lp-hero-orb {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(560px, 70vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(72px);
+  opacity: .42;
+  will-change: transform;
 }
+.lp-hero-orb.is-a { background: radial-gradient(circle at 50% 50%, var(--accent) 0%, transparent 68%); translate: -78% -46%; }
+.lp-hero-orb.is-b { background: radial-gradient(circle at 50% 50%, #8b5cf6 0%, transparent 68%); translate: -18% -30%; opacity: .32; }
+.lp-hero-orb.is-c { background: radial-gradient(circle at 50% 50%, #22d3ee 0%, transparent 66%); translate: -52% 4%; width: min(460px, 60vw); opacity: .28; }
+.lp-hero-dots {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--accent) 38%, transparent) 1px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(ellipse 52% 46% at 50% 56%, #000 0%, transparent 100%);
+  mask-image: radial-gradient(ellipse 52% 46% at 50% 56%, #000 0%, transparent 100%);
+  opacity: .35;
+}
+html[data-theme="dark"] .lp-hero-orb { opacity: .5; mix-blend-mode: screen; }
+html[data-theme="dark"] .lp-hero-orb.is-a { background: radial-gradient(circle, #7cc4ff 0%, transparent 68%); }
+html[data-theme="dark"] .lp-hero-dots { background-image: radial-gradient(circle, rgba(255, 255, 255, .45) 1px, transparent 1.4px); opacity: .28; }
 @media (prefers-reduced-motion: no-preference) {
-  .lp-hero-sphere { animation: lp-sphere-in 1800ms var(--ease-standard) both, lp-sphere-float 9s ease-in-out 1800ms infinite alternate; }
+  .lp-hero-glow { animation: lp-fade 1600ms var(--ease-standard) both; }
+  .lp-hero-orb.is-a { animation: lp-orb-a 22s ease-in-out infinite alternate; }
+  .lp-hero-orb.is-b { animation: lp-orb-b 26s ease-in-out infinite alternate; }
+  .lp-hero-orb.is-c { animation: lp-orb-c 30s ease-in-out infinite alternate; }
+  .lp-hero-dots { animation: lp-dots-breathe 9s ease-in-out infinite alternate; }
 }
-@keyframes lp-sphere-in { from { opacity: 0; transform: translate(-50%, 6%) scale(.96); } }
-@keyframes lp-sphere-float { to { transform: translate(-50%, -2.5%); } }
-@media (max-width: 720px) { .lp-hero-sphere { top: calc(100% - 120px); width: 100vw; } }
+@keyframes lp-orb-a { to { transform: translate(14%, 10%) scale(1.12); } }
+@keyframes lp-orb-b { to { transform: translate(-16%, 14%) scale(.9); } }
+@keyframes lp-orb-c { to { transform: translate(10%, -16%) scale(1.15); } }
+@keyframes lp-dots-breathe { from { opacity: .18; } to { opacity: .4; } }
+@media (max-width: 720px) {
+  .lp-hero-orb { filter: blur(56px); width: 90vw; }
+  .lp-hero-orb.is-c { width: 76vw; }
+}
 
 /* One line at every width: the sentence runs about 12.2 times its font size
    in Geist at this tracking, so the size follows the column with room to
@@ -235,7 +262,7 @@ html[data-theme="dark"] .lp-hero-sphere {
 
 /* Hero entrance: title, subtitle, composer, note, one after the other. */
 @media (prefers-reduced-motion: no-preference) {
-  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-sphere) { animation: lp-rise 1000ms var(--ease-standard) backwards; }
+  .lp-hero > :not(.lp-hero-ambient):not(.lp-hero-glow) { animation: lp-rise 1000ms var(--ease-standard) backwards; }
   .lp-hero-subtitle { animation-delay: 90ms !important; }
   .lp-composer { animation-delay: 180ms !important; }
   .lp-hero-note { animation-delay: 270ms !important; }
