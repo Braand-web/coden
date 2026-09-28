@@ -52,7 +52,7 @@ assert.ok(
 // Located by index rather than by a regex over a 65k slice: a lazy pattern
 // stops at the first nested brace and quietly matches nothing useful.
 const payloads: string[] = [];
-for (let at = route.indexOf('preview: {'); at !== -1; at = route.indexOf('preview: {', at + 1)) {
+for (let at = route.indexOf('preview: {', needsFixBranch); at !== -1; at = route.indexOf('preview: {', at + 1)) {
   payloads.push(route.slice(at, at + 500));
 }
 assert.ok(payloads.length >= 2, `both terminal payloads must be findable, found ${payloads.length}`);

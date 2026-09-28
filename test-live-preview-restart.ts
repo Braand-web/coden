@@ -23,7 +23,7 @@ assert.doesNotMatch(markup, /id="btn-live-preview-start"/, 'the manual preview s
 
 // Recovery exists and asks the route that actually starts a server, but it is
 // automatic rather than exposed as a second toolbar action.
-assert.match(builder, /async function ensureLivePreview\(\)/, 'a stopped application must restart automatically');
+assert.match(builder, /async function ensureLivePreview\(silent = false\)/, 'a stopped application must restart automatically');
 const start = builder.slice(builder.indexOf('async function ensureLivePreview'), builder.indexOf('/** Forget the live preview'));
 assert.match(start, /sandbox\/start/, 'by calling the start route');
 assert.match(start, /method: 'POST'/, 'which is a POST');

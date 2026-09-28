@@ -3842,7 +3842,7 @@ function bindPreviewRecovery() {
   });
 }
 
-async function ensureLivePreview() {
+async function ensureLivePreview(silent = false) {
   if (!currentProjectId || liveStartInFlight) return;
   const projectId = currentProjectId;
   liveStartInFlight = true;
@@ -3854,13 +3854,13 @@ async function ensureLivePreview() {
     if (currentProjectId !== projectId) return;
     activateBuilderView('preview');
     setLivePreview(url);
-    showTransientNotice('Aperçu live démarré.', 2200);
+    if (!silent) showTransientNotice('Aperçu live démarré.', 2200);
   } catch (error: any) {
     // The install log and the dev server's own error are the useful part here,
     // and the route returns them; a generic failure notice would hide the one
     // line that says which package or which file is the problem.
     const detail = String(error?.message || '').trim();
-    showTransientNotice(detail ? `Aperçu live indisponible : ${detail}` : 'Aperçu live indisponible.', 5200);
+    if (!silent) showTransientNotice(detail ? `Aperçu live indisponible : ${detail}` : 'Aperçu live indisponible.', 5200);
   } finally {
     liveStartInFlight = false;
   }
@@ -5784,22 +5784,10 @@ async function ensureProject() {
 
   if (currentProjectId) {
     rememberLastBuilderProjectId(currentProjectId);
-    try {
-      return await apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
-    } catch (error) {
-      // A bookmarked project can legitimately disappear (for example after a
-      // workspace migration). Do not leave its id in memory: the next build
-      // would otherwise receive a 404 and incorrectly present it as a missing
-      // streaming endpoint. Start from a clean project flow instead.
-      const status = Number((error as { status?: unknown })?.status || 0);
-      if (status !== 404) throw error;
-      const staleProjectId = currentProjectId;
-      forgetLastBuilderProjectId(staleProjectId);
-      currentProjectId = '';
-      userWorkspaceState = null;
-      window.history.replaceState({}, '', '/builder.html?new=1');
-      return emptyBuilderProjectPayload(null);
-    }
+    // An explicit project link is authoritative. A transient 404 (auth/RLS
+    // recovery, storage outage) must never silently turn it into a new empty
+    // project and make the user's session appear lost.
+    return await apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
   }
 
   const userState = await apiFetch<{ success: boolean; state: UserWorkspaceState | null }>('/api/users/me/workspace-state').catch(() => null);
@@ -5818,6 +5806,7 @@ async function ensureProject() {
     try {
       return await apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
     } catch (error) {
+      if (Number((error as { status?: unknown })?.status || 0) !== 404) throw error;
       forgetLastBuilderProjectId(fallbackProjectId);
       currentProjectId = '';
       window.history.replaceState({}, '', '/builder.html');
@@ -6009,6 +5998,10 @@ async function loadProject() {
       // Keep the running application; no background WebContainer may replace it.
     } else if (payload.preview?.html && payload.preview.status !== 'idle' && isUsablePreviewHtml(payload.preview.html)) {
       setPreview(payload.preview.html, payload.preview.status);
+      // Saved HTML is only a lightweight rendering; it cannot reproduce every
+      // CSS import, build transform or dependency. Keep it visible immediately,
+      // then restart the real app from committed files in the background.
+      if (currentFiles.length) void ensureLivePreview(true);
     } else {
       currentPreviewHtml = '';
       // Said, not left blank: a cold preview takes about half a minute to

@@ -2,6 +2,7 @@
 import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
+import { authoritativeProjectFiles } from './src/services/project-file-recovery.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
 import {
@@ -8430,10 +8431,10 @@ function recoverProjectPayloadFromSnapshot(input: {
   const snapshotFiles = normalizeGeneratedFiles(snapshot?.files_snapshot || []);
   const snapshotMessages = Array.isArray(snapshot?.messages_snapshot) ? snapshot!.messages_snapshot! : [];
   const snapshotEvents = Array.isArray(snapshot?.events_snapshot) ? snapshot!.events_snapshot! : [];
-  const fileMap = new Map<string, GeneratedFile>();
-  snapshotFiles.forEach(file => fileMap.set(file.path, file));
-  input.files.forEach(file => fileMap.set(file.path, file));
-  const files = Array.from(fileMap.values()).sort((a, b) => a.path.localeCompare(b.path));
+  // A checkpoint belongs to a run, not the committed project. Mixing paths
+  // from both revisions can silently replace its styling on the next reload.
+  const files = authoritativeProjectFiles(input.files, snapshotFiles)
+    .slice().sort((a, b) => a.path.localeCompare(b.path));
   const messageMap = new Map<string, any>();
   [...snapshotMessages, ...input.messages].forEach((message: any, index) => {
     const key = String(message?.ai_message_id || message?.id || `${message?.role || 'unknown'}:${message?.created_at || index}:${message?.content || ''}`);
@@ -15820,7 +15821,17 @@ ${resolvedMission}` : resolvedMission;
         credits: routingCredits,
         onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
         signal: generationAbortController.signal,
-        onSnapshot: async files => { await saveProject({ ...project, preview_status:'needs_fix', updated_at:new Date().toISOString() }, files as GeneratedFile[]); },
+        onSnapshot: async files => {
+          // Keep the in-progress tree durable without promoting it to
+          // project_files. A refresh or failed run must still show the last
+          // complete application, not this intermediate build round.
+          await persistDurableProjectSnapshot({
+            project,
+            files: files as GeneratedFile[],
+            preview: { status: project.preview_status || 'idle', html: project.preview_html || '' },
+            lastAgentRunId: pipelineRunId || undefined,
+          });
+        },
         onSandboxEvent: event => {
           eventStream?.workspace(event.type === 'preview_ready' ? { ...event, projectId: project.id } : event);
         },
@@ -15872,8 +15883,13 @@ ${resolvedMission}` : resolvedMission;
         };
         const previewPipeline = runPreviewPipeline(updatedProject, pipelineFiles);
         updatedProject.preview_html = previewPipeline.html;
-
-        await saveProject(updatedProject, pipelineFiles);
+        const preserveLastVerifiedApp = !outcome.ok
+          && project.preview_status === 'verified'
+          && Boolean(project.preview_html?.trim())
+          && existingFiles.length > 0;
+        if (!preserveLastVerifiedApp) await saveProject(updatedProject, pipelineFiles);
+        const visibleProject = preserveLastVerifiedApp ? project : updatedProject;
+        const visibleFiles = preserveLastVerifiedApp ? existingFiles : pipelineFiles;
 
         /*
          * The work is billed, because it was not.
@@ -16006,27 +16022,32 @@ ${resolvedMission}` : resolvedMission;
             recoverable: true,
           }),
           intent: decision,
-          project: updatedProject,
-          files: pipelineFiles,
+          project: visibleProject,
+          files: visibleFiles,
           diff,
-          summary: summarizePipelineOutcome({
-            plan: outcome.plan,
-            ok: outcome.ok,
-            route: pipelineRoute,
-            diff,
-            stoppedBecause: outcome.repairOutcome.stoppedBecause,
-            prompt,
-            evidence: outcome.repairOutcome.finalReport.evidence,
-          }),
+          summary: [
+            ...(preserveLastVerifiedApp ? [frenchActivity
+              ? 'La modification n’a pas été validée. La dernière version fonctionnelle reste intacte.'
+              : 'The edit could not be verified. The last working version remains intact.'] : []),
+            summarizePipelineOutcome({
+              plan: outcome.plan,
+              ok: outcome.ok,
+              route: pipelineRoute,
+              diff,
+              stoppedBecause: outcome.repairOutcome.stoppedBecause,
+              prompt,
+              evidence: outcome.repairOutcome.finalReport.evidence,
+            }),
+          ].join('\n\n'),
           model: outcome.modelId,
           real_cost_usd: pipelineCompleteCostUsd,
           verification: outcome.repairOutcome.finalReport,
           plan: outcome.plan,
           preview: {
-            status: outcome.ok ? 'verified' : 'needs_fix',
-            html: previewPipeline.html,
-            live_url: outcome.liveUrl,
-            live_state: outcome.liveState,
+            status: visibleProject.preview_status,
+            html: visibleProject.preview_html,
+            live_url: preserveLastVerifiedApp ? '' : outcome.liveUrl,
+            live_state: preserveLastVerifiedApp ? 'idle' : outcome.liveState,
             live_error: outcome.ok ? null : outcome.repairOutcome.stoppedBecause,
           },
           pipeline: 'multi_agent',
