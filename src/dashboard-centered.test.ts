@@ -59,7 +59,7 @@ describe('Coden projects dashboard surface contract', () => {
     // The dashboard mounts the shared composer rather than wiring loose
     // buttons through `initPromptInputActions`, which it no longer needs.
     expect(reactDashboard).toContain("from './components/ui/ai-chat-input'");
-    expect(server).toContain('preview_html: project.preview_html || \'\'');
+    expect(server).toContain('preview_html: restoreLegacyMotionPreview(project.preview_html || \'\')');
     expect(reactDashboard).not.toContain('Que veux-tu accomplir');
     expect(reactDashboard).not.toContain('Demander à Coden');
     expect(reactDashboard).not.toContain('Crédits');

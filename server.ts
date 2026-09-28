@@ -1,6 +1,7 @@
 // Deployment marker: publish the restored Coden dashboard surface.
 import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
+import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
 import {
@@ -3895,6 +3896,7 @@ function buildReactVitePreviewHtml(
     '    };',
     '    window.MotionMock = {',
     '      AnimatePresence: function(props) { return props.children; },',
+    `      ${REDUCED_MOTION_PREVIEW_HOOK}`,
     '      motion: new Proxy({}, {',
     '        get: function(target, tag) {',
     '          return function(props) {',
@@ -4352,7 +4354,7 @@ function getProjectPreviewHtml(project: GeneratedProject, files: GeneratedFile[]
   const servesThePublic = environment === 'production';
   const verified = project.preview_status === 'verified';
   if (project.preview_html && (verified || !servesThePublic)) {
-    const seoHtml = enhanceHtmlSeo(project.preview_html, project.name, project.prompt || project.name, project.slug || project.id, environment);
+    const seoHtml = enhanceHtmlSeo(restoreLegacyMotionPreview(project.preview_html), project.name, project.prompt || project.name, project.slug || project.id, environment);
     return injectAnalyticsSnippet(seoHtml, project.id, environment);
   }
   return buildPreviewErrorHtml({
@@ -8147,7 +8149,11 @@ async function loadProject(projectId: string, userId: string, req?: any): Promis
   const project = data as GeneratedProject;
   const role = await resolveProjectRole(project, userId, req);
   if (!role) return null;
-  return { ...project, __coden_project_role: role } as GeneratedProject;
+  return {
+    ...project,
+    preview_html: restoreLegacyMotionPreview(project.preview_html || ''),
+    __coden_project_role: role,
+  } as GeneratedProject;
 }
 
 async function loadProjectForAnalytics(projectId: string): Promise<GeneratedProject | null> {
@@ -8217,7 +8223,7 @@ async function enrichProjectsForDashboard(projects: GeneratedProject[]) {
       // A generated rendering remains useful while its verification verdict is
       // being repaired. The client filters the explicit error document, but it
       // must receive the real artifact to render it in the dashboard.
-      preview_html: project.preview_html || '',
+      preview_html: restoreLegacyMotionPreview(project.preview_html || ''),
       publish_status: publishStatus,
       live_url: liveUrl,
       created_at: project.created_at,
@@ -8457,7 +8463,7 @@ function recoverProjectPayloadFromSnapshot(input: {
   const snapshotPreview = snapshot?.preview_snapshot || null;
   const normalizedPreviewHtml = input.project.preview_html
     ? getProjectPreviewHtml(input.project, files, 'preview')
-    : String(snapshotPreview?.html || '').trim()
+    : restoreLegacyMotionPreview(String(snapshotPreview?.html || '').trim())
       || getProjectPreviewHtml(input.project, files, 'preview');
   const usedSnapshot = files.length > input.files.length
     || messages.length > input.messages.length
