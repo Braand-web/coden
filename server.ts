@@ -3612,10 +3612,10 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
   // An address is a publication result, not a prediction. Showing a computed
   // subdomain before Vercel has built and Coden has verified it made failed
   // attempts look live in both the API and the publish panel.
+  // The Coden address is the stable primary link; an optional custom domain
+  // is displayed separately and never replaces that link in the panel.
   const publicUrl = publishedDeployment
-    ? customDomain
-      ? normalizeDomainUrl(customDomain)
-      : String(publishedDeployment.public_url || publishedDeployment.deployment_url || '')
+    ? String(publishedDeployment.public_url || publishedDeployment.deployment_url || '')
     : '';
   const state: PublishStatus['state'] = !previewReady || !hasFiles
     ? 'not_ready'
@@ -18982,10 +18982,8 @@ async function loadPublicationUsage(organizationId: string): Promise<Publication
  *
  *   - every user may publish an app on the Coden domain (<slug>.coden.fun),
  *     with or without a subscription, and it stays online;
- *   - a custom domain is for paying subscribers: adding one requires an
- *     active paid subscription, and when that subscription lapses past its
- *     grace period the custom domain is detached — the app itself stays up
- *     on its Coden address.
+ *   - adding a custom domain requires an active paid subscription; an
+ *     already connected domain remains online after a downgrade or expiry.
  *
  * So only the custom-domain operation is gated here.
  */
@@ -19059,11 +19057,8 @@ async function customDomainsForProject(client: any, projectId: string): Promise<
  * Keep hosting in line with the publication policy (see
  * requirePublicationEntitlement).
  *
- * The Coden address is free and never paused. What a lapsed subscription
- * loses, after its seven-day grace, is the custom domain: it is detached
- * from the provider project, the app stays online on <slug>.coden.fun, and a
- * renewed subscription attaches it again. Projects paused under the previous
- * rule — which took the whole site down — are brought back online.
+ * The Coden address and every already-connected custom domain stay online.
+ * Repair only the sites/domains detached by the former subscription rule.
  */
 async function reconcilePublishedSiteEntitlements(): Promise<void> {
   const client = getSupabase();
@@ -19088,17 +19083,11 @@ async function reconcilePublishedSiteEntitlements(): Promise<void> {
   if (suspensionResult.error) throw new Error(`Publication suspension reconciliation failed: ${suspensionResult.error.message}`);
 
   const suspensions = new Map(((suspensionResult.data || []) as any[]).map(row => [String(row.project_id), row]));
-  const entitlementByOrganization = new Map<string, PublicationEntitlement>();
   const now = () => new Date().toISOString();
   for (const projectRow of (projectResult.data || []) as any[]) {
     const organizationId = String(projectRow.organization_id || '');
     const projectId = String(projectRow.id || '');
     if (!organizationId || !projectId) continue;
-    let entitlement = entitlementByOrganization.get(organizationId);
-    if (!entitlement) {
-      entitlement = await resolvePublicationEntitlement(client, organizationId);
-      entitlementByOrganization.set(organizationId, entitlement);
-    }
     const vercelProject = vercelProjectNameForSlug(String(projectRow.slug || projectId));
     const previous = suspensions.get(projectId);
     const domainsDetached = previous?.status === 'paused' && previous?.reason === 'custom_domains_detached';
@@ -19118,21 +19107,12 @@ async function reconcilePublishedSiteEntitlements(): Promise<void> {
         await record({ status: result === 'missing' ? 'missing' : 'active', reason: 'coden_domain_free', resumed_at: result === 'missing' ? null : now(), last_error: null });
       }
 
-      if (entitlement.canServeExisting) {
-        if (domainsDetached) {
-          for (const domain of await customDomainsForProject(client, projectId)) {
-            await attachVercelCustomDomain(vercelProject, domain);
-          }
-          await record({ status: 'active', reason: 'subscription_renewed', resumed_at: now(), last_error: null });
+      if (domainsDetached) {
+        for (const domain of await customDomainsForProject(client, projectId)) {
+          await attachVercelCustomDomain(vercelProject, domain);
         }
-        continue;
+        await record({ status: 'active', reason: 'existing_domains_retained', resumed_at: now(), last_error: null });
       }
-
-      if (domainsDetached) continue;
-      const domains = await customDomainsForProject(client, projectId);
-      if (!domains.length) continue;
-      for (const domain of domains) await removeVercelCustomDomain(vercelProject, domain);
-      await record({ status: 'paused', reason: 'custom_domains_detached', paused_at: now(), resumed_at: null, last_error: null });
     } catch (error: any) {
       const message = redactSecrets(error?.message || String(error), '[redacted]').slice(0, 1_000);
       console.warn('[coden:publication_entitlement_project_failed]', { project_id: projectId, message });
@@ -19863,6 +19843,7 @@ function pathExists(target: string): boolean {
 // ============================================================
 import {
   publishProjectToVercel,
+  activateVercelPublication,
   attachVercelCustomDomain,
   getVercelCustomDomainStatus,
   removeVercelCustomDomain,
@@ -19870,7 +19851,7 @@ import {
   vercelProjectUrlForSlug,
   vercelCodenHostForSlug,
   verifyVercelDeployment,
-  promoteVercelDeployment,
+  rollbackVercelDeployment,
   pauseVercelProject,
   unpauseVercelProject,
 } from './src/services/publish-vercel.ts';
@@ -20225,6 +20206,9 @@ async function publishVercelProjectForRequest(req: any, res: any) {
   let publishArtifactHash = '';
   let publishAttemptStarted = false;
   let publishProviderResult: Awaited<ReturnType<typeof publishProjectToVercel>> | null = null;
+  let stagedDeploymentId = '';
+  let promotionAttempted = false;
+  let previousDeploymentId = '';
   try {
     const auth = getRequiredAuth(req);
     if (!enforceRateLimit(`publish:${auth.userId}`, 6, 60_000)) {
@@ -20244,6 +20228,9 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     // Publishing on the Coden domain is open to every user (see
     // requirePublicationEntitlement); only a custom domain is paid.
     const context = await createPublishContext(project);
+    previousDeploymentId = context.latestDeployment?.provider === 'vercel'
+      ? String(context.latestDeployment.provider_deployment_id || '')
+      : '';
     const publishStatus = buildPublishStatus(context);
     if (!publishStatus.can_publish) {
       const failedCheck = publishStatus.checks.find((check: any) => check.status === 'fail');
@@ -20304,6 +20291,18 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       securityBlockers: [],
     });
     publishArtifactHash = artifactHash;
+    // Replaying the same confirmed request must not create a second deployment.
+    if (publishStatus.state === 'published' && context.latestDeployment?.commit_hash === artifactHash) {
+      return res.json({
+        success: true,
+        deployment: sanitizeDeploymentForUser(
+          context.latestDeployment,
+          publishStatus.public_url,
+          publishStatus.custom_domain,
+        ),
+        publish: publishStatus,
+      });
+    }
     const backendEnv = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
     const publicBuildEnv: Record<string, string> = {
       ...backendEnv,
@@ -20377,13 +20376,49 @@ async function publishVercelProjectForRequest(req: any, res: any) {
           `Vercel deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
         );
       }
-      verifiedPublicUrl = deploymentVerification.baseUrl;
+      // Persist the verified candidate before touching any production alias.
+      // Only status=ready is visible as the public version.
+      stagedDeploymentId = randomUUID();
+      const { error: stagingError } = await requireSupabase('Staged publication persistence')
+        .from('deployments').insert({
+          id: stagedDeploymentId,
+          organization_id: project.organization_id,
+          project_id: project.id,
+          provider: 'vercel',
+          provider_deployment_id: result.deploymentId,
+          deployment_url: result.deploymentUrl,
+          status: 'staged',
+          commit_hash: artifactHash,
+          branch: req.body?.branch || 'main',
+        });
+      if (stagingError) throw new Error(`Staged publication could not be saved: ${stagingError.message}`);
+      promotionAttempted = true;
+      result = await activateVercelPublication(result, slug);
+      publishProviderResult = result;
+      const liveCandidate = result.codenUrl || result.defaultUrl || result.deploymentUrl;
+      // Promotion and domain aliases can take a few seconds to propagate.
+      // Verify the public address, not a private provider bypass URL.
+      let liveVerification = await verifyVercelDeployment({
+        codenUrl: liveCandidate,
+        defaultUrl: '',
+        deploymentUrl: '',
+      }, publicRoutes);
+      for (let attempt = 0; attempt < 2 && !liveVerification.verified; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
+        liveVerification = await verifyVercelDeployment({
+          codenUrl: liveCandidate,
+          defaultUrl: '',
+          deploymentUrl: '',
+        }, publicRoutes);
+      }
+      if (!liveVerification.verified) throw new Error('The promoted publication could not be verified.');
+      verifiedPublicUrl = liveVerification.baseUrl;
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
     const createdAt = new Date().toISOString();
     const deploy = {
-      id: randomUUID(),
+      id: stagedDeploymentId,
       organization_id: project.organization_id,
       project_id: project.id,
       provider: result.provider,
@@ -20398,9 +20433,17 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       created_at: createdAt,
     };
 
-    // Record the provider result before updating the mutable publication pointer.
-    await saveDeploymentRecord(deploy);
-    const client = getSupabase();
+    // Promote the staged database row only after the public address works.
+    const client = requireSupabase('Publication activation persistence');
+    const { data: activatedRows, error: activationError } = await client.from('deployments').update({
+      status: 'ready',
+      public_url: verifiedPublicUrl,
+      custom_domain: deploy.custom_domain,
+      updated_at: createdAt,
+    }).eq('id', stagedDeploymentId).eq('project_id', project.id).select('id');
+    if (activationError || activatedRows?.length !== 1) {
+      throw new Error(`Publication activation could not be saved: ${activationError?.message || 'staged deployment not found'}`);
+    }
     if (client) {
       // The publication pointer is a compatibility cache, not the source of
       // truth: `deployments` already contains the provider result. Older
@@ -20448,9 +20491,39 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       publish: { ...nextStatus, public_url: verifiedPublicUrl },
     });
   } catch (e: any) {
+    // A first publication has no previous production deployment to restore.
+    // If promotion was attempted, keep its staged row for operator recovery
+    // instead of incorrectly recording a possibly live site as failed.
+    let rollbackFailed = promotionAttempted && !previousDeploymentId;
+    if (promotionAttempted && previousDeploymentId && publishProjectRecord) {
+      await rollbackVercelDeployment(
+        vercelProjectNameForSlug(String(publishProjectRecord.slug || publishProjectRecord.id)),
+        previousDeploymentId,
+      ).catch((rollbackError: any) => {
+        rollbackFailed = true;
+        console.error('[coden:publish_auto_rollback_failed]', {
+          request_id: requestId,
+          project_id: projectId,
+          message: redactSecrets(rollbackError?.message || String(rollbackError), '[redacted]'),
+        });
+      });
+    }
+    if (stagedDeploymentId && !rollbackFailed) {
+      try {
+        const { error: failureRecordError } = await requireSupabase('Failed staged publication persistence')
+          .from('deployments').update({ status: 'failed' }).eq('id', stagedDeploymentId);
+        if (failureRecordError) throw failureRecordError;
+      } catch (recordError: any) {
+        console.error('[coden:publish_failed_stage_record_failed]', {
+          request_id: requestId,
+          project_id: projectId,
+          message: redactSecrets(recordError?.message || String(recordError), '[redacted]'),
+        });
+      }
+    }
     const diagnostic = diagnosePublishError(e);
     console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e) });
-    if (publishAttemptStarted && publishProjectRecord) {
+    if (publishAttemptStarted && publishProjectRecord && !stagedDeploymentId) {
       await saveDeploymentRecord({
         id: randomUUID(),
         organization_id: publishProjectRecord.organization_id,
@@ -20472,10 +20545,15 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         });
       });
     }
+    const userMessage = diagnostic.suggested_action === 'fix_build_then_publish'
+      ? 'Cette version n’a pas pu être préparée. Demandez à Coden de la corriger, puis réessayez.'
+      : diagnostic.suggested_action === 'configure_vercel' || diagnostic.suggested_action === 'update_vercel_token'
+        ? 'La publication est momentanément indisponible. Votre projet est conservé.'
+        : 'La publication n’a pas abouti. Votre projet est conservé et vous pouvez réessayer.';
     return res.status(diagnostic.status).json({
       success: false,
-      error: diagnostic.message,
-      message: diagnostic.message,
+      error: userMessage,
+      message: userMessage,
       diagnostic_code: diagnostic.diagnostic_code,
       request_id: requestId,
       suggested_action: diagnostic.suggested_action,
@@ -20538,7 +20616,7 @@ app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, as
   try {
   const projectName = vercelProjectNameForSlug(String(project.slug || project.id));
   try {
-    await promoteVercelDeployment(projectName, String(target.provider_deployment_id));
+    await rollbackVercelDeployment(projectName, String(target.provider_deployment_id));
   } catch (rollbackError: any) {
     return res.status(502).json({
       success: false,

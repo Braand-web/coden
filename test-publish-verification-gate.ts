@@ -16,7 +16,7 @@ assert.match(server, /if \(!publishStatus\.can_publish\)/, 'Publishing must be g
 // a custom domain requires a paid subscription.
 assert.doesNotMatch(server, /requirePublicationEntitlement\(project, 'publish'\)/, 'Publishing on the Coden domain must not require a subscription.');
 assert.match(server, /operation: 'domain',/, 'Only the custom-domain operation is gated by the subscription.');
-assert.match(server, /reason: 'custom_domains_detached'/, 'A lapsed subscription detaches custom domains instead of taking the site down.');
+assert.doesNotMatch(server, /await removeVercelCustomDomain\(vercelProject, domain\)/, 'A lapsed subscription must never detach an existing domain.');
 assert.doesNotMatch(server, /await pauseVercelProject\(vercelProject\)/, 'The Coden address is never paused for lack of a subscription.');
 assert.match(server, /await requirePublicationEntitlement\(project, 'domain', domain,/, 'Every custom-domain path must require an active paid subscription and enforce the exact requested domain.');
 assert.match(server, /await canServePublishedProject\(project\)/, 'Published proxy routes must enforce expiry and grace periods server-side.');
@@ -42,11 +42,13 @@ assert.match(builder, /data-publish-action="confirm-publish"/, 'Publish confirma
 assert.doesNotMatch(builder, /window\.confirm\(`Confirmer :/, 'The publish flow must not use a native browser confirmation.');
 assert.match(builder, /idempotency-key/, 'Builder must attach an idempotency key.');
 assert.match(builder, /confirmed: true, idempotency_key: idempotencyKey/, 'Builder must send explicit confirmation.');
-assert.match(builder, /version sur Vercel/, 'Progress UI must name the actual provider.');
+assert.doesNotMatch(builder, /version sur Vercel/, 'Progress UI uses Coden language instead of provider jargon.');
+assert.match(publisher, /target: 'preview'/, 'The candidate must not auto-replace the live deployment.');
+assert.match(server, /result = await activateVercelPublication\(result, slug\)/, 'Only the verified candidate is promoted.');
 assert.match(server, /const activePublishOperations = new Map/, 'Concurrent publishes must be rejected.');
 assert.match(server, /PUBLISH_IN_PROGRESS/, 'Concurrent rejection must have a stable code.');
 assert.match(server, /readGeneratedRuntimeContract\(project, context\.files\)/, 'The exact snapshot must drive build and artifact hash.');
-assert.match(server, /promoteVercelDeployment\(projectName, String\(target\.provider_deployment_id\)\)/, 'Rollback must promote the prior Vercel deployment.');
+assert.match(server, /rollbackVercelDeployment\(projectName, String\(target\.provider_deployment_id\)\)/, 'Rollback must restore the prior Vercel deployment.');
 assert.doesNotMatch(
   server,
   /await client\.from\([^\n]+\)\.(?:upsert|insert|update|delete)\([^\n]*\)\.catch/,

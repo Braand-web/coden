@@ -215,9 +215,7 @@ export type PublicationEntitlement = PublicationLimits & {
   graceEndsAt: string | null;
 };
 
-const PUBLICATION_GRACE_MS = 7 * 24 * 60 * 60 * 1_000;
-
-/** Resolve publish rights from the paid subscription, never from top-ups or a stale organization label. */
+/** Publishing and existing domains survive a downgrade; only adding a new domain needs a paid subscription. */
 export async function resolvePublicationEntitlement(
   supabase: any,
   accountId: string,
@@ -241,21 +239,16 @@ export async function resolvePublicationEntitlement(
   const periodEnd = data?.current_period_end ? new Date(String(data.current_period_end)) : null;
   const validPeriod = Boolean(periodEnd && Number.isFinite(periodEnd.getTime()) && periodEnd > now);
   const active = isPaidPlanKey(plan) && data?.status === 'active' && validPeriod;
-  const graceEnds = periodEnd && Number.isFinite(periodEnd.getTime())
-    ? new Date(periodEnd.getTime() + PUBLICATION_GRACE_MS)
-    : null;
-  const inGrace = isPaidPlanKey(plan) && Boolean(graceEnds && graceEnds > now);
-
   return {
     ...limits,
     plan,
     creditTier,
     subscriptionStatus: String(data?.status || 'inactive'),
-    canPublish: active,
+    canPublish: true,
     canAddDomain: active,
-    canServeExisting: active || inGrace,
+    canServeExisting: true,
     currentPeriodEnd: periodEnd && Number.isFinite(periodEnd.getTime()) ? periodEnd.toISOString() : null,
-    graceEndsAt: graceEnds?.toISOString() || null,
+    graceEndsAt: null,
   };
 }
 export function resolveCheckoutAmount(plan: PlanConfig, billingInterval: BillingInterval, credits = plan.credits) {

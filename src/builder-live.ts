@@ -4367,7 +4367,7 @@ function renderDomainSection(canAddDomain = true) {
           <strong>Domaine personnalisé</strong>
           <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
         </div>
-        <p class="cdn-dom__hint">Votre application est publiée gratuitement sur son adresse Coden. Pour la servir sur votre propre domaine (app.votremarque.com), passez à un abonnement payant.</p>
+        <p class="cdn-dom__hint">L’adresse Coden est incluse. Une offre payante permet d’ajouter votre domaine.</p>
         <button type="button" class="cdn-pub__secondary" data-publish-action="see-plans">Voir les offres</button>
       </div>
     `;
@@ -4401,13 +4401,13 @@ function renderDomainSection(canAddDomain = true) {
         <strong>Domaine personnalisé</strong>
         <button type="button" class="cdn-pub__small" data-publish-action="main">Retour</button>
       </div>
-      ${domainError ? `<div class="cdn-pub__error">${escapeHtml(domainError)}</div>` : ''}
-      <form class="cdn-dom__form" data-domain-action="add">
+      ${domainError ? '<div class="cdn-pub__error" role="status">Cette action n’a pas abouti. Vérifiez le domaine et réessayez.</div>' : ''}
+      ${canAddDomain ? `<form class="cdn-dom__form" data-domain-action="add">
         <input class="cdn-dom__input" name="domain" type="text" inputmode="url" autocomplete="off"
                placeholder="app.monentreprise.com" aria-label="Domaine à connecter" ${adding ? 'disabled' : ''} />
         <button type="submit" class="cdn-pub__secondary" ${adding ? 'disabled' : ''}>${adding ? 'Ajout…' : 'Ajouter'}</button>
-      </form>
-      ${rows || '<div class="cdn-dom__empty">Aucun domaine connecté. Ajoutez le vôtre — Coden vous donne l’enregistrement DNS à créer, puis vérifie et active le certificat.</div>'}
+      </form>` : '<p class="cdn-dom__hint">Vos domaines existants restent en ligne. Une offre payante est nécessaire pour en ajouter un autre.</p>'}
+      ${rows || '<div class="cdn-dom__empty">Aucun domaine connecté.</div>'}
     </div>
   `;
 }
@@ -4469,7 +4469,8 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
     (status.state === 'published' || status.state === 'changes_unpublished')
   );
   const targetUrl = status?.public_url || '';
-  const liveUrl = hasPublishedDeployment && !isPublishing && !error ? targetUrl : '';
+  // A failed update must never hide the previous public version.
+  const liveUrl = hasPublishedDeployment ? targetUrl : '';
   const publicUrlLabel = liveUrl ? formatPublishUrl(liveUrl) : 'L’adresse sera disponible après la publication.';
   const canOpen = Boolean(liveUrl && hasPublishedDeployment);
   const checks = status?.checks || [];
@@ -4482,9 +4483,9 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? 'Réessayer'
         : publishPrimaryLabel(status);
   const effectiveTitle = isPublishing ? 'Publication en cours' : error ? 'Publication interrompue' : title;
-  const canPublish = Boolean(status?.can_publish && !isPublishing);
+  const canPublish = Boolean(status?.can_publish && status.state !== 'published' && !isPublishing);
   const blockers = status && !status.can_publish ? checks.filter(check => check.status === 'fail') : [];
-  const notes = checks.filter(check => check.status === 'warn' && check.key !== 'domain');
+  const mainBlocker = blockers.find(check => check.key === 'security') || blockers[0];
   const justPublished = Boolean(payload && (payload as { deployment?: unknown }).deployment && publishJustSucceeded);
   syncPublishTimer(isPublishing);
   const summary = loading
@@ -4496,12 +4497,12 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
     : !status
     ? ''
     : status.state === 'published'
-      ? 'La version publique est à jour.'
+      ? 'Votre application est en ligne.'
       : status.state === 'changes_unpublished'
-        ? 'Des changements vérifiés sont prêts à remplacer la version publique.'
+        ? 'Vos changements ne sont pas encore en ligne.'
         : status.state === 'ready_to_publish'
-          ? 'Prête à être mise en ligne sur son adresse Coden.'
-          : 'Terminez les contrôles bloquants avant de publier.';
+          ? 'Prête à être mise en ligne.'
+          : 'Préparez votre application avant de publier.';
 
   const detailPanel = publishPanelMode === 'domain'
       ? renderDomainSection(status?.can_add_domain !== false)
@@ -4509,7 +4510,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? `
           <div class="cdn-pub__confirm">
             <strong>${status.state === 'published' || status.state === 'changes_unpublished' ? 'Mettre à jour cette application ?' : 'Publier cette application ?'}</strong>
-            <p>La version vérifiée sera publiée sous le domaine Coden. Son adresse sera affichée une fois le déploiement vérifié.</p>
+            <p>${liveUrl ? 'La version actuelle reste en ligne pendant la vérification.' : 'Une adresse publique sera créée après vérification.'}</p>
             <div class="cdn-pub__actions-row">
               <button type="button" class="cdn-pub__secondary" data-publish-action="main" ${isPublishing ? 'disabled' : ''}>Annuler</button>
               <button type="button" class="cdn-pub__primary" data-publish-action="confirm-publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
@@ -4528,7 +4529,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         <button type="button" class="cdn-pub__icon-btn" data-publish-action="close" aria-label="Fermer">${publishIcon('fail')}</button>
       </div>
       <div class="cdn-pub__body">
-        ${error ? `<div class="cdn-pub__error">${escapeHtml(error)}</div>` : ''}
+        ${error ? `<div class="cdn-pub__error" role="status">La publication n’a pas abouti. ${liveUrl ? 'Votre version en ligne reste disponible.' : 'Vous pouvez réessayer.'}</div>` : ''}
         ${status ? `
           <div class="cdn-pub__url">
             <span class="cdn-pub__glyph">${publishIcon('globe')}</span>
@@ -4546,23 +4547,18 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           </div>
         `}
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
-        ${summary && !isPublishing && !blockers.length ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
-        ${justPublished && liveUrl ? `
-          <div class="cdn-pub__success" role="status">
-            <strong>Votre application est en ligne.</strong>
-            <span>Partagez le lien ci-dessus : chaque visiteur voit cette version.</span>
-          </div>` : ''}
-        ${blockers.length && !isPublishing ? `
+        ${summary && !isPublishing && !blockers.length && !justPublished ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
+        ${justPublished && liveUrl ? '<p class="cdn-pub__summary" role="status">Votre application est en ligne.</p>' : ''}
+        ${mainBlocker && !isPublishing ? `
           <div class="cdn-pub__blockers" role="status">
             <strong>Avant de publier</strong>
-            ${blockers.map(check => `
+            ${[mainBlocker].map(check => `
               <div class="cdn-pub__blocker">
-                <span>${escapeHtml(check.detail)}</span>
+                <span>${escapeHtml(check.key === 'hosting' ? 'La publication est temporairement indisponible.' : check.key === 'security' ? 'Une vérification de sécurité doit être corrigée.' : 'Terminez la génération de votre application.')}</span>
                 ${publishBlockerAction(check.key) ? `<button type="button" class="cdn-pub__small" data-publish-action="${publishBlockerAction(check.key)!.action}">${escapeHtml(publishBlockerAction(check.key)!.label)}</button>` : ''}
               </div>`).join('')}
           </div>` : ''}
-        ${notes.length && !blockers.length && !isPublishing ? `<p class="cdn-pub__note">${escapeHtml(notes[0].detail)}</p>` : ''}
-        ${isPublishing ? `<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span><div>Coden compile et met en ligne cette version sur Vercel, puis vérifie le site. Comptez 1 à 3 minutes. <b class="cdn-pub__elapsed" data-publish-elapsed>${formatElapsed(publishStartedAt)}</b></div></div>` : ''}
+        ${isPublishing ? `<div class="cdn-pub__progress" role="status"><span aria-hidden="true"></span><div>Préparation et vérification de votre site <b class="cdn-pub__elapsed" data-publish-elapsed>${formatElapsed(publishStartedAt)}</b></div></div>` : ''}
         <button type="button"
           class="cdn-pub__primary"
           data-variant="${statusMissing || (error && canPublish) ? 'retry' : canPublish ? 'go' : 'idle'}"

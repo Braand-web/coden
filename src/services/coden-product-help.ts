@@ -34,7 +34,7 @@ export const PUBLIC_HELP_TOPICS: readonly HelpTopic[] = [
   {
     id: 'publish', route: '/builder.html',
     terms: ['publier', 'publication', 'mettre en ligne', 'domaine personnalise', 'nom de domaine', 'deploiement'],
-    guidance: 'Dans le Builder, « Publier » ouvre le panneau de publication. Il permet de vérifier les contrôles avant mise en ligne puis de gérer le domaine. La publication publique et les domaines personnalisés exigent un abonnement payant actif; un achat de crédits seul ne débloque pas ces droits. Si la publication échoue, indiquez l’état affiché et proposez « Réessayer »; ne dites jamais que le site est en ligne sans confirmation.',
+    guidance: 'Dans le Builder, « Publier » ouvre le panneau de publication. Toute offre peut publier sur une adresse Coden, même sans crédits de génération restants. Seul l’ajout d’un nouveau domaine personnalisé exige un abonnement payant actif; les domaines déjà connectés restent en ligne si cet abonnement expire. Une modification du projet exige une republication explicite. En cas d’échec, la version publique précédente reste disponible; proposez « Réessayer » sans révéler de détails techniques. Ne dites jamais que le site est en ligne sans confirmation.',
   },
   {
     id: 'settings', route: '/dashboard.html',
@@ -44,7 +44,7 @@ export const PUBLIC_HELP_TOPICS: readonly HelpTopic[] = [
   {
     id: 'billing', route: '/pricing.html',
     terms: ['tarif', 'tarifs', 'prix', 'forfait', 'forfaits', 'abonnement', 'credit', 'credits', 'facturation', 'payer', 'recharge', 'recharges', 'quota', 'quotas', 'limite', 'limites', 'gratuit', 'free', 'business', 'pro'],
-    guidance: 'Pour comparer les offres, ouvrez Tarifs, ou Paramètres → Facturation pour voir le forfait et le solde du compte connecté. Les prix exacts sont ceux du catalogue public; ne déduisez jamais le solde individuel d’un prix de forfait. Les recharges ponctuelles ne donnent pas les droits de publication.',
+    guidance: 'Pour comparer les offres, ouvrez Tarifs, ou Paramètres → Facturation pour voir le forfait et le solde du compte connecté. Les prix exacts sont ceux du catalogue public; ne déduisez jamais le solde individuel d’un prix de forfait. Publier sur une adresse Coden est ouvert à tous; les recharges ponctuelles ne donnent pas le droit d’ajouter un domaine personnalisé.',
   },
   {
     id: 'recovery', route: '/builder.html',

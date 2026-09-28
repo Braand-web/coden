@@ -24,9 +24,9 @@ describe('Coden V4 unified billing', () => {
       feature: 1.2,
       full_page: 1.7,
     });
-    expect(publicationLimitsFor('free')).toEqual({ publishedSites: 0, customDomains: 0 });
-    expect(publicationLimitsFor('pro', 25)).toEqual({ publishedSites: 1, customDomains: 1 });
-    expect(publicationLimitsFor('pro', 60)).toEqual({ publishedSites: 3, customDomains: 3 });
+    expect(publicationLimitsFor('free')).toEqual({ publishedSites: null, customDomains: 0 });
+    expect(publicationLimitsFor('pro', 25)).toEqual({ publishedSites: null, customDomains: 1 });
+    expect(publicationLimitsFor('pro', 60)).toEqual({ publishedSites: null, customDomains: 3 });
     expect(publicationLimitsFor('pro', 100)).toEqual({ publishedSites: null, customDomains: 10 });
     expect(publicationLimitsFor('business', 100)).toEqual({ publishedSites: null, customDomains: null });
   });

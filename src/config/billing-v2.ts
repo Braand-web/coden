@@ -35,22 +35,21 @@ export type PublicationLimits = {
 
 export function publicationLimitsFor(plan: BillingPlanKey, credits = 0): PublicationLimits {
   if (plan === 'business' || plan === 'enterprise') return { publishedSites: null, customDomains: null };
-  if (plan !== 'pro') return { publishedSites: 0, customDomains: 0 };
+  // A Coden address is available on every plan; only new custom domains are paid.
+  if (plan !== 'pro') return { publishedSites: null, customDomains: 0 };
   if (credits >= 100) return { publishedSites: null, customDomains: 10 };
-  if (credits >= 60) return { publishedSites: 3, customDomains: 3 };
-  return { publishedSites: 1, customDomains: 1 };
+  if (credits >= 60) return { publishedSites: null, customDomains: 3 };
+  return { publishedSites: null, customDomains: 1 };
 }
 
 const formatCount = (value: number) => new Intl.NumberFormat('fr-FR').format(value);
 
-/** "1 site publié et 1 domaine personnalisé", from the same limits the server enforces. */
+/** Customer-facing publication copy, from the same domain limits the server enforces. */
 export function publicationLabel(plan: BillingPlanKey, credits = 0): string {
-  const { publishedSites, customDomains } = publicationLimitsFor(plan, credits);
-  if (publishedSites === null && customDomains === null) return 'Sites publiés et domaines personnalisés illimités';
-  if (publishedSites === 0) return 'Aucune publication publique ni domaine personnalisé';
-  const sites = publishedSites === null ? 'Sites publiés illimités' : `${publishedSites} site${publishedSites > 1 ? 's' : ''} publié${publishedSites > 1 ? 's' : ''}`;
-  const domains = customDomains === null ? 'domaines personnalisés illimités' : `${customDomains} domaine${customDomains > 1 ? 's' : ''} personnalisé${customDomains > 1 ? 's' : ''}`;
-  return `${sites} et ${domains}`;
+  const { customDomains } = publicationLimitsFor(plan, credits);
+  if (customDomains === 0) return 'Publication sur une adresse Coden';
+  if (customDomains === null) return 'Publication Coden et domaines personnalisés illimités';
+  return `Publication Coden et ${customDomains} domaine${customDomains > 1 ? 's' : ''} personnalisé${customDomains > 1 ? 's' : ''}`;
 }
 
 /**
@@ -227,7 +226,7 @@ export function planComparisonRows(): PlanComparisonRow[] {
   return [
     { label: 'Prix', free: '0 FCFA', pro: from('pro'), business: from('business') },
     { label: 'Crédits', free: `${BILLING_PLANS.free.grants.signupCredits}, une seule fois`, pro: range(BILLING_PLANS.pro.tiers), business: range(BILLING_PLANS.business.tiers) },
-    { label: 'Sites publiés', free: '—', pro: either(proLimits.map(limit => limit.publishedSites)), business: 'Illimités' },
+    { label: 'Publication sur une adresse Coden', free: 'Incluse', pro: 'Incluse', business: 'Incluse' },
     { label: 'Domaines personnalisés', free: '—', pro: either(proLimits.map(limit => limit.customDomains)), business: 'Illimités' },
     { label: 'Preview privée', free: 'Oui', pro: 'Oui', business: 'Oui' },
     { label: 'Édition et export du code', free: 'Oui', pro: 'Oui', business: 'Oui' },

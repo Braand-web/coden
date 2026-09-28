@@ -64,7 +64,7 @@ describe('pricing consistency', () => {
     expect(rows.Prix).toEqual({ free: '0 FCFA', pro: 'dès 5 000 FCFA / mois', business: 'dès 30 000 FCFA / mois' });
     expect(rows.Prix.pro).toContain(flat(new Intl.NumberFormat('fr-FR').format(priceFor('pro', BILLING_PLANS.pro.tiers[0], 'monthly').amount)));
     expect(rows.Crédits.pro).toBe('25, 60, puis 100 à 10 000 par mois');
-    expect(rows['Sites publiés']).toEqual({ free: '—', pro: '1, 3 ou illimités', business: 'Illimités' });
+    expect(rows['Publication sur une adresse Coden']).toEqual({ free: 'Incluse', pro: 'Incluse', business: 'Incluse' });
     expect(rows['Domaines personnalisés']).toEqual({ free: '—', pro: '1, 3 ou 10', business: 'Illimités' });
     expect(rows['E-mails transactionnels'].business).toBe(`${flat(new Intl.NumberFormat('fr-FR').format(MONTHLY_EMAILS.business))} par mois`);
     expect(rows['Recharge ponctuelle']).toEqual({ free: '—', pro: `${formatUnit(topupUnitXaf('pro'))} FCFA le crédit`, business: `${formatUnit(topupUnitXaf('business'))} FCFA le crédit` });

@@ -10,12 +10,12 @@
 
 .cdn-pub {
   position: absolute;
-  width: min(380px, calc(100vw - 24px));
+  width: min(334px, calc(100vw - 24px));
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--foreground);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg, 0 18px 48px color-mix(in srgb, var(--foreground) 45%, transparent));
+  box-shadow: 0 18px 48px color-mix(in srgb, #000 36%, transparent);
   overflow: hidden;
   font-family: var(--font-sans);
   transform-origin: top right;
@@ -39,7 +39,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 16px 11px;
+  padding: 13px 15px 10px;
 }
 
 .cdn-pub__title {
@@ -51,10 +51,10 @@
 
 .cdn-pub__title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.1;
   letter-spacing: -.02em;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--foreground);
 }
 
@@ -82,19 +82,22 @@
 }
 
 .cdn-pub__icon-btn:hover { background: var(--input); }
+.cdn-pub__icon-btn:focus-visible,
+.cdn-pub button:focus-visible,
+.cdn-pub input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── body ───────────────────────────────────────────────── */
 
 .cdn-pub__body {
   display: grid;
-  gap: 11px;
-  padding: 0 16px 14px;
+  gap: 10px;
+  padding: 0 15px 14px;
 }
 
 .cdn-pub__section {
   display: grid;
   gap: 10px;
-  padding: 0 16px 14px;
+  padding: 0 15px 14px;
 }
 
 .cdn-pub__section-head {
@@ -129,7 +132,7 @@
 .cdn-pub__confirm {
   display: grid;
   gap: 9px;
-  padding: 2px 16px 14px;
+  padding: 2px 15px 14px;
 }
 
 .cdn-pub__confirm strong { color: var(--foreground); font-size: 13.5px; }
@@ -266,19 +269,20 @@
 /* ── buttons ────────────────────────────────────────────── */
 
 .cdn-pub__primary {
-  height: 40px;
-  border: 0;
-  background: var(--surface);
-  color: var(--foreground);
-  border-radius: 11px;
-  font-size: 13.5px;
-  font-weight: 800;
+  height: 38px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
   letter-spacing: -.01em;
   cursor: pointer;
   transition: filter 120ms ease;
 }
 
-.cdn-pub__primary:hover:not(:disabled) { filter: brightness(1.06); }
+.cdn-pub__primary:hover:not(:disabled) { filter: brightness(1.08); }
+.cdn-pub__primary:active:not(:disabled) { transform: translateY(1px); }
 .cdn-pub__primary:disabled { opacity: .5; cursor: default; }
 
 .cdn-pub__secondary {

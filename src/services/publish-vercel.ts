@@ -4,8 +4,8 @@
  * The publisher deliberately uses Vercel's REST API instead of the CLI so the
  * Railway service stays deterministic and does not need to install a second
  * global tool for every deploy. Builds are produced and security-checked by
- * Coden first; static builds and serverless-compatible source are then sent
- * to Vercel through the same production deployment path.
+ * Coden first; static builds and serverless-compatible source are staged on
+ * Vercel, verified, and only then promoted to production.
  */
 
 import fs from 'node:fs';
@@ -561,7 +561,9 @@ export async function publishProjectToVercel(params: {
     method: 'POST',
     body: JSON.stringify({
       name: projectName,
-      target: 'production',
+      // A preview deployment does not move an existing production alias.
+      // Promotion happens only after Coden has verified this exact artifact.
+      target: 'preview',
       files: files.map(({ file, sha, size }) => ({ file, sha, size })),
       projectSettings,
       ...(Object.keys(publicEnv).length ? { env: publicEnv, build: { env: publicEnv } } : {}),
@@ -574,48 +576,56 @@ export async function publishProjectToVercel(params: {
   const deploymentUrl = asHttpsUrl(ready.url || deployment.url);
   if (!deploymentUrl) throw new Error('Vercel did not return a deployment URL.');
 
-  const host = vercelCodenHostForSlug(params.slug);
-  // DNS propagation is independent of the production build. Keep its state
-  // separate so an available Vercel URL can be published while DNS is pending.
-  let domain = { verified: false, verification: [] as any[] };
-  try {
-    const attached = await attachCodenDomain(projectName, host);
-    domain = await waitForCodenDomain(projectName, host, attached);
-  } catch (error: any) {
-    console.warn('[coden:vercel_domain_pending]', {
-      project: projectName,
-      domain: host,
-      message: error?.message || 'Vercel custom domain setup failed',
-    });
-  }
-  const codenUrl = domain.verified ? `https://${host}` : null;
-  // Never guess the alias: Vercel can suffix it when the name is unavailable.
-  // A guessed address could even belong to someone else's deployment.
-  let defaultUrl = deploymentUrl;
-  try {
-    const aliases = await vercelRequest<{ aliases?: Array<{ alias?: string }> }>(
-      `/v2/deployments/${encodeURIComponent(ready.id || deployment.id)}/aliases`,
-    );
-    const productionAlias = aliases.aliases?.find(item => /^[a-z0-9-]+\.vercel\.app$/i.test(item.alias || ''))?.alias;
-    if (productionAlias) defaultUrl = asHttpsUrl(productionAlias);
-  } catch (error: any) {
-    // Alias lookup is an enhancement. A ready deployment's own URL is issued
-    // by Vercel and remains the safe public fallback if listing aliases fails.
-    console.warn('[coden:vercel_alias_lookup_skipped]', {
-      project: projectName,
-      status: Number(error?.statusCode || 0) || undefined,
-    });
-  }
-
   return {
     provider: 'vercel',
     runtime: params.runtime,
     projectName,
     projectId: ready.projectId || null,
-    defaultUrl,
-    codenUrl,
+    defaultUrl: deploymentUrl,
+    codenUrl: null,
     deploymentId: ready.id || deployment.id,
     deploymentUrl,
+    customDomain: null,
+    customDomainVerified: false,
+    customDomainVerification: [],
+  };
+}
+
+/** Promote only a verified preview, then connect the permanent Coden address. */
+export async function activateVercelPublication(result: VercelPublishResult, slug: string): Promise<VercelPublishResult> {
+  await promoteVercelDeployment(result.projectId || result.projectName, result.deploymentId);
+  const host = vercelCodenHostForSlug(slug);
+  let defaultUrl = result.deploymentUrl;
+  try {
+    const aliases = await vercelRequest<{ aliases?: Array<{ alias?: string }> }>(
+      `/v2/deployments/${encodeURIComponent(result.deploymentId)}/aliases`,
+    );
+    const stableAlias = aliases.aliases?.find(item =>
+      /^[a-z0-9-]+\.vercel\.app$/i.test(item.alias || '')
+      && asHttpsUrl(item.alias) !== result.deploymentUrl,
+    )?.alias;
+    if (stableAlias) defaultUrl = asHttpsUrl(stableAlias);
+  } catch (error: any) {
+    console.warn('[coden:vercel_alias_lookup_skipped]', {
+      project: result.projectName,
+      status: Number(error?.statusCode || 0) || undefined,
+    });
+  }
+  let domain = { verified: false, verification: [] as any[] };
+  try {
+    const attached = await attachCodenDomain(result.projectName, host);
+    domain = await waitForCodenDomain(result.projectName, host, attached);
+  } catch (error: any) {
+    console.warn('[coden:vercel_domain_pending]', {
+      project: result.projectName,
+      domain: host,
+      message: redactProviderMessage(error?.message || 'Coden domain pending'),
+    });
+  }
+  return {
+    ...result,
+    defaultUrl,
+    codenUrl: domain.verified ? `https://${host}` : null,
     customDomain: domain.verified ? host : null,
     customDomainVerified: domain.verified,
     customDomainVerification: domain.verification,
@@ -695,4 +705,9 @@ export async function unpauseVercelProject(project: string): Promise<'active' | 
 
 export async function promoteVercelDeployment(project: string, deploymentId: string): Promise<void> {
   await vercelRequest(`/v10/projects/${encodeURIComponent(project)}/promote/${encodeURIComponent(deploymentId)}`, { method: 'POST' });
+}
+
+/** A previously live deployment uses Vercel's rollback operation, not promote. */
+export async function rollbackVercelDeployment(project: string, deploymentId: string): Promise<void> {
+  await vercelRequest(`/v1/projects/${encodeURIComponent(project)}/rollback/${encodeURIComponent(deploymentId)}`, { method: 'POST' });
 }

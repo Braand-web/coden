@@ -15,14 +15,14 @@ function fakeSupabase(subscription: Record<string, unknown> | null) {
 describe('publication entitlement', () => {
   const now = new Date('2026-09-20T12:00:00.000Z');
 
-  it('does not unlock publishing for a Free account or a credit top-up', async () => {
+  it('allows a Free account to publish on Coden but not add a custom domain', async () => {
     const entitlement = await resolvePublicationEntitlement(fakeSupabase(null), 'account', now);
     expect(entitlement).toMatchObject({
       plan: 'free',
-      canPublish: false,
+      canPublish: true,
       canAddDomain: false,
-      canServeExisting: false,
-      publishedSites: 0,
+      canServeExisting: true,
+      publishedSites: null,
       customDomains: 0,
     });
   });
@@ -40,33 +40,34 @@ describe('publication entitlement', () => {
       canPublish: true,
       canAddDomain: true,
       canServeExisting: true,
-      publishedSites: 3,
+      publishedSites: null,
       customDomains: 3,
     });
   });
 
-  it('keeps existing sites online during grace without allowing a new publish', async () => {
+  it('keeps publication available after payment expiry without allowing a new custom domain', async () => {
     const entitlement = await resolvePublicationEntitlement(fakeSupabase({
       plan_id: 'coden_pro_v2',
       credit_tier: 100,
       status: 'past_due',
       current_period_end: '2026-09-18T12:00:00.000Z',
     }), 'account', now);
-    expect(entitlement.canPublish).toBe(false);
+    expect(entitlement.canPublish).toBe(true);
     expect(entitlement.canAddDomain).toBe(false);
     expect(entitlement.canServeExisting).toBe(true);
-    expect(entitlement.graceEndsAt).toBe('2026-09-25T12:00:00.000Z');
+    expect(entitlement.graceEndsAt).toBeNull();
   });
 
-  it('takes existing sites offline after the seven-day grace period', async () => {
+  it('keeps existing sites and domains online after the old grace period', async () => {
     const entitlement = await resolvePublicationEntitlement(fakeSupabase({
       plan_id: 'coden_business_v2',
       credit_tier: 100,
       status: 'past_due',
       current_period_end: '2026-09-10T12:00:00.000Z',
     }), 'account', now);
-    expect(entitlement.canPublish).toBe(false);
-    expect(entitlement.canServeExisting).toBe(false);
+    expect(entitlement.canPublish).toBe(true);
+    expect(entitlement.canServeExisting).toBe(true);
+    expect(entitlement.canAddDomain).toBe(false);
     expect(entitlement.publishedSites).toBeNull();
     expect(entitlement.customDomains).toBeNull();
   });
