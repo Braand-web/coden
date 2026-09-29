@@ -9,6 +9,100 @@
  * token` with a blank preview and a run stuck in needs_fix.
  */
 
+import { posix } from 'node:path';
+
+type PreviewSourceFile = { path: string; content: string };
+
+/**
+ * Follow the generated app's imports instead of assuming its entire design
+ * lives in index.css or App.css. The lightweight preview does not run Vite, so
+ * CSS imports otherwise become no-ops in its module loader. Keep this confined
+ * to in-memory project files; a generated path must never read from the host.
+ */
+export function collectPreviewStyles(files: PreviewSourceFile[]): {
+  styles: PreviewSourceFile[];
+  externalStylesheets: string[];
+} {
+  const byPath = new Map(files.map(file => [file.path.replace(/\\/g, '/').replace(/^\.\//, ''), file]));
+  const styles: PreviewSourceFile[] = [];
+  const externalStylesheets: string[] = [];
+  const visitedModules = new Set<string>();
+  const visitedStyles = new Set<string>();
+
+  function resolve(from: string, specifier: string): string | null {
+    const clean = specifier.split(/[?#]/, 1)[0].replace(/\\/g, '/');
+    if (!clean || /^(?:[a-z]+:|\/\/)/i.test(clean)) return null;
+    const base = clean.startsWith('@/') ? `src/${clean.slice(2)}`
+      : clean.startsWith('/') ? clean.slice(1)
+      : clean.startsWith('.') ? posix.join(posix.dirname(from), clean)
+      : null;
+    if (!base) return null;
+    const normalized = posix.normalize(base);
+    if (normalized === '..' || normalized.startsWith('../')) return null;
+    for (const candidate of [normalized, ...['.tsx', '.ts', '.jsx', '.js', '.css', '/index.tsx', '/index.ts', '/index.jsx', '/index.js'].map(ext => normalized + ext)]) {
+      if (byPath.has(candidate)) return candidate;
+      if (byPath.has(`public/${candidate}`)) return `public/${candidate}`;
+    }
+    return null;
+  }
+
+  function expandCss(path: string, stack = new Set<string>()): string {
+    if (stack.has(path)) return '';
+    const source = byPath.get(path)?.content || '';
+    const nextStack = new Set(stack).add(path);
+    return source.replace(/@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?([^;]*);/gi, (statement, _quote: string, specifier: string, conditions: string) => {
+      const imported = resolve(path, specifier);
+      if (!imported || !imported.endsWith('.css')) return statement;
+      const content = expandCss(imported, nextStack);
+      const condition = conditions.trim();
+      if (!condition) return content;
+      if (/^layer\([\w-]+\)$/i.test(condition)) return `@layer ${condition.slice(6, -1)} {\n${content}\n}`;
+      if (/^(?:screen|print|all|\()/i.test(condition)) return `@media ${condition} {\n${content}\n}`;
+      return statement;
+    });
+  }
+
+  function visitStyle(path: string) {
+    if (visitedStyles.has(path)) return;
+    visitedStyles.add(path);
+    styles.push({ path, content: expandCss(path) });
+  }
+
+  const importPattern = /\b(?:import|export)\s+(?:[^'";]*?\bfrom\s*)?['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  function visitModule(path: string) {
+    if (visitedModules.has(path)) return;
+    visitedModules.add(path);
+    const code = byPath.get(path)?.content || '';
+    for (const match of code.matchAll(importPattern)) {
+      const imported = resolve(path, match[1] || match[2] || match[3]);
+      if (!imported) continue;
+      if (imported.endsWith('.css')) visitStyle(imported);
+      else if (/\.[cm]?[jt]sx?$/.test(imported)) visitModule(imported);
+    }
+  }
+
+  const index = byPath.get('index.html')?.content || '';
+  for (const tag of index.match(/<link\b[^>]*>/gi) || []) {
+    const rel = tag.match(/\brel\s*=\s*(['"])(.*?)\1/i)?.[2] || '';
+    const href = tag.match(/\bhref\s*=\s*(['"])(.*?)\1/i)?.[2] || '';
+    if (!/\bstylesheet\b/i.test(rel) || !href) continue;
+    const local = resolve('index.html', href);
+    if (local?.endsWith('.css')) visitStyle(local);
+    else if (/^https:\/\/[^\s<>"']+$/i.test(href) && !externalStylesheets.includes(href)) externalStylesheets.push(href);
+  }
+  for (const [indexInHtml, match] of [...index.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)].entries()) {
+    styles.push({ path: `index.html#style-${indexInHtml}`, content: match[1] });
+  }
+
+  const entry = ['src/main.tsx', 'src/main.jsx', 'src/main.ts', 'src/main.js', 'src/App.tsx', 'src/App.jsx'].find(path => byPath.has(path));
+  if (entry) visitModule(entry);
+  // Older generated apps sometimes omitted the import but relied on the
+  // preview's historical treatment of these two conventional files.
+  if (!visitedStyles.size) for (const path of ['src/index.css', 'src/App.css']) if (byPath.has(path)) visitStyle(path);
+
+  return { styles, externalStylesheets };
+}
+
 /**
  * Neutralize any sequence that would end the `<style>` element.
  *

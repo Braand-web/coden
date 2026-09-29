@@ -3740,12 +3740,17 @@ function buildReactVitePreviewHtml(
   const appFile = fileByPath(files, 'src/App.tsx') || fileByPath(files, 'src/App.jsx');
   if (!appFile) return null;
 
-  // Generated CSS is untrusted: a stray `</style>` closes the element early and
-  // the rest of the document, bootstrap script included, stops parsing.
-  const css = styleSafeCss([
-    fileByPath(files, 'src/index.css')?.content,
-    fileByPath(files, 'src/App.css')?.content,
-  ].filter(Boolean).join('\n\n'));
+  // The preview's module loader does not execute CSS imports. Resolve the
+  // app's stylesheet graph here, including styles added by later iterations.
+  const previewStyles = collectPreviewStyles(files);
+  let usesTailwind4 = false;
+  try {
+    const manifest = JSON.parse(fileByPath(files, 'package.json')?.content || '{}');
+    const packages = { ...manifest.dependencies, ...manifest.devDependencies };
+    usesTailwind4 = Boolean(packages['@tailwindcss/vite'] || packages['@tailwindcss/postcss'])
+      || /^[~^]?4\./.test(String(packages.tailwindcss || ''));
+  } catch { /* A malformed manifest is reported by the project build. */ }
+  usesTailwind4 ||= previewStyles.styles.some(file => /@theme\b|@import\s+['"]tailwindcss['"]/i.test(file.content));
 
   const title = projectName || 'Coden app';
   const description = summarizeForMeta(promptOrDescription || title, 'React application preview.');
@@ -3779,6 +3784,7 @@ function buildReactVitePreviewHtml(
     '  <meta charset="UTF-8" />',
     '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
     `  <meta name="robots" content="${robots}" />`,
+    '  <meta name="coden-preview-css" content="imports-v1" />',
     `  <link rel="canonical" href="${escapeHtml(canonical)}" />`,
     `  <title>${escapeHtml(title)}</title>`,
     `  <meta name="description" content="${escapeHtml(description)}" />`,
@@ -3786,8 +3792,10 @@ function buildReactVitePreviewHtml(
     `  <meta property="og:description" content="${escapeHtml(description)}" />`,
     '  <meta property="og:type" content="website" />',
     '  <meta name="twitter:card" content="summary_large_image" />',
-    '  <script src="https://cdn.tailwindcss.com"></script>',
-    ...(themeLiteral ? [`  <script>tailwind.config = { theme: ${themeLiteral} };</script>`] : []),
+    usesTailwind4
+      ? '  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>'
+      : '  <script src="https://cdn.tailwindcss.com"></script>',
+    ...(!usesTailwind4 && themeLiteral ? [`  <script>tailwind.config = { theme: ${themeLiteral} };</script>`] : []),
     '  <script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react/jsx-dev-runtime":"https://esm.sh/react@18.3.1/jsx-dev-runtime","react-dom":"https://esm.sh/react-dom@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client"}}</script>',
     // Pinned. This URL used to float on latest, so when Babel 8 removed the
     // preset options below, every preview in production broke at once with no
@@ -3796,9 +3804,12 @@ function buildReactVitePreviewHtml(
     `  <script src="https://unpkg.com/@babel/standalone@${CODEN_PREVIEW_BABEL_VERSION}/babel.min.js"></script>`,
     '  <script src="https://unpkg.com/lucide@0.383.0/dist/umd/lucide.min.js"></script>',
     '  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>',
-    '  <style>',
-    css || '',
-    '  </style>',
+    ...previewStyles.externalStylesheets.map(url => `  <link rel="stylesheet" href="${escapeHtml(url)}" />`),
+    ...previewStyles.styles.map(file => {
+      const tailwindCss = usesTailwind4 || /@apply\b|@tailwind\b/i.test(file.content);
+      const css = usesTailwind4 ? file.content.replace(/@import\s+['"]tailwindcss['"]\s*;/gi, '') : file.content;
+      return `  <style${tailwindCss ? ' type="text/tailwindcss"' : ''} data-coden-css-path="${escapeHtml(file.path)}">\n${styleSafeCss(css)}\n  </style>`;
+    }),
     '</head>',
     '<body>',
     '  <div id="root"></div>',
@@ -4096,11 +4107,12 @@ function buildReactVitePreviewHtml(
     '        window.ReactDOM = domNs;',
     "        if (!window.React || typeof window.React.createElement !== 'function') throw new Error('React runtime unavailable');",
     '        await __codenLoadCdnModules();',
-    '        const entryPoint = window.__modules__["src/main.tsx"] ? "src/main.tsx" : "src/App.tsx";',
+    '        const entryPoint = ["src/main.tsx", "src/main.jsx", "src/main.ts", "src/main.js", "src/App.tsx", "src/App.jsx"].find(path => window.__modules__[path]);',
+    '        if (!entryPoint) throw new Error("Generated app entrypoint missing.");',
     '        const exports = window.require(entryPoint);',
     '        const rootNode = document.getElementById("root");',
     '        if (rootNode) {',
-    '          if (entryPoint === "src/App.tsx" && rootNode.dataset.codenMounted !== "true") {',
+    '          if (entryPoint.startsWith("src/App.") && rootNode.dataset.codenMounted !== "true") {',
     '            const App = exports.default || exports;',
     '            if (typeof App === "function" || (App && typeof App.$$typeof === "symbol")) {',
     '              const root = window.ReactDOM.createRoot(rootNode);',
@@ -4355,7 +4367,8 @@ function getProjectPreviewHtml(project: GeneratedProject, files: GeneratedFile[]
   const servesThePublic = environment === 'production';
   const verified = project.preview_status === 'verified';
   if (project.preview_html && (verified || !servesThePublic)) {
-    const seoHtml = enhanceHtmlSeo(restoreLegacyMotionPreview(project.preview_html), project.name, project.prompt || project.name, project.slug || project.id, environment);
+    const savedHtml = refreshLegacyPreviewStyles(project.preview_html, project, files, environment);
+    const seoHtml = enhanceHtmlSeo(restoreLegacyMotionPreview(savedHtml), project.name, project.prompt || project.name, project.slug || project.id, environment);
     return injectAnalyticsSnippet(seoHtml, project.id, environment);
   }
   return buildPreviewErrorHtml({
@@ -4364,6 +4377,24 @@ function getProjectPreviewHtml(project: GeneratedProject, files: GeneratedFile[]
       ? 'The generated runtime needs fixes before this preview can be shown.'
       : 'The generated runtime has not been verified yet.',
   });
+}
+
+function refreshLegacyPreviewStyles(html: string, project: GeneratedProject, files: GeneratedFile[], environment: 'preview' | 'production'): string {
+  // Existing projects retain their saved source files. Refresh only snapshots
+  // made by the old lightweight renderer whose code still matches the saved
+  // files. An interrupted iteration must keep the last committed preview.
+  if (!files.length || !html.includes('window.__modules__ =') || html.includes('name="coden-preview-css"')) return html;
+  const marker = 'window.__modules__ = ';
+  const start = html.indexOf(marker);
+  const end = html.indexOf(';\n    window.__resolve_path__', start);
+  if (start < 0 || end < 0) return html;
+  try {
+    const savedModules = JSON.parse(html.slice(start + marker.length, end));
+    const currentModules = files.filter(file => /\.(?:tsx?|jsx?|json)$/i.test(file.path));
+    if (Object.keys(savedModules).length !== currentModules.length
+      || currentModules.some(file => savedModules[file.path]?.code !== file.content)) return html;
+  } catch { return html; }
+  return buildReactVitePreviewHtml(files, project.name, project.id, environment, project.prompt || project.name, project.slug || project.id) || html;
 }
 
 function createTemplateFiles(projectName: string, prompt: string): GeneratedFile[] {
@@ -8464,7 +8495,7 @@ function recoverProjectPayloadFromSnapshot(input: {
   const snapshotPreview = snapshot?.preview_snapshot || null;
   const normalizedPreviewHtml = input.project.preview_html
     ? getProjectPreviewHtml(input.project, files, 'preview')
-    : restoreLegacyMotionPreview(String(snapshotPreview?.html || '').trim())
+    : restoreLegacyMotionPreview(refreshLegacyPreviewStyles(String(snapshotPreview?.html || '').trim(), input.project, files, 'preview'))
       || getProjectPreviewHtml(input.project, files, 'preview');
   const usedSnapshot = files.length > input.files.length
     || messages.length > input.messages.length
@@ -19884,7 +19915,7 @@ import {
 } from './src/services/publish-vercel.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
-import { insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
+import { collectPreviewStyles, insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
