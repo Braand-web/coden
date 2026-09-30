@@ -857,6 +857,26 @@ export function classifyGeneratedAppType(prompt: string): GeneratedAppType {
   return 'generic_web_app';
 }
 
+/**
+ * The kind of product, by the number of its own words the request uses.
+ *
+ * `classifyGeneratedAppType` answers with the first kind, in a fixed order, that has any keyword in the request:
+ * « une boutique … avec panier et paiement » was a billing app because « paiement » comes first, « une plateforme
+ * e-learning » a clinic because « learning » is in that list too. Here every kind is scored by how many of its
+ * keywords the request actually contains, the best score wins, and the fixed order only breaks a tie.
+ */
+export function classifyGeneratedAppTypeScored(prompt: string): { type: GeneratedAppType; hits: number } {
+  const text = normalizePrompt(prompt);
+  if (!text) return { type: 'generic_web_app', hits: 0 };
+  let best: { type: GeneratedAppType; hits: number } = { type: 'generic_web_app', hits: 0 };
+  for (const [type, keywords] of Object.entries(keywordGroups) as Array<[GeneratedAppType, string[] | undefined]>) {
+    if (!keywords) continue;
+    const hits = new Set(keywords.filter(keyword => hasAny(text, [keyword])).map(normalizePrompt)).size;
+    if (hits > best.hits) best = { type, hits };
+  }
+  return best;
+}
+
 export function chooseDesignDirection(appType: GeneratedAppType, prompt: string): DesignDirection {
   const text = normalizePrompt(prompt);
 
