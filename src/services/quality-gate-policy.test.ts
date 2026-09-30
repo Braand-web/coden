@@ -66,3 +66,42 @@ describe('a small request is finished when it works', async () => {
     expect(DESIGN_REVIEW_PASS_SCORE).toBeLessThanOrEqual(6);
   });
 });
+
+describe('a small request keeps a small plan and a small run', async () => {
+  const { resolveQualityPolicy } = await import('./quality-tier');
+  const { runPlannerAgent } = await import('./planner-agent');
+  const plannerSource = (await import('node:fs')).readFileSync('src/services/planner-agent.ts', 'utf8');
+
+  it('no specialists and no designer review for a mini tool, even at the highest level; a real product keeps them', () => {
+    const small = resolveQualityPolicy({ route: 'new_project', effort: 'Ultra', credits: 500, prompt: 'cree une mini calculatrice' });
+    expect(small).toMatchObject({ specialists: false, designReview: false, acceptance: true, explore: true });
+    const big = resolveQualityPolicy({ route: 'new_project', effort: 'Ultra', credits: 500, prompt: 'Une boutique en ligne pour vendre mes bougies avec un panier et le paiement' });
+    expect(big).toMatchObject({ specialists: true, designReview: true });
+  });
+
+  it('the planner is told to size the plan to the request, and is asked for no scenario about history or saved data', () => {
+    expect(plannerSource).toMatch(/smallest complete version of exactly what was asked/);
+    expect(plannerSource).toMatch(/isSmallRequest\(input\.prompt\)/);
+    expect(typeof runPlannerAgent).toBe('function');
+  });
+});
+
+describe('the specialists are chosen from what was written, not from the scaffold', async () => {
+  const { STARTER_KIT_FILES } = await import('./sandbox/starter-kit');
+  const { selectAgentsForContext } = await import('./parallel-agent-runner');
+  const pipeline = (await import('node:fs')).readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
+  const database = /\b(database|supabase|postgres|sql|crud|base de donn)/i;
+
+  it('the pipeline reads the signals from what was written for the project, not from what every project starts with', () => {
+    expect(STARTER_KIT_FILES.length).toBeGreaterThan(0);
+    expect(database.test('x')).toBe(false);
+    expect(pipeline).toMatch(/scaffold\.get\(file\.path\) !== file\.content && !startsWithEveryProject\(file\.path\)/);
+    expect(pipeline).not.toMatch(/Object\.keys\(input\.backendEnv \|\| \{\}\)\.some\(key => \/SUPABASE\|DATABASE\/i\.test\(key\)\)\s*\n\s*\|\|/);
+  });
+
+  it('a design request on a finished calculator asks for no backend engineer', () => {
+    const roles = selectAgentsForContext({ projectName: 'calc', userPrompt: 'optimise le design', appType: 'generic_web_app', fileCount: 3, files: [{ path: 'src/App.tsx', content: 'export default function App(){return null}' }], hasAuth: false, hasDatabase: false, hasPayments: false, language: 'fr', availableModels: {} as any } as any);
+    expect(roles).not.toContain('backend_engineer');
+    expect(roles).not.toContain('security_auditor');
+  });
+});

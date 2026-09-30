@@ -14,6 +14,7 @@
 
 import type { AgentEffort } from './agent-effort.ts';
 import type { PipelineRoute } from './edit-intent.ts';
+import { isSmallRequest } from './quality-gate-policy.ts';
 
 export type QualityTier = 'lean' | 'standard' | 'premium';
 
@@ -41,6 +42,8 @@ export function resolveQualityPolicy(input: {
   credits?: number;
   effort?: AgentEffort;
   plan?: string;
+  /** The request itself: a small one never gets the specialists' pre-analysis or a designer's second look. */
+  prompt?: string;
 }): QualityPolicy {
   const credits = typeof input.credits === 'number' && Number.isFinite(input.credits) ? input.credits : undefined;
   const plan = String(input.plan || '').toLowerCase();
@@ -66,6 +69,10 @@ export function resolveQualityPolicy(input: {
     return { tier, specialists: false, maxSpecialists: 0, specialistTimeoutMs: 0, acceptance: false, explore: false, designReview: false };
   }
   const building = input.route === 'new_project';
+  // A small tool is finished when it works: no specialists before the code, no designer's review after it.
+  if (input.prompt && isSmallRequest(input.prompt)) {
+    return { tier, specialists: false, maxSpecialists: 0, specialistTimeoutMs: 0, acceptance: true, explore: true, designReview: false };
+  }
   if (tier === 'lean') {
     return { tier, specialists: false, maxSpecialists: 0, specialistTimeoutMs: 0, acceptance: true, explore: true, designReview: false };
   }

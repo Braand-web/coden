@@ -587,7 +587,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + (input.previewTool ? `${PREVIEW_GUIDANCE}\n\n${isVisualEditPrompt(input.userMessages?.at(-1)) ? `${VISUAL_EDIT_GUIDANCE}\n\n` : ''}` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'Build what was asked, then stop. Once every requested feature works and the automated checks pass, report what you did and finish: do not redesign the interface, restyle what already works, or add screens, features and sections nobody asked for. A small request stays small. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.' + (input.userMessages ? `\n\n${styleBlock(input.userMessages)}` : '')),
+          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + (input.previewTool ? `${PREVIEW_GUIDANCE}\n\n${isVisualEditPrompt(input.userMessages?.at(-1)) ? `${VISUAL_EDIT_GUIDANCE}\n\n` : ''}` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'Build what was asked, then stop. Once every requested feature works and the automated checks pass, report what you did and finish: do not redesign the interface, restyle what already works, or add screens, features and sections nobody asked for. A small request stays small. A control that has a standard symbol (× ÷ − + ⌫ ±, an icon) shows the symbol and keeps the word in its aria-label; what a key shows is what it types. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.' + (input.userMessages ? `\n\n${styleBlock(input.userMessages)}` : '')),
         },
         ...carried,
         {
@@ -946,7 +946,7 @@ export async function runMultiAgentPipeline(input: {
     ? themeStarter(selectStarter(input.prompt), { prompt: input.prompt, seed: input.projectId, title: input.projectName })
     : null;
   // What this run can afford: pre-analysis, journeys, exploration, review.
-  const quality = resolveQualityPolicy({ route: input.route, credits: input.credits, effort: input.effort, plan: String(input.userPlan || '') });
+  const quality = resolveQualityPolicy({ route: input.route, credits: input.credits, effort: input.effort, plan: String(input.userPlan || ''), prompt: input.prompt });
 
   // Hoisted above planning: the planner is a recorded step too, and the
   // record cannot start halfway through the run it describes.
@@ -1064,9 +1064,16 @@ export async function runMultiAgentPipeline(input: {
   })();
   let specialistBrief = '';
   if (input.route !== 'small_edit' && input.enableSpecialists !== false && quality.specialists) {
+    /*
+     * What the project is about is read from what was written for it, not from the scaffold every project starts
+     * with: the kit's own `src/lib/supabase.ts` made every project « use a database » and « have a backend », and a
+     * backend engineer was sent to « optimise le design » of a calculator.
+     */
+    const scaffold = new Map(STARTER_KIT_FILES.map(file => [file.path, file.content]));
+    const startsWithEveryProject = (path: string) => /^src\/lib\/(?:supabase|storage|cn)\.ts$/.test(path);
     const sourceSignals = [
       input.prompt,
-      ...input.existingFiles.slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
+      ...input.existingFiles.filter(file => scaffold.get(file.path) !== file.content && !startsWithEveryProject(file.path)).slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
     ].join('\n').toLowerCase();
     const specialistContext = {
       projectName: input.projectName || input.projectId,
@@ -1075,8 +1082,8 @@ export async function runMultiAgentPipeline(input: {
       fileCount: input.existingFiles.length,
       files: input.existingFiles.map(file => ({ path: file.path, content: file.content || '' })),
       hasAuth: /\b(auth|login|signup|connexion|inscription|session)\b/i.test(sourceSignals),
-      hasDatabase: Object.keys(input.backendEnv || {}).some(key => /SUPABASE|DATABASE/i.test(key))
-        || /\b(database|supabase|postgres|sql|crud|base de donn)/i.test(sourceSignals),
+      // The Supabase keys are provisioned for every project: their presence says nothing about what this one needs.
+      hasDatabase: /\b(database|supabase|postgres|sql|crud|base de donn)/i.test(sourceSignals),
       hasPayments: /\b(payment|paiement|checkout|billing|factur|subscription|abonnement|saspay|stripe)\b/i.test(sourceSignals),
       language: (fr ? 'fr' : 'en') as 'fr' | 'en',
       // Pinned: every specialist runs the user's model, never changed behind
