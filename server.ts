@@ -15717,6 +15717,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * the files' content, the analysed pages and their images.
    */
   let attachmentBlock = '';
+  // The standing references as text, for the sub-agents (see TurnContext.brief).
+  let attachmentBrief = '';
   try {
     const turnAttachments = await attachmentService().buildTurnContext({
       userId,
@@ -15732,7 +15734,19 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       attachmentBlock += `\n\n## À signaler à l’utilisateur, en une phrase, au début de ta réponse\n${turnAttachments.notices.map(notice => `- ${notice}`).join('\n')}`;
     }
     if (attachmentBlock) agentPrompt = `${agentPrompt}${attachmentBlock}`;
+    attachmentBrief = turnAttachments.brief;
     visionInputs = [...visionInputs, ...turnAttachments.visionInputs].slice(0, 16);
+    /*
+     * The proof that the files were read, before any model answers: what the
+     * agents were given, in the user's words. A user who attached a mock-up
+     * and sees "Maquette · palette #0F172A, #38BDF8 · 6 sections" knows it
+     * arrived; one who sees nothing has no way to tell it was dropped.
+     */
+    if (turnAttachments.seen.length) {
+      const shown = turnAttachments.seen.slice(0, 3).map(item => `${item.name} (${item.summary})`).join(' ; ');
+      const more = turnAttachments.seen.length > 3 ? ` et ${turnAttachments.seen.length - 3} autre${turnAttachments.seen.length - 3 > 1 ? 's' : ''}` : '';
+      eventStream?.chat({ type: 'activity', label: frenchActivity ? `Pièces jointes prises en compte : ${shown}${more}` : `Attachments taken into account: ${shown}${more}` });
+    }
     if (turnAttachments.current.length || turnAttachments.referenced.length) {
       console.info('[coden:turn_attachments]', {
         request_id: requestId,
@@ -15741,6 +15755,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         failed_links: turnAttachments.links.failed.length,
         referenced: turnAttachments.referenced.length,
         vision_inputs: visionInputs.length,
+        standing_brief_chars: attachmentBrief.length,
+        injections: turnAttachments.injections.map(finding => finding.rule),
       });
     }
   } catch (error: any) {
@@ -16058,6 +16074,7 @@ ${resolvedMission}` : resolvedMission;
         effort: requestedEffort,
         selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
         visionInputs,
+        attachmentBrief: attachmentBrief || undefined,
         library: runLibrary || undefined,
         userPlan: routingPlan,
         credits: routingCredits,

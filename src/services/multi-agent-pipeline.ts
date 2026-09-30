@@ -33,7 +33,7 @@ import type { DesignGuard } from './sandbox/sandbox-tools.ts';
 import { compareDesign, extractDesignContract, renderDesignContract, restoreDesign, wantsDesignChange, type DesignViolation } from './design-contract.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
-import type { ChatMessage } from './openrouter-service.ts';
+import type { ChatContentPart, ChatMessage } from './openrouter-service.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter, STARTERS } from './sandbox/starters.ts';
 import { STARTER_KIT_FILES } from './sandbox/starter-kit.ts';
@@ -369,6 +369,16 @@ export function isModelRefusal(diagnosticCode: string): boolean {
   return /^(?:MODEL_(?:UNAVAILABLE|CAPABILITY_UNAVAILABLE|MODALITY_UNAVAILABLE|OUTPUT_LIMIT)|PROVIDER_(?:UNSUPPORTED_RUNTIME_CONFIG|BAD_REQUEST|QUOTA_OR_BILLING))$/.test(diagnosticCode);
 }
 
+/** A message's parts with every image or video replaced by a one-line note, so text and structure survive. */
+export function withoutVisualParts(parts: ChatContentPart[]): ChatContentPart[] {
+  let dropped = 0;
+  const kept = parts.filter(part => {
+    if (part.type === 'image_url' || part.type === 'video_url') { dropped += 1; return false; }
+    return true;
+  });
+  return dropped ? [...kept, { type: 'text', text: `[${dropped} image(s) of the user's attachments were sent with this earlier message; they are attached again to the latest one.]` }] : kept;
+}
+
 function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity {
   return complexity === 'simple' ? 'complex' : 'extreme';
 }
@@ -444,6 +454,12 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         if (message.role === 'user' && typeof message.content === 'string' && message.content.length > 2_000) {
           return { role: 'user' as const, content: `[Earlier round instruction — the mission is restated in full in the latest message.]\n${message.content.slice(-600)}` };
         }
+        // The images travel with every round's own message (below), so an
+        // older copy is dropped rather than paid for again — and never sent
+        // to a model that was switched to since and cannot read images.
+        if (message.role === 'user' && Array.isArray(message.content)) {
+          return { role: 'user' as const, content: withoutVisualParts(message.content) };
+        }
         return message.reasoning_details ? { ...message, reasoning_details: undefined } : message;
       });
     const modelId = input.current?.modelId ?? input.modelId;
@@ -508,9 +524,14 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         ...carried,
         {
           role: 'user',
-          content: input.visionInputs?.length && !rounds.length
-            ? buildVisionMessageContent(instruction, input.visionInputs)
-            : rounds.length ? `${instruction}\n\n(Your earlier rounds in this run are above. Build on what you already did; the files on disk are the source of truth.)` : instruction,
+          // The user's images ride with EVERY round, not only the first: a
+          // repair round that has lost the mock-up flattens the component it
+          // touches. They are read once per round by whichever model is
+          // current (Auto may have escalated since the last one).
+          content: (() => {
+            const text = rounds.length ? `${instruction}\n\n(Your earlier rounds in this run are above. Build on what you already did; the files on disk are the source of truth.)` : instruction;
+            return input.visionInputs?.length ? buildVisionMessageContent(text, input.visionInputs) : text;
+          })(),
         },
       ],
       handlers,
@@ -610,6 +631,12 @@ export async function runMultiAgentPipeline(input: {
   approvedPlan?: string;
   selectedModel?: AllowedModelId;
   visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>;
+  /**
+   * What the user attached, as text (`TurnContext.brief`: standing design
+   * references, documents, links). Given to every sub-agent, which otherwise
+   * start from a goal sentence and nothing else.
+   */
+  attachmentBrief?: string;
   complexity?: 'simple' | 'medium' | 'complex' | 'extreme';
   /** How long the whole run may take, shared by every coder round. */
   runDeadlineMs?: number;
@@ -923,9 +950,14 @@ export async function runMultiAgentPipeline(input: {
             allowTools: false,
             preferStructuredOutput: false,
           }));
+          // The designer reads the mock-up itself rather than a description
+          // of it. The orchestrator's model was chosen able to read images
+          // whenever there are some; a fallback that cannot is skipped by the
+          // gateway (MODEL_MODALITY_UNAVAILABLE is a model refusal).
+          const readsImages = Boolean(input.visionInputs?.length) && (task.role === 'ui_designer' || task.role === 'ux_validator');
           const result = await input.gateway.chat(specialistModel, [
             { role: 'system', content: withUserInstructions(task.systemContext) },
-            { role: 'user', content: task.prompt },
+            { role: 'user', content: readsImages ? buildVisionMessageContent(task.prompt, input.visionInputs!) : task.prompt },
           ], {
             maxAttempts: 2,
             allowFallback: input.selectedModel === undefined,
@@ -988,6 +1020,8 @@ export async function runMultiAgentPipeline(input: {
       allowFallback: input.selectedModel === undefined,
       withAcceptance: quality.acceptance,
       signal: input.signal,
+      // The planner reads the mock-up too: a plan from words alone names a generic layout.
+      visionInputs: input.visionInputs,
       onReasoning: planningThoughts ? delta => planningThoughts.push(delta) : undefined,
     });
     planningThoughts?.end();
@@ -1172,6 +1206,10 @@ export async function runMultiAgentPipeline(input: {
         credits: input.credits,
         pinnedModel: input.selectedModel,
         libraryBlock: input.library.block,
+        // Sub-agents get what the user attached too: the text brief always,
+        // the images when the sub-agent's own model reads them.
+        attachmentBrief: input.attachmentBrief,
+        visionInputs: input.visionInputs,
         designPolicy: [designContractBlock, designPolicy].filter(Boolean).join('\n\n') || undefined,
         onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
         onSpend: subSpend => {

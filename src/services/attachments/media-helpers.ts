@@ -9,6 +9,7 @@
  */
 import type { ChatContentPart, ChatMessage } from '../openrouter-service.ts';
 import type { ExtractionDeps } from './extract.ts';
+import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.ts';
 
 type Chat = (modelId: string, messages: ChatMessage[], retryAttempts?: number, timeoutMs?: number) => Promise<{ text: string; cost_usd?: number }>;
 type Catalog = { peek(id: string): { architecture?: { input_modalities?: string[] } } | undefined; ensure(): Promise<void> };
@@ -32,8 +33,11 @@ export function createMediaHelpers(chat: Chat, allowed: readonly string[], catal
     return String(result.text || '').trim();
   };
   return {
+    // Structured, so the analysis can be kept and rendered back into every
+    // later turn (image-analysis.ts). Never on the path a user waits on: the
+    // service marks the image ready before this answers.
     describeImage: (image, name) => ask('image', [
-      { type: 'text', text: `Décris cette image (« ${name} ») pour un développeur qui va créer une interface à partir d’elle. En français, 150 mots au plus, sans préambule. Dis d’abord ce que c’est (capture d’écran, maquette, logo, charte graphique, photo, schéma), puis : la mise en page et ses sections dans l’ordre, les textes lisibles importants, les couleurs (codes hexadécimaux estimés), la typographie et le style général.` },
+      { type: 'text', text: IMAGE_ANALYSIS_PROMPT(name) },
       { type: 'image_url', image_url: { url: `data:${image.mime};base64,${base64(image.data)}`, detail: 'high' } },
     ], 45_000),
     ocrPdf: (pdf, name) => ask('file', [
