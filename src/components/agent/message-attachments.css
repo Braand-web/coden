@@ -1,0 +1,92 @@
+/*
+ * Attachments in a message: thumbnails, file cards, the full-screen preview.
+ *
+ * Coden's tokens only (surfaces, borders, text levels, accent, radii, shadows), so both themes come for free. The
+ * attachments sit above the bubble, separated from the words, aligned with it, never wider than it.
+ */
+.coden-chat-userstack { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; max-width: min(86%, 520px); }
+.coden-chat-message.user .coden-chat-userstack > .coden-chat-bubble { max-width: 100%; }
+.coden-att-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; max-width: 100%; }
+.coden-att-stack ul { list-style: none; margin: 0; padding: 0; }
+
+/* ── Images ─────────────────────────────────────────────────────────────── */
+.coden-att-images { display: grid; gap: 6px; justify-content: end; max-width: 100%; }
+.coden-att-images[data-count="1"] { width: 260px; max-width: 100%; grid-template-columns: minmax(0, 1fr); }
+.coden-att-images[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 132px)); }
+.coden-att-images[data-count="3"] { grid-template-columns: repeat(3, minmax(0, 88px)); }
+.coden-att-images[data-count="4"] { grid-template-columns: repeat(2, minmax(0, 128px)); }
+.coden-att-images > li { min-width: 0; }
+.coden-att-tile { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface-soft); cursor: zoom-in; aspect-ratio: 1 / 1; isolation: isolate; transition: border-color 160ms var(--ease-standard, ease-out), box-shadow 160ms var(--ease-standard, ease-out), transform 160ms var(--ease-standard, ease-out); }
+.coden-att-tile[data-count="1"] { aspect-ratio: 4 / 3; max-height: 240px; }
+.coden-att-tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 180ms var(--ease-standard, ease-out); }
+.coden-att-tile[data-state="ready"] img { opacity: 1; }
+.coden-att-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coden-att-skeleton { position: absolute; inset: 0; overflow: hidden; background: var(--surface-soft); }
+.coden-att-skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 7%, transparent), transparent); animation: coden-att-sheen 1.4s ease-in-out infinite; }
+@keyframes coden-att-sheen { to { transform: translateX(100%); } }
+.coden-att-broken { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 8px; text-align: center; font-size: 11px; line-height: 1.3; color: var(--text-secondary); background: var(--surface-soft); }
+.coden-att-more { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; font-weight: 650; letter-spacing: -.02em; color: var(--foreground); background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.coden-att-analysing { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 6px; max-width: calc(100% - 12px); padding: 4px 8px; border-radius: var(--radius-full, 9999px); font-size: 11px; line-height: 1.2; color: var(--foreground); background: color-mix(in srgb, var(--surface) 88%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .coden-att-tile:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); box-shadow: var(--shadow-md); transform: translateY(-1px); } }
+
+/* ── Files ──────────────────────────────────────────────────────────────── */
+.coden-att-files { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
+.coden-att-files > li { min-width: 0; max-width: 100%; }
+.coden-att-file { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; box-sizing: border-box; width: min(320px, 100%); min-width: 0; padding: 8px 12px 8px 8px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface); color: var(--text-strong, var(--foreground)); text-decoration: none; transition: border-color 160ms var(--ease-standard, ease-out), background 160ms var(--ease-standard, ease-out); }
+a.coden-att-file:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coden-att-file[data-failed] { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.coden-att-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius-sm, 8px); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.coden-att-icon[data-kind="spreadsheet"] { color: var(--success); background: color-mix(in srgb, var(--success) 12%, var(--surface)); }
+.coden-att-icon[data-kind="archive"] { color: var(--syntax-yellow, var(--text-secondary)); background: color-mix(in srgb, var(--syntax-yellow, var(--text-muted)) 14%, var(--surface)); }
+.coden-att-icon[data-kind="code"], .coden-att-icon[data-kind="text"], .coden-att-icon[data-kind="file"] { color: var(--text-secondary); background: var(--surface-soft); }
+.coden-att-icon[data-kind="video"] { color: var(--foreground); background: var(--surface-soft); }
+.coden-att-text { display: grid; gap: 1px; min-width: 0; }
+.coden-att-mid { display: flex; min-width: 0; white-space: nowrap; }
+.coden-att-mid-head { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.coden-att-mid-tail { flex: none; }
+.coden-att-name { display: flex; overflow: hidden; font-size: 13px; font-weight: 550; line-height: 1.35; color: var(--text-strong, var(--foreground)); }
+.coden-att-meta { display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; line-height: 1.3; color: var(--text-muted); }
+.coden-att-meta[data-tone="error"] { color: var(--danger); }
+@media (hover: hover) { a.coden-att-file:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--surface-soft); } }
+
+.coden-att-spinner { flex: none; width: 10px; height: 10px; border: 1.6px solid color-mix(in srgb, var(--accent) 28%, transparent); border-top-color: var(--accent); border-radius: 50%; animation: coden-att-spin 800ms linear infinite; }
+@keyframes coden-att-spin { to { transform: rotate(360deg); } }
+
+/* ── Full-screen preview ────────────────────────────────────────────────── */
+.coden-att-lightbox { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; background: color-mix(in srgb, var(--background) 82%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); animation: coden-att-fade 160ms var(--ease-standard, ease-out) both; }
+.coden-att-lightbox-panel { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(1100px, 100vw); height: min(860px, 100dvh); padding: 0 0 12px; }
+.coden-att-lightbox-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+.coden-att-lightbox-title { display: grid; min-width: 0; }
+.coden-att-lightbox-name { display: flex; font-size: 14px; font-weight: 600; color: var(--text-strong, var(--foreground)); }
+.coden-att-lightbox-sub { font-size: 12px; color: var(--text-muted); }
+.coden-att-lightbox-tools { display: flex; align-items: center; gap: 6px; flex: none; }
+.coden-att-lightbox-tools button, .coden-att-lightbox-tools a, .coden-att-lightbox-nav { display: inline-grid; place-items: center; min-width: 36px; height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-md, 12px); background: var(--surface); color: var(--text-strong, var(--foreground)); font: inherit; font-size: 13px; text-decoration: none; cursor: pointer; transition: background 150ms var(--ease-standard, ease-out), border-color 150ms var(--ease-standard, ease-out); }
+.coden-att-lightbox-tools button:disabled { opacity: .45; cursor: default; }
+.coden-att-lightbox-tools .is-value { min-width: 58px; font-variant-numeric: tabular-nums; }
+.coden-att-lightbox-tools button:focus-visible, .coden-att-lightbox-tools a:focus-visible, .coden-att-lightbox-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (hover: hover) { .coden-att-lightbox-tools button:not(:disabled):hover, .coden-att-lightbox-tools a:hover, .coden-att-lightbox-nav:hover { background: var(--surface-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); } }
+.coden-att-lightbox-stage { display: grid; place-items: center; min-height: 0; overflow: auto; padding: 0 16px; }
+.coden-att-lightbox-stage[data-zoomed] { place-items: start center; cursor: zoom-out; }
+.coden-att-lightbox-stage img { display: block; max-height: 100%; object-fit: contain; border-radius: var(--radius-md, 12px); box-shadow: var(--shadow-overlay); background: var(--surface-soft); cursor: zoom-in; }
+.coden-att-lightbox-stage[data-zoomed] img { max-height: none; cursor: zoom-out; }
+.coden-att-lightbox-broken { display: grid; justify-items: center; gap: 8px; color: var(--text-secondary); text-align: center; }
+.coden-att-lightbox-broken a { color: var(--accent); }
+.coden-att-lightbox-nav { position: absolute; top: 50%; width: 44px; height: 44px; margin-top: -10px; padding: 0; font-size: 26px; line-height: 1; border-radius: 50%; box-shadow: var(--shadow-md); }
+.coden-att-lightbox-nav.is-prev { left: 12px; }
+.coden-att-lightbox-nav.is-next { right: 12px; }
+.coden-att-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@keyframes coden-att-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (max-width: 560px) {
+  .coden-chat-userstack { max-width: 92%; }
+  .coden-att-images[data-count="1"] { width: 240px; }
+  .coden-att-lightbox-bar { padding: 10px 12px; }
+  .coden-att-lightbox-tools a { display: none; }
+  .coden-att-lightbox-nav { width: 40px; height: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coden-att-tile, .coden-att-tile img, .coden-att-file, .coden-att-lightbox-tools button, .coden-att-lightbox-tools a, .coden-att-lightbox-nav { transition: none; }
+  .coden-att-lightbox, .coden-att-spinner, .coden-att-skeleton::after { animation: none; }
+  .coden-att-tile:hover { transform: none; }
+}

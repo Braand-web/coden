@@ -16,6 +16,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { Response } from "./components/ui/response";
 import { AgentMessage, type DecisionAnswersHandler } from './components/agent/agent-message';
 import { EMPTY_MESSAGE, reduceAgentMessage, type AgentMessageState, type DecisionNotice } from './components/agent/agent-parts';
+import { MessageAttachments, type MessageAttachment } from './components/agent/message-attachments';
+import { splitLegacyAttachmentText } from './lib/attachment-display';
 import { createTypingPacer, type TypingPacer } from './lib/typing-pacer';
 import type { AgentEnvelope, ChatEvent } from './lib/agent-chat-protocol';
 import type { AgentMode } from "./services/agent-mode";
@@ -121,10 +123,12 @@ export type CodenConversationMessage = {
   block?: CodenConversationBlock;
   createdAt?: string;
   liveRun?: LiveRunState;
+  /** What the user attached, kept apart from the words: one component draws it above the bubble. */
+  attachments?: MessageAttachment[];
 };
 
 export type CodenConversationApi = {
-  addMessage: (message: { id?: string; role: CodenConversationRole; content: string; working?: boolean }) => string;
+  addMessage: (message: { id?: string; role: CodenConversationRole; content: string; working?: boolean; attachments?: MessageAttachment[] }) => string;
   updateMessage: (id: string, content: string) => void;
   setParts: (id: string, parts: unknown[], content?: string) => void;
   setWorking: (id: string, label: string) => void;
@@ -411,6 +415,8 @@ function conversationStorageKey() {
 
 function persistedMessage(message: CodenConversationMessage): CodenConversationMessage {
   const copy = JSON.parse(JSON.stringify({ ...message, actions: [] })) as CodenConversationMessage;
+  // A small picture kept in memory is fetched again by id after a reload: sessionStorage stays light.
+  if (copy.attachments?.length) copy.attachments = copy.attachments.map(item => (item.id && item.previewUrl?.startsWith('data:') ? { ...item, previewUrl: undefined } : item));
   if (!copy.working) return copy;
 
   copy.working = false;
@@ -687,6 +693,7 @@ export function createStore(storageKey = conversationStorageKey()) {
           working: Boolean(message.working),
           actions: [],
           createdAt: new Date().toISOString(),
+          ...(message.attachments?.length ? { attachments: message.attachments } : {}),
         });
       });
       return id;
@@ -1888,17 +1895,28 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
   const isAssistant = message.role === "assistant";
 
   if (isUser) {
+    // Older messages carried « 📎 a · b » inside the text: show it as attachments, not as words.
+    const legacy = message.attachments?.length ? null : splitLegacyAttachmentText(message.content);
+    const attachments: MessageAttachment[] = message.attachments?.length
+      ? message.attachments
+      : (legacy?.names || []).map((name) => ({ name }));
+    const text = legacy?.names.length ? legacy.text : message.content;
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-        <div className="coden-chat-bubble">
-          {message.content}
-          {message.actions?.length ? (
-            <div className="coden-chat-actions">
-              {message.actions.map((action) => (
-                <button key={action.id} type="button" onClick={action.onClick}>
-                  {action.label}
-                </button>
-              ))}
+        <div className="coden-chat-userstack">
+          {attachments.length ? <MessageAttachments items={attachments} /> : null}
+          {text || message.actions?.length ? (
+            <div className="coden-chat-bubble">
+              {text}
+              {message.actions?.length ? (
+                <div className="coden-chat-actions">
+                  {message.actions.map((action) => (
+                    <button key={action.id} type="button" onClick={action.onClick}>
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
