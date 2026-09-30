@@ -258,6 +258,7 @@ import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-r
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
+import { canDuplicateProject, duplicateProjectName } from './src/services/project-duplicate.ts';
 import { findCompletedTurnForRun } from './src/services/run-ledger.ts';
 import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
 import { buildReliabilityReport, evaluateReliabilityAlert, reliabilityAlertEnabled, type ReliabilityTurn } from './src/services/reliability-metrics.ts';
@@ -15197,6 +15198,51 @@ app.delete('/api/projects/:id', async (req: any, res: any) => {
     last_route: '/dashboard.html',
   }).catch(() => null);
   res.json({ success: true, deleted_project_id: project.id });
+});
+
+/*
+ * Duplicate a project: its files and look, in a new draft. The conversation, the published site and the backend stay
+ * with the original (services/project-duplicate.ts).
+ */
+app.post('/api/projects/:id/duplicate', async (req: any, res: any) => {
+  try {
+    const authUser = requireAuthenticatedUser(req, res);
+    if (!authUser) return;
+    const userId = authUser.id;
+    if (!enforceRateLimit(`project-duplicate:${userId}`, 10, 60_000)) return res.status(429).json({ success: false, error: 'Trop de copies à la suite : réessayez dans une minute.' });
+    const source = await loadProject(String(req.params.id), userId, req);
+    if (!source) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!canDuplicateProject(getUserProjectRole(req, source))) return res.status(403).json({ success: false, error: 'Vous ne pouvez pas copier ce projet.' });
+    const client = requireSupabase('Project duplication');
+    const files = await loadProjectFiles(source.id);
+    const taken = await client.from('projects').select('name').eq('owner_id', userId).ilike('name', `${String(source.name || '').replace(/[%_]/g, ' ').replace(/\s*\(copie(?:\s+\d+)?\)\s*$/i, '').trim()}%`).limit(200);
+    const name = sanitizeProjectName(duplicateProjectName(source.name, (taken.data || []).map((row: any) => String(row.name || ''))));
+    const now = new Date().toISOString();
+    const copy: GeneratedProject = {
+      id: randomUUID(),
+      owner_id: userId,
+      organization_id: source.organization_id,
+      created_by: userId,
+      name,
+      slug: await uniqueSlug(name, userId),
+      prompt: source.prompt || '',
+      template: source.template || 'custom',
+      theme: source.theme || 'light',
+      model_id: source.model_id || 'auto',
+      status: 'draft',
+      preview_status: source.preview_status === 'verified' ? 'verified' : 'idle',
+      preview_html: source.preview_html || '',
+      created_at: now,
+      updated_at: now,
+    };
+    await saveProject(copy, files);
+    await createProjectVersion(copy, files, 'duplicate', { duplicated_from: source.id }).catch(() => null);
+    console.log('[coden:project_duplicated]', { from: source.id, to: copy.id, files: files.length });
+    res.json({ success: true, project: { id: copy.id, name: copy.name }, builder_url: `/builder.html?project=${copy.id}`, files: files.length });
+  } catch (error: any) {
+    console.error('[coden:project_duplicate_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'La copie a échoué. Le projet d’origine n’a pas été modifié.' });
+  }
 });
 
 app.get('/api/projects/:id/state', async (req: any, res: any) => {
