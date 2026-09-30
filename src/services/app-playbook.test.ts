@@ -30,6 +30,8 @@ describe('recognising a kind of app', () => {
       'Mets une photo de profil ronde dans l’en-tête.',
       'Fais une page qui présente mon entreprise de plomberie.',
       'Make the button green.',
+      'cree une mini calculatrice avec les quatre opérations',
+      'Un convertisseur d’unités simple',
       '',
     ]) expect(detectAppKind(prompt), prompt).toBeNull();
   });
@@ -52,9 +54,9 @@ describe('the brief', () => {
     expect(buildAppPlaybook('Fais une page pour mon plombier.')).toBe('');
   });
 
-  it('is switched off by CODEN_APP_PLAYBOOK=0, and reaches the coder only on a new build', () => {
-    expect(appPlaybookEnabled({})).toBe(true);
-    expect(appPlaybookEnabled({ CODEN_APP_PLAYBOOK: '0' })).toBe(false);
+  it('is off unless CODEN_APP_PLAYBOOK=1, and reaches the coder only on a new build', () => {
+    expect(appPlaybookEnabled({})).toBe(false);
+    expect(appPlaybookEnabled({ CODEN_APP_PLAYBOOK: '1' })).toBe(true);
     const pipeline = readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
     expect(pipeline).toMatch(/input\.route === 'new_project' \|\| input\.route === 'large_change'\) \? buildAppPlaybook\(input\.prompt\)/);
     expect(pipeline).toMatch(/designPolicy: \[\.\.\.\[designContractBlock, designPolicy, backendBriefing, appPlaybook\]/);

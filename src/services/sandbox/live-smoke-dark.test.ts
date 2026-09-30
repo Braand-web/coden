@@ -26,6 +26,7 @@ let base = '';
 let canLaunch = false;
 
 beforeAll(async () => {
+  process.env.CODEN_DARK_QA = '1';
   server = http.createServer((request, response) => { response.setHeader('content-type', 'text/html'); response.end(PAGES[request.url || ''] || '<!doctype html><title>404</title>'); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -40,7 +41,7 @@ beforeAll(async () => {
   }
 }, 30_000);
 
-afterAll(() => { server?.close(); });
+afterAll(() => { server?.close(); delete process.env.CODEN_DARK_QA; });
 
 const sandbox = (path: string) => ({ status: () => ({ state: 'running', port: Number(new URL(base).port), basePath: path, origin: null }) as any }) as any;
 const check = (path: string) => verifyLivePreview(sandbox(path), undefined, { capture: true });
