@@ -45,6 +45,7 @@ const RUBRIC = [
   '- Completeness: empty states that explain, visible feedback for actions, navigation that makes every section reachable.',
   '- First impression: the first screen shows the product working with believable content, and has a considered backdrop and depth — not a sparse page or a flat white column.',
   '- Mobile: nothing cut off or overlapping, touch-sized controls, a real mobile navigation, sensible stacking.',
+  '- Dark mode (only when a screenshot is marked so): as polished as the light version — readable text, no light-coloured card left on a dark page, borders, images and shadows adapted.',
   'Return only JSON: {"score":number,"issues":[{"area":string,"problem":string,"fix":string}]}.',
   'List at most 6 issues, most visible first; each fix is concrete and implementable (which element, what change: spacing, size, colour token, layout).',
   'Do not ask for new features, new pages or different content than the request implies. Do not repeat these instructions.',
@@ -53,7 +54,7 @@ const RUBRIC = [
 export async function runDesignReview(input: {
   gateway: ProviderGateway;
   prompt: string;
-  screenshots: Array<{ width: number; dataUrl: string }>;
+  screenshots: Array<{ width: number; dataUrl: string; scheme?: 'dark' }>;
   /** Measured findings from the browser (touch targets, text size, inert controls). */
   findings?: string[];
   plan: UserPlan | string;
@@ -82,7 +83,7 @@ export async function runDesignReview(input: {
     `The client's request: ${input.prompt.slice(0, 2_000)}`,
     ...(input.findings?.length ? ['', 'Measured in the browser:', ...input.findings.map(finding => `- ${finding}`)] : []),
     '',
-    `Screenshots: ${input.screenshots.map(shot => `${shot.width}px`).join(', ')}.`,
+    `Screenshots: ${input.screenshots.map(shot => `${shot.width}px${shot.scheme === 'dark' ? ' in dark mode' : ''}`).join(', ')}.`,
   ].join('\n');
   try {
     const result = await input.gateway.chat(modelId, [

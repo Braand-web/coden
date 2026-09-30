@@ -49,7 +49,9 @@ export type ValidationReport = {
      * JPEG captures of the running app for the design review. In memory only:
      * callers strip them before persisting a report.
      */
-    screenshots?: Array<{ width: number; dataUrl: string }>;
+    screenshots?: Array<{ width: number; dataUrl: string; scheme?: 'dark' }>;
+    /** Whether the app follows the system's dark scheme, and what is hard to read in it. */
+    darkMode?: { supported: boolean; lowContrast: string[] };
   };
 };
 

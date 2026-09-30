@@ -19,6 +19,49 @@ export type LivePreviewOptions = {
   capture?: boolean;
 };
 
+/**
+ * Page-side: what text is hard to read against its background, and the page's own background.
+ * Contrast is the WCAG ratio; large text needs 3:1, the rest 4.5:1. The background is the nearest opaque
+ * one behind the text, so a card on a dark page is judged against the card.
+ */
+const READABILITY_PROBE = () => {
+  const parse = (value: string) => { const m = value.match(/rgba?\(([^)]+)\)/); if (!m) return null; const [r, g, b, a] = m[1].split(',').map(part => parseFloat(part)); return { r, g, b, a: a === undefined ? 1 : a }; };
+  const channel = (v: number) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+  const luminance = (c: { r: number; g: number; b: number }) => 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+  const backgroundOf = (element: Element | null) => {
+    for (let node = element; node; node = node.parentElement) {
+      const c = parse(getComputedStyle(node).backgroundColor);
+      if (c && c.a > 0.95) return c;
+    }
+    const canvas = parse(getComputedStyle(document.documentElement).backgroundColor);
+    return canvas && canvas.a > 0.95 ? canvas : (matchMedia('(prefers-color-scheme: dark)').matches ? { r: 18, g: 18, b: 18, a: 1 } : { r: 255, g: 255, b: 255, a: 1 });
+  };
+  const page = backgroundOf(document.body);
+  const low: string[] = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let checked = 0;
+  while (walker.nextNode() && checked < 500) {
+    const node = walker.currentNode;
+    const text = (node.textContent || '').trim();
+    const parent = node.parentElement;
+    if (!parent || text.length < 2) continue;
+    const box = parent.getBoundingClientRect();
+    const style = getComputedStyle(parent);
+    if (!box.width || !box.height || style.visibility === 'hidden' || style.display === 'none' || parseFloat(style.opacity) < 0.05) continue;
+    checked += 1;
+    const fg = parse(style.color);
+    if (!fg) continue;
+    const bg = backgroundOf(parent);
+    const l1 = luminance(fg) * fg.a + luminance(bg) * (1 - fg.a);
+    const l2 = luminance(bg);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    const size = parseFloat(style.fontSize);
+    const large = size >= 24 || (size >= 18.66 && parseInt(style.fontWeight, 10) >= 700);
+    if (ratio < (large ? 3 : 4.5)) low.push(`${text.slice(0, 30)} (${ratio.toFixed(1)}:1)`);
+  }
+  return { pageLuminance: luminance(page), low: [...new Set(low)].slice(0, 8), lowCount: low.length };
+};
+
 const VIEWPORTS = [
   { width: 1280, height: 800 },
   { width: 768, height: 1024 },
@@ -92,7 +135,7 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       }
       if (['document','script','stylesheet','fetch','xhr'].includes(request.resourceType())) fail(`Resource unavailable: ${new URL(request.url()).pathname}`);
     });
-    const screenshots: Array<{ width: number; dataUrl: string }> = [];
+    const screenshots: Array<{ width: number; dataUrl: string; scheme?: 'dark' }> = [];
     for (const viewport of VIEWPORTS) {
       const width = viewport.width;
       await page.setViewportSize(viewport);
@@ -150,6 +193,36 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       }
     }
     await page.setViewportSize({ width: 1280, height: 800 });
+    if (options.capture) {
+      /*
+       * The same screen in the system's dark scheme.
+       *
+       * The review only ever saw the light version, so an app that half-supports dark mode — a white card
+       * left on a dark page, grey text that vanishes — passed. An app that does not react to the scheme at
+       * all is not at fault and is left alone; one that does is held to the same standard as its light self.
+       */
+      try {
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+        await page.waitForTimeout(400);
+        const light = await page.evaluate(READABILITY_PROBE);
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+        await page.evaluate(() => document.fonts.ready);
+        await page.waitForTimeout(600);
+        const dark = await page.evaluate(READABILITY_PROBE);
+        const supported = Math.abs(dark.pageLuminance - light.pageLuminance) > 0.2;
+        report.evidence!.darkMode = { supported, lowContrast: supported ? dark.low : [] };
+        if (light.lowCount >= 3) warn(`${light.lowCount} text elements are hard to read (contrast under 4.5:1): ${light.low.slice(0, 4).join('; ')}. Raise the contrast of text on its background.`);
+        if (supported) {
+          if (dark.lowCount >= 3) warn(`Dark mode: ${dark.lowCount} text elements are hard to read (contrast under 4.5:1): ${dark.low.slice(0, 4).join('; ')}. Use the theme's text and surface tokens so both schemes stay readable.`);
+          const height = Math.min(await page.evaluate(() => document.documentElement.scrollHeight).catch(() => 800), 1800);
+          const image = await page.screenshot({ type: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: 1280, height }, fullPage: true }).catch(() => null);
+          if (image) screenshots.push({ width: 1280, dataUrl: `data:image/jpeg;base64,${image.toString('base64')}`, scheme: 'dark' });
+        }
+      } catch { /* the dark pass is a bonus: a failure here never fails a run that works */ }
+      finally { await page.emulateMedia({ colorScheme: 'light' }).catch(() => undefined); }
+    }
     if (options.explore) {
       const explored = await exploreApplication(page, url).catch(() => null);
       if (explored) {
