@@ -23,6 +23,25 @@ import { DecisionRequiredError, isDecisionRequiredError, readDecisionRequest } f
 import { agentWebProvider } from '../agent-web.ts';
 import { agentIntegrationProvider, SERVICE_NEEDS } from '../agent-integrations.ts';
 import { SERVICE_CHOICES, type ServiceNeed } from '../composio.ts';
+import { checkDesignWrite, isDesignLayerPath, type DesignViolation } from '../design-contract.ts';
+
+/**
+ * How the design layer is protected while an agent works.
+ *
+ * `allowValueChanges` is whether the user asked for a different look (or the
+ * first build is still creating one): token values may then change, but no
+ * token, theme key or font link may disappear, and the stylesheet stays wired.
+ */
+export type DesignGuard = {
+  allowValueChanges: boolean;
+  /**
+   * Scaffold files that exist and that `write_file` may not replace whole —
+   * the starter's own reserved list, which used to bind only the very first
+   * build's merge. `edit_file` still changes them, one snippet at a time.
+   */
+  replaceProtected?: readonly string[];
+  onBlocked?: (info: { tool: string; path: string; violations: DesignViolation[] }) => void;
+};
 
 export type ToolResult =
   | { ok: true; [key: string]: unknown }
@@ -63,7 +82,7 @@ export const SANDBOX_TOOL_SCHEMAS = [
   },
   {
     name: 'write_file',
-    description: 'Create a file, or replace one entirely. For a change to part of an existing file prefer edit_file.',
+    description: 'Create a file, or replace one entirely. For a change to part of an existing file prefer edit_file. The design layer — the global stylesheet, tailwind.config, the font link in index.html, the stylesheet import in the app entry — cannot be replaced whole: extend it with edit_file.',
     parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] },
   },
   {
@@ -232,9 +251,33 @@ export function isPersistentPreviewCommand(command: string, args: readonly strin
   return false;
 }
 
-export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void; signal?: AbortSignal } = {}) {
-  const sandbox: ProjectSandbox = sandboxRegistry.get(projectId);
+export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void; signal?: AbortSignal; design?: DesignGuard; sandbox?: ProjectSandbox } = {}) {
+  const sandbox: ProjectSandbox = options.sandbox ?? sandboxRegistry.get(projectId);
   const changed = (paths: string[]) => options.onChange?.(paths);
+  /**
+   * Refuses a write that would take the design out of the app.
+   *
+   * Judged against what the file holds now, so extending it is free. The
+   * refusal is a result with a hint, like every other failure here: the agent
+   * that is told which tokens it was about to remove and how to add its class
+   * instead does so on the next call.
+   */
+  const designVerdict = (tool: string, path: string, before: string | null, after: string): ToolResult | null => {
+    if (!options.design || before === null) return null;
+    const normalized = path.replace(/\\/g, '/').replace(/^\.\//, '');
+    if (tool === 'write_file' && options.design.replaceProtected?.includes(normalized)) {
+      options.design.onBlocked?.({ tool, path, violations: [] });
+      return fail(
+        `${normalized} belongs to the project scaffold and cannot be replaced whole.`,
+        `Change it with edit_file (one snippet at a time), or add a dependency with install_package. Rewriting it from memory is how a working build loses its plugins, scripts and imports.`,
+      );
+    }
+    if (!isDesignLayerPath(path)) return null;
+    const verdict = checkDesignWrite({ path, before, after, allowValueChanges: options.design.allowValueChanges });
+    if (verdict.ok) return null;
+    options.design.onBlocked?.({ tool, path, violations: verdict.violations });
+    return fail(verdict.error, verdict.hint);
+  };
 
   const handlers: Record<SandboxToolName, (args: any) => Promise<ToolResult>> = {
     async list_files() {
@@ -285,6 +328,8 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
       try {
         const previous = await sandbox.readProjectFile(String(path)).catch(() => null);
         if (previous === String(content ?? '')) return { ok: true, path, unchanged: true, bytes: previous.length };
+        const refused = designVerdict('write_file', String(path), previous, String(content ?? ''));
+        if (refused) return refused;
         await sandbox.writeFiles([{ path: String(path), content: String(content ?? '') }]);
         changed([String(path)]);
         return { ok: true, path, bytes: String(content ?? '').length, restartRequired: needsRestart([String(path)]) };
@@ -314,7 +359,10 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
         return fail(`That snippet appears ${occurrences} times in ${target}.`, 'Include more surrounding lines so it matches exactly once.');
       }
       if (needle === String(replace ?? '')) return { ok: true, path: target, unchanged: true, replaced: 0 };
-      await sandbox.writeFiles([{ path: target, content: content.replace(needle, String(replace ?? '')) }]);
+      const edited = content.replace(needle, () => String(replace ?? ''));
+      const refused = designVerdict('edit_file', target, content, edited);
+      if (refused) return refused;
+      await sandbox.writeFiles([{ path: target, content: edited }]);
       changed([target]);
       return { ok: true, path: target, replaced: 1, restartRequired: needsRestart([target]) };
     },
@@ -322,6 +370,10 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
     async delete_file({ path }: { path: string }) {
       try {
         if (!await sandbox.hasFile(String(path))) return { ok:true, path, unchanged:true };
+        if (options.design && isDesignLayerPath(String(path))) {
+          const refused = designVerdict('delete_file', String(path), await sandbox.readProjectFile(String(path)).catch(() => null), '');
+          if (refused) return refused;
+        }
         await sandbox.deleteProjectFile(String(path));
         changed([String(path)]);
         return { ok: true, path };

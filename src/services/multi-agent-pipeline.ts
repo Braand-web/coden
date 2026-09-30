@@ -29,11 +29,13 @@ import { resolvePipelineRoute, taskKindForRoute, buildEditInstruction, type Pipe
 import { affordableReasoning, selectModel, type TaskComplexity } from './model-selection.ts';
 import { MODEL_REGISTRY } from '../config/ai-models.ts';
 import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } from './sandbox/repair-loop.ts';
+import type { DesignGuard } from './sandbox/sandbox-tools.ts';
+import { compareDesign, extractDesignContract, renderDesignContract, restoreDesign, wantsDesignChange, type DesignViolation } from './design-contract.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
 import type { ChatMessage } from './openrouter-service.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
-import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter } from './sandbox/starters.ts';
+import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter, STARTERS } from './sandbox/starters.ts';
 import { STARTER_KIT_FILES } from './sandbox/starter-kit.ts';
 import { sandboxRegistry } from './sandbox/sandbox-registry.ts';
 import type { ProjectSandbox } from './sandbox/project-sandbox.ts';
@@ -101,6 +103,13 @@ export type MultiAgentPipelineOutcome =
       costUsd: number;
       /** Tokens the provider reported for the run's model calls (planner excluded when it does not report them). */
       tokens: { prompt: number; completion: number };
+      /**
+       * What became of the app's design during the run: its fingerprint before
+       * and after, the writes the tools refused, and anything the safety net
+       * had to put back. Two equal fingerprints on an iteration that did not
+       * ask for a new look is the property the design contract exists to keep.
+       */
+      design: { before: string; after: string; changeAllowed: boolean; refusedWrites: number; restored: string[] };
     };
 
 /**
@@ -329,6 +338,16 @@ function renderPlanAsInstruction(plan: BuildPlan): string {
   const journeys = renderScenariosForCoder(plan.acceptance);
   if (journeys) lines.push('', journeys);
   return lines.join('\n');
+}
+
+function describeDesignViolation(violation: DesignViolation): string {
+  switch (violation.kind) {
+    case 'token_removed': case 'token_changed': return `${violation.kind}:${violation.name}`;
+    case 'font_removed': return `font_removed:${violation.family}`;
+    case 'theme_key_removed': return `theme_key_removed:${violation.key}`;
+    case 'stylesheet_not_imported': return `stylesheet_not_imported:${violation.stylesheet}`;
+    case 'tailwind_directives_removed': return `tailwind_directives_removed:${violation.stylesheet}`;
+  }
 }
 
 /** Read the whole project back out of a sandbox, as `{path, content}` pairs. */
@@ -759,6 +778,30 @@ export async function runMultiAgentPipeline(input: {
   // implements it are designed to the same brief. A planner that has not seen
   // the design system names three files; the coder then designs from nothing.
   const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0, input.projectId);
+  /*
+   * The design the project already has, read from its files — not described.
+   *
+   * `designPolicy` above is general guidance about how to design; nothing in
+   * it says what THIS app looks like, and `small_edit` gets none of it. An
+   * iteration therefore started from files it could read but had no reason to
+   * treat as a contract, and rewrote the stylesheet "to add a class". The
+   * contract is the app's own tokens, utilities and fonts, stated up front for
+   * every route, with the write-time guard behind it.
+   */
+  const designBaselineFiles = (starter ? applyStarter(starter, []).files : input.existingFiles).map(file => ({ path: file.path, content: file.content || '' }));
+  const designBaseline = extractDesignContract(designBaselineFiles);
+  // The first build is still designing the look; an iteration only when it was asked to.
+  const allowDesignChange = input.route === 'new_project' || wantsDesignChange(input.prompt);
+  const designContractBlock = input.existingFiles.length ? renderDesignContract(designBaseline, { allowValueChanges: allowDesignChange }) : '';
+  let refusedDesignWrites = 0;
+  const designGuard: DesignGuard = {
+    allowValueChanges: allowDesignChange,
+    replaceProtected: (starter || STARTERS['react-vite']).reservedPaths,
+    onBlocked: ({ tool, path, violations }) => {
+      refusedDesignWrites += 1;
+      console.info('[coden:design_write_refused]', { project: input.projectId, tool, path, violations: violations.slice(0, 6).map(violation => `${violation.kind}:${'name' in violation ? violation.name : 'key' in violation ? violation.key : 'family' in violation ? violation.family : ''}`) });
+    },
+  };
   // Undefined when no backend was provisioned, so nothing tells an agent a
   // database exists when none does — the one failure worse than no backend is
   // an app written against one that is not there.
@@ -792,6 +835,9 @@ export async function runMultiAgentPipeline(input: {
     projectId: input.projectId,
     userId: input.userId,
     files: launchFiles,
+    // An existing project is the saved one, exactly: not the saved one plus
+    // whatever an earlier, abandoned attempt left in a warm sandbox.
+    exact: !starter,
     /*
      * The app's backend, in the environment its dev server reads.
      *
@@ -934,7 +980,7 @@ export async function runMultiAgentPipeline(input: {
       // The planner needs it before the coder does: a plan written as if there
       // were no database names a localStorage module, and the coder then
       // builds what the plan asked for.
-      designPolicy: [designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
+      designPolicy: [designContractBlock, designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       plan: input.userPlan,
       credits: input.credits,
       selectedModel: input.selectedModel,
@@ -1101,6 +1147,7 @@ export async function runMultiAgentPipeline(input: {
     maxRounds: routeBudget.maxRounds,
     maxToolCallsPerRound: routeBudget.maxToolCallsPerRound,
     maxStalledRounds: routeBudget.maxStalledRounds,
+    design: designGuard,
     turn: buildToolLoopTurn({
       redact: secretRedactor,
       gateway: input.gateway,
@@ -1116,7 +1163,7 @@ export async function runMultiAgentPipeline(input: {
       // Both in the system message, so a repair round cannot lose either one
       // and quietly swap a real query back out for mock data.
       // The library block (error rules, skills, reusable sub-agents) and the team briefing follow.
-      designPolicy: [...[designPolicy, backendBriefing].filter(Boolean), input.library?.block, input.library ? teamBriefing(teamLimits) : ''].filter(Boolean).join('\n\n') || undefined,
+      designPolicy: [...[designContractBlock, designPolicy, backendBriefing].filter(Boolean), input.library?.block, input.library ? teamBriefing(teamLimits) : ''].filter(Boolean).join('\n\n') || undefined,
       team: input.library ? {
         store: input.library.store,
         session: input.library.session,
@@ -1125,7 +1172,7 @@ export async function runMultiAgentPipeline(input: {
         credits: input.credits,
         pinnedModel: input.selectedModel,
         libraryBlock: input.library.block,
-        designPolicy,
+        designPolicy: [designContractBlock, designPolicy].filter(Boolean).join('\n\n') || undefined,
         onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
         onSpend: subSpend => {
           spent.toolCalls += subSpend.toolCalls;
@@ -1313,7 +1360,28 @@ export async function runMultiAgentPipeline(input: {
     }
   }
 
-  const files = await readAllFiles(sandbox);
+  let files = await readAllFiles(sandbox);
+  /*
+   * The net under the write-time guard.
+   *
+   * A tool can be refused; a shell command, a formatter or a sub-agent's
+   * rewrite can still leave the design layer short. Whatever went missing is
+   * put back — additively, so the run's own styles stay — before anything is
+   * saved, so no version of the project is ever written without its design.
+   */
+  const designViolations = compareDesign(designBaseline, extractDesignContract(files), { allowValueChanges: allowDesignChange });
+  const restoredDesign: string[] = [];
+  if (designViolations.length) {
+    const restoration = restoreDesign(designBaselineFiles, files, designViolations);
+    const byPath = new Map(files.map(file => [file.path, file.content]));
+    const changed = restoration.files.filter(file => byPath.get(file.path) !== file.content);
+    if (changed.length) {
+      await sandbox.writeFiles(changed);
+      files = await readAllFiles(sandbox);
+    }
+    restoredDesign.push(...restoration.restored.map(describeDesignViolation));
+    console.warn('[coden:design_restored]', { project: input.projectId, restored: restoredDesign.slice(0, 12), unrepaired: restoration.unrepaired.length });
+  }
   const status = sandbox.status();
 
   return {
@@ -1337,6 +1405,13 @@ export async function runMultiAgentPipeline(input: {
      */
     costUsd: spent.costUsd,
     tokens: { prompt: spent.promptTokens, completion: spent.completionTokens },
+    design: {
+      before: designBaseline.fingerprint,
+      after: extractDesignContract(files).fingerprint,
+      changeAllowed: allowDesignChange,
+      refusedWrites: refusedDesignWrites,
+      restored: restoredDesign,
+    },
   };
   } finally {
     releaseRun();
