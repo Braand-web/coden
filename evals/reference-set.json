@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "about": "Jeu de référence de Coden : 32 demandes et tâches variées. Chacune porte ce que le harness doit décider (taille, type de produit, niveau de qualité) et ce que l'agent ne doit pas ajouter. Les décisions se mesurent sans crédit (npm run eval:reference); les exécutions complètes (design noté sur 100, parcours, coût) se lancent avec scripts/run-reference-live.mjs quand le solde du fournisseur le permet. gate: les types de produit qu'un relecteur raisonnable accepterait pour cette demande (generic_web_app = aucun type particulier).",
+  "tasks": [
+    {
+      "id": "saas-01",
+      "category": "saas",
+      "route": "new_project",
+      "prompt": "Une application SaaS de gestion d'abonnements pour mes clients, avec un tableau de bord et des factures.",
+      "small": false,
+      "gate": [
+        "saas_dashboard",
+        "fintech_billing"
+      ],
+      "mustNotAdd": [
+        "un blog",
+        "un jeu"
+      ]
+    },
+    {
+      "id": "saas-02",
+      "category": "saas",
+      "route": "new_project",
+      "prompt": "Crée un CRM avec un pipeline de vente pour une équipe de 5 commerciaux.",
+      "small": false,
+      "gate": [
+        "crm_erp"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "saas-03",
+      "category": "saas",
+      "route": "new_project",
+      "prompt": "Outil interne de demandes de congés avec workflow d'approbation.",
+      "small": false,
+      "gate": [
+        "generic_web_app",
+        "admin_panel"
+      ],
+      "mustNotAdd": [
+        "paiement"
+      ]
+    },
+    {
+      "id": "saas-04",
+      "category": "saas",
+      "route": "new_project",
+      "prompt": "Une plateforme e-learning avec des cours, des quiz et un suivi de progression.",
+      "small": false,
+      "gate": [
+        "education_platform"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "shop-01",
+      "category": "ecommerce",
+      "route": "new_project",
+      "prompt": "Une boutique en ligne pour vendre mes bougies artisanales, avec panier et paiement.",
+      "small": false,
+      "gate": [
+        "ecommerce"
+      ],
+      "mustNotAdd": [
+        "un forum"
+      ]
+    },
+    {
+      "id": "shop-02",
+      "category": "ecommerce",
+      "route": "new_project",
+      "prompt": "A marketplace for sellers and buyers of second-hand bikes.",
+      "small": false,
+      "gate": [
+        "marketplace",
+        "ecommerce"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "shop-03",
+      "category": "ecommerce",
+      "route": "new_project",
+      "prompt": "Une application de réservation pour mon salon de coiffure, avec prise de rendez-vous.",
+      "small": false,
+      "gate": [
+        "generic_web_app",
+        "restaurant"
+      ],
+      "mustNotAdd": [
+        "panier"
+      ]
+    },
+    {
+      "id": "game-01",
+      "category": "game",
+      "route": "new_project",
+      "prompt": "Un jeu de morpion contre l'ordinateur.",
+      "small": false,
+      "gate": [
+        "gaming_creative"
+      ],
+      "mustNotAdd": [
+        "comptes utilisateurs",
+        "historique sauvegardé"
+      ]
+    },
+    {
+      "id": "game-02",
+      "category": "game",
+      "route": "new_project",
+      "prompt": "Un petit jeu de mémoire avec des cartes.",
+      "small": true,
+      "gate": [
+        "gaming_creative"
+      ],
+      "mustNotAdd": [
+        "classement en ligne"
+      ]
+    },
+    {
+      "id": "game-03",
+      "category": "game",
+      "route": "new_project",
+      "prompt": "Un jeu de snake avec score et niveaux de difficulté.",
+      "small": false,
+      "gate": [
+        "gaming_creative"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "site-01",
+      "category": "showcase",
+      "route": "new_project",
+      "prompt": "Un site vitrine élégant pour mon cabinet d'avocats, avec présentation, équipe, tarifs et formulaire de contact.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "panier"
+      ]
+    },
+    {
+      "id": "site-02",
+      "category": "showcase",
+      "route": "new_project",
+      "prompt": "Crée une landing page pour le lancement de notre application mobile.",
+      "small": false,
+      "gate": [
+        "landing_page"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "site-03",
+      "category": "showcase",
+      "route": "new_project",
+      "prompt": "Un portfolio pour un photographe, avec galerie et page contact.",
+      "small": false,
+      "gate": [
+        "portfolio"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "dash-01",
+      "category": "dashboard",
+      "route": "new_project",
+      "prompt": "Un tableau de bord admin pour suivre les utilisateurs, les ventes et les erreurs.",
+      "small": false,
+      "gate": [
+        "admin_panel",
+        "analytics_dashboard"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "dash-02",
+      "category": "dashboard",
+      "route": "new_project",
+      "prompt": "Un outil de suivi des dépenses et un budget mensuel avec graphiques.",
+      "small": false,
+      "gate": [
+        "analytics_dashboard",
+        "generic_web_app",
+        "fintech_billing"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "dash-03",
+      "category": "dashboard",
+      "route": "new_project",
+      "prompt": "Un kanban pour gérer les tâches de mon équipe.",
+      "small": false,
+      "gate": [
+        "productivity_tool"
+      ],
+      "mustNotAdd": [
+        "facturation"
+      ]
+    },
+    {
+      "id": "bug-01",
+      "category": "bug",
+      "route": "small_edit",
+      "prompt": "Le bouton « Envoyer » du formulaire de contact ne fait rien.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "nouvelle page",
+        "refonte"
+      ]
+    },
+    {
+      "id": "bug-02",
+      "category": "bug",
+      "route": "small_edit",
+      "prompt": "La page déborde à droite sur mobile.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "nouvelle fonctionnalité"
+      ]
+    },
+    {
+      "id": "bug-03",
+      "category": "bug",
+      "route": "small_edit",
+      "prompt": "Mets le bouton principal en vert.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "refonte"
+      ]
+    },
+    {
+      "id": "feat-01",
+      "category": "feature",
+      "route": "large_change",
+      "prompt": "Ajoute une page de tarifs avec trois formules et un bouton de paiement.",
+      "small": false,
+      "gate": [
+        "generic_web_app",
+        "fintech_billing"
+      ],
+      "mustNotAdd": [
+        "refonte du reste"
+      ]
+    },
+    {
+      "id": "feat-02",
+      "category": "feature",
+      "route": "large_change",
+      "prompt": "Ajoute un mode sombre à toute l'application.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "changement de palette claire"
+      ]
+    },
+    {
+      "id": "feat-03",
+      "category": "feature",
+      "route": "large_change",
+      "prompt": "Ajoute la possibilité de filtrer la liste par catégorie.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": []
+    },
+    {
+      "id": "redo-01",
+      "category": "redesign",
+      "route": "large_change",
+      "prompt": "optimise le design",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "nouvelle fonctionnalité",
+        "backend"
+      ]
+    },
+    {
+      "id": "redo-02",
+      "category": "redesign",
+      "route": "large_change",
+      "prompt": "Refais l'interface dans un style plus sobre, sans changer les fonctionnalités.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "nouvelle fonctionnalité"
+      ]
+    },
+    {
+      "id": "redo-03",
+      "category": "redesign",
+      "route": "large_change",
+      "prompt": "inspire toi de ce design pour taskflow",
+      "small": false,
+      "gate": [
+        "productivity_tool",
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "panier",
+        "paiement"
+      ]
+    },
+    {
+      "id": "amb-01",
+      "category": "ambiguous",
+      "route": "new_project",
+      "prompt": "Fais-moi quelque chose de cool.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "paiement",
+        "comptes"
+      ],
+      "note": "doit choisir une interprétation raisonnable, la dire, et continuer"
+    },
+    {
+      "id": "amb-02",
+      "category": "ambiguous",
+      "route": "new_project",
+      "prompt": "Une app pour mon entreprise.",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "paiement"
+      ],
+      "note": "une seule question courte si la réponse change fortement le résultat"
+    },
+    {
+      "id": "amb-03",
+      "category": "ambiguous",
+      "route": "large_change",
+      "prompt": "oui",
+      "small": false,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [],
+      "note": "exécute la dernière proposition de Coden"
+    },
+    {
+      "id": "tool-01",
+      "category": "small_tool",
+      "route": "new_project",
+      "prompt": "cree une mini calculatrice",
+      "small": true,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "historique",
+        "sauvegarde locale",
+        "panneau latéral",
+        "comptes"
+      ]
+    },
+    {
+      "id": "tool-02",
+      "category": "small_tool",
+      "route": "new_project",
+      "prompt": "un chronomètre tout simple",
+      "small": true,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "historique",
+        "comptes"
+      ]
+    },
+    {
+      "id": "tool-03",
+      "category": "small_tool",
+      "route": "new_project",
+      "prompt": "Une liste de tâches simple.",
+      "small": true,
+      "gate": [
+        "productivity_tool",
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "équipes",
+        "paiement",
+        "panier"
+      ]
+    },
+    {
+      "id": "tool-04",
+      "category": "small_tool",
+      "route": "new_project",
+      "prompt": "Un générateur de mot de passe",
+      "small": true,
+      "gate": [
+        "generic_web_app"
+      ],
+      "mustNotAdd": [
+        "comptes",
+        "historique"
+      ]
+    }
+  ]
+}
