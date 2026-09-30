@@ -178,6 +178,32 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, 
   signal?.addEventListener('abort', onAbort, { once: true });
 });
 
+/*
+ * Below this many output tokens a code-writing answer cannot finish a file:
+ * the model writes a half component, the preview breaks, and the run ends as
+ * "needs fix" or interrupted — with the user charged for a broken result.
+ * When the account can only afford less, the request is refused instead, so
+ * the run stops cleanly with PROVIDER_QUOTA_OR_BILLING and nothing half-written.
+ */
+export const MIN_AFFORDABLE_OUTPUT_TOKENS = 8_000;
+/** Under this, the balance is low enough to warn the operator before it runs out. */
+export const LOW_AFFORDABLE_OUTPUT_TOKENS = 32_000;
+
+export type ProviderBalanceSignal = { provider: 'openrouter'; model: string; affordable: number; requested: number; starved: boolean };
+const balanceListeners = new Set<(signal: ProviderBalanceSignal) => void>();
+
+/** The server subscribes to alert the operator; one listener's failure never reaches a request. */
+export function onProviderBalanceSignal(listener: (signal: ProviderBalanceSignal) => void): () => void {
+  balanceListeners.add(listener);
+  return () => balanceListeners.delete(listener);
+}
+
+function emitBalanceSignal(signal: ProviderBalanceSignal) {
+  for (const listener of balanceListeners) {
+    try { listener(signal); } catch { /* alerts are best effort */ }
+  }
+}
+
 /**
  * Adjust a refused request once, in place, when the refusal names its own fix.
  *
@@ -210,7 +236,16 @@ export function adjustForRefusal(payload: Record<string, any>, status: number, m
   const affordable = Number.isFinite(named)
     ? named
     : /fewer max_tokens|max_tokens|more credits, or fewer/i.test(message) ? Math.min(16_000, Math.floor(requested / 4)) : NaN;
-  if (!Number.isFinite(affordable) || affordable < 256 || affordable >= requested) return false;
+  if (!Number.isFinite(affordable) || affordable >= requested) return false;
+  if (affordable < MIN_AFFORDABLE_OUTPUT_TOKENS) {
+    // Too little to write a file: refuse rather than produce a truncated app.
+    console.error('[coden:openrouter_balance_starved]', { model: payload.model, requested, affordable });
+    emitBalanceSignal({ provider: 'openrouter', model: String(payload.model || ''), affordable, requested, starved: true });
+    return false;
+  }
+  if (affordable < LOW_AFFORDABLE_OUTPUT_TOKENS) {
+    emitBalanceSignal({ provider: 'openrouter', model: String(payload.model || ''), affordable, requested, starved: false });
+  }
   payload.max_tokens = affordable;
   if (payload.reasoning?.max_tokens) payload.reasoning = { max_tokens: maxReasoningBudget(affordable) };
   console.warn('[coden:openrouter_max_tokens_reduced]', { model: payload.model, from: requested, max_tokens: affordable });

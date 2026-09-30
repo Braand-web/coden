@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { MODEL_REGISTRY, PUBLIC_MODEL_CATALOG } from '../config/ai-models';
 import type { CatalogModel } from './openrouter-capabilities';
 import { REASONING_LEVELS, answerReserve, buildOpenRouterRequest, estimatePromptTokens, maxReasoningBudget, promptSafetyMargin } from './openrouter-request';
-import { adjustForRefusal } from './openrouter-service';
+import { adjustForRefusal, onProviderBalanceSignal, type ProviderBalanceSignal } from './openrouter-service';
 import { reasoningLevelForEffort, AGENT_EFFORT_LEVELS } from './agent-effort';
 
 /*
@@ -102,6 +102,23 @@ describe('buildOpenRouterRequest — every model × every level', () => {
     expect(unnamed.reasoning.max_tokens).toBeLessThan(16_000);
     expect(adjustForRefusal({ model: 'm', max_tokens: 128_000 }, 402, 'Insufficient credits. Add more using https://openrouter.ai/credits')).toBe(false);
     expect(adjustForRefusal({ model: 'm', max_tokens: 128_000 }, 402, 'You requested up to 128000 tokens, but can only afford 12.')).toBe(false);
+  });
+
+  it('refuses to run on a nearly empty balance instead of producing truncated files', () => {
+    const signals: ProviderBalanceSignal[] = [];
+    const off = onProviderBalanceSignal(signal => signals.push(signal));
+    const starved: any = { model: 'm', max_tokens: 128_000 };
+    expect(adjustForRefusal(starved, 402, 'You requested up to 128000 tokens, but can only afford 5082.')).toBe(false);
+    expect(starved.max_tokens).toBe(128_000);
+    expect(signals.at(-1)).toMatchObject({ affordable: 5082, starved: true });
+    const low: any = { model: 'm', max_tokens: 128_000 };
+    expect(adjustForRefusal(low, 402, 'You requested up to 128000 tokens, but can only afford 20000.')).toBe(true);
+    expect(signals.at(-1)).toMatchObject({ affordable: 20_000, starved: false });
+    const healthy: any = { model: 'm', max_tokens: 128_000 };
+    const before = signals.length;
+    expect(adjustForRefusal(healthy, 402, 'You requested up to 128000 tokens, but can only afford 90000.')).toBe(true);
+    expect(signals.length).toBe(before);
+    off();
   });
 
   it('sends the fallback chain as `models`, without the primary twice', () => {
