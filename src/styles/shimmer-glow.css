@@ -5,7 +5,7 @@
  * (`.coden-shimmer`), skeletons (`.coden-skeleton`) and the small loading pill (`.coden-ui-shimmer`). This
  * extends them; it does not add another. The colour is the `--glow-blue` token, lighter in the light theme.
  *
- * TEXT: the light is the letters' own: a `drop-shadow` follows the glyphs, a few pixels wide and no further, so
+ * TEXT: the light is the letters' own: a `drop-shadow` follows the glyphs, two to four pixels wide and no further, so
  * the sweep and the glow are one movement. It exists exactly as long as the shimmer, since it is the shimmer's
  * own style. BOXES (skeletons, the pill): a soft edge, two or three pixels past the shape, that breathes.
  *
@@ -22,7 +22,7 @@
 
 /* ── Text: the light hugs the letters ─────────────────────────────────────── */
 :root:not([data-shimmer-glow="off"]) :is(.coden-shimmer-text, .coden-shimmer) {
-  filter: drop-shadow(0 0 2px var(--shimmer-halo)) drop-shadow(0 0 6px color-mix(in srgb, var(--shimmer-halo) 70%, transparent));
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--shimmer-halo) 75%, transparent)) drop-shadow(0 0 4px color-mix(in srgb, var(--shimmer-halo) 40%, transparent));
 }
 
 /* ── Boxes: a soft edge that breathes ─────────────────────────────────────── */
@@ -39,7 +39,7 @@
   border-radius: inherit;
   pointer-events: none;
   /* A soft edge just outside the shape, nothing inside it: the shadow is static, only the layer breathes. */
-  box-shadow: 0 0 6px 1px var(--shimmer-halo);
+  box-shadow: 0 0 4px 0 var(--shimmer-halo);
   opacity: 0;
   will-change: transform, opacity;
   animation:
@@ -47,11 +47,11 @@
     coden-glow-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-@keyframes coden-glow-in { from { opacity: 0; } to { opacity: 0.5; } }
+@keyframes coden-glow-in { from { opacity: 0; } to { opacity: 0.4; } }
 /* ~2.6 s per cycle: well under three pulses a second. */
 @keyframes coden-glow-breathe {
-  0%, 100% { opacity: 0.5; scale: 0.98; }
-  50% { opacity: 0.9; scale: 1.03; }
+  0%, 100% { opacity: 0.4; scale: 0.99; }
+  50% { opacity: 0.75; scale: 1.02; }
 }
 
 /* Off screen, or in a hidden tab: nothing moves. */
@@ -66,6 +66,6 @@ html[data-tab-hidden] :is(.coden-skeleton, .coden-ui-shimmer)::before { animatio
     will-change: auto;
   }
   :root:not([data-shimmer-glow="off"]) :is(.coden-shimmer-text, .coden-shimmer) {
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--shimmer-halo) 60%, transparent));
+    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--shimmer-halo) 50%, transparent));
   }
 }

@@ -74,7 +74,7 @@ describe('in a browser', () => {
       // Every radius stays within a few pixels of the letters.
       const radii = [...text.filter.matchAll(/(\d+(?:\.\d+)?)px\)/g)].map(match => Number(match[1]));
       expect(radii.length).toBeGreaterThan(0);
-      for (const radius of radii) expect(radius).toBeLessThanOrEqual(8);
+      for (const radius of radii) expect(radius).toBeLessThanOrEqual(5);
     }
   }, 30_000);
 
@@ -88,8 +88,8 @@ describe('in a browser', () => {
     expect(early.content).toBe('""');
     expect(early.animation).toMatch(/coden-glow-breathe/);
     expect(early.animation).toMatch(/coden-glow-in/);
-    expect(early.opacity).toBeLessThan(0.45);
-    expect(later.opacity).toBeGreaterThan(0.45);
+    expect(early.opacity).toBeLessThan(0.4);
+    expect(later.opacity).toBeGreaterThan(0.35);
     expect(later.pointer).toBe('none');
     expect(later.position).toBe('absolute');
     expect(later.zIndex).toBe('-1');
@@ -98,7 +98,7 @@ describe('in a browser', () => {
     const edge = await (async () => { const { tab: t2, context: c2 } = await open(page('light')); const value = await t2.evaluate(() => { const style = getComputedStyle(document.querySelector('#s')!, '::before'); return { shadow: style.boxShadow, background: style.backgroundColor, inset: style.inset }; }); await c2.close(); return value; })();
     expect(edge.background).toBe('rgba(0, 0, 0, 0)');
     expect(edge.inset).toMatch(/^0px/);
-    expect(edge.shadow).toMatch(/\b6px 1px\b/);
+    expect(edge.shadow).toMatch(/\b4px 0px\b/);
   }, 30_000);
 
   it('goes on the skeleton too, and stops with the switch', async (context) => {
