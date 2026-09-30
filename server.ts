@@ -10336,31 +10336,50 @@ async function upsertProjectWorkspaceState(userId: string, projectId: string, pa
   return data;
 }
 
+/**
+ * The next version number for a project, read from the highest one stored.
+ *
+ * It was `listProjectVersions().length + 1`: every stored snapshot of every
+ * file, downloaded to be counted — and wrong the moment two versions exist
+ * whose numbers are not 1..n. The unique index on (project_id, version_number)
+ * turns a race between two finishing runs into a retry instead of two v4s.
+ */
+async function nextProjectVersionNumber(client: any, projectId: string): Promise<number> {
+  const { data, error } = await client.from('project_versions').select('version_number').eq('project_id', projectId).order('version_number', { ascending: false }).limit(1);
+  if (error) return 1;
+  return Number(data?.[0]?.version_number || 0) + 1;
+}
+
 async function createProjectVersion(project: GeneratedProject, files: GeneratedFile[], reason: string, diff: any) {
-  const versions = await listProjectVersions(project.id);
-  const row = {
-    id: randomUUID(),
-    organization_id: project.organization_id,
-    project_id: project.id,
-    version_number: versions.length + 1,
-    reason,
-    files_snapshot: files,
-    diff_summary: diff,
-    created_at: new Date().toISOString(),
-  };
   const client = requireSupabase('Project version persistence');
-  let insertRow: Record<string, any> = { ...row };
+  let row: Record<string, any> = {};
   let error: any = null;
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const result = await client.from('project_versions').insert([insertRow]);
-    error = result.error;
-    if (!error) return row;
-    const missingColumn = getSchemaColumnFromMessage(String(error.message || ''));
-    if (missingColumn && missingColumn in insertRow) {
-      delete insertRow[missingColumn];
-      continue;
+    row = {
+      id: randomUUID(),
+      organization_id: project.organization_id,
+      project_id: project.id,
+      version_number: await nextProjectVersionNumber(client, project.id),
+      reason,
+      files_snapshot: files,
+      diff_summary: diff,
+      created_at: new Date().toISOString(),
+    };
+    let insertRow: Record<string, any> = { ...row };
+    for (let column = 0; column < 8; column += 1) {
+      const result = await client.from('project_versions').insert([insertRow]);
+      error = result.error;
+      if (!error) return row;
+      const missingColumn = getSchemaColumnFromMessage(String(error.message || ''));
+      if (missingColumn && missingColumn in insertRow) {
+        delete insertRow[missingColumn];
+        continue;
+      }
+      break;
     }
-    if (/project_versions|schema cache|relation .* does not exist|table .* does not exist|column .* does not exist|could not find .* in the schema cache/i.test(error.message || '')) {
+    // Another run took this number between the read and the insert: read again.
+    if (error?.code === '23505' || /duplicate key|project_versions_project_number_uniq/i.test(error?.message || '')) continue;
+    if (/project_versions|schema cache|relation .* does not exist|table .* does not exist|column .* does not exist|could not find .* in the schema cache/i.test(error?.message || '')) {
       console.warn('[coden:project_version_persistence_skipped]', { message: error.message });
       return row;
     }
@@ -10379,6 +10398,52 @@ async function listProjectVersions(projectId: string) {
   }
   if (error) throw new Error(`Supabase project version listing failed: ${error.message}`);
   return (data || []).map(redactSecretPayload);
+}
+
+/**
+ * The history, without the files. A list of versions is a list of labels; each
+ * row used to carry a full snapshot of the project, so opening the history
+ * panel downloaded every file of every version to draw a few lines of text.
+ * `is_current` marks the version the project is on: the newest one that was
+ * actually committed (a run that failed verification is kept for reference but
+ * never became the project).
+ */
+async function listProjectVersionSummaries(projectId: string) {
+  const client = requireSupabase('Project version listing');
+  const { data, error } = await client
+    .from('project_versions')
+    .select('id, version_number, reason, diff_summary, created_at, agent_run_id')
+    .eq('project_id', projectId)
+    .order('version_number', { ascending: false })
+    .limit(200);
+  if (error && /project_versions|schema cache|relation .* does not exist|table .* does not exist|column .* does not exist|could not find .* in the schema cache/i.test(error.message || '')) {
+    console.warn('[coden:project_version_listing_skipped]', { message: error.message });
+    return [];
+  }
+  if (error) throw new Error(`Supabase project version listing failed: ${error.message}`);
+  const rows = (data || []).map(redactSecretPayload) as any[];
+  const currentId = rows.find(row => row?.diff_summary?.committed !== false)?.id;
+  return rows.map(row => ({
+    id: row.id,
+    version_number: row.version_number,
+    label: String(row.reason || '').slice(0, 200),
+    created_at: row.created_at,
+    agent_run_id: row.agent_run_id || null,
+    summary: row.diff_summary?.summary || '',
+    files_changed: ['created', 'modified', 'deleted'].reduce((sum, key) => sum + (Array.isArray(row.diff_summary?.[key]) ? row.diff_summary[key].length : 0), 0),
+    verified: row.diff_summary?.ok === undefined ? null : row.diff_summary.ok === true,
+    committed: row.diff_summary?.committed !== false,
+    design_changed: row.diff_summary?.design ? row.diff_summary.design.before !== row.diff_summary.design.after : null,
+    rollback_to: row.diff_summary?.rollback_to || null,
+    is_current: row.id === currentId,
+  }));
+}
+
+async function loadProjectVersion(projectId: string, versionId: string) {
+  const client = requireSupabase('Project version loading');
+  const { data, error } = await client.from('project_versions').select('*').eq('project_id', projectId).eq('id', versionId).maybeSingle();
+  if (error) throw new Error(`Supabase project version load failed: ${error.message}`);
+  return data ? redactSecretPayload(data) as any : null;
 }
 
 /**
@@ -16162,11 +16227,18 @@ ${resolvedMission}` : resolvedMission;
             .filter((problem: any) => problem?.severity !== 'warning')
             .map((problem: any) => redactSecrets(String(problem?.message || '')).slice(0, 300)),
         });
-        await createProjectVersion(updatedProject, pipelineFiles, prompt, {
+        // Where "undo" goes: the version the project was on before this run.
+        const previousCurrentId = (await listProjectVersionSummaries(project.id).catch(() => [] as any[])).find((item: any) => item.is_current)?.id || null;
+        const savedVersion = await createProjectVersion(updatedProject, pipelineFiles, prompt, {
           ...diff,
           multi_agent_pipeline: true,
           route: pipelineRoute,
           ok: outcome.ok,
+          // A run that failed verification is kept in the history for reference,
+          // but the project stayed on its last verified version.
+          committed: !preserveLastVerifiedApp,
+          // The design before and after: equal on an iteration nobody asked to restyle.
+          design: outcome.design,
         }).catch(() => null);
 
         /*
@@ -16228,6 +16300,15 @@ ${resolvedMission}` : resolvedMission;
             live_error: outcome.ok ? null : outcome.repairOutcome.stoppedBecause,
           },
           pipeline: 'multi_agent',
+          // What this run saved, and the version to go back to: one click to undo.
+          version: savedVersion ? {
+            id: savedVersion.id,
+            version_number: savedVersion.version_number,
+            committed: !preserveLastVerifiedApp,
+            previous_id: previousCurrentId,
+            design_kept: outcome.design.before === outcome.design.after,
+            design_restored: outcome.design.restored.length,
+          } : undefined,
         });
       }
 
@@ -16504,9 +16585,11 @@ ${resolvedMission}` : resolvedMission;
     };
     agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
     activeAgentRunControllers.set(agentRunId, generationAbortController);
+    activeAgentRunProjects.set(agentRunId, project.id);
     if (harnessContext) activeHarnessAgentRunIds.set(harnessContext.turn.id, agentRunId);
     const releaseActiveRun = () => {
       activeAgentRunControllers.delete(agentRunId);
+      activeAgentRunProjects.delete(agentRunId);
       pendingAgentRunInstructions.delete(agentRunId);
       if (harnessContext) {
         activeHarnessTurnControllers.delete(harnessContext.turn.id);
@@ -18384,40 +18467,105 @@ app.post('/api/projects/:id/agent/runs/:runId/cancel', async (req: any, res: any
 
 app.get('/api/projects/:id/versions', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
-  const project = await loadProject(req.params.id, userId);
+  const project = await loadProject(req.params.id, userId, req);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  const versions = await listProjectVersions(project.id);
-  res.json({ success: true, versions });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const versions = await listProjectVersionSummaries(project.id);
+  res.json({ success: true, versions, current_version_id: versions.find(version => version.is_current)?.id || null });
 });
 
+/** Same paths, same bytes: is `a` the project `b` already holds? */
+function sameProjectFiles(a: Array<{ path: string; content?: string }>, b: Array<{ path: string; content?: string }>): boolean {
+  if (a.length !== b.length) return false;
+  const other = new Map(b.map(file => [file.path, file.content || '']));
+  return a.every(file => other.has(file.path) && other.get(file.path) === (file.content || ''));
+}
+
+/**
+ * Go back to a saved version, in one call and without losing anything.
+ *
+ * The history panel's button used to fail every time: this route demanded
+ * `confirmed: true` and the panel never sent it. And when it did run, it
+ * re-verified the old files in a browser and, if that check was unhappy,
+ * replaced the preview of a project that had just been restored with an error
+ * page. The version's own files are the project's design; what comes back is
+ * exactly them — files, stylesheet, tokens — and the preview is rebuilt from
+ * them, never swapped for a failure document.
+ *
+ * Nothing is destroyed: the state being replaced is saved as its own version
+ * first when no version holds it, and the restoration is itself a new version,
+ * so undoing a rollback is a rollback.
+ */
 app.post('/api/projects/:id/versions/:versionId/rollback', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
-  const project = await loadProject(req.params.id, userId);
+  const project = await loadProject(req.params.id, userId, req);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  activeAgentRunControllers.get(req.params.runId)?.abort();
-  activeAgentRunControllers.delete(req.params.runId);
-  pendingAgentRunInstructions.delete(req.params.runId);
   if (!requireProjectCapability(req, res, 'build', project)) return;
   if (req.body?.confirmed !== true && req.body?.approvalGranted !== true) {
     return res.status(409).json({ success: false, requires_confirmation: true, error: 'Explicit confirmation is required before rolling back this project.' });
   }
-  const versions = await listProjectVersions(project.id);
-  const version = versions.find((item: any) => item.id === req.params.versionId);
+  const runningTurn = [...activeAgentRunProjects.values()].includes(project.id);
+  if (runningTurn) return res.status(409).json({ success: false, error: 'An agent run is still working on this project. Wait for it to finish or stop it, then restore.' });
+  const version = await loadProjectVersion(project.id, req.params.versionId);
   if (!version) return res.status(404).json({ success: false, error: 'Version not found.' });
   const files = normalizeGeneratedFiles(version.files_snapshot || []);
+  if (!files.length) return res.status(422).json({ success: false, error: 'This version holds no files to restore.' });
+
+  // 1. Keep what is about to be replaced, unless a version already is it.
+  const summaries = await listProjectVersionSummaries(project.id);
+  const currentFiles = await loadProjectFiles(project.id);
+  let safetyVersion: { id: string; version_number: number } | null = null;
+  if (currentFiles.length) {
+    const latest = summaries.find(item => item.is_current);
+    const latestRow = latest ? await loadProjectVersion(project.id, latest.id) : null;
+    const held = latestRow ? sameProjectFiles(normalizeGeneratedFiles(latestRow.files_snapshot || [], { ensureIndex: false }), currentFiles) : false;
+    if (!held) {
+      const saved = await createProjectVersion(project, currentFiles, `Before restoring version ${version.version_number}`, { safety_snapshot: true, committed: true, ok: project.preview_status === 'verified' });
+      safetyVersion = { id: saved.id, version_number: saved.version_number };
+    }
+  }
+
+  // 2. The preview comes from the restored files. A version that was verified
+  //    when it was saved is verified again: these are the same bytes.
   const pipeline = runPreviewPipeline(project, files);
-  const browser = pipeline.status === 'ready'
-    ? await runBrowserInteractionAuditDetailed({ files, previewHtml: pipeline.html, timeoutMs: 20_000 })
-    : null;
-  const verified = pipeline.status === 'ready' && browser?.status === 'passed' && !browser.findings.some((finding: any) => finding.severity === 'high');
+  const wasVerified = version.diff_summary?.ok === true;
+  let verified = wasVerified && pipeline.status === 'ready';
+  let browser: any = null;
+  if (!wasVerified && version.diff_summary?.ok === undefined && pipeline.status === 'ready') {
+    browser = await runBrowserInteractionAuditDetailed({ files, previewHtml: pipeline.html, timeoutMs: 20_000 }).catch(() => null);
+    verified = browser?.status === 'passed' && !browser.findings.some((finding: any) => finding.severity === 'high');
+  }
   const updatedProject = {
     ...project,
     preview_status: verified ? 'verified' : 'needs_fix',
-    preview_html: verified ? pipeline.html : buildPreviewErrorHtml({ projectName: project.name, error: 'The rolled-back runtime could not be verified.' }),
+    // Whatever the verdict, what the user sees is their restored app.
+    preview_html: pipeline.status === 'ready' ? pipeline.html : (project.preview_html || pipeline.html),
     updated_at: new Date().toISOString(),
   };
   await saveProject(updatedProject, files);
-  await createProjectVersion(updatedProject, files, `Rollback to v${version.version_number}`, { rollback_to: version.id });
+  const design = extractDesignContract(files.map(file => ({ path: file.path, content: file.content || '' })));
+  const restoredVersion = await createProjectVersion(updatedProject, files, `Restored version ${version.version_number}`, {
+    rollback_to: version.id,
+    restored_number: version.version_number,
+    committed: true,
+    ok: verified,
+    summary: `Restored version ${version.version_number}.`,
+    design: { before: design.fingerprint, after: design.fingerprint },
+  });
+
+  // 3. The running preview must show the restored app too, not the one it had.
+  let liveRestarted = false;
+  try {
+    const sandbox = sandboxRegistry.peek(project.id);
+    if (sandbox) {
+      const packageChanged = (await sandbox.readProjectFile('package.json').catch(() => '')) !== (files.find(file => file.path === 'package.json')?.content || '');
+      await sandbox.replaceProjectFiles(files.map(file => ({ path: file.path, content: file.content || '' })));
+      if (packageChanged) { await sandbox.stop(); liveRestarted = true; }
+    }
+  } catch (error: any) {
+    console.warn('[coden:rollback_sandbox_sync_failed]', { project_id: project.id, message: redactSecrets(String(error?.message || error), '[redacted]') });
+  }
+
   // The person undid the agent's latest work: a quality signal against the model that produced it.
   void recordQualitySignal(getSupabase(), {
     userId,
@@ -18425,17 +18573,30 @@ app.post('/api/projects/:id/versions/:versionId/rollback', async (req: any, res:
     kind: 'revert',
     modelId: (project as any).model_id || null,
     success: false,
-    detail: { versions_back: Math.max(0, versions.findIndex((item: any) => item.id === version.id)) },
+    detail: { versions_back: Math.max(0, summaries.findIndex(item => item.id === version.id)) },
   });
-  res.json({ success: verified, needs_fix: !verified, project: updatedProject, files, preview: { status: verified ? 'verified' : 'needs_fix', html: updatedProject.preview_html }, browser });
+  res.json({
+    success: true,
+    needs_fix: !verified,
+    project: updatedProject,
+    files,
+    preview: { status: updatedProject.preview_status, html: updatedProject.preview_html },
+    version: { id: restoredVersion.id, version_number: restoredVersion.version_number, restored_from: version.version_number },
+    // Where "undo" goes: the state that was just replaced.
+    undo_version_id: safetyVersion?.id || summaries.find(item => item.is_current)?.id || null,
+    live_restarted: liveRestarted,
+    browser,
+  });
 });
 
 app.get('/api/projects/:id/diff', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
-  const project = await loadProject(req.params.id, userId);
+  const project = await loadProject(req.params.id, userId, req);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  const versions = await listProjectVersions(project.id);
-  res.json({ success: true, diff: versions[0]?.diff_summary || { created: [], modified: [], deleted: [], summary: 'No diff yet' } });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const client = requireSupabase('Project diff');
+  const { data } = await client.from('project_versions').select('diff_summary').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1);
+  res.json({ success: true, diff: data?.[0]?.diff_summary || { created: [], modified: [], deleted: [], summary: 'No diff yet' } });
 });
 
 app.post('/api/projects/:id/browser-test', async (req: any, res: any) => {
@@ -20140,6 +20301,8 @@ async function readGeneratedRuntimeContract(project: GeneratedProject, sourceFil
 
 type PendingAgentInstruction = { id: string; text: string; createdAt: string; userId: string };
 const activeAgentRunControllers = new Map<string, AbortController>();
+/** Which project each in-flight run is working on, so a rollback never lands under a running agent. */
+const activeAgentRunProjects = new Map<string, string>();
 const pendingAgentRunInstructions = new Map<string, PendingAgentInstruction[]>();
 
 function queueAgentRunInstruction(runId: string, instruction: PendingAgentInstruction) {
@@ -21145,7 +21308,7 @@ app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: a
     // Before starting, not after: going over the host's limit and then
     // trimming makes the moment of peak load the moment it is most loaded.
     const evicted = await sandboxRegistry.makeRoomFor(project.id);
-    await sandbox.writeFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
+    await sandbox.replaceProjectFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
 
     // Installing is the slow step, so it is skipped when the tree is already
     // there. Reopening a project should resume in a second, not a minute.
