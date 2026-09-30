@@ -24,6 +24,23 @@ export const EMPTY_MESSAGE: AgentMessageState = { parts: [], activity: null, thi
 const VERBS = { read: 'A lu', search: 'A cherché', create: 'A créé', edit: 'A modifié', delete: 'A supprimé' };
 export const verbFor = (action: FileAction) => VERBS[action];
 export const toolPart = (id: string, action: FileAction, files: string[]): ToolPart => ({ id, type: 'tool', kind: action === 'read' || action === 'search' ? 'read' : 'write', verb: verbFor(action), files });
+/**
+ * When the run is over, so are its sub-agents.
+ *
+ * The last `subagents` snapshot is whatever the server sent before the run
+ * ended. A run cancelled, failed or cut off mid-delegation ends with agents
+ * still "En cours" — a card that keeps saying work is going on in a message
+ * that has stopped. A finished run settles them as done; anything else marks
+ * the unfinished ones as interrupted.
+ */
+export function settleSubagents(agents: SubagentSnapshot[] | undefined, completed: boolean): SubagentSnapshot[] | undefined {
+  if (!agents?.length) return agents;
+  if (!agents.some(agent => agent.status === 'queued' || agent.status === 'running' || agent.status === 'retrying')) return agents;
+  return agents.map(agent => (agent.status === 'queued' || agent.status === 'running' || agent.status === 'retrying')
+    ? (completed ? { ...agent, status: 'done' as const, progress: 1 } : { ...agent, status: 'failed' as const, error: 'Interrompu' })
+    : agent);
+}
+
 export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, sequence?: number): AgentMessageState {
   if (sequence !== undefined && sequence <= (prev.lastSequence ?? -1)) return prev;
   if (prev.status !== 'streaming') return prev;
@@ -90,13 +107,14 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
       const waitingReason = next.pausedReason;
       const awaitingDecision = waitingReason === 'decision';
       next.status = event.reason === 'cancelled' ? 'cancelled' : 'done';
+      next.subagents = settleSubagents(next.subagents, event.reason !== 'cancelled');
       next.thinking = false;
       next.activity = null;
       next.pausedReason = awaitingDecision || waitingReason === 'credits' ? waitingReason : undefined;
       next.notices = next.notices?.filter(notice => notice.type === 'artifact' || (awaitingDecision && notice.type === 'decision'));
       break;
     }
-    case 'run_cancelled': closeText(); next.status = 'cancelled'; next.thinking = false; next.activity = null; break;
+    case 'run_cancelled': closeText(); next.status = 'cancelled'; next.subagents = settleSubagents(next.subagents, false); next.thinking = false; next.activity = null; break;
     /*
      * The code is kept beside the sentence, not instead of it.
      *
@@ -106,7 +124,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
      * diagnostic lets the client say it itself; the server's own text stays as
      * the fallback for a failure that carries no code.
      */
-    case 'run_failed': closeText(); next.status = 'error'; next.error = event.message; next.diagnosticCode = event.diagnosticCode; next.thinking = false; next.activity = null; break;
+    case 'run_failed': closeText(); next.status = 'error'; next.subagents = settleSubagents(next.subagents, false); next.error = event.message; next.diagnosticCode = event.diagnosticCode; next.thinking = false; next.activity = null; break;
     case 'run_paused': closeText(); next.thinking = false; next.activity = null; next.pausedReason = event.reason; break;
     case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
     case 'decision_required': {

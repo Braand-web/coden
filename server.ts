@@ -244,7 +244,7 @@ import { collectAgentWebResearch, publicResearchUrl, type PublicResearchSource }
 import { createRoutingTraceWriter } from './src/services/routing-trace.ts';
 import { ProposalStore, memoryProposalBackend, supabaseProposalBackend, toView as proposalView } from './src/services/proposals/proposal-store.ts';
 import { proposeAfterRun } from './src/services/proposals/proposal-runner.ts';
-import { isProposalLevel } from './src/services/proposals/proposal-engine.ts';
+import { isProposalLevel, summarizeProposals } from './src/services/proposals/proposal-engine.ts';
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
@@ -12602,6 +12602,18 @@ app.delete('/api/admin/error-memory/:id', async (req: any, res) => {
   } catch (error: any) {
     res.status(400).json({ success: false, error: String(error?.message || error).slice(0, 200) });
   }
+});
+
+/** How the ideas the agent proposes are received: proposed, applied, refused, per category. Counts only. */
+app.get('/api/admin/proposals/overview', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  const client = getSupabase();
+  if (!client) return res.json({ success: true, days: 30, summary: summarizeProposals([]) });
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const result = await client.from('agent_proposals').select('category,status').gte('created_at', since).limit(20_000);
+  if (result.error) return res.status(500).json({ success: false, error: 'Lecture des propositions impossible.' });
+  res.json({ success: true, days: 30, summary: summarizeProposals((result.data || []) as Array<{ category: string; status: string }>) });
 });
 
 app.get('/api/admin/agent-learning', async (req: any, res) => {

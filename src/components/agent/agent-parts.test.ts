@@ -60,3 +60,26 @@ describe('research sources', () => {
     expect(continued.researchSources?.map(source => source.url)).toEqual(['https://docs.example/guide', 'https://docs.example/release', 'https://docs.example/faq']);
   });
 });
+
+describe('sub-agents when the run ends', () => {
+  const running = { type: 'subagents' as const, agents: [
+    { id: 'a', role: 'UI', status: 'running' as const, progress: 0.4, scope: ['src/'] },
+    { id: 'b', role: 'Tests', status: 'done' as const, progress: 1, scope: ['tests/'] },
+    { id: 'c', role: 'Docs', status: 'queued' as const, progress: 0, scope: ['docs/'] },
+  ] };
+  const at = (event: any) => reduceAgentMessage(reduceAgentMessage(EMPTY_MESSAGE, running, 1), event, 2);
+
+  it('a finished run settles what was still going as done', () => {
+    const state = at({ type: 'run_finished', reason: 'completed' });
+    expect(state.subagents?.map(agent => agent.status)).toEqual(['done', 'done', 'done']);
+    expect(state.subagents?.[0].progress).toBe(1);
+  });
+
+  it('a cancelled or failed run marks the unfinished ones as interrupted and keeps the finished one', () => {
+    for (const event of [{ type: 'run_cancelled' }, { type: 'run_finished', reason: 'cancelled' }, { type: 'run_failed', message: 'x' }]) {
+      const state = at(event);
+      expect(state.subagents?.map(agent => agent.status)).toEqual(['failed', 'done', 'failed']);
+      expect(state.subagents?.[0].error).toBe('Interrompu');
+    }
+  });
+});

@@ -156,3 +156,34 @@ export function selectProposals(drafts: ProposalDraft[], history: ProposalHistor
   }
   return kept;
 }
+
+export type ProposalSummary = {
+  total: number;
+  answered: number;
+  /** Applied / answered: how many ideas were worth a click. */
+  acceptanceRate: number | null;
+  byStatus: Record<ProposalStatus, number>;
+  byCategory: Array<{ category: string; total: number; applied: number; dismissed: number; acceptanceRate: number | null }>;
+};
+
+/** What the admin reads: how many ideas were proposed, and how many people wanted. */
+export function summarizeProposals(rows: Array<{ category: string; status: string }>): ProposalSummary {
+  const byStatus: Record<ProposalStatus, number> = { new: 0, applied: 0, later: 0, dismissed: 0 };
+  const categories = new Map<string, { total: number; applied: number; dismissed: number }>();
+  for (const row of rows) {
+    if (row.status in byStatus) byStatus[row.status as ProposalStatus] += 1;
+    const entry = categories.get(row.category) || { total: 0, applied: 0, dismissed: 0 };
+    entry.total += 1;
+    if (row.status === 'applied') entry.applied += 1;
+    if (row.status === 'dismissed') entry.dismissed += 1;
+    categories.set(row.category, entry);
+  }
+  const rate = (applied: number, dismissed: number) => (applied + dismissed ? Math.round((applied / (applied + dismissed)) * 100) / 100 : null);
+  return {
+    total: rows.length,
+    answered: byStatus.applied + byStatus.dismissed,
+    acceptanceRate: rate(byStatus.applied, byStatus.dismissed),
+    byStatus,
+    byCategory: [...categories.entries()].map(([category, entry]) => ({ category, ...entry, acceptanceRate: rate(entry.applied, entry.dismissed) })).sort((a, b) => b.total - a.total),
+  };
+}
