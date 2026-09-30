@@ -765,7 +765,7 @@ function DashboardHome() {
             )}
           </div>
 
-          <section className="coden-dashboard-project-list coden-enter-stagger" aria-label="Liste des projets" aria-live="polite">
+          <section className="coden-dashboard-project-list coden-enter-stagger" aria-label="Liste des projets" aria-live="polite" aria-busy={projectsQuery.isFetching}>
             {projectsQuery.isLoading && (
               <>
                 {/*
@@ -777,16 +777,16 @@ function DashboardHome() {
                 {Array.from({ length: 6 }, (_, index) => <ProjectCardSkeleton key={index} />)}
               </>
             )}
-            {projectsQuery.isError && (
+            {projectsQuery.isError && !projectsQuery.data && (
               <div className="coden-dashboard-empty" role="alert">
                 <strong>Projets indisponibles</strong>
                 <span>Actualisez la page pour réessayer.</span>
               </div>
             )}
-            {!projectsQuery.isLoading && !projectsQuery.isError && visibleProjects.map((project) => (
+            {!projectsQuery.isLoading && visibleProjects.map((project) => (
               <ProjectCard key={project.id} project={project} />
             ))}
-            {!projectsQuery.isLoading && !projectsQuery.isError && !filteredProjects.length && (
+            {!projectsQuery.isLoading && (!projectsQuery.isError || projectsQuery.data) && !filteredProjects.length && (
               <div className="coden-dashboard-empty">
                 <strong>{search ? 'Aucun résultat' : 'Aucun projet'}</strong>
                 <span>{search ? 'Essayez une autre recherche.' : 'Créez votre premier projet avec Coden.'}</span>
@@ -804,7 +804,7 @@ function DashboardHome() {
             * one is doing it and hands over the control that undoes it,
             * rather than telling a user their project is elsewhere.
             */}
-          {!projectsQuery.isLoading && !projectsQuery.isError && hiddenProjects && (
+          {!projectsQuery.isLoading && hiddenProjects && (
             <section className="coden-dashboard-project-more">
               <strong>Vous cherchez un autre projet&nbsp;?</strong>
               <span>{hiddenProjects.reason}</span>

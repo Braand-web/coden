@@ -80,10 +80,11 @@ describe('pricing consistency', () => {
     expect(rows).toEqual(planComparisonRows().map(row => [row.label, row.free, row.pro, row.business].map(flat)));
   });
 
-  it('starts the landing with the first three canonical lines and the same badge', () => {
+  it('starts the compact landing with canonical features, without a popularity claim', () => {
     expect(listItems(landing, 'data-lp-features="pro"')).toEqual(planFeatures('pro', 25).slice(0, 3));
     expect(listItems(landing, 'data-lp-features="business"')).toEqual(planFeatures('business', 100).slice(0, 3));
-    expect(listItems(landing, 'data-lp-features="free"')).toEqual(planFeatures('free').slice(0, 3));
-    expect(landing).toContain(`lp-plan-badge">${FEATURED_PLAN_BADGE}<`);
+    expect(listItems(landing, 'data-lp-features="free"')).toEqual(planFeatures('free').slice(1, 3));
+    expect(landing).not.toContain('Le plus choisi');
+    expect(landing).not.toContain('5 crédits offerts');
   });
 });

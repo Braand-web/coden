@@ -97,7 +97,7 @@ const cloudCss = read('./src/styles/cloud-console.css');
    * row height. The skeleton keeps a 36px avatar and bars well under it, so
    * the same thing sets the height in both states and the row cannot resize.
    */
-  const avatar = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-avatar {'));
+  const avatar = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-icon {'));
   assert.match(avatar.slice(0, avatar.indexOf('}')), /height: 36px;/, 'the real avatar is 36px');
   const ghost = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-skeleton-avatar {'));
   assert.match(ghost.slice(0, ghost.indexOf('}')), /height: 36px;/, 'and so is the skeleton one');

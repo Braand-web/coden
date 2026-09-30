@@ -211,13 +211,7 @@ function mountFooter() {
   if (!host) return;
   host.replaceChildren();
   const frame = element('div', 'coden-public-footer-frame');
-  // The animated mesh behind the footer card. The landing paints its own, across the last composer too.
-  if (document.body.dataset.codenSurface !== 'landing-new') {
-    const mesh = element('div', 'coden-footer-mesh');
-    mesh.setAttribute('aria-hidden', 'true');
-    frame.appendChild(mesh);
-    void import('./lib/brand-mesh').then(({ mountBrandMesh }) => mountBrandMesh(mesh, 'footer'));
-  }
+  // A quiet, shared footer: no background canvas or perpetual ambient loop.
   const footer = element('footer', 'coden-public-footer');
 
   const brand = element('div', 'coden-public-footer-brand');

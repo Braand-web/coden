@@ -1027,6 +1027,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                     isModelSelectOpen ? "bg-accent/60 text-foreground" : ""
                   )}
                   aria-label={`Choisir le modèle. Actuel : ${MODEL_LABELS.get(selectedModel) || selectedModel}`}
+                  aria-expanded={isModelSelectOpen}
                 >
                   <ModelIcon model={selectedModel} className="size-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
                   <span className="text-xs font-semibold select-none transition-colors">
@@ -1036,6 +1037,8 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
 
                 <div
                   style={{ transformOrigin: "bottom left" }}
+                  aria-hidden={!isModelSelectOpen}
+                  inert={!isModelSelectOpen}
                   onMouseLeave={() => {
                     setHoverStyle((prev) => ({
                       ...prev, opacity: 0, transform: prev.transform.replace("scale(1)", "scale(0.95)"), transition: "opacity 0.2s ease-in, transform 0.2s ease-out",

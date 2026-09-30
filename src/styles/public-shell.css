@@ -75,9 +75,9 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
     radial-gradient(70% 42% at 80% 90%, color-mix(in srgb, var(--footer-hue-2) 64%, transparent), transparent 70%),
     radial-gradient(90% 32% at 50% 108%, color-mix(in srgb, var(--footer-hue-4) 72%, transparent), transparent 72%);
 }
-#coden-marketing-footer-root { margin-top: 96px; }
-.coden-public-footer-frame { position: relative; width: 100%; padding: 160px max(16px, calc((100% - var(--public-shell-width)) / 2)) 80px; overflow: hidden; isolation: isolate; }
-.coden-public-footer-frame::before { content: ''; position: absolute; inset: 0 -8% 0; z-index: -1; background: var(--coden-footer-light); filter: blur(32px); -webkit-mask-image: linear-gradient(to bottom, transparent 0%, var(--foreground) 40%); mask-image: linear-gradient(to bottom, transparent 0%, var(--foreground) 40%); pointer-events: none; }
+#coden-marketing-footer-root { margin-top: 32px; }
+.coden-public-footer-frame { position: relative; width: 100%; padding: 32px max(24px, calc((100% - var(--public-shell-width)) / 2)) 32px; }
+.coden-public-footer-frame::before { content: none; }
 :root[data-theme='dark'] .coden-public-footer-frame::before { opacity: .55; }
 /* The animated mesh behind the footer card (src/lib/brand-mesh.ts), faded in over the CSS light once drawn. */
 .coden-footer-mesh { position: absolute; inset: 0; z-index: -1; opacity: 0; pointer-events: none; transition: opacity 1400ms ease; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 42%); mask-image: linear-gradient(to bottom, transparent 0%, #000 42%); }
@@ -85,10 +85,10 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
 :root[data-theme='dark'] .coden-footer-mesh.is-ready { opacity: .75; }
 .coden-footer-mesh canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 @media (prefers-reduced-motion: reduce) { .coden-footer-mesh { transition: none; } }
-.coden-public-footer { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3.4fr); gap: 48px 32px; padding: 56px 56px 32px; border: 1px solid color-mix(in srgb, var(--border) 70%, transparent); border-radius: var(--radius-xl); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 32px 80px -32px color-mix(in srgb, var(--foreground) 28%, transparent); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+.coden-public-footer { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3.4fr); gap: 40px 32px; padding: 40px 0 0; border-top: 1px solid var(--border); background: var(--background); }
 .coden-public-footer-brand { display: grid; align-content: start; gap: 16px; }
 .coden-public-footer-logo { display: inline-flex; width: fit-content; border-radius: var(--radius-sm); transition: transform 280ms var(--ease-standard); }
-.coden-public-footer-logo:hover { transform: rotate(-6deg) scale(1.04); }
+.coden-public-footer-logo:hover { transform: translateY(-1px); }
 .coden-public-footer-logo .coden-public-logo { width: 40px; height: 40px; }
 .coden-public-footer-brand p { max-width: 180px; margin: 0; color: var(--text-muted); font-size: 14px; line-height: 20px; }
 .coden-public-footer-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 32px; }
@@ -112,15 +112,15 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
   .coden-public-nav, .coden-public-actions > .coden-public-signin, .coden-public-actions > .coden-public-cta { display: none; }
   .coden-public-actions { margin-left: auto; }
   .coden-public-menu-trigger { display: grid; }
-  .coden-public-footer { grid-template-columns: 1fr; gap: 40px; padding: 40px 32px 24px; }
+  .coden-public-footer { grid-template-columns: 1fr; gap: 40px; padding: 32px 0 0; }
   .coden-public-footer-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
   .coden-public-footer-brand p { max-width: none; }
 }
 
 @media (max-width: 560px) {
   .coden-public-header { width: calc(100% - 24px); padding-left: 12px; }
-  .coden-public-footer-frame { padding-top: 96px; padding-bottom: 32px; }
-  .coden-public-footer { padding: 32px 24px 20px; border-radius: var(--radius-lg); }
+  .coden-public-footer-frame { padding-top: 24px; padding-bottom: 24px; }
+  .coden-public-footer { padding: 32px 0 0; }
   .coden-public-footer-bottom { flex-wrap: wrap; }
   .coden-public-cookie-preferences { padding-inline: 2px; }
 }

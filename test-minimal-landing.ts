@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const html = read('./index.html');
+const script = read('./src/landing-new.ts');
+const css = read('./src/styles/landing-new.css');
+const builder = read('./builder.html');
+const live = read('./src/builder-live.ts');
+const dashboard = read('./src/dashboard-react.tsx');
+assert.equal((html.match(/<section /g) || []).length, 6, 'six primary sections only');
+assert.equal((html.match(/<h1 /g) || []).length, 1);
+assert.match(html, /Votre idée\.<br \/>Votre application\./);
+for (const removed of ['Essayez :', '5 crédits offerts', 'Sans carte bancaire', 'Preview privée', 'Le plus choisi', 'Prête à publier']) {
+  assert.ok(!html.toLowerCase().includes(removed.toLowerCase()), 'no unnecessary or unverified copy: ' + removed);
+}
+for (const id of ['landing-composer', 'landing-final-composer']) assert.equal((html.match(new RegExp('id="' + id + '"', 'g')) || []).length, 1);
+assert.ok(html.indexOf('landing-final-composer') < html.indexOf('coden-marketing-footer-root'));
+assert.match(script, /createLandingDraft\(storage\)/);
+assert.match(script, /!draft.beginSubmit\(\)/);
+assert.match(script, /model,\s*effort,/);
+assert.match(script, /BILLING_PLANS\[plan\]\.tiers\[0\]/, 'minimum advertised price uses the real first tier');
+assert.match(script, /priceFor\(plan, credits, interval\)/);
+assert.match(html, /Quelques connecteurs du catalogue/);
+assert.match(script, /clone\.setAttribute\('aria-hidden', 'true'\)/);
+assert.match(script, /clone.inert = true/);
+assert.match(css, /\.lp-stack:focus-within .*animation-play-state: paused/);
+assert.match(css, /prefers-reduced-motion: reduce/);
+assert.match(css, /html\[data-lp-reveal="on"\]/);
+assert.ok(!script.includes('mountBrandMesh') && !script.includes('installScrollMotion'));
+for (const [, path] of html.matchAll(/src="(\/connector-logos\/[^"]+)"/g)) assert.ok(existsSync(new URL('./public' + path, import.meta.url)), 'local logo exists: ' + path);
+assert.match(builder, /restrained --radius-md \(12px\) corners/);
+assert.match(live, /if \(!cloudConsoleDatabase\) target.innerHTML = dbLoadingSkeleton/);
+assert.match(live, /currentProjectId !== loadingProjectId/);
+assert.match(dashboard, /projectsQuery.isError && !projectsQuery.data/);
+assert.match(dashboard, /aria-busy=\{projectsQuery.isFetching\}/);
+console.log('Minimal Landing, shared draft, marquee, pricing and loading contracts passed.');

@@ -3990,6 +3990,8 @@
       .workspace-body[data-mobile-view="preview"] .editor-pane,
       .workspace-body[data-mobile-view="code"] .editor-pane {
         padding-top: 0 !important;
+        border-radius: var(--radius-md);
+        overflow: hidden;
       }
     }
 
@@ -4214,7 +4216,7 @@
 
     /* The workspace is made of independent surfaces. The right context owns one
        rounded frame — the Dashboard's panel: a 12px gutter on the sidebar
-       tone and the same --radius-xl corners. In preview mode, the application
+       tone and restrained --radius-md (12px) corners. In preview mode, the application
        fills that frame directly: no second device card, dark shell, or exposed
        stage around it, and the frame's corners clip it. */
     @media (min-width: 761px) {
@@ -4222,7 +4224,7 @@
         margin: 0 12px 12px 0;
         padding-top: 0 !important;
         border: 1px solid var(--border) !important;
-        border-radius: var(--radius-xl);
+        border-radius: var(--radius-md);
         background: var(--surface) !important;
         box-shadow: var(--shadow-sm);
         overflow: hidden;

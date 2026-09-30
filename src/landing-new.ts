@@ -1,197 +1,67 @@
 import './styles/landing-new.css';
 import { mountPromptInput } from './mount-prompt-input';
-import { enhanceSelect } from './lib/select-menu';
 import { mountPublicShell } from './public-shell';
-import { mountBrandMesh } from './lib/brand-mesh';
 import { hasStoredSession } from './lib/stored-session';
 import { fetchCurrentPlan, planChoiceHref } from './lib/plan-choice';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
 import type { AttachmentUploader } from './lib/attachment-types';
 import { stashPendingFiles } from './lib/pending-files';
-import {
-  readPreferredEffort,
-  readPreferredModelSelection,
-  writePreferredEffort,
-  writePreferredModelSelection,
-} from './lib/composer-preferences';
-import { BILLING_XAF_PER_USD, planFeatures, priceFor, type BillingInterval } from './config/billing-v2';
+import { createLandingDraft } from './lib/landing-draft';
+import { readPreferredEffort, readPreferredModelSelection, writePreferredEffort, writePreferredModelSelection } from './lib/composer-preferences';
+import { ANNUAL_DISCOUNT, BILLING_PLANS, planFeatures, priceFor, type BillingInterval } from './config/billing-v2';
 
-const reducedMotion = () => Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
-
-/*
- * Run `callback` once, the first time `node` is on screen.
- *
- * Without an observer it runs straight away: the content is never gated on
- * an API the browser may not have.
- */
-function onceVisible(node: Element, callback: () => void, threshold = .35) {
-  if (!('IntersectionObserver' in window)) { callback(); return; }
-  const observer = new IntersectionObserver((entries) => {
-    if (!entries.some(entry => entry.isIntersecting)) return;
-    observer.disconnect();
-    callback();
-  }, { threshold });
-  observer.observe(node);
-}
-
-/*
- * Sections arrive as they scroll into view.
- *
- * The page only hides them after this has installed the observer, so a
- * failed script leaves a fully visible page. Siblings of the same grid are
- * staggered by 80ms, which is what makes a row of cards read as one gesture.
- * `data-lp-reveal` may name a direction ("left", "right", "scale"); section
- * titles also rise word by word.
- *
- * Once an element has arrived its attribute is dropped: the reveal's long
- * transition would otherwise stay on it and make every hover lift take 900ms.
- */
-const REVEAL_MS = 900;
-
-function splitWords(heading: HTMLElement) {
-  if (heading.childElementCount || heading.dataset.lpWords) return;
-  const words = (heading.textContent || '').trim().split(/ +/);
-  heading.dataset.lpWords = 'on';
-  heading.textContent = '';
-  words.forEach((word, index) => {
-    if (index) heading.append(' ');
-    const span = document.createElement('span');
-    span.className = 'lp-word';
-    span.style.setProperty('--i', String(index));
-    span.textContent = word;
-    heading.append(span);
-  });
-}
-
-function installReveal() {
-  const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-lp-reveal]'));
-  if (!nodes.length || reducedMotion() || !('IntersectionObserver' in window)) return;
-  const delays = new Map<Element, number>();
-  nodes.forEach(node => {
-    const siblings = Array.from(node.parentElement?.children || []).filter(child => child.hasAttribute('data-lp-reveal'));
-    const index = siblings.indexOf(node);
-    delays.set(node, Math.max(0, index) * 80);
-    if (index > 0) node.style.setProperty('--lp-delay', `${index * 80}ms`);
-    node.querySelectorAll<HTMLElement>('h2').forEach(splitWords);
-    if (node.matches('h2')) splitWords(node);
-  });
-  document.documentElement.dataset.lpReveal = 'on';
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const node = entry.target as HTMLElement;
-      node.classList.add('is-visible');
-      observer.unobserve(node);
-      const words = node.querySelectorAll('.lp-word').length;
-      window.setTimeout(() => {
-        node.removeAttribute('data-lp-reveal');
-        node.style.removeProperty('--lp-delay');
-      }, (delays.get(node) || 0) + REVEAL_MS + words * 45 + 200);
-    });
-  }, { threshold: 0, rootMargin: '0px 0px -10% 0px' });
-  nodes.forEach(node => observer.observe(node));
-}
-
-/*
- * What scrolling moves, besides the page.
- *
- * A reading bar along the top, and depth in the hero: the title drifts up
- * faster than the page while the light behind it lags. One passive listener,
- * batched to a frame. It writes on the hero and the bar only: a variable on
- * <html> would restyle the whole document on every frame.
- */
-function installScrollMotion() {
-  if (reducedMotion()) return;
-  const bar = document.querySelector<HTMLElement>('.lp-scroll-progress');
-  const hero = document.querySelector<HTMLElement>('.lp-hero');
-  let queued = false;
-  const update = () => {
-    queued = false;
-    const root = document.documentElement;
-    const max = root.scrollHeight - window.innerHeight;
-    const y = window.scrollY;
-    if (bar) bar.style.transform = `scaleX(${max > 0 ? Math.min(1, y / max).toFixed(4) : 0})`;
-    if (hero) {
-      const progress = Math.min(1, Math.max(0, y / Math.max(1, hero.offsetHeight)));
-      hero.style.setProperty('--lp-hero-p', progress.toFixed(4));
-    }
-  };
-  const queue = () => {
-    if (queued) return;
-    queued = true;
-    window.requestAnimationFrame(update);
-  };
-  window.addEventListener('scroll', queue, { passive: true });
-  window.addEventListener('resize', queue, { passive: true });
-  update();
-}
-
-/*
- * A composer: the hero's, and the one that closes the page.
- *
- * Controlled, so that an example can write its brief into it: the value
- * lives here and every change re-renders through `mountPromptInput`, which
- * reconciles instead of remounting — the chosen model and effort survive,
- * and both composers read and write the same stored preference.
- */
-function setupComposer(hostId: string, statusId: string) {
-  const host = document.getElementById(hostId);
-  const status = document.getElementById(statusId);
-  if (!host) return { fill: (_value: string) => {} };
-
-  let value = '';
-  let busy = false;
-  /*
-   * Signed in, files go up as they are chosen and links are analysed as they
-   * are written. Signed out, files stay in the browser until the Builder can
-   * send them after sign-in. The API client is loaded only in the first case.
-   */
+function setupComposers() {
+  let storage: Storage | undefined;
+  try { storage = window.sessionStorage; } catch { /* the shared live draft still works */ }
+  const draft = createLandingDraft(storage);
+  let model = readPreferredModelSelection();
+  let effort = readPreferredEffort();
   let uploader: AttachmentUploader | null = null;
-  const setStatus = (next: CreateProjectFlowStatus) => {
-    if (status) status.textContent = formatCreateProjectFlowStatus(next, 'fr');
-  };
-
-  const render = () => {
+  const pairs = [
+    ['landing-composer', 'landing-composer-status'],
+    ['landing-final-composer', 'landing-final-composer-status'],
+  ].map(([hostId, statusId]) => ({ host: document.getElementById(hostId), status: document.getElementById(statusId) }));
+  const setStatus = (text: string) => pairs.forEach(({ status }) => { if (status) status.textContent = text; });
+  const onStatus = (status: CreateProjectFlowStatus) => setStatus(formatCreateProjectFlowStatus(status, 'fr'));
+  const render = () => pairs.forEach(({ host }) => {
+    if (!host) return;
+    host.setAttribute('aria-busy', String(draft.busy));
     mountPromptInput(host, {
-      placeholder: 'Décrivez l’application que vous voulez créer…',
+      placeholder: 'Décrivez votre application…',
       defaultExpanded: true,
-      collapsedWidth: 640,
-      expandedWidth: 640,
-      value,
-      onChange: (next) => { value = next; render(); },
-      isBusy: busy,
-      // Same stored choice as the Dashboard and the Builder.
-      defaultModel: readPreferredModelSelection(),
-      defaultEffort: readPreferredEffort(),
-      onModelChange: writePreferredModelSelection,
-      onEffortChange: writePreferredEffort,
+      collapsedWidth: 560,
+      expandedWidth: 560,
+      value: draft.value,
+      onChange: next => draft.setValue(next),
+      isBusy: draft.busy,
+      disabled: draft.busy,
+      model,
+      effort,
+      onModelChange: next => { model = writePreferredModelSelection(next); render(); },
+      onEffortChange: next => { effort = writePreferredEffort(next); render(); },
       uploader,
       onSubmit: (prompt, meta) => {
-        if (busy) return;
-        busy = true;
-        render();
-        setStatus('preparing');
+        if (!prompt.trim() || !draft.beginSubmit()) return;
+        onStatus('preparing');
         void (async () => {
           if (meta.attachments.length) await stashPendingFiles(meta.attachments);
           await startCreateProjectFlow({
-            prompt,
-            model: meta.model,
-            effort: meta.effort,
-            source: 'landing',
+            prompt, model: meta.model, effort: meta.effort, source: 'landing',
             theme: document.documentElement.dataset.theme || 'light',
             attachmentIds: [...meta.attachmentIds, ...meta.linkIds],
             skippedUrls: meta.skippedUrls,
             pendingFiles: meta.attachments.length > 0,
-          }, { onStatus: setStatus });
+          }, { onStatus });
+          // Keep the draft until handoff succeeds; no speculative erase on send.
         })().catch(() => {
-          busy = false;
-          render();
-          if (status) status.textContent = 'Le démarrage a échoué. Votre demande est conservée, vous pouvez réessayer.';
+          draft.releaseSubmit();
+          setStatus('Votre demande est conservée. Le démarrage est indisponible pour le moment, réessayez.');
         });
       },
     });
-  };
+  });
+  draft.subscribe(render);
   render();
   if (hasStoredSession()) {
     void import('./lib/attachment-client').then(({ createAttachmentUploader }) => {
@@ -199,250 +69,111 @@ function setupComposer(hostId: string, statusId: string) {
       render();
     }).catch(() => undefined);
   }
-
-  const fill = (brief: string) => {
-    value = brief;
-    render();
-    host.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
-    host.classList.remove('is-filled');
-    void host.offsetWidth;
-    host.classList.add('is-filled');
-    window.setTimeout(() => {
-      const field = host.querySelector<HTMLTextAreaElement>('textarea');
-      field?.focus({ preventScroll: true });
-      field?.setSelectionRange(field.value.length, field.value.length);
-    }, reducedMotion() ? 0 : 420);
-  };
-  return { fill };
-}
-
-function setupExamples(fill: (brief: string) => void) {
-  document.querySelectorAll<HTMLButtonElement>('[data-example-prompt]').forEach(button => {
-    button.addEventListener('click', () => fill(button.dataset.examplePrompt || ''));
-  });
-}
-
-/* Card one types a few briefs in turn while it is on screen. */
-function setupTyping() {
-  const target = document.querySelector<HTMLElement>('[data-lp-typing]');
-  if (!target || reducedMotion()) return;
-  const briefs = [
-    'Un CRM pour suivre les clients de mon agence',
-    'Un site de réservation pour mon restaurant',
-    'Un portail client avec factures et messagerie',
-  ];
-  let brief = 0;
-  let length = briefs[0].length;
-  let phase: 'hold' | 'deleting' | 'typing' = 'hold';
-  let visible = false;
-  let timer: number | undefined;
-  const tick = () => {
-    timer = undefined;
-    if (!visible) return;
-    let delay = 46;
-    if (phase === 'hold') {
-      phase = 'deleting';
-      delay = 22;
-    } else if (phase === 'deleting') {
-      length -= 1;
-      delay = 22;
-      if (length <= 0) { brief = (brief + 1) % briefs.length; phase = 'typing'; delay = 320; }
-    } else {
-      length += 1;
-      if (length >= briefs[brief].length) { phase = 'hold'; delay = 2600; }
-    }
-    target.textContent = briefs[brief].slice(0, Math.max(0, length));
-    timer = window.setTimeout(tick, delay);
-  };
-  const card = target.closest('.lp-card') || target;
-  const observer = new IntersectionObserver(([entry]) => {
-    visible = Boolean(entry?.isIntersecting);
-    if (visible && timer === undefined) timer = window.setTimeout(tick, 2400);
-  }, { threshold: .4 });
-  observer.observe(card);
-}
-
-/* The publish panel runs its checks once, when it is first seen. */
-function setupPublishChecks() {
-  const panel = document.querySelector<HTMLElement>('[data-lp-publish]');
-  if (!panel) return;
-  const steps = Array.from(panel.querySelectorAll<HTMLElement>('[data-lp-step]'));
-  const finish = () => {
-    steps.forEach(step => { step.classList.remove('is-running'); step.classList.add('is-done'); });
-    panel.classList.add('is-ready');
-  };
-  if (reducedMotion()) { finish(); return; }
-  onceVisible(panel, () => {
-    steps.forEach((step, index) => {
-      window.setTimeout(() => step.classList.add('is-running'), 300 + index * 900);
-      window.setTimeout(() => { step.classList.remove('is-running'); step.classList.add('is-done'); }, 1100 + index * 900);
-    });
-    window.setTimeout(() => panel.classList.add('is-ready'), 1200 + steps.length * 900);
-  }, .5);
-}
-
-/*
- * The plans, priced by the same function the server bills from.
- *
- * Settlement is in FCFA; the dollar amount is the catalogue's own conversion
- * (BILLING_XAF_PER_USD), shown for reading and labelled as such.
- */
-type DisplayCurrency = 'XAF' | 'USD';
-const CURRENCY_STORAGE_KEY = 'coden-display-currency';
-
-/* A price as its two halves: the figure set large, the currency set small. */
-function splitAmount(xaf: number, currency: DisplayCurrency) {
-  if (currency === 'XAF') {
-    return { figure: new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(xaf), unit: 'FCFA' };
-  }
-  const usd = xaf / BILLING_XAF_PER_USD;
-  const digits = Number.isInteger(Math.round(usd * 100) / 100) ? 0 : 2;
-  return { figure: new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(usd), unit: '$' };
-}
-
-function formatAmount(xaf: number, currency: DisplayCurrency) {
-  const { figure, unit } = splitAmount(xaf, currency);
-  return `${figure}\u00a0${unit}`;
-}
-
-/* The first three lines of the plan's canonical list, as on the pricing page. */
-function renderPlanFeatures(section: ParentNode, plan: 'free' | 'pro' | 'business', credits = 0) {
-  const items = section.querySelectorAll<HTMLElement>(`[data-lp-features="${plan}"] li span`);
-  planFeatures(plan, credits).slice(0, items.length).forEach((text, index) => { items[index].textContent = text; });
-}
-
-/* Slide each toggle's thumb under its pressed option. */
-function placeThumbs(root: ParentNode) {
-  root.querySelectorAll<HTMLElement>('[data-lp-segmented]').forEach(group => {
-    const pressed = group.querySelector<HTMLElement>('button[aria-pressed="true"]');
-    if (!pressed) return;
-    group.style.setProperty('--thumb-x', `${pressed.offsetLeft}px`);
-    group.style.setProperty('--thumb-w', `${pressed.offsetWidth}px`);
-  });
 }
 
 function setupPricing() {
   const section = document.querySelector<HTMLElement>('[data-lp-pricing]');
   if (!section) return;
-  const intervalButtons = Array.from(section.querySelectorAll<HTMLButtonElement>('[data-lp-interval]'));
-  const currencyButtons = Array.from(section.querySelectorAll<HTMLButtonElement>('[data-lp-currency]'));
-  const tiers = Array.from(section.querySelectorAll<HTMLSelectElement>('[data-lp-tier]'));
-  const currencyNote = section.querySelector<HTMLElement>('[data-lp-currency-note]');
-
   let interval: BillingInterval = 'monthly';
-  let currency: DisplayCurrency = 'XAF';
-  let signedIn = hasStoredSession();
   let currentPlan: string | null = null;
-  const ctaFor = (plan: string) => section.querySelector<HTMLAnchorElement>(
-    plan === 'free' ? 'a[data-conversion-event="pricing_start_free"]' : `a[data-conversion-plan="${plan}"]`,
-  );
-  /*
-   * The offer buttons carry the choice — plan, credits, interval — to the
-   * dashboard's billing, through sign-up for a visitor. They used to lead to
-   * a bare sign-up and the choice was lost on the way.
-   */
-  const updateCtas = () => {
-    const free = ctaFor('free');
-    if (free) {
-      free.href = planChoiceHref({ plan: 'free', interval }, signedIn);
-      free.textContent = signedIn ? (currentPlan === 'free' ? 'Mon espace' : 'Ouvrir mon espace') : 'Créer mon espace';
-    }
-    tiers.forEach(select => {
-      const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
-      const cta = ctaFor(plan);
-      if (!cta) return;
-      const current = signedIn && currentPlan === plan;
-      cta.href = current ? '/dashboard.html?settings=facturation' : planChoiceHref({ plan, credits: Number(select.value), interval }, signedIn);
-      cta.textContent = current ? 'Gérer mon abonnement' : `Choisir ${plan === 'business' ? 'Business' : 'Pro'}`;
-      cta.closest('.lp-plan')?.classList.toggle('is-current-plan', current);
+  let signedIn = hasStoredSession();
+  const format = (amount: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(amount);
+  section.querySelector('[data-lp-discount]')!.textContent = '−' + format(ANNUAL_DISCOUNT * 100) + ' %';
+  const render = () => {
+    section.querySelectorAll<HTMLButtonElement>('[data-lp-interval]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.lpInterval === interval));
     });
-  };
-  try {
-    if (localStorage.getItem(CURRENCY_STORAGE_KEY) === 'USD') currency = 'USD';
-  } catch { /* the default currency is fine */ }
-
-  const dropdowns = tiers.map(select => {
-    const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
-    return enhanceSelect(select, { describe: value => `${formatAmount(priceFor(plan, Number(value), interval).monthlyEquivalent, currency)} / mois` });
-  });
-
-  const setText = (node: Element | null, text: string, animate: boolean) => {
-    if (!node || node.textContent === text) return;
-    node.textContent = text;
-    if (!animate || reducedMotion()) return;
-    node.classList.remove('lp-price-swap');
-    void (node as HTMLElement).offsetWidth;
-    node.classList.add('lp-price-swap');
-  };
-  const show = (node: HTMLElement | null, text: string | null) => {
-    if (!node) return;
-    node.hidden = !text;
-    if (text) node.textContent = text;
-  };
-
-  const render = (animate = true) => {
-    intervalButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.lpInterval === interval)));
-    currencyButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.lpCurrency === currency)));
-    placeThumbs(section);
-    section.querySelectorAll('[data-lp-unit]').forEach(node => { node.textContent = currency === 'XAF' ? 'FCFA' : '$'; });
-    setText(section.querySelector('[data-lp-amount="free"]'), splitAmount(0, currency).figure, animate);
-    tiers.forEach(select => {
-      const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
-      const price = priceFor(plan, Number(select.value), interval);
-      const monthly = priceFor(plan, price.credits, 'monthly');
-      const annual = interval === 'annual';
-      setText(section.querySelector(`[data-lp-amount="${plan}"]`), splitAmount(price.monthlyEquivalent, currency).figure, animate);
-      show(section.querySelector<HTMLElement>(`[data-lp-was="${plan}"]`), annual ? `${formatAmount(monthly.amount, currency)} / mois` : null);
-      setText(section.querySelector(`[data-lp-note="${plan}"]`), annual ? `${formatAmount(price.amount, currency)} facturés par an` : 'Facturé mensuellement', false);
-      show(section.querySelector<HTMLElement>(`[data-lp-save="${plan}"]`), annual ? `Économie de ${formatAmount(monthly.amount * 12 - price.amount, currency)}` : null);
-      renderPlanFeatures(section, plan, price.credits);
-    });
-    dropdowns.forEach(dropdown => dropdown.refresh());
-    updateCtas();
-    if (currencyNote) {
-      currencyNote.textContent = currency === 'USD'
-        ? `Montants en dollars indicatifs (1 $ = ${BILLING_XAF_PER_USD} FCFA). Paiement en FCFA via un checkout Saspay sécurisé.`
-        : 'Paiement en FCFA via un checkout Saspay sécurisé.';
+    for (const plan of ['free', 'pro', 'business'] as const) {
+      const credits = BILLING_PLANS[plan].tiers[0] ?? BILLING_PLANS[plan].baseCredits;
+      const cta = section.querySelector<HTMLAnchorElement>('[data-lp-plan-cta="' + plan + '"]');
+      if (cta) {
+        cta.href = currentPlan === plan && signedIn ? '/dashboard.html?settings=facturation' : planChoiceHref({ plan, credits, interval }, signedIn);
+        cta.textContent = plan === 'free' ? (signedIn ? 'Ouvrir mon espace' : 'Créer mon application') : (currentPlan === plan ? 'Gérer mon abonnement' : 'Choisir ' + BILLING_PLANS[plan].name);
+      }
+      if (plan === 'free') continue;
+      const price = priceFor(plan, credits, interval);
+      section.querySelector('[data-lp-amount="' + plan + '"]')!.textContent = format(price.monthlyEquivalent);
+      section.querySelector('[data-lp-note="' + plan + '"]')!.textContent = interval === 'annual'
+        ? format(price.amount) + ' FCFA facturés par an' : format(credits) + ' crédits par mois';
+      const list = section.querySelector('[data-lp-features="' + plan + '"]');
+      list?.replaceChildren(...planFeatures(plan, credits).slice(0, 3).map(feature => {
+        const li = document.createElement('li');
+        li.textContent = feature;
+        return li;
+      }));
     }
   };
-
-  intervalButtons.forEach(button => button.addEventListener('click', () => {
+  section.querySelectorAll<HTMLButtonElement>('[data-lp-interval]').forEach(button => button.addEventListener('click', () => {
     interval = button.dataset.lpInterval === 'annual' ? 'annual' : 'monthly';
     render();
   }));
-  currencyButtons.forEach(button => button.addEventListener('click', () => {
-    currency = button.dataset.lpCurrency === 'USD' ? 'USD' : 'XAF';
-    try { localStorage.setItem(CURRENCY_STORAGE_KEY, currency); } catch { /* not remembered, still applied */ }
-    render();
-  }));
-  tiers.forEach(select => select.addEventListener('change', () => render()));
-  // The thumbs are measured, so they follow the fonts and the layout.
-  if ('ResizeObserver' in window) new ResizeObserver(() => placeThumbs(section)).observe(section);
-  void document.fonts?.ready.then(() => placeThumbs(section));
-  render(false);
-  void fetchCurrentPlan().then(plan => {
-    if (!plan) return;
-    signedIn = true;
-    currentPlan = plan;
-    updateCtas();
+  render();
+  void fetchCurrentPlan().then(plan => { if (plan) { signedIn = true; currentPlan = plan; render(); } }).catch(() => undefined);
+}
+
+function setupMarquee() {
+  const marquee = document.querySelector<HTMLElement>('.lp-marquee');
+  const belt = marquee?.querySelector('.lp-marquee-belt');
+  const track = belt?.querySelector('.lp-marquee-track');
+  const toggle = document.querySelector<HTMLButtonElement>('.lp-marquee-toggle');
+  if (!marquee || !belt || !track || !toggle) return;
+  // Exact duplicate gives a seamless loop, with no duplicate accessible names.
+  const clone = track.cloneNode(true) as HTMLElement;
+  clone.setAttribute('aria-hidden', 'true');
+  clone.inert = true;
+  belt.append(clone);
+  let userPaused = false;
+  let onScreen = true;
+  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const update = () => {
+    marquee.dataset.paused = String(userPaused || !onScreen || document.hidden || motion.matches);
+    toggle.setAttribute('aria-pressed', String(userPaused));
+    toggle.textContent = userPaused ? 'Reprendre le défilement' : 'Mettre en pause';
+  };
+  toggle.addEventListener('click', () => { userPaused = !userPaused; update(); });
+  document.addEventListener('visibilitychange', update);
+  motion.addEventListener('change', update);
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => { onScreen = entries.some(entry => entry.isIntersecting); update(); });
+    observer.observe(marquee);
+  }
+  update();
+  marquee.dataset.ready = 'true';
+}
+
+function setupReveal() {
+  if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const nodes = [...document.querySelectorAll<HTMLElement>('[data-lp-reveal]')];
+  document.querySelectorAll<HTMLElement>('[data-lp-words]').forEach(heading => {
+    const words = (heading.textContent || '').trim().split(/\s+/);
+    heading.textContent = '';
+    words.forEach((word, index) => {
+      if (index) heading.append(' ');
+      const span = document.createElement('span');
+      span.className = 'lp-word';
+      span.style.setProperty('--i', String(index));
+      span.textContent = word;
+      heading.append(span);
+    });
   });
+  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add('is-visible');
+    observer.unobserve(entry.target);
+    window.setTimeout(() => entry.target.removeAttribute('data-lp-reveal'), 900);
+  }), { rootMargin: '0px 0px -24px 0px', threshold: 0 });
+  nodes.forEach(node => observer.observe(node));
+  // Opt in only once the observer is installed. No JS means visible content.
+  document.documentElement.dataset.lpReveal = 'on';
 }
 
 function init() {
   mountPublicShell();
   initCodenNavigationTransitions();
-  const { fill } = setupComposer('landing-composer', 'landing-composer-status');
-  setupComposer('landing-final-composer', 'landing-final-composer-status');
-  setupExamples(fill);
-  setupTyping();
-  setupPublishChecks();
+  setupComposers();
   setupPricing();
-  // The animated mesh behind the hero and the finale (composer + footer).
-  mountBrandMesh(document.querySelector<HTMLElement>('.lp-hero-mesh'), 'hero');
-  mountBrandMesh(document.querySelector<HTMLElement>('.lp-finale-mesh'), 'footer');
-  installReveal();
-  installScrollMotion();
+  setupMarquee();
+  setupReveal();
 }
-
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
 else init();

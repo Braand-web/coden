@@ -1663,6 +1663,7 @@ function rememberedLastBuilderProjectId() {
 }
 
 function setCurrentBuilderProjectId(projectId: string, updateUrl = true) {
+  if (currentProjectId !== String(projectId).trim()) cloudConsoleDatabase = null;
   currentProjectId = isRealProjectId(projectId) ? String(projectId).trim() : '';
   if (!currentProjectId) return;
   rememberLastBuilderProjectId(currentProjectId);
@@ -4829,9 +4830,8 @@ function renderHistoryPanel(runs: AgentRunSummary[] = [], versions: ProjectVersi
         <button class="coden-history-close" type="button" data-history-close aria-label="Fermer l’historique">×</button>
       </header>
       <div class="coden-history-body">
-        ${loading ? '<div class="coden-history-empty">Chargement de l’historique…</div>' : ''}
+        ${loading ? dbLoadingSkeleton('Chargement de l’historique', 4) : versionRows}
         ${error ? `<div class="coden-history-error" role="alert">${escapeHtml(error)}</div>` : ''}
-        ${versionRows}
       </div>
     </section>
   `;
@@ -5988,7 +5988,7 @@ async function loadProject() {
   // Clearing now happens next to the restore, below, so the two are one swap.
   ensureConversationApi();
   const projectName = document.getElementById('project-name');
-  const loading = showTransientNotice('Loading project files, timeline and preview...', 0);
+  const loading = showTransientNotice('Chargement du projet et de son aperçu…', 0);
   try {
     const payload = await ensureProject();
     if (isRealProjectId(payload.project?.id || currentProjectId)) {
@@ -7872,8 +7872,8 @@ function cloudConsolePage(db: any) {
   if (cloudConsoleView === 'functions') return cloudConsoleFunctionsPage();
   if (cloudConsoleView === 'logs') return cloudConsoleLogsPage(db);
   if (cloudConsoleView === 'jobs') return `<div id="cloud-jobs-host" class="cloud-panel">${dbLoadingSkeleton('Chargement des automatisations')}</div>`;
-  if (cloudConsoleView === 'usage') return '<div id="cloud-usage-host" class="cloud-console-content"><div class="cloud-console-loading"><span></span><span></span><span></span></div></div>';
-  if (cloudConsoleView === 'analytics') return '<div id="cloud-analytics-host" class="cloud-analytics-host"><div class="cloud-console-loading"><span></span><span></span><span></span></div></div>';
+  if (cloudConsoleView === 'usage') return `<div id="cloud-usage-host" class="cloud-console-content">${dbLoadingSkeleton('Chargement de la consommation', 3)}</div>`;
+  if (cloudConsoleView === 'analytics') return `<div id="cloud-analytics-host" class="cloud-analytics-host">${dbLoadingSkeleton('Chargement des statistiques', 4)}</div>`;
   return cloudConsoleAdvancedPage(db);
 }
 
@@ -8117,15 +8117,32 @@ async function loadDatabase(force = false) {
     renderCloudConsole(cloudConsoleDatabase);
     return;
   }
-  target.innerHTML = `<div class="cloud-console-loading" aria-label="Chargement de Coden Cloud"><span></span><span></span><span></span></div>`;
+  const loadingProjectId = currentProjectId;
+  target.setAttribute('aria-busy', 'true');
+  target.querySelector('[data-cloud-refresh-warning]')?.remove();
+  // Refresh the data in place; a skeleton is for the first load only.
+  if (!cloudConsoleDatabase) target.innerHTML = dbLoadingSkeleton('Chargement de Coden Cloud', 6);
   try {
     const payload = await apiFetch<any>(`/api/projects/${encodeURIComponent(currentProjectId)}/database`);
+    if (currentProjectId !== loadingProjectId) return;
     const db = payload.database || {};
     cloudConsoleDatabase = db;
     renderCloudConsole(db);
   } catch (error) {
+    if (currentProjectId !== loadingProjectId) return;
+    if (cloudConsoleDatabase) {
+      const warning = document.createElement('p');
+      warning.dataset.cloudRefreshWarning = '';
+      warning.className = 'db-note';
+      warning.setAttribute('role', 'status');
+      warning.textContent = 'Actualisation indisponible. Les dernières données restent affichées.';
+      target.prepend(warning);
+      return;
+    }
     target.innerHTML = `<div class="cloud-empty"><span class="cloud-empty-icon">${cloudConsoleIcon('cloud')}</span><h2>Cloud indisponible</h2><p>${escapeHtml(error instanceof Error ? error.message : 'Backend cloud indisponible pour le moment.')}</p><button type="button" class="cloud-console-action" id="cloud-console-retry">Réessayer</button></div>`;
     target.querySelector('#cloud-console-retry')?.addEventListener('click', () => void loadDatabase(true));
+  } finally {
+    if (currentProjectId === loadingProjectId) target.setAttribute('aria-busy', 'false');
   }
 }
 
