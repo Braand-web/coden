@@ -35,6 +35,7 @@ import type { ActionGuard } from './action-guard/action-guard.ts';
 import { confirmationOptions } from './action-guard/fast-filter.ts';
 import { DecisionRequiredError } from './agent-decision.ts';
 import { PREVIEW_GUIDANCE, previewToolEnabled } from './preview-tool/preview-policy.ts';
+import { humanizeText, styleBlock, withHonestyNote, responseStyleEnabled } from './response-style.ts';
 import { previewUserActiveUntil } from './preview-tool/preview-activity.ts';
 import { modelAvailability } from './openrouter-capabilities.ts';
 import { loadRoutingPolicy, normalizeRoutingMode, routerV2Enabled } from './routing-policy.ts';
@@ -178,7 +179,12 @@ export function summarizePipelineOutcome(input: {
       : `The work is saved, but verification did not pass yet: ${reason}. ${diffRecap}`;
   }
 
-  if (input.plan?.summary) return `${input.plan.summary.trim()} ${diffRecap}`.trim();
+  if (input.plan?.summary) {
+    // The planner's own words, in plain language, and never saying « testé » about what the run did not test.
+    const facts = { journeys: scenarios.length, viewports: viewports.length };
+    const summary = responseStyleEnabled() ? withHonestyNote(humanizeText(input.plan.summary.trim(), { french: fr, userMessages: [input.prompt] }), facts, fr) : input.plan.summary.trim();
+    return `${summary} ${diffRecap}`.trim();
+  }
 
   return fr
     ? `Modification effectuée. ${diffRecap}`
@@ -446,6 +452,8 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
   previewTool?: PreviewTool;
   /** Judges the preview's consequential clicks, like every other risky action. */
   actionGuard?: ActionGuard;
+  /** What the person wrote, oldest first: their level and language shape how the agent talks to them. */
+  userMessages?: string[];
   /** The round's instruction as it was given, to read the errors it carried. */
   onInstruction?: (instruction: string) => void;
   /**
@@ -577,7 +585,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + (input.previewTool ? `${PREVIEW_GUIDANCE}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.'),
+          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + (input.previewTool ? `${PREVIEW_GUIDANCE}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.' + (input.userMessages ? `\n\n${styleBlock(input.userMessages)}` : '')),
         },
         ...carried,
         {
@@ -703,6 +711,8 @@ export async function runMultiAgentPipeline(input: {
   routingMode?: string;
   /** Asked before every risky action (action-guard/). Absent, tools run as they always have. */
   actionGuard?: ActionGuard;
+  /** What the person wrote in this conversation, oldest first: their level and language shape how the agent talks to them. */
+  userMessages?: string[];
   /** Describes a capture of the preview in words (a vision model the router picks), for a coder that cannot see images. */
   describePreview?: (dataUrl: string, question: string) => Promise<string>;
   /** Every routing decision of the run, for the trace. Never throws into the run. */
@@ -1422,6 +1432,7 @@ export async function runMultiAgentPipeline(input: {
       visionInputs: input.visionInputs,
       previewTool,
       actionGuard: input.actionGuard,
+      userMessages: input.userMessages ?? [input.prompt],
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
       // The coder writes as the integrator, which is the role that already

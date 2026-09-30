@@ -16370,6 +16370,7 @@ ${resolvedMission}` : resolvedMission;
         routingMode: typeof req.body?.routingMode === 'string' ? req.body.routingMode.slice(0, 24) : undefined,
         describePreview: describePreviewCapture,
         actionGuard,
+        userMessages: [...recentHistory.filter(turn => turn.role === 'user').map(turn => turn.content).slice(-8), prompt],
         onRoutingEvent: event => recordRoutingEvent({ ...event, runId: pipelineRunId || requestId }),
         library: runLibrary || undefined,
         userPlan: routingPlan,
