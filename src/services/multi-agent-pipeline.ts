@@ -31,6 +31,9 @@ import { ModelSupervisor } from './model-supervisor.ts';
 import { createSupervisorPicks } from './supervisor-picks.ts';
 import { createRunSupervision } from './run-supervision.ts';
 import { createPreviewTool, type PreviewTool } from './preview-tool/preview-tool.ts';
+import type { ActionGuard } from './action-guard/action-guard.ts';
+import { confirmationOptions } from './action-guard/fast-filter.ts';
+import { DecisionRequiredError } from './agent-decision.ts';
 import { PREVIEW_GUIDANCE, previewToolEnabled } from './preview-tool/preview-policy.ts';
 import { previewUserActiveUntil } from './preview-tool/preview-activity.ts';
 import { modelAvailability } from './openrouter-capabilities.ts';
@@ -441,6 +444,8 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    * coder works without it exactly as before.
    */
   previewTool?: PreviewTool;
+  /** Judges the preview's consequential clicks, like every other risky action. */
+  actionGuard?: ActionGuard;
   /** The round's instruction as it was given, to read the errors it carried. */
   onInstruction?: (instruction: string) => void;
   /**
@@ -512,6 +517,14 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
         input.signal?.throwIfAborted();
         toolCalls += 1;
         if (input.previewTool && tool.name === input.previewTool.schema.name) {
+          // A click the agent marks as confirmed is still the agent's word: the guard asks whether the person wanted it.
+          if (input.actionGuard && args.action === 'click' && args.confirm === true) {
+            const verdict = await input.actionGuard.check({ tool: 'preview', args });
+            if (verdict.decision === 'block') return { ok: false, error: `Blocked for safety: ${verdict.reason}`, hint: 'Do not click it. Report what you saw instead.' };
+            if (verdict.decision === 'ask' || verdict.decision === 'pause') {
+              throw new DecisionRequiredError([{ q: verdict.question || 'Cette action demande ta confirmation. Continuer ?', type: 'radio', options: verdict.decision === 'pause' ? ['Continue avec une autre approche', 'Arrête ici'] : confirmationOptions(verdict.category) }], verdict.reason.slice(0, 300));
+            }
+          }
           return recordToolCall(
             input.harness || null,
             input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null,
@@ -688,6 +701,8 @@ export async function runMultiAgentPipeline(input: {
   attachmentBrief?: string;
   /** Économique / Équilibré / Performance, from the composer. Omitted means balanced. */
   routingMode?: string;
+  /** Asked before every risky action (action-guard/). Absent, tools run as they always have. */
+  actionGuard?: ActionGuard;
   /** Describes a capture of the preview in words (a vision model the router picks), for a coder that cannot see images. */
   describePreview?: (dataUrl: string, question: string) => Promise<string>;
   /** Every routing decision of the run, for the trace. Never throws into the run. */
@@ -1391,6 +1406,14 @@ export async function runMultiAgentPipeline(input: {
     maxToolCallsPerRound: routeBudget.maxToolCallsPerRound,
     maxStalledRounds: routeBudget.maxStalledRounds,
     design: designGuard,
+    guard: input.actionGuard,
+    onGuard: notice => input.onChatEvent?.({
+      type: 'guard_notice',
+      noticeId: `guard-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      level: notice.level,
+      title: notice.level === 'blocked' ? (fr ? 'Coden a évité une action risquée' : 'Coden avoided a risky action') : notice.level === 'asked' ? (fr ? 'Coden te demande confirmation avant d’agir' : 'Coden is asking you to confirm before acting') : (fr ? 'Coden s’est mis en pause après plusieurs blocages' : 'Coden paused after several blocks'),
+      detail: notice.reason,
+    }),
     turn: buildToolLoopTurn({
       redact: secretRedactor,
       gateway: input.gateway,
@@ -1398,6 +1421,7 @@ export async function runMultiAgentPipeline(input: {
       sandbox,
       visionInputs: input.visionInputs,
       previewTool,
+      actionGuard: input.actionGuard,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
       // The coder writes as the integrator, which is the role that already
@@ -1422,6 +1446,7 @@ export async function runMultiAgentPipeline(input: {
         visionInputs: input.visionInputs,
         // Sub-agents that build screens can look at the preview, never operate it.
         preview: subagentPreview,
+        guard: input.actionGuard,
         designPolicy: [designContractBlock, designPolicy].filter(Boolean).join('\n\n') || undefined,
         onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
         onSpend: subSpend => {

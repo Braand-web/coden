@@ -15,6 +15,8 @@
  * invent.
  */
 
+import type { ActionGuard } from '../action-guard/action-guard.ts';
+import { confirmationOptions } from '../action-guard/fast-filter.ts';
 import { sandboxRegistry } from './sandbox-registry.ts';
 import type { ProjectSandbox } from './project-sandbox.ts';
 import { decideCommand } from './command-policy.ts';
@@ -251,7 +253,10 @@ export function isPersistentPreviewCommand(command: string, args: readonly strin
   return false;
 }
 
-export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void; signal?: AbortSignal; design?: DesignGuard; sandbox?: ProjectSandbox } = {}) {
+/** What the action guard tells the caller when it stops or pauses something, for the "action blocked" indicator. */
+export type GuardNotice = { level: 'blocked' | 'asked' | 'paused'; category: string; reason: string };
+
+export function createSandboxTools(projectId: string, options: { onChange?: (paths: string[]) => void; signal?: AbortSignal; design?: DesignGuard; sandbox?: ProjectSandbox; guard?: ActionGuard; onGuard?: (notice: GuardNotice) => void } = {}) {
   const sandbox: ProjectSandbox = options.sandbox ?? sandboxRegistry.get(projectId);
   const changed = (paths: string[]) => options.onChange?.(paths);
   /**
@@ -508,13 +513,31 @@ export function createSandboxTools(projectId: string, options: { onChange?: (pat
   return {
     schemas: SANDBOX_TOOL_SCHEMAS,
     /** Dispatch one call. An unknown name is a result, not a throw. */
-    async call(name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
+    async call(name: string, args: Record<string, unknown> = {}, meta: { actor?: 'agent' | 'subagent' } = {}): Promise<ToolResult> {
       const handler = handlers[name as SandboxToolName];
       if (!handler) {
         return fail(`Unknown tool: ${name}`, `Available: ${SANDBOX_TOOL_SCHEMAS.map(tool => tool.name).join(', ')}`);
       }
+      // Before anything runs: did the user authorise this precise action? (action-guard/)
+      const guard = options.guard;
+      if (guard) {
+        const verdict = await guard.check({ tool: name, args: args || {} }, meta.actor ?? 'agent');
+        if (verdict.decision === 'block') {
+          options.onGuard?.({ level: 'blocked', category: verdict.category, reason: verdict.reason });
+          return fail(`Blocked for safety: ${verdict.reason}`, 'Do not retry this action. Find a safer way to reach the goal, or explain to the user what you could not do and why.');
+        }
+        if (verdict.decision === 'ask' || verdict.decision === 'pause') {
+          options.onGuard?.({ level: verdict.decision === 'pause' ? 'paused' : 'asked', category: verdict.category, reason: verdict.reason });
+          throw new DecisionRequiredError([{
+            q: verdict.question || 'Cette action demande ta confirmation. Continuer ?',
+            type: 'radio',
+            options: verdict.decision === 'pause' ? ['Continue avec une autre approche', 'Arrête ici'] : confirmationOptions(verdict.category),
+          }], verdict.reason.slice(0, 300));
+        }
+      }
       try {
-        return await handler(args || {});
+        const result = await handler(args || {});
+        return guard ? guard.screenResult(name, result) : result;
       } catch (error: any) {
         /*
          * One throw is allowed through: the one that means "stop".

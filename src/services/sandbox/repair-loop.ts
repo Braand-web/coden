@@ -34,7 +34,8 @@
  */
 
 import type { ProjectSandbox } from './project-sandbox.ts';
-import { createSandboxTools, SANDBOX_TOOL_SCHEMAS, type DesignGuard } from './sandbox-tools.ts';
+import { createSandboxTools, SANDBOX_TOOL_SCHEMAS, type DesignGuard, type GuardNotice } from './sandbox-tools.ts';
+import type { ActionGuard } from '../action-guard/action-guard.ts';
 import { validateProject, validateBuild, buildRepairInstruction, type ValidationReport } from './validate.ts';
 import { createHash } from 'node:crypto';
 
@@ -72,7 +73,7 @@ export type RepairOutcome = {
 export type RepairTurn = (input: {
   instruction: string;
   tools: typeof SANDBOX_TOOL_SCHEMAS;
-  call: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  call: (name: string, args: Record<string, unknown>, meta?: { actor?: 'agent' | 'subagent' }) => Promise<unknown>;
   maxToolCalls: number;
 }) => Promise<{ toolCalls: number }>;
 
@@ -162,6 +163,10 @@ export async function runCoderLoop(input: {
   deadline?: number;
   /** Keeps the app's design layer from being rewritten or emptied while the agent works. */
   design?: DesignGuard;
+  /** Asked before every risky action; absent, tools run as they always have. */
+  guard?: ActionGuard;
+  /** Told when the guard blocks, asks or pauses, for the "action blocked" line. */
+  onGuard?: (notice: GuardNotice) => void;
   beforeRound?: (round: number) => Promise<string | undefined>;
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
@@ -220,10 +225,12 @@ export async function runCoderLoop(input: {
       onChange: paths => paths.forEach(path => touched.add(path)),
       signal: input.signal,
       design: input.design,
+      guard: input.guard,
+      onGuard: input.onGuard,
     });
 
     let calls = 0;
-    const guardedCall = async (name: string, args: Record<string, unknown>) => {
+    const guardedCall = async (name: string, args: Record<string, unknown>, meta?: { actor?: 'agent' | 'subagent' }) => {
       input.signal?.throwIfAborted();
       // The per-round ceiling is enforced here rather than trusted to the
       // model: a run that ignores its budget is exactly the run that needs one.
@@ -231,7 +238,7 @@ export async function runCoderLoop(input: {
         return { ok: false, error: `Tool budget for this round is spent (${maxToolCalls} calls).`, hint: 'Stop and let the checks run.' };
       }
       calls += 1;
-      const result = await tools.call(name, args);
+      const result = await tools.call(name, args, meta);
       if ((result as any)?.restartRequired) restartRequired = true;
       return result;
     };

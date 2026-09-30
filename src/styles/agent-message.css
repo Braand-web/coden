@@ -171,3 +171,8 @@ button.coden-tool-line:focus-visible { outline: var(--focus-outline); outline-of
 .coden-subagents li[data-status="failed"] .coden-subagent-bar span { background:var(--danger); }
 @keyframes coden-subagent-pulse { 50% { opacity:.35; } }
 @media (prefers-reduced-motion: reduce) { .coden-subagent-dot { animation:none !important; } .coden-subagent-bar span { transition:none; } }
+
+/* An action Coden stopped or asked about: a quiet line, not an alarm. */
+.coden-guard-note { display:flex; align-items:flex-start; gap:6px; margin:2px 0 6px; color:var(--text-muted); font-size:12px; line-height:1.45; }
+.coden-guard-note svg { flex:none; margin-top:2px; }
+.coden-guard-note[data-level="paused"] { color:var(--foreground); }

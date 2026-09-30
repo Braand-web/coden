@@ -47,6 +47,8 @@ export type ChatEvent =
       /** The mode the choice was made in, on the first announcement. */
       mode?: 'economy' | 'balanced' | 'performance';
     }
+  /** Coden stopped, or asked about, a risky action: a discreet line for the person, with the reason in plain words. */
+  | { type: 'guard_notice'; noticeId: string; level: 'blocked' | 'asked' | 'paused'; title: string; detail: string }
   | { type: 'files_touched'; action: FileAction; paths: string[] }
   /** The master's sub-agents: the whole list each time, so a late client catches up. */
   | { type: 'subagents'; agents: SubagentSnapshot[] }

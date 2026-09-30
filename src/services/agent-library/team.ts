@@ -24,6 +24,8 @@ import { normalizeAgentDefinition, normalizeSkillDefinition, type AgentDefinitio
 import { normalizeCategory } from './error-memory.ts';
 import type { AgentLibraryStore, LibrarySession } from './store.ts';
 import type { PreviewTool } from '../preview-tool/preview-tool.ts';
+import type { ActionGuard } from '../action-guard/action-guard.ts';
+import { isDecisionRequiredError } from '../agent-decision.ts';
 import {
   parseDelegation,
   pathInScope,
@@ -145,6 +147,8 @@ export type TeamDeps = {
    * look (capture, read, console) but never operate the app. Absent, none.
    */
   preview?: (sees: () => boolean) => PreviewTool;
+  /** Judges what is handed to a sub-agent and what it hands back, and what would be shared. */
+  guard?: ActionGuard;
   onSubagents?: (views: SubagentView[]) => void;
   onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>;
   /** Scrubs the project's secret values from every tool result a sub-agent reads. */
@@ -153,7 +157,7 @@ export type TeamDeps = {
 
 export type SandboxAccess = {
   schemas: ToolSchema[];
-  call: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  call: (name: string, args: Record<string, unknown>, meta?: { actor?: 'agent' | 'subagent' }) => Promise<unknown>;
 };
 
 const labelOf = (modelId: string) => MODEL_REGISTRY.find(model => model.id === modelId)?.label || modelId;
@@ -216,7 +220,14 @@ export function createAgentTeam(deps: TeamDeps) {
           return { ok: false, error: `« ${path} » est hors de ton périmètre (${task.scope.join(', ')}). Ne l’écris pas : décris la modification dans ton compte rendu, le maître s’en chargera.` };
         }
       }
-      const result = await sandbox.call(schema.name, args);
+      let result: unknown;
+      try {
+        result = await sandbox.call(schema.name, args, { actor: 'subagent' });
+      } catch (error) {
+        // A sub-agent cannot stop the run to ask the person; it reports what it could not do and the master decides.
+        if (!isDecisionRequiredError(error)) throw error;
+        return { ok: false, error: 'Cette action demande la confirmation de l’utilisateur : ne la fais pas. Décris-la dans ton compte rendu, le maître la lui proposera.' };
+      }
       if ((result as any)?.ok === true && SUBAGENT_WRITE_TOOLS.includes(schema.name) && typeof args.path === 'string') filesChanged.add(args.path);
       return result;
     }]));
@@ -259,7 +270,8 @@ export function createAgentTeam(deps: TeamDeps) {
       });
       await deps.onSpend?.(loop.spend);
       const tokens = loop.spend.promptTokens + loop.spend.completionTokens;
-      const summary = String(loop.result?.text || '').trim();
+      // What comes back is data for the master, never an order: phrasing that tries to instruct is neutralised.
+      const summary = deps.guard ? deps.guard.checkReturn(String(loop.result?.text || '').trim()) : String(loop.result?.text || '').trim();
       const finished = loop.spend.stoppedBecause === 'answered';
       const ok = finished || (filesChanged.size > 0 && loop.spend.stoppedBecause !== 'step_budget');
       return {
@@ -284,6 +296,9 @@ export function createAgentTeam(deps: TeamDeps) {
       if (name === 'delegate_to_subagents') {
         const parsed = parseDelegation(args, deps.limits, id => Boolean(deps.session?.agents.has(id)));
         if (!parsed.ok) return { ok: false, error: parsed.error };
+        // What the master hands to a sub-agent has to be what the user asked for, not something planted in content it read.
+        const delegation = deps.guard?.checkDelegation(parsed.tasks.map(task => ({ role: task.role, goal: task.goal, systemPrompt: task.systemPrompt })));
+        if (delegation && !delegation.ok) return { ok: false, error: `Delegation blocked for safety: ${delegation.reason}`, hint: 'Rewrite the task from the user\'s own request only.' };
         const results = await runSubagents({
           tasks: parsed.tasks,
           limits: deps.limits,
@@ -296,7 +311,7 @@ export function createAgentTeam(deps: TeamDeps) {
           if (task.libraryAgentId) {
             deps.session?.usedItemIds.add(task.libraryAgentId);
             deps.session?.itemOutcomes.set(task.libraryAgentId, outcome.ok);
-          } else if (task.saveToLibrary && task.systemPrompt && deps.session) {
+          } else if (task.saveToLibrary && task.systemPrompt && deps.session && (deps.guard?.checkShared(`${task.saveToLibrary.name}\n${task.saveToLibrary.description || ''}\n${task.systemPrompt}`).ok ?? true)) {
             deps.session.candidates.push({
               kind: 'agent',
               name: task.saveToLibrary.name,
@@ -311,6 +326,8 @@ export function createAgentTeam(deps: TeamDeps) {
       }
       if (name === 'save_skill') {
         if (!deps.session) return { ok: false, error: 'La bibliothèque n’est pas disponible pour cette session.' };
+        const shared = deps.guard?.checkShared([args.name, args.description, args.when_to_use, args.instructions, JSON.stringify(args.examples ?? '')].map(part => String(part ?? '')).join('\n'));
+        if (shared && !shared.ok) return { ok: false, error: shared.reason };
         const definition = normalizeSkillDefinition({
           whenToUse: args.when_to_use as string,
           instructions: args.instructions as string,
@@ -334,6 +351,8 @@ export function createAgentTeam(deps: TeamDeps) {
       }
       if (name === 'record_error_lesson') {
         if (!deps.session) return { ok: false, error: 'La mémoire des erreurs n’est pas disponible pour cette session.' };
+        const lesson = deps.guard?.checkShared([args.error_message, args.cause, args.fix, args.rule].map(part => String(part ?? '')).join('\n'));
+        if (lesson && !lesson.ok) return { ok: false, error: lesson.reason };
         deps.session.errors.push({
           category: normalizeCategory(args.category),
           message: String(args.error_message || ''),
