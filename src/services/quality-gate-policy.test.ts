@@ -85,3 +85,23 @@ describe('a small request keeps a small plan and a small run', async () => {
     expect(typeof runPlannerAgent).toBe('function');
   });
 });
+
+describe('the specialists are chosen from what was written, not from the scaffold', async () => {
+  const { STARTER_KIT_FILES } = await import('./sandbox/starter-kit');
+  const { selectAgentsForContext } = await import('./parallel-agent-runner');
+  const pipeline = (await import('node:fs')).readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
+  const database = /\b(database|supabase|postgres|sql|crud|base de donn)/i;
+
+  it('the pipeline reads the signals from what was written for the project, not from what every project starts with', () => {
+    expect(STARTER_KIT_FILES.length).toBeGreaterThan(0);
+    expect(database.test('x')).toBe(false);
+    expect(pipeline).toMatch(/scaffold\.get\(file\.path\) !== file\.content && !startsWithEveryProject\(file\.path\)/);
+    expect(pipeline).not.toMatch(/Object\.keys\(input\.backendEnv \|\| \{\}\)\.some\(key => \/SUPABASE\|DATABASE\/i\.test\(key\)\)\s*\n\s*\|\|/);
+  });
+
+  it('a design request on a finished calculator asks for no backend engineer', () => {
+    const roles = selectAgentsForContext({ projectName: 'calc', userPrompt: 'optimise le design', appType: 'generic_web_app', fileCount: 3, files: [{ path: 'src/App.tsx', content: 'export default function App(){return null}' }], hasAuth: false, hasDatabase: false, hasPayments: false, language: 'fr', availableModels: {} as any } as any);
+    expect(roles).not.toContain('backend_engineer');
+    expect(roles).not.toContain('security_auditor');
+  });
+});

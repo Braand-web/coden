@@ -1064,9 +1064,16 @@ export async function runMultiAgentPipeline(input: {
   })();
   let specialistBrief = '';
   if (input.route !== 'small_edit' && input.enableSpecialists !== false && quality.specialists) {
+    /*
+     * What the project is about is read from what was written for it, not from the scaffold every project starts
+     * with: the kit's own `src/lib/supabase.ts` made every project « use a database » and « have a backend », and a
+     * backend engineer was sent to « optimise le design » of a calculator.
+     */
+    const scaffold = new Map(STARTER_KIT_FILES.map(file => [file.path, file.content]));
+    const startsWithEveryProject = (path: string) => /^src\/lib\/(?:supabase|storage|cn)\.ts$/.test(path);
     const sourceSignals = [
       input.prompt,
-      ...input.existingFiles.slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
+      ...input.existingFiles.filter(file => scaffold.get(file.path) !== file.content && !startsWithEveryProject(file.path)).slice(0, 80).map(file => `${file.path}\n${String(file.content || '').slice(0, 4_000)}`),
     ].join('\n').toLowerCase();
     const specialistContext = {
       projectName: input.projectName || input.projectId,
@@ -1075,8 +1082,8 @@ export async function runMultiAgentPipeline(input: {
       fileCount: input.existingFiles.length,
       files: input.existingFiles.map(file => ({ path: file.path, content: file.content || '' })),
       hasAuth: /\b(auth|login|signup|connexion|inscription|session)\b/i.test(sourceSignals),
-      hasDatabase: Object.keys(input.backendEnv || {}).some(key => /SUPABASE|DATABASE/i.test(key))
-        || /\b(database|supabase|postgres|sql|crud|base de donn)/i.test(sourceSignals),
+      // The Supabase keys are provisioned for every project: their presence says nothing about what this one needs.
+      hasDatabase: /\b(database|supabase|postgres|sql|crud|base de donn)/i.test(sourceSignals),
       hasPayments: /\b(payment|paiement|checkout|billing|factur|subscription|abonnement|saspay|stripe)\b/i.test(sourceSignals),
       language: (fr ? 'fr' : 'en') as 'fr' | 'en',
       // Pinned: every specialist runs the user's model, never changed behind
