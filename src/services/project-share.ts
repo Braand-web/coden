@@ -44,9 +44,9 @@ export function isShareActive(row: Pick<ShareRow, 'revoked_at' | 'expires_at'> |
   return Number.isFinite(until) && until > now;
 }
 
-/** Only owners and admins give a project away: an editor works on it, but it is not theirs to hand out. */
+/** Only the owner gives a project away: an editor works on it, and a platform admin may read it, but neither hands it out. */
 export function canShareProject(role: string | null | undefined): boolean {
-  return role === 'owner' || role === 'admin';
+  return role === 'owner';
 }
 
 export type SharedProjectView = { name: string; description: string; preview_html: string; files: number; shared_at: string | null };

@@ -42,10 +42,9 @@ describe('when a link works', () => {
 });
 
 describe('who may share', () => {
-  it('owners and admins, not editors or viewers', () => {
+  it('the owner only — not an editor, a viewer, or an administrator of the platform', () => {
     expect(canShareProject('owner')).toBe(true);
-    expect(canShareProject('admin')).toBe(true);
-    for (const role of ['editor', 'viewer', null, undefined, '']) expect(canShareProject(role as any)).toBe(false);
+    for (const role of ['admin', 'editor', 'viewer', null, undefined, '']) expect(canShareProject(role as any)).toBe(false);
   });
 });
 
