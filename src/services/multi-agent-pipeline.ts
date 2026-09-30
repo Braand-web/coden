@@ -30,6 +30,10 @@ import { affordableReasoning, selectModel, type TaskComplexity, type TaskKind } 
 import { ModelSupervisor } from './model-supervisor.ts';
 import { createSupervisorPicks } from './supervisor-picks.ts';
 import { createRunSupervision } from './run-supervision.ts';
+import { createPreviewTool, type PreviewTool } from './preview-tool/preview-tool.ts';
+import { PREVIEW_GUIDANCE, previewToolEnabled } from './preview-tool/preview-policy.ts';
+import { previewUserActiveUntil } from './preview-tool/preview-activity.ts';
+import { modelAvailability } from './openrouter-capabilities.ts';
 import { loadRoutingPolicy, normalizeRoutingMode, routerV2Enabled } from './routing-policy.ts';
 import { sonnet55Experiment } from './routing-experiments.ts';
 import type { RoutingTraceEvent } from './routing-trace.ts';
@@ -432,6 +436,11 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    * the start of each round and cleared by the reader.
    */
   roundNote?: () => Promise<string>;
+  /**
+   * The Preview tool: the agent's own browser on the running app. Absent, the
+   * coder works without it exactly as before.
+   */
+  previewTool?: PreviewTool;
   /** The round's instruction as it was given, to read the errors it carried. */
   onInstruction?: (instruction: string) => void;
   /**
@@ -495,12 +504,21 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     const knownPaths = new Set(await input.sandbox.listFiles());
     const touched = new Map<import('../lib/agent-chat-protocol.ts').FileAction, Set<string>>();
     // The team's tools sit beside the sandbox's; sub-agents get the sandbox's only (depth 1).
-    const allTools = team ? [...tools, ...team.schemas.filter(schema => !tools.some(tool => tool.name === schema.name))] : tools;
+    const base = team ? [...tools, ...team.schemas.filter(schema => !tools.some(tool => tool.name === schema.name))] : tools;
+    const allTools = input.previewTool ? [...base, input.previewTool.schema as unknown as (typeof base)[number]] : base;
     const handlers = Object.fromEntries(allTools.map(tool => [
       tool.name,
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
+        if (input.previewTool && tool.name === input.previewTool.schema.name) {
+          return recordToolCall(
+            input.harness || null,
+            input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null,
+            { name: tool.name, args },
+            () => input.previewTool!.call(args),
+          );
+        }
         if (team && TEAM_TOOL_NAMES.has(tool.name)) {
           return recordToolCall(
             input.harness || null,
@@ -526,6 +544,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
           { name: tool.name, args },
           () => call(tool.name, args),
         );
+        if ((result as any)?.ok === true && (tool.name === 'write_file' || tool.name === 'edit_file' || tool.name === 'delete_file')) input.previewTool?.noteFileWritten();
         if ((result as any)?.ok === true && !(result as any)?.unchanged && typeof args.path === 'string') {
           const action = ({ read_file: 'read', write_file: knownPaths.has(args.path) ? 'edit' : 'create', edit_file: 'edit', delete_file: 'delete' } as Record<string, import('../lib/agent-chat-protocol.ts').FileAction>)[tool.name];
           if (action) {
@@ -545,7 +564,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       messages: [
         {
           role: 'system',
-          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.'),
+          content: withUserInstructions((input.designPolicy ? `${input.designPolicy}\n\n` : '') + (input.previewTool ? `${PREVIEW_GUIDANCE}\n\n` : '') + 'Deliver a complete, working product, not a mock-up: every visible control does what its label says, every navigation link leads to a real screen, user data persists, and every screen works at 390px, 768px and 1280px. Automated browser journeys and a design review check exactly that after each round. Compose the interface from the scaffold\'s ready-made components, tokens and motion helpers when they exist in the project, and give the app its own considered identity rather than a generic template. ' + 'You build and repair a real application through tools. Work in few, full steps: every step re-sends this whole conversation, so batch independent tool calls in one step — read every file you need at once, write several new files together, and do not re-read a file you just wrote. Read a file before editing it. Prefer edit_file for a targeted change; use write_file only to create a new file or to replace one entirely. Install a missing dependency rather than rewriting the import that needs it. When you are unsure of the current API of a library, how a service is set up, or what an unfamiliar error means, look it up with web_search and read the official page with fetch_url instead of guessing; do not browse for what you already know. Before each useful batch of tools, briefly explain your next action in the user language, in one or two sentences. Report observed outcomes, not private reasoning. Never print file bodies, fenced code, secrets or tool arguments in prose. Use tools to write code. Do not claim tests passed without their results. Coden already owns the live dev server and preview verification: never run dev, start, serve, or preview scripts; use get_logs when runtime output is needed. When a requirement is vague, choose the most reasonable interpretation, say which one you chose, and keep building — request_decision stops the run and costs the user a round trip, so it is for the rare case where continuing would destroy work or commit the project to one of two incompatible directions, never for preferences, naming, or confirming that you understood.'),
         },
         ...carried,
         {
@@ -578,6 +597,8 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
       // modes still receive a bounded same-model retry for transient outages.
       allowFallback: input.allowFallback === true,
       onFallback: input.onFallback,
+      // A capture reaches the model as an image only if the model working now reads images.
+      acceptToolImages: input.previewTool ? () => modelAvailability(input.current?.modelId ?? input.modelId, undefined).supportsVision : undefined,
       maxModelAttempts: 2,
       // One clock for the whole run, not one per round.
       deadline: input.deadline,
@@ -667,6 +688,8 @@ export async function runMultiAgentPipeline(input: {
   attachmentBrief?: string;
   /** Économique / Équilibré / Performance, from the composer. Omitted means balanced. */
   routingMode?: string;
+  /** Describes a capture of the preview in words (a vision model the router picks), for a coder that cannot see images. */
+  describePreview?: (dataUrl: string, question: string) => Promise<string>;
   /** Every routing decision of the run, for the trace. Never throws into the run. */
   onRoutingEvent?: (event: RoutingTraceEvent) => void;
   complexity?: 'simple' | 'medium' | 'complex' | 'extreme';
@@ -721,6 +744,8 @@ export async function runMultiAgentPipeline(input: {
   onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
 }): Promise<MultiAgentPipelineOutcome> {
   const releaseRun = sandboxRegistry.reserveRun(input.projectId);
+  // The agents' browsers on the running app: closed with the run, whatever ended it.
+  const previewTools: PreviewTool[] = [];
   try {
   /*
    * What the run is doing right now, for the thinking line.
@@ -1321,6 +1346,39 @@ export async function runMultiAgentPipeline(input: {
     },
   });
 
+  // The agent's own browser on the running app, for this run; closed when the run ends.
+  const modelSees = () => modelAvailability(current.modelId, MODEL_REGISTRY.find(model => model.id === current.modelId) as any).supportsVision;
+  const previewTool: PreviewTool | undefined = previewToolEnabled()
+    ? createPreviewTool({
+      sandbox,
+      projectId: input.projectId,
+      readFiles: () => readAllFiles(sandbox),
+      describe: input.describePreview,
+      modelSees,
+      onActivity: label => input.onChatEvent?.({ type: 'activity', label }),
+      userActiveUntil: () => previewUserActiveUntil(input.projectId),
+      signal: input.signal,
+    })
+    : undefined;
+  if (previewTool) previewTools.push(previewTool);
+  // A sub-agent that builds a screen gets a browser of its own that can only look, never operate.
+  const subagentPreview = previewTool
+    ? (sees: () => boolean) => {
+      const tool = createPreviewTool({
+        sandbox,
+        projectId: input.projectId,
+        role: 'subagent',
+        readFiles: () => readAllFiles(sandbox),
+        describe: input.describePreview,
+        modelSees: sees,
+        limits: { maxActions: 12, maxCaptures: 4 },
+        userActiveUntil: () => previewUserActiveUntil(input.projectId),
+        signal: input.signal,
+      });
+      previewTools.push(tool);
+      return tool;
+    }
+    : undefined;
   let repairOutcome: RepairOutcome;
   const teamLimits = subagentLimits();
   activity('Coden construit l’application…', 'Coden is building the application…');
@@ -1339,6 +1397,7 @@ export async function runMultiAgentPipeline(input: {
       modelId,
       sandbox,
       visionInputs: input.visionInputs,
+      previewTool,
       onChatEvent: input.onChatEvent,
       activityLabel: fr ? 'Coden applique les changements…' : 'Coden is applying the changes…',
       // The coder writes as the integrator, which is the role that already
@@ -1361,6 +1420,8 @@ export async function runMultiAgentPipeline(input: {
         // the images when the sub-agent's own model reads them.
         attachmentBrief: input.attachmentBrief,
         visionInputs: input.visionInputs,
+        // Sub-agents that build screens can look at the preview, never operate it.
+        preview: subagentPreview,
         designPolicy: [designContractBlock, designPolicy].filter(Boolean).join('\n\n') || undefined,
         onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
         onSpend: subSpend => {
@@ -1628,5 +1689,7 @@ export async function runMultiAgentPipeline(input: {
   };
   } finally {
     releaseRun();
+    // The agent's browsers close with the run, whatever ended it.
+    await Promise.all(previewTools.map(tool => tool.dispose())).catch(() => undefined);
   }
 }

@@ -3855,6 +3855,27 @@ function bindPreviewRecovery() {
   });
 }
 
+/**
+ * The user works in the preview: when focus moves from the builder into the
+ * preview frame (a click or a key inside it), an agent driving the same
+ * preview holds back for a few seconds instead of fighting them for it. Only
+ * a "someone is here" signal is sent — never what they do — and at most once
+ * every few seconds, and only while a run is in progress.
+ */
+let lastPreviewActivityAt = 0;
+function bindPreviewUserActivity() {
+  window.addEventListener('blur', () => {
+    // The frame takes focus a tick after the window blurs.
+    window.setTimeout(() => {
+      const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
+      if (!frame || document.activeElement !== frame || !isGenerating || !currentProjectId) return;
+      if (Date.now() - lastPreviewActivityAt < 4_000) return;
+      lastPreviewActivityAt = Date.now();
+      void apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/preview/activity`, { method: 'POST', body: '{}' }).catch(() => undefined);
+    }, 0);
+  });
+}
+
 async function ensureLivePreview(silent = false) {
   if (!currentProjectId || liveStartInFlight) return;
   const projectId = currentProjectId;
@@ -9286,6 +9307,7 @@ function initShell() {
   initCodenNavigationTransitions();
   bindGlobalKeyboardShortcuts();
   bindPreviewRecovery();
+  bindPreviewUserActivity();
   ensureConversationApi();
   bindSharedModelSelectionEvents();
   // The stored mode and model come from localStorage, which is readable
