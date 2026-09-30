@@ -92,20 +92,24 @@ const cloudCss = read('./src/styles/cloud-console.css');
   assert.match(dashboardTsx, /function ProjectCardSkeleton\(\)/, 'replaced by a card-shaped skeleton');
 
   /*
-   * Geometry, checked rather than asserted by eye. The caption row is centred
-   * around a 36px avatar; the real copy comes to 35px, so the avatar sets the
-   * row height. The skeleton keeps a 36px avatar and bars well under it, so
-   * the same thing sets the height in both states and the row cannot resize.
+   * The current caption has two lines and a 30px arrow, not an avatar.
+   * Its 20px title, 16px timestamp and 2px gap occupy 38px. The skeleton
+   * reserves that same height rather than asserting against an unused class.
    */
-  const avatar = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-icon {'));
-  assert.match(avatar.slice(0, avatar.indexOf('}')), /height: 36px;/, 'the real avatar is 36px');
-  const ghost = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-skeleton-avatar {'));
-  assert.match(ghost.slice(0, ghost.indexOf('}')), /height: 36px;/, 'and so is the skeleton one');
+  const title = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy strong {'));
+  assert.match(title.slice(0, title.indexOf('}')), /line-height: 20px;/);
+  const timestamp = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy small {'));
+  assert.match(timestamp.slice(0, timestamp.indexOf('}')), /line-height: 16px;/);
+  const copy = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy {'));
+  assert.match(copy.slice(0, copy.indexOf('}')), /gap: 2px;/);
+  const ghost = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-skeleton-copy {'));
+  assert.match(ghost.slice(0, ghost.indexOf('}')), /min-height: 38px;/);
+  assert.match(dashboardTsx, /coden-dashboard-project-card-copy coden-dashboard-skeleton-copy/);
 
   const bar = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-skeleton-line {'));
   const barHeight = Number((bar.slice(0, bar.indexOf('}')).match(/height: (\d+)px;/) || [])[1]);
-  assert.ok(barHeight > 0 && barHeight < 36,
-    `the bars cannot be what sets the row height (${barHeight}px against a 36px avatar)`);
+  assert.ok(barHeight > 0 && barHeight < 38,
+    `the bars cannot be what sets the reserved row height (${barHeight}px against 38px)`);
 
   // The tile is the card's own element, so it inherits the 16/10 ratio rather
   // than declaring a second one that could drift from it.

@@ -493,7 +493,7 @@ function ProjectCardSkeleton() {
     <article className="coden-dashboard-project-card" aria-hidden="true">
       <span className="coden-dashboard-project-preview coden-skeleton" />
       <span className="coden-dashboard-project-card-meta">
-        <span className="coden-dashboard-project-card-copy">
+        <span className="coden-dashboard-project-card-copy coden-dashboard-skeleton-copy">
           <span className="coden-skeleton coden-dashboard-skeleton-line" />
           <span className="coden-skeleton coden-dashboard-skeleton-line is-short" />
         </span>

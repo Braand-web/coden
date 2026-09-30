@@ -127,7 +127,7 @@ html[data-lp-reveal="on"] [data-lp-reveal] { transition: opacity 480ms var(--lp-
   .lp-card, .lp-button { transition: none; }
   .lp-card:hover, .lp-button:hover, .lp-button:active, .lp-marquee-toggle:active { transform: none; }
   .lp-marquee { overflow: visible; }
-  .lp-marquee-belt { width: auto; }
+  .lp-marquee-belt { display: block; width: auto; }
   .lp-marquee-track { flex-wrap: wrap; gap: 24px; padding: 0; }
   .lp-marquee-track[aria-hidden="true"] { display: none; }
   .lp-marquee-toggle { display: none; }

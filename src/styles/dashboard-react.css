@@ -1055,6 +1055,7 @@ html[data-theme="dark"] .coden-dashboard-project-badge {
 
 .coden-dashboard-project-card-copy strong {
   font-size: 14.5px;
+  line-height: 20px;
   font-weight: 650;
   letter-spacing: -.012em;
 }
@@ -1062,6 +1063,13 @@ html[data-theme="dark"] .coden-dashboard-project-badge {
 .coden-dashboard-project-card-copy small {
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 16px;
+}
+
+/* Two real lines (20px + 16px) and their 2px gap: no jump when data arrives. */
+.coden-dashboard-skeleton-copy {
+  min-height: 38px;
+  justify-content: center;
 }
 
 .coden-dashboard-project-open {
