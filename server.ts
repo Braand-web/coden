@@ -251,6 +251,8 @@ import { createGuardJournal, invalidateGuardRules, loadGuardRules, summarizeGuar
 import { evaluateCorpus } from './src/services/action-guard/evaluate.ts';
 import { ADVERSARIAL_SET } from './src/services/action-guard/adversarial-set.ts';
 import { HELDOUT_SET } from './src/services/action-guard/heldout-set.ts';
+import { styleBlock } from './src/services/response-style.ts';
+import { recordStream, streamMetrics } from './src/services/stream-metrics.ts';
 import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-request-context.ts';
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
@@ -5947,9 +5949,12 @@ function buildAgentTextMessages(input: {
       ].filter(Boolean).join('\n\n')
     : input.sessionContext || undefined;
 
+  // How to talk to this person: short, honest about what was verified, plain words, the same voice whichever model answers.
+  const styleGuide = styleBlock([...(input.history || []).filter(turn => turn.role === 'user').map(turn => turn.content), prompt]);
   const systemPrompt = input.finalizer
-    ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext })
+    ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext, styleBlock: styleGuide })
     : buildAgentTextSystemPrompt({
+        styleBlock: styleGuide,
         intent: decision.intent,
         modeInstruction,
         languageInstruction,
@@ -12726,6 +12731,13 @@ app.delete('/api/projects/:id/guard-rules/:ruleId', async (req: any, res: any) =
 });
 app.delete('/api/users/me/guard-rules/:ruleId', (req: any, res: any) => guardRuleRoutes(req, res, null));
 
+/** How the streaming is holding up: streams cut before the run ended, and follow-ups that reached its end. Counted since the last deploy. */
+app.get('/api/admin/streaming/overview', (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, metrics: streamMetrics() });
+});
+
 /** How the ideas the agent proposes are received: proposed, applied, refused, per category. Counts only. */
 app.get('/api/admin/proposals/overview', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
@@ -15763,7 +15775,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             payload: envelope as unknown as Record<string, unknown>,
           });
         } : undefined,
+        // A run's stream that closes before the run ends is an interruption; the page follows the run again from where it stopped.
+        onTransportLost: () => recordStream('interrupted', { run: streamRunId }),
       }) : null;
+  if (eventStream) recordStream('started', { run: streamRunId });
   // Set by the multi-agent branch; settled by respondJson on the way out.
   let pipelineRunId = '';
   let pipelineTokens: { prompt: number; completion: number } | null = null;
@@ -18366,9 +18381,13 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
   });
   res.flushHeaders();
   req.once('close', () => { disconnected = true; });
+  recordStream('resume_started', { run: turn.id, after: afterEnvelope });
   const writeEnvelope = async (envelope: any) => {
+    if (disconnected || res.destroyed || res.writableEnded) return;
     if (!res.write(`id: ${envelope.seq}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
-      await new Promise<void>(resolve => res.once('drain', resolve));
+      // Waiting for the socket to drain must also end when it closes: a client that left mid-backlog
+      // would otherwise hold this loop, and the record it reads, open for good.
+      await new Promise<void>(resolve => { const done = () => { res.off('drain', done); res.off('close', done); resolve(); }; res.once('drain', done); res.once('close', done); });
     }
   };
 
@@ -18429,6 +18448,7 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
     res.write(': heartbeat\n\n');
     await new Promise(resolve => setTimeout(resolve, events.length ? 50 : 400));
   }
+  recordStream(terminalEnvelopeSeen ? 'resume_completed' : disconnected ? 'resume_abandoned' : 'resume_abandoned', { run: turn.id, ms: Date.now() - startedAt });
   if (!disconnected && !res.writableEnded) res.end();
 });
 

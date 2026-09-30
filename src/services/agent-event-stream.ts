@@ -12,6 +12,8 @@ export type AgentEventStreamOptions = {
   persist?: (envelope: AgentEnvelope) => Promise<void>;
   persistAttempts?: number;
   retryDelayMs?: number;
+  /** Called once if the connection closes before the run has ended. */
+  onTransportLost?: () => void;
 };
 
 const TERMINAL_EVENTS = new Set(['run_finished', 'run_failed', 'run_cancelled']);
@@ -219,7 +221,11 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   const heartbeat = setInterval(() => chat({ type: 'heartbeat' }), 15_000);
   heartbeat.unref();
   const cleanup = () => { finalized = true; transportOpen = false; clearInterval(heartbeat); if (textTimer) clearTimeout(textTimer); if (reasoningTimer) clearTimeout(reasoningTimer); textBuffer = ''; reasoningBuffer = ''; };
-  res.once('close', () => { transportOpen = false; });
+  res.once('close', () => {
+    // A close before the run ended is an interruption; after it, it is the ordinary end of the stream.
+    if (!finalized && !closing) { try { options.onTransportLost?.(); } catch { /* counting never breaks the stream */ } }
+    transportOpen = false;
+  });
   res.once('finish', () => { transportOpen = false; });
 
   return {

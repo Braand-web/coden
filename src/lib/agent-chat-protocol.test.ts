@@ -38,6 +38,35 @@ describe('agent streaming protocol', () => {
     expect(events.map(e => e.payload.type)).toEqual(['activity']);
   });
 
+  it('reads a connection RESET as an interruption too, so the Builder replays instead of starting the run over', async () => {
+    /*
+     * A proxy closing the socket cleanly ends the body; a reset — a phone
+     * changing network — makes read() itself reject with a bare TypeError.
+     * That skipped the reconnect and re-posted the request: a second run for
+     * the same message. Found in a real browser against a server that
+     * destroys the socket mid-stream.
+     */
+    const events: AgentEnvelope[] = [];
+    let sent = false;
+    const reset = new Response(new ReadableStream({
+      pull(controller) {
+        if (!sent) { sent = true; controller.enqueue(new TextEncoder().encode(encode(1, 'chat', { type: 'text_delta', delta: 'début' }))); return; }
+        controller.error(new TypeError('network error'));
+      },
+    }));
+    const error = await consumeAgentStream(reset, e => events.push(e)).then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AgentStreamInterruptedError);
+    expect((error as AgentStreamInterruptedError).lastSequence).toBe(1);
+    expect(events.map(e => e.payload.type)).toEqual(['text_delta']);
+  });
+
+  it('lets the person\'s own stop through as an abort, not as an interruption to recover from', async () => {
+    const aborted = new Response(new ReadableStream({ pull(controller) { controller.error(new DOMException('The operation was aborted.', 'AbortError')); } }));
+    const error = await consumeAgentStream(aborted, () => undefined).then(() => null, (caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(AgentStreamInterruptedError);
+    expect((error as { name?: string }).name).toBe('AbortError');
+  });
+
   it('keeps streaming after a persistence failure instead of muting the run', async () => {
     /*
      * `pending` is what every later event chains onto, and `.then()` on a
@@ -194,5 +223,29 @@ describe('agent streaming protocol', () => {
       requireResult: false,
     });
     expect(seen).toEqual([4, 5]);
+  });
+});
+
+describe('counting interrupted streams', () => {
+  const fakeResponse = () => {
+    const res: any = new EventEmitter();
+    res.status = () => res; res.set = () => res; res.flushHeaders = () => {}; res.write = () => true; res.end = () => { res.writableEnded = true; res.emit('finish'); };
+    res.destroyed = false; res.writableEnded = false; res.writableLength = 0;
+    return res;
+  };
+  it('reports a connection that closes before the run ended, once — and nothing for the ordinary end', async () => {
+    let lost = 0;
+    const cut = fakeResponse();
+    createAgentEventStream(cut, 'run-cut', { onTransportLost: () => { lost += 1; } });
+    cut.emit('close');
+    cut.emit('close');
+    expect(lost).toBe(1);
+
+    let lostAfterEnd = 0;
+    const done = fakeResponse();
+    const stream = createAgentEventStream(done, 'run-done', { onTransportLost: () => { lostAfterEnd += 1; } });
+    await stream.finish({ success: true, summary: 'ok' }, 200);
+    done.emit('close');
+    expect(lostAfterEnd).toBe(0);
   });
 });

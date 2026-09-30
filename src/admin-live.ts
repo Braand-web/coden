@@ -31,6 +31,7 @@ type AdminState = {
   routing: JsonRecord | null;
   proposals: JsonRecord | null;
   guard: JsonRecord | null;
+  streaming: JsonRecord | null;
   publish: JsonRecord | null;
   security: JsonRecord | null;
   flags: JsonRecord[];
@@ -55,6 +56,7 @@ const state: AdminState = {
   routing: null,
   proposals: null,
   guard: null,
+  streaming: null,
   publish: null,
   security: null,
   flags: [],
@@ -486,6 +488,12 @@ function renderAgent() {
         escapeHtml(formatNumber(row.contributors)),
       ]), 'Aucun schéma n’a encore été confirmé par deux contributeurs. Les entrées curées servent en attendant.')}
     </article>
+    ${(() => {
+      const metrics = state.streaming?.metrics as JsonRecord | null | undefined;
+      if (!metrics) return '';
+      const pct = (value: unknown) => (typeof value === 'number' ? `${Math.round(value * 1000) / 10} %` : '--');
+      return metric('Flux de génération', `${pct(metrics.interruptedRate)} coupés`, `${formatNumber(metrics.started ?? 0)} flux · ${pct(metrics.resumeSuccessRate)} des reprises menées au bout (${formatNumber(metrics.resume_completed ?? 0)}/${formatNumber(metrics.resume_started ?? 0)}) · depuis le dernier déploiement`);
+    })()}
     ${guardCard()}
     <article class="admin-card">
       <span class="panel-label">Signaux par type</span>
@@ -1213,7 +1221,7 @@ async function loadAdminData() {
     });
     const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
     if (copyButton) copyButton.hidden = false;
-    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals, guard] = await Promise.all([
+    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals, guard, streaming] = await Promise.all([
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
       safeAdminFetch('/api/admin/runs', { runs: [], distributions: {}, availability: {} }),
@@ -1230,6 +1238,7 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/routing/overview?days=7', { overview: null }),
       safeAdminFetch('/api/admin/proposals/overview', { summary: null }),
       safeAdminFetch('/api/admin/action-guard/overview', { summary: null }),
+      safeAdminFetch('/api/admin/streaming/overview', { metrics: null }),
     ]);
     state.live = live;
     state.overview = overview;
@@ -1244,6 +1253,7 @@ async function loadAdminData() {
     state.routing = routing;
     state.proposals = proposals;
     state.guard = guard;
+    state.streaming = streaming;
     state.publish = publish;
     state.security = security;
     state.flags = flags.flags || [];
