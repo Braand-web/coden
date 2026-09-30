@@ -200,6 +200,8 @@ export type PlannerAgentInput = {
    * mock-up itself, is how a plan misses the pricing section in the picture.
    */
   visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
+  /** Économique / Équilibré / Performance, from the composer. */
+  routingMode?: string;
   signal?: AbortSignal;
   /**
    * The planner's reasoning as it is written, for display only. Planning is
@@ -217,7 +219,7 @@ export type PlannerAgentResult = BuildPlan & {
 
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<PlannerAgentResult> {
   const sees = Boolean(input.visionInputs?.length);
-  const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits, needs: sees ? { vision: true } : undefined }).modelId;
+  const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits, mode: input.routingMode, needs: sees ? { vision: true } : undefined }).modelId;
   const systemPrompt = withUserInstructions(buildPlannerSystemPrompt(input.designPolicy, input.withAcceptance === true));
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
   const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,preferStructuredOutput:true,effort:input.effort}));

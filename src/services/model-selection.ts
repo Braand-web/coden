@@ -25,14 +25,17 @@ import {
   MODEL_ACTION_CREDIT_FLOORS,
   MODEL_REGISTRY,
   PUBLIC_MODEL_CATALOG,
+  isModelEnabled,
   UserPlan,
   normalizeUserPlan,
   type AllowedModelId,
   type ModelStrength,
 } from '../config/ai-models.ts';
 import { modelAvailability } from './openrouter-capabilities.ts';
-import { getLearnedModelStats, learnedPreference } from './agent-learning.ts';
+import { getLearnedModelStats, learnedPreference, MIN_RUNS_FOR_ROUTING, smoothedSuccessRate } from './agent-learning.ts';
 import type { ReasoningLevel } from './openrouter-request.ts';
+import { loadRoutingPolicy, normalizeRoutingMode, routerV2Enabled, type RoutingMode } from './routing-policy.ts';
+import { rankScored, scoreModel, type ScoreParts } from './model-scoring.ts';
 
 /** What the platform actually asks a model to do. */
 export type TaskKind =
@@ -88,6 +91,16 @@ export type SelectionRequest = {
    * way twice.
    */
   allowDegradation?: boolean;
+  /**
+   * Économique / Équilibré / Performance: how much price weighs against
+   * strength and speed among the models that clear the gates. Omitted means
+   * balanced. Ignored for a pinned model and when `CODEN_ROUTER_V2=0`.
+   */
+  mode?: RoutingMode | string;
+  /** Models to leave out — the ones already tried and abandoned in this run. */
+  exclude?: readonly string[];
+  /** A push toward specific models, set only for an experiment's treatment arm (routing-experiments.ts). */
+  boost?: Readonly<Record<string, number>>;
 };
 
 export type SelectionResult = {
@@ -101,6 +114,13 @@ export type SelectionResult = {
    * user's level; callers ignore this field then.
    */
   reasoningLevel: ReasoningLevel;
+  /** Which policy decided: the scored one, or the previous cheapest-first walk. */
+  policy?: 'scored' | 'legacy';
+  mode?: RoutingMode;
+  /** The best few candidates with what made up their score — the decision, explained. */
+  considered?: Array<{ modelId: AllowedModelId; score: number; parts: ScoreParts; usdPerMillion: number }>;
+  /** How long the decision took. It is synchronous and local; this is the proof. */
+  decisionMs?: number;
 };
 
 const STRENGTH_ORDER: Record<ModelStrength, number> = { low: 0, medium: 1, high: 2, frontier: 3 };
@@ -151,6 +171,18 @@ export function blendedCost(modelId: AllowedModelId): number {
   return model.inputUsdPerMillion * 0.25 + model.outputUsdPerMillion * 0.75;
 }
 
+/**
+ * The price a model is actually billed at: the live OpenRouter catalogue's
+ * when it has been read, the registry's otherwise. The registry prices are
+ * written by hand and drift; the router should not rank on a stale number.
+ */
+export function liveBlendedCost(modelId: AllowedModelId | string): number {
+  const entry = MODEL_REGISTRY.find(model => model.id === modelId);
+  const live = modelAvailability(String(modelId), entry as any).pricing;
+  if (live && (live.inputUsdPerMillion > 0 || live.outputUsdPerMillion > 0)) return live.inputUsdPerMillion * 0.25 + live.outputUsdPerMillion * 0.75;
+  return blendedCost(modelId as AllowedModelId);
+}
+
 /** The catalogue, cheapest first. The order the selector walks. */
 export const MODELS_BY_COST: AllowedModelId[] = MODEL_REGISTRY
   .map(model => model.id as AllowedModelId)
@@ -187,6 +219,8 @@ function planAllows(userPlan: string, modelId: AllowedModelId): boolean {
  * decision nobody can explain is a routing decision nobody can correct.
  */
 export function selectModel(request: SelectionRequest): SelectionResult {
+  const startedAt = performance.now();
+  const decided = <T extends SelectionResult>(result: T): T => ({ ...result, decisionMs: Math.round((performance.now() - startedAt) * 100) / 100 });
   const complexity = request.complexity || 'medium';
   const plan = String(request.plan || UserPlan.FREE).toLowerCase();
   const bar = TASK_BAR[request.task];
@@ -199,7 +233,8 @@ export function selectModel(request: SelectionRequest): SelectionResult {
     : ['planning','architecture','security'].includes(request.task) ? AUTO_MODEL_ROLES.lead
     : request.task === 'review' ? AUTO_MODEL_ROLES.premium
     : complexity === 'simple' ? AUTO_MODEL_ROLES.worker : AUTO_MODEL_ROLES.lead;
-  if (request.requestedModel && !MODELS_BY_COST.includes(request.requestedModel as AllowedModelId)) {
+  // A model that is not in the catalogue, or is switched off (a feature flag), cannot be pinned.
+  if (request.requestedModel && (!MODELS_BY_COST.includes(request.requestedModel as AllowedModelId) || !isModelEnabled(request.requestedModel))) {
     throw Object.assign(new Error('The selected model is not available.'), { diagnosticCode: 'MODEL_CAPABILITY_UNAVAILABLE' });
   }
   const reasoningLevel = autoReasoningLevel(request.task, complexity);
@@ -214,6 +249,8 @@ export function selectModel(request: SelectionRequest): SelectionResult {
    * no model is asked which model to use.
    */
   const pool = AUTO_POOL.filter(id => {
+    // Switched off by its feature flag: never offered to Auto, and not worth a line in the rejections.
+    if (!isModelEnabled(id)) return false;
     if (modelAvailability(id, MODEL_REGISTRY.find(entry => entry.id === id)).available) return true;
     rejected.push({ modelId: id, because: 'absent from the OpenRouter catalogue' });
     return false;
@@ -229,7 +266,10 @@ export function selectModel(request: SelectionRequest): SelectionResult {
         || Number(b === preferred) - Number(a === preferred)
         || blendedCost(a) - blendedCost(b))
     : [preferred, ...pool.filter(id => id !== preferred)].filter(id => pool.includes(id));
-  const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId] : ordered;
+  // Models already tried and abandoned in this run are not offered again.
+  const excluded = new Set(request.exclude || []);
+  const candidates = request.requestedModel ? [request.requestedModel as AllowedModelId] : ordered.filter(id => !excluded.has(id));
+  const scored = routerV2Enabled() && !request.requestedModel;
   const gate = (modelId: AllowedModelId): string | null => {
     const caps = AI_MODEL_CAPABILITIES[modelId];
     if (!planAllows(plan, modelId)) return `requires the ${AI_MODEL_PLAN_ACCESS[modelId]} plan`;
@@ -261,13 +301,58 @@ export function selectModel(request: SelectionRequest): SelectionResult {
       continue;
     }
     eligible.push(modelId);
-    if (request.requestedModel || eligible.length >= 4) break;
+    // The legacy walk stops at the first few; the scored policy weighs them all.
+    if (request.requestedModel || (!scored && eligible.length >= 4)) break;
+  }
+  if (eligible.length && scored) {
+    const policy = loadRoutingPolicy();
+    const mode = normalizeRoutingMode(request.mode);
+    const interactive = Boolean(request.interactive) || INHERENTLY_INTERACTIVE.has(request.task);
+    // What each model has actually achieved on this task, against its peers here.
+    const rates = new Map(getLearnedModelStats()
+      .filter(stat => stat.task_type === request.task && stat.runs >= MIN_RUNS_FOR_ROUTING)
+      .map(stat => [stat.model_id, smoothedSuccessRate(stat)]));
+    const known = eligible.filter(id => rates.has(id)).map(id => rates.get(id)!);
+    const peerMean = known.length > 1 ? known.reduce((sum, rate) => sum + rate, 0) / known.length : null;
+    const ranked = rankScored(eligible.map(modelId => {
+      const entry = MODEL_REGISTRY.find(model => model.id === modelId);
+      const caps = AI_MODEL_CAPABILITIES[modelId];
+      return scoreModel({
+        modelId,
+        deciding: caps[dimensionKey],
+        others: (Object.values(DIMENSIONS) as Array<(typeof DIMENSIONS)[keyof typeof DIMENSIONS]>).filter(key => key !== dimensionKey).map(key => caps[key]),
+        required: requiredStrength,
+        complexity,
+        mode,
+        speed: caps.speed,
+        reliability: caps.reliability,
+        costPerMillion: liveBlendedCost(modelId),
+        preferred: modelId === preferred,
+        boost: request.boost?.[modelId],
+        interactive,
+        learnedDelta: peerMean !== null && rates.has(modelId) ? Math.max(-1, Math.min(1, rates.get(modelId)! - peerMean)) : 0,
+        lowCredits: typeof request.credits === 'number' && request.credits < MODEL_ACTION_CREDIT_FLOORS[modelId] * policy.lowCreditFloors,
+      }, policy);
+    }), liveBlendedCost);
+    const best = ranked[0];
+    const modelId = best.modelId as AllowedModelId;
+    const caps = AI_MODEL_CAPABILITIES[modelId];
+    return decided({
+      modelId,
+      reason: `best value for ${request.task}/${complexity} in ${mode} mode (${bar.dimension} ${caps[dimensionKey]}, about $${liveBlendedCost(modelId).toFixed(2)} per million tokens${best.parts.learned > 0.05 ? ', measured to succeed more often' : ''})`,
+      rejected,
+      estimatedUsdPerMillionBlended: Number(blendedCost(modelId).toFixed(3)),
+      reasoningLevel: affordableReasoning(reasoningLevel, modelId, request.credits),
+      policy: 'scored',
+      mode,
+      considered: ranked.slice(0, 3).map(item => ({ modelId: item.modelId as AllowedModelId, score: Number(item.score.toFixed(3)), parts: item.parts, usdPerMillion: Number(liveBlendedCost(item.modelId).toFixed(3)) })),
+    });
   }
   if (eligible.length) {
     const learned = request.requestedModel ? null : learnedPreference(eligible, request.task, getLearnedModelStats());
     const modelId = (learned?.modelId || eligible[0]) as AllowedModelId;
     const caps = AI_MODEL_CAPABILITIES[modelId];
-    return {
+    return decided({
       modelId,
       reason: learned?.learned
         ? `measured to succeed more often on ${request.task} than ${eligible[0]} (Coden run history)`
@@ -277,7 +362,8 @@ export function selectModel(request: SelectionRequest): SelectionResult {
       rejected,
       estimatedUsdPerMillionBlended: Number(blendedCost(modelId).toFixed(3)),
       reasoningLevel: affordableReasoning(reasoningLevel, modelId, request.credits),
-    };
+      policy: 'legacy' as const,
+    });
   }
 
   /*
@@ -324,14 +410,16 @@ export function selectModel(request: SelectionRequest): SelectionResult {
       .sort((a, b) => STRENGTH_ORDER[AI_MODEL_CAPABILITIES[b][dimensionKey]] - STRENGTH_ORDER[AI_MODEL_CAPABILITIES[a][dimensionKey]])[0];
 
     if (fallback) {
-      return {
+      return decided({
         modelId: fallback,
         reason: `best accessible model for ${request.task}/${complexity}; preferred ${bar.dimension} strength is unavailable on this plan`,
         rejected,
         estimatedUsdPerMillionBlended: Number(blendedCost(fallback).toFixed(3)),
         // A weaker model than the task deserves: let it think as hard as it can afford.
         reasoningLevel: affordableReasoning(reasoningLevel === 'max' ? 'max' : 'high', fallback, request.credits),
-      };
+        policy: scored ? 'scored' as const : 'legacy' as const,
+        mode: normalizeRoutingMode(request.mode),
+      });
     }
   }
 
