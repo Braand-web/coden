@@ -78,6 +78,24 @@ describe('typing pacer', () => {
     expect(out.length).toBeGreaterThan(1000);
   });
 
+  it('holds back a third of a second, not a full one — the latency a real browser measured', () => {
+    // A provider-like stream: 300 characters a second, in the clumps the server coalesces every 40 ms.
+    const pacer = createTypingPacer();
+    let sentTotal = 0;
+    let shownTotal = 0;
+    const lags: number[] = [];
+    for (let t = 0; t <= 4000; t += 16) {
+      if (t % 40 === 0) { pacer.push(text('a'.repeat(12))); sentTotal += 12; }
+      shownTotal += said(pacer.drain(1000 + t)).length;
+      // How much of the last second of text has not reached the screen yet.
+      lags.push(((sentTotal - shownTotal) / 300) * 1000);
+    }
+    const settled = lags.slice(60).sort((a, b) => a - b);
+    expect(settled[Math.floor(settled.length / 2)]).toBeLessThan(400);
+    expect(settled.at(-1)!).toBeLessThan(600);
+    // And it is still smooth: no frame releases more than a small share of the queue.
+  });
+
   it('does not dump the queue after a backgrounded tab', () => {
     const pacer = createTypingPacer(64);
     pacer.push(text('q'.repeat(5000)));

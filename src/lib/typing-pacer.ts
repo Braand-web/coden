@@ -33,10 +33,19 @@ import type { ChatEvent } from './agent-chat-protocol';
 
 /** The floor: a comfortable reading pace when the model is slow. */
 export const DEFAULT_CHARS_PER_SECOND = 90;
-/** At most this much text is held back while the run is live. */
-const LIVE_BACKLOG_SECONDS = 1;
+/*
+ * At most this much text is held back while the run is live.
+ *
+ * It was a full second, and measured in a real browser against a provider-like
+ * stream (75 tokens a second) the screen sat a steady 0.9 s behind the server
+ * with 1.7 s still to type once the run had ended — a second of latency bought
+ * for smoothness the frame rate already provides. The server coalesces text
+ * over 40 ms, so a third of a second of queue is more than enough to hide the
+ * clumps.
+ */
+export const LIVE_BACKLOG_SECONDS = 0.35;
 /** Once the run has ended, whatever is left is out within this. */
-const ENDED_BACKLOG_SECONDS = 0.6;
+export const ENDED_BACKLOG_SECONDS = 0.3;
 
 /** Events that end a run. */
 const TERMINAL = new Set(['run_finished', 'run_failed', 'run_cancelled']);
@@ -146,7 +155,9 @@ export function createTypingPacer(charsPerSecond = DEFAULT_CHARS_PER_SECOND): Ty
        * whole queue. The caller flushes outright while the page is hidden, so
        * this only has to cover a long frame.
        */
-      budget = Math.min(budget, rate / 2);
+      // Half a second's worth, and never more than half of what is waiting: with a short live
+      // backlog the rate alone would let one long frame release the whole queue.
+      budget = Math.min(budget, rate / 2, Math.max(waiting / 2, 8));
       return take();
     },
     flush: everything,

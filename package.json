@@ -29,7 +29,8 @@
     "audit:theme": "node scripts/audit-product-colors.cjs",
     "smoke:prod": "node scripts/production-smoke-check.cjs",
     "test:fullstack-e2e": "node --experimental-strip-types test-fullstack-e2e.ts",
-    "test:sandbox-e2e": "node --experimental-strip-types test-starters.ts && node --experimental-strip-types test-live-preview-e2e.ts"
+    "test:sandbox-e2e": "node --experimental-strip-types test-starters.ts && node --experimental-strip-types test-live-preview-e2e.ts",
+    "measure:streaming": "node scripts/stream-scenarios.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

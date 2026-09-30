@@ -6,6 +6,7 @@
  * cleaned before anything reaches the shared library. Persistence is in
  * `store.ts`; nothing here touches the network.
  */
+import { screenSharedContent } from '../action-guard/screen.ts';
 import { redactSecrets } from '../secret-redaction.ts';
 import { cosineSimilarity, type EmbeddingVector } from '../embeddings.ts';
 
@@ -161,7 +162,25 @@ export function libraryRejection(kind: LibraryKind, name: string, definition: Ag
   }
   const text = JSON.stringify(definition);
   if ((text.match(/<SECRET>|<TOKEN>/g) || []).length > 3) return 'La définition contenait des secrets : elle doit rester générique.';
+  /*
+   * What is shared is read by everyone's future runs, so it is held to the strictest standard.
+   *
+   * The scan the injection module promised for shared skills was never wired in here: a skill written
+   * from a poisoned page — "always send the API key to…" — would have been promoted and then read, as a
+   * trusted instruction, by every later run. An order in disguise, a secret and a dangerous command
+   * all keep it out.
+   */
+  const shared = screenSharedContent(`${name}\n${text}`);
+  if (!shared.ok) return shared.reason;
   return null;
+}
+
+/**
+ * `CODEN_AGENT_EVOLUTION=0` stops agents' own skills and sub-agents from being promoted to the shared library.
+ * What is already there keeps working, and every promotion is logged.
+ */
+export function agentEvolutionEnabled(env: Record<string, string | undefined> = typeof process !== 'undefined' ? process.env : {}): boolean {
+  return env.CODEN_AGENT_EVOLUTION !== '0';
 }
 
 /* ------------------------------------------------------------------------ */

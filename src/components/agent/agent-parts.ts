@@ -10,7 +10,9 @@ export type AutoChoice = { modelId: string; label: string; reasoningLevel: strin
 export type DecisionNotice = { type: 'decision'; id: string; question: string; options: Array<{ id: string; label: string; description?: string; recommended?: boolean }>; allowFreeText: boolean; questions?: DecisionQuestion[] };
 export type ArtifactNotice = { type: 'artifact'; id: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number };
 export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number };
-export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice;
+/** An action Coden stopped or asked about: shown as a quiet line, never an alarm. */
+export type GuardNotice = { type: 'guard'; id: string; level: 'blocked' | 'asked' | 'paused'; title: string; detail: string };
+export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice | GuardNotice;
 export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
   researchSources?: Array<{ title: string; url: string }>;
@@ -111,7 +113,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
       next.thinking = false;
       next.activity = null;
       next.pausedReason = awaitingDecision || waitingReason === 'credits' ? waitingReason : undefined;
-      next.notices = next.notices?.filter(notice => notice.type === 'artifact' || (awaitingDecision && notice.type === 'decision'));
+      next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard' || (awaitingDecision && notice.type === 'decision'));
       break;
     }
     case 'run_cancelled': closeText(); next.status = 'cancelled'; next.subagents = settleSubagents(next.subagents, false); next.thinking = false; next.activity = null; break;
@@ -126,7 +128,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
      */
     case 'run_failed': closeText(); next.status = 'error'; next.subagents = settleSubagents(next.subagents, false); next.error = event.message; next.diagnosticCode = event.diagnosticCode; next.thinking = false; next.activity = null; break;
     case 'run_paused': closeText(); next.thinking = false; next.activity = null; next.pausedReason = event.reason; break;
-    case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact'); break;
+    case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard'); break;
     case 'decision_required': {
       closeText(); next.thinking = false; next.activity = null;
       /*
@@ -144,6 +146,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
       next.notices = [...(next.notices || []).filter(existing => existing.id !== event.decisionId), notice];
       break;
     }
+    case 'guard_notice': next.notices = [...(next.notices || []).filter(notice => notice.id !== event.noticeId), { type: 'guard' as const, id: event.noticeId, level: event.level, title: event.title, detail: event.detail }].slice(-6); break;
     case 'artifact_ready': next.notices = [...(next.notices || []).filter(notice => notice.id !== event.artifactId), { type: 'artifact', id: event.artifactId, artifactType: event.artifactType, title: event.title, version: event.version }]; break;
     case 'cost_checkpoint': closeText(); next.thinking = false; next.activity = null; next.notices = [...(next.notices || []).filter(notice => notice.id !== event.checkpointId), { type: 'cost', id: event.checkpointId, creditsUsed: event.creditsUsed, nextThreshold: event.nextThreshold, completed: event.completed, next: event.next, estimatedRemaining: event.estimatedRemaining }]; break;
     case 'heartbeat': break;

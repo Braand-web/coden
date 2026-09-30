@@ -30,6 +30,8 @@ type AdminState = {
   models: JsonRecord | null;
   routing: JsonRecord | null;
   proposals: JsonRecord | null;
+  guard: JsonRecord | null;
+  streaming: JsonRecord | null;
   publish: JsonRecord | null;
   security: JsonRecord | null;
   flags: JsonRecord[];
@@ -53,6 +55,8 @@ const state: AdminState = {
   models: null,
   routing: null,
   proposals: null,
+  guard: null,
+  streaming: null,
   publish: null,
   security: null,
   flags: [],
@@ -443,6 +447,7 @@ function renderAgent() {
   const knowledge = learning.knowledge || {};
   const personalization = learning.personalization || {};
   const routing = learning.routing || {};
+  bindGuardCard(root);
   const perDay: JsonRecord[] = signals.per_day || [];
   const runDates = perDay.flatMap(day => Array.from({ length: Number(day.runs) || 0 }, () => day.day));
   root.innerHTML = `
@@ -483,6 +488,13 @@ function renderAgent() {
         escapeHtml(formatNumber(row.contributors)),
       ]), 'Aucun schéma n’a encore été confirmé par deux contributeurs. Les entrées curées servent en attendant.')}
     </article>
+    ${(() => {
+      const metrics = state.streaming?.metrics as JsonRecord | null | undefined;
+      if (!metrics) return '';
+      const pct = (value: unknown) => (typeof value === 'number' ? `${Math.round(value * 1000) / 10} %` : '--');
+      return metric('Flux de génération', `${pct(metrics.interruptedRate)} coupés`, `${formatNumber(metrics.started ?? 0)} flux · ${pct(metrics.resumeSuccessRate)} des reprises menées au bout (${formatNumber(metrics.resume_completed ?? 0)}/${formatNumber(metrics.resume_started ?? 0)}) · depuis le dernier déploiement`);
+    })()}
+    ${guardCard()}
     <article class="admin-card">
       <span class="panel-label">Signaux par type</span>
       <div class="flag-list">${Object.entries(signals.by_kind || {}).map(([kind, count]) => `
@@ -491,6 +503,81 @@ function renderAgent() {
       <p class="metric-note" style="margin-top:12px;">Signaux sans contenu : ni prompt, ni fichier, ni instruction ne quittent le compte de l’utilisateur.</p>
     </article>
   `;
+}
+
+/**
+ * The action guard: how often it stopped or asked, where, how fast; the
+ * corpus it is measured on (false negatives are dangerous actions let
+ * through, false positives are legitimate ones stopped); and what people
+ * labelled. Read-only apart from labelling a decision.
+ */
+function guardCard() {
+  const guard = state.guard as JsonRecord | null;
+  if (!guard || !guard.summary) return '';
+  const summary = guard.summary as JsonRecord;
+  const config = (guard.config || {}) as JsonRecord;
+  const corpus = (guard.corpus || {}) as JsonRecord;
+  const main = (corpus.attacksAndOrdinary || {}) as JsonRecord;
+  const held = (corpus.heldout || {}) as JsonRecord;
+  const decisions = Object.fromEntries(((summary.byDecision || []) as JsonRecord[]).map(entry => [entry.name, entry.total]));
+  const latency = (summary.latency || {}) as JsonRecord;
+  const labelled = (summary.labelled || {}) as JsonRecord;
+  const ms = (value: unknown) => (value === null || value === undefined ? '--' : `${value} ms`);
+  const recent = ((guard.recent || []) as JsonRecord[]).slice(0, 15);
+  return `
+    ${metric('Sécurité des actions', `${config.mode || '--'}`, `juge : ${config.modelMode || '--'} · ${formatNumber(config.cases ?? 0)} cas de test`)}
+    ${metric('Actions arrêtées', `${formatNumber(decisions.block ?? 0)} bloquées · ${formatNumber(decisions.ask ?? 0)} confirmations`, `${formatNumber(decisions.pause ?? 0)} pauses · ${formatNumber(summary.total ?? 0)} décisions journalisées`)}
+    ${metric('Vitesse du contrôle', ms(latency.fastP95Ms), `p95 filtre rapide · juge p50 ${ms(latency.modelP50Ms)} · p95 ${ms(latency.modelP95Ms)}`)}
+    ${metric('Faux négatifs (jeu de test)', `${formatNumber(((main.falseNegatives as unknown[]) || []).length + ((held.falseNegatives as unknown[]) || []).length)}`, `${formatNumber(((main.falsePositives as unknown[]) || []).length + ((held.falsePositives as unknown[]) || []).length)} faux positifs · ${formatNumber(labelled.falseNegatives ?? 0)} FN et ${formatNumber(labelled.falsePositives ?? 0)} FP signalés à la main`)}
+    <article class="admin-card full">
+      <div class="admin-panel-head">
+        <div>
+          <span class="panel-label">Décisions récentes du contrôle</span>
+          <p class="metric-note">Signale une décision : « faux positif » (action légitime arrêtée) ou « correct ». Les cas signalés nourrissent le jeu de test.</p>
+        </div>
+        <button class="admin-button" type="button" data-guard-evaluate>Évaluer avec le juge (modèle)</button>
+      </div>
+      <div data-guard-evaluation class="metric-note"></div>
+      ${table(['Quand', 'Action', 'Catégorie', 'Décision', 'Étape', 'Raison', 'Signalement'], recent.map(row => [
+        escapeHtml(formatDate(row.created_at)),
+        `<code>${escapeHtml(row.tool)}</code>`,
+        escapeHtml(row.category),
+        pill(row.decision === 'block' ? 'failed' : row.decision === 'ask' ? 'warning' : 'ok', row.decision),
+        escapeHtml(row.stage),
+        escapeHtml(String(row.reason || '').slice(0, 140)),
+        `<span class="admin-inline-actions"><button type="button" data-guard-label="false_positive" data-event="${escapeHtml(row.id)}">Faux positif</button><button type="button" data-guard-label="ok" data-event="${escapeHtml(row.id)}">Correct</button>${row.label ? ` ${escapeHtml(row.label)}` : ''}</span>`,
+      ]), 'Aucune action arrêtée sur la période.')}
+    </article>`;
+}
+
+function bindGuardCard(root: HTMLElement) {
+  if (root.dataset.guardBound === '1') return;
+  root.dataset.guardBound = '1';
+  root.addEventListener('click', async event => {
+    const target = event.target as HTMLElement;
+    const label = target.closest<HTMLElement>('[data-guard-label]');
+    if (label) {
+      try {
+        await apiFetch(`/api/admin/action-guard/events/${encodeURIComponent(label.dataset.event || '')}/label`, { method: 'POST', body: JSON.stringify({ label: label.dataset.guardLabel }) });
+        label.textContent = 'Enregistré';
+        (label as HTMLButtonElement).disabled = true;
+      } catch { label.textContent = 'Échec'; }
+      return;
+    }
+    const evaluate = target.closest<HTMLButtonElement>('[data-guard-evaluate]');
+    if (evaluate) {
+      const out = root.querySelector<HTMLElement>('[data-guard-evaluation]');
+      evaluate.disabled = true;
+      if (out) out.textContent = 'Évaluation en cours (appels au modèle)…';
+      try {
+        const result = await apiFetch<JsonRecord>('/api/admin/action-guard/evaluate', { method: 'POST', body: JSON.stringify({}) });
+        const part = (name: string, data: JsonRecord) => `${name} : ${data.metrics?.correct}/${data.metrics?.cases} corrects · FN ${(data.metrics?.falseNegatives || []).length} · FP ${(data.metrics?.falsePositives || []).length} · juge p50 ${data.latency?.modelP50Ms ?? '--'} ms, p95 ${data.latency?.modelP95Ms ?? '--'} ms`;
+        if (out) out.textContent = `${part('Jeu principal', result.main)} — ${part('Jeu tenu à part', result.heldout)}`;
+      } catch (error) {
+        if (out) out.textContent = error instanceof Error ? error.message : 'Évaluation impossible.';
+      } finally { evaluate.disabled = false; }
+    }
+  });
 }
 
 function toolkitCell(slug: string) {
@@ -1134,7 +1221,7 @@ async function loadAdminData() {
     });
     const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
     if (copyButton) copyButton.hidden = false;
-    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals] = await Promise.all([
+    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals, guard, streaming] = await Promise.all([
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
       safeAdminFetch('/api/admin/runs', { runs: [], distributions: {}, availability: {} }),
@@ -1150,6 +1237,8 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/live', { live: {}, alerts: [], recent_errors: [] }),
       safeAdminFetch('/api/admin/routing/overview?days=7', { overview: null }),
       safeAdminFetch('/api/admin/proposals/overview', { summary: null }),
+      safeAdminFetch('/api/admin/action-guard/overview', { summary: null }),
+      safeAdminFetch('/api/admin/streaming/overview', { metrics: null }),
     ]);
     state.live = live;
     state.overview = overview;
@@ -1163,6 +1252,8 @@ async function loadAdminData() {
     state.models = { costs: costs.rows || [], providers: providers.rows || [], margins: margins.rows || [], guardrails: margins.guardrails };
     state.routing = routing;
     state.proposals = proposals;
+    state.guard = guard;
+    state.streaming = streaming;
     state.publish = publish;
     state.security = security;
     state.flags = flags.flags || [];

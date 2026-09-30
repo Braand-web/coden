@@ -245,6 +245,15 @@ import { createRoutingTraceWriter } from './src/services/routing-trace.ts';
 import { ProposalStore, memoryProposalBackend, supabaseProposalBackend, toView as proposalView } from './src/services/proposals/proposal-store.ts';
 import { proposeAfterRun } from './src/services/proposals/proposal-runner.ts';
 import { isProposalLevel, summarizeProposals } from './src/services/proposals/proposal-engine.ts';
+import { createActionGuard } from './src/services/action-guard/action-guard.ts';
+import { guardModeFromEnv, guardModelModeFromEnv } from './src/services/action-guard/action-types.ts';
+import { createGuardJournal, invalidateGuardRules, loadGuardRules, summarizeGuardEvents } from './src/services/action-guard/guard-store.ts';
+import { evaluateCorpus } from './src/services/action-guard/evaluate.ts';
+import { ADVERSARIAL_SET } from './src/services/action-guard/adversarial-set.ts';
+import { HELDOUT_SET } from './src/services/action-guard/heldout-set.ts';
+import { styleBlock } from './src/services/response-style.ts';
+import { recordStream, streamMetrics } from './src/services/stream-metrics.ts';
+import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-request-context.ts';
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
@@ -455,6 +464,8 @@ app.use('/api/saspay/webhook', express.raw({ type: 'application/json', limit: '2
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
+// The person's Économique / Équilibré / Performance choice, for every model pick made on their behalf in this request.
+app.use(['/api/assistant/chat', '/api/projects/:id/generate'], (req: any, _res: any, next: any) => runWithRoutingMode(req.body?.routingMode, next));
 
 // Baseline browser hardening. The generated-app response adds its own opaque
 // sandbox CSP below; this middleware stays compatible with the Builder and
@@ -1166,6 +1177,21 @@ const proposalsEnabled = () => process.env.CODEN_PROPOSALS !== '0';
 async function askForProposals(plan: string, prompt: string): Promise<string> {
   const chosen = selectModel({ task: 'summary', complexity: 'simple', plan, interactive: false });
   const result = await openRouter.chat(chosen.modelId, [{ role: 'user', content: prompt }], 1, 25_000);
+  return String(result.text || '');
+}
+
+/**
+ * The action guard (action-guard/): what runs before every risky action.
+ * `CODEN_ACTION_GUARD` = enforce (default) | shadow (log only) | off;
+ * `CODEN_ACTION_GUARD_LLM` = shadow (default) | enforce | off — the model stage.
+ */
+let guardJournalInstance: ReturnType<typeof createGuardJournal> | null = null;
+const guardJournal = () => (guardJournalInstance ??= createGuardJournal(getSupabase()));
+
+/** The judge: a small, fast model the router picks, alone in its own request — it never shares a conversation with an agent. */
+async function askGuardModel(plan: string, messages: Array<{ role: 'system' | 'user'; content: string }>, options: { timeoutMs: number }): Promise<string> {
+  const chosen = selectModel({ task: 'classification', complexity: 'simple', plan, interactive: true, mode: 'economy' });
+  const result = await openRouter.chat(chosen.modelId, messages as any, 0, options.timeoutMs);
   return String(result.text || '');
 }
 
@@ -5829,6 +5855,7 @@ async function resolveAgentProviderModel(input: {
       const substitute = await modelRouter.selectModel({
         plan: accessPlan,
         mode: routingModeForPolicy(input.decision.selectedModelPolicy),
+        routingMode: currentRoutingMode(),
         userCredits: accessBudget,
         task,
         taskComplexity: complexity,
@@ -5854,6 +5881,7 @@ async function resolveAgentProviderModel(input: {
   const model = await modelRouter.selectModel({
     plan: accessPlan,
     mode,
+    routingMode: currentRoutingMode(),
     userCredits: accessBudget,
     task,
     taskComplexity: complexity,
@@ -5921,9 +5949,12 @@ function buildAgentTextMessages(input: {
       ].filter(Boolean).join('\n\n')
     : input.sessionContext || undefined;
 
+  // How to talk to this person: short, honest about what was verified, plain words, the same voice whichever model answers.
+  const styleGuide = styleBlock([...(input.history || []).filter(turn => turn.role === 'user').map(turn => turn.content), prompt]);
   const systemPrompt = input.finalizer
-    ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext })
+    ? buildFinalizerSystemPrompt({ modeInstruction, languageInstruction, executionContext, styleBlock: styleGuide })
     : buildAgentTextSystemPrompt({
+        styleBlock: styleGuide,
         intent: decision.intent,
         modeInstruction,
         languageInstruction,
@@ -12604,6 +12635,109 @@ app.delete('/api/admin/error-memory/:id', async (req: any, res) => {
   }
 });
 
+/*
+ * The action guard, seen from the admin: how often it stopped or asked, where,
+ * how fast, what people said about its decisions; the corpus it is measured
+ * on; and a live run of that corpus against the model stage.
+ */
+app.get('/api/admin/action-guard/overview', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  const days = Math.max(1, Math.min(30, Math.round(Number(req.query.days) || 7)));
+  const [offline, heldout] = await Promise.all([evaluateCorpus({}), evaluateCorpus({ cases: HELDOUT_SET })]);
+  const corpus = { attacksAndOrdinary: { ...offline.metrics, latency: offline.latency }, heldout: heldout.metrics };
+  const config = { mode: guardModeFromEnv(), modelMode: guardModelModeFromEnv(), cases: ADVERSARIAL_SET.length + HELDOUT_SET.length };
+  const client = getSupabase();
+  if (!client) return res.json({ success: true, days, config, corpus, summary: summarizeGuardEvents([]), recent: [] });
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const result = await client.from('action_guard_events')
+    .select('id,created_at,tool,category,decision,stage,rule,reason,latency_ms,shadow_decision,label,summary,actor,mode')
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(20_000);
+  if (result.error) return res.status(500).json({ success: false, error: 'Lecture du journal impossible.' });
+  const rows = (result.data || []) as any[];
+  res.json({ success: true, days, config, corpus, summary: summarizeGuardEvents(rows), recent: rows.filter(row => row.decision !== 'allow').slice(0, 40) });
+});
+
+/** Runs the corpus against the real judge: what it costs and how it does, measured, not assumed. */
+app.post('/api/admin/action-guard/evaluate', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (!adminMutationAllowed(req, res, 'guard_evaluate', 5)) return;
+  try {
+    const live = await evaluateCorpus({ ask: (messages, options) => askGuardModel('business', messages, options), modelMode: 'enforce' });
+    const liveHeldout = await evaluateCorpus({ cases: HELDOUT_SET, ask: (messages, options) => askGuardModel('business', messages, options), modelMode: 'enforce' });
+    await recordAdminAudit(req, 'action_guard.evaluated', { type: 'platform', id: 'action_guard' }, { false_negatives: live.metrics.falseNegatives.length + liveHeldout.metrics.falseNegatives.length, false_positives: live.metrics.falsePositives.length + liveHeldout.metrics.falsePositives.length });
+    res.json({ success: true, main: { metrics: live.metrics, latency: live.latency, mismatches: live.outcomes.filter(o => o.expected !== o.got) }, heldout: { metrics: liveHeldout.metrics, latency: liveHeldout.latency, mismatches: liveHeldout.outcomes.filter(o => o.expected !== o.got) } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: String(error?.message || error).slice(0, 240) });
+  }
+});
+
+app.post('/api/admin/action-guard/events/:id/label', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const label = String(req.body?.label || '');
+  if (!['ok', 'false_positive', 'false_negative'].includes(label)) return res.status(400).json({ success: false, error: 'Invalid label.' });
+  const client = getSupabase();
+  if (!client) return res.status(503).json({ success: false, error: 'Database unavailable.' });
+  const { data, error } = await client.from('action_guard_events').update({ label }).eq('id', String(req.params.id)).select('id');
+  if (error || !data?.length) return res.status(error ? 500 : 404).json({ success: false, error: error ? 'Could not save.' : 'Event not found.' });
+  res.json({ success: true });
+});
+
+/*
+ * The rules a person sets for the guard, in their words ("never touch
+ * production without asking me"), per project or for everything. A rule can
+ * only make the guard more careful. Each person's rules apply to their own runs.
+ */
+const GUARD_RULE_LIMIT = 20;
+async function guardRuleRoutes(req: any, res: any, projectId: string | null) {
+  const userId = getUserOrgId(req);
+  const client = getSupabase();
+  if (!client) return res.status(503).json({ success: false, error: 'Database unavailable.' });
+  const scope = (query: any) => (projectId ? query.eq('project_id', projectId) : query.is('project_id', null));
+  if (req.method === 'GET') {
+    const { data, error } = await scope(client.from('agent_guard_rules').select('id,rule,created_at').eq('user_id', userId)).order('created_at', { ascending: true }).limit(GUARD_RULE_LIMIT);
+    if (error) return res.status(500).json({ success: false, error: 'Could not read the rules.' });
+    return res.json({ success: true, rules: data || [] });
+  }
+  if (req.method === 'POST') {
+    const rule = String(req.body?.rule || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (rule.length < 4) return res.status(400).json({ success: false, error: 'La règle est trop courte.' });
+    const existing = await scope(client.from('agent_guard_rules').select('id', { count: 'exact', head: true }).eq('user_id', userId));
+    if ((existing.count || 0) >= GUARD_RULE_LIMIT) return res.status(400).json({ success: false, error: `Vingt règles au plus.` });
+    const { data, error } = await client.from('agent_guard_rules').insert({ user_id: userId, project_id: projectId, rule }).select('id,rule,created_at').single();
+    if (error) return res.status(500).json({ success: false, error: 'Could not save the rule.' });
+    invalidateGuardRules(userId);
+    return res.json({ success: true, rule: data });
+  }
+  const { error } = await scope(client.from('agent_guard_rules').delete().eq('user_id', userId).eq('id', String(req.params.ruleId || '')));
+  if (error) return res.status(500).json({ success: false, error: 'Could not delete the rule.' });
+  invalidateGuardRules(userId);
+  res.json({ success: true });
+}
+for (const method of ['get', 'post'] as const) {
+  app[method]('/api/projects/:id/guard-rules', async (req: any, res: any) => {
+    const project = await loadProject(req.params.id, getUserOrgId(req), req);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!requireProjectCapability(req, res, method === 'get' ? 'view' : 'build', project)) return;
+    return guardRuleRoutes(req, res, project.id);
+  });
+  app[method]('/api/users/me/guard-rules', (req: any, res: any) => guardRuleRoutes(req, res, null));
+}
+app.delete('/api/projects/:id/guard-rules/:ruleId', async (req: any, res: any) => {
+  const project = await loadProject(req.params.id, getUserOrgId(req), req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  return guardRuleRoutes(req, res, project.id);
+});
+app.delete('/api/users/me/guard-rules/:ruleId', (req: any, res: any) => guardRuleRoutes(req, res, null));
+
+/** How the streaming is holding up: streams cut before the run ended, and follow-ups that reached its end. Counted since the last deploy. */
+app.get('/api/admin/streaming/overview', (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, metrics: streamMetrics() });
+});
+
 /** How the ideas the agent proposes are received: proposed, applied, refused, per category. Counts only. */
 app.get('/api/admin/proposals/overview', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
@@ -15641,7 +15775,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             payload: envelope as unknown as Record<string, unknown>,
           });
         } : undefined,
+        // A run's stream that closes before the run ends is an interruption; the page follows the run again from where it stopped.
+        onTransportLost: () => recordStream('interrupted', { run: streamRunId }),
       }) : null;
+  if (eventStream) recordStream('started', { run: streamRunId });
   // Set by the multi-agent branch; settled by respondJson on the way out.
   let pipelineRunId = '';
   let pipelineTokens: { prompt: number; completion: number } | null = null;
@@ -16193,6 +16330,22 @@ ${resolvedMission}` : resolvedMission;
       });
       if (webResearch.sources.length) eventStream?.chat({ type: 'research_sources', sources: webResearch.sources });
 
+      // Before any risky action: did the person authorise this precise action? The judge sees their words and the action, nothing else.
+      const guardMode = guardModeFromEnv();
+      const actionGuard = guardMode === 'off' ? undefined : createActionGuard({
+        mode: guardMode,
+        modelMode: guardModelModeFromEnv(),
+        context: {
+          userMessages: [...recentHistory.filter(turn => turn.role === 'user').map(turn => turn.content).slice(-8), prompt],
+          rules: await loadGuardRules(getSupabase(), userId, project.id, currentPersonalization()?.instructions || ''),
+          projectId: project.id,
+          userId,
+          organizationId: (project as any).organization_id,
+        },
+        ask: (messages, options) => askGuardModel(routingPlan, messages, options),
+        journal: entry => guardJournal().write(entry),
+        runId: requestId,
+      });
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
         projectId: project.id,
@@ -16216,6 +16369,8 @@ ${resolvedMission}` : resolvedMission;
         // Économique / Équilibré / Performance, from the composer.
         routingMode: typeof req.body?.routingMode === 'string' ? req.body.routingMode.slice(0, 24) : undefined,
         describePreview: describePreviewCapture,
+        actionGuard,
+        userMessages: [...recentHistory.filter(turn => turn.role === 'user').map(turn => turn.content).slice(-8), prompt],
         onRoutingEvent: event => recordRoutingEvent({ ...event, runId: pipelineRunId || requestId }),
         library: runLibrary || undefined,
         userPlan: routingPlan,
@@ -18227,9 +18382,13 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
   });
   res.flushHeaders();
   req.once('close', () => { disconnected = true; });
+  recordStream('resume_started', { run: turn.id, after: afterEnvelope });
   const writeEnvelope = async (envelope: any) => {
+    if (disconnected || res.destroyed || res.writableEnded) return;
     if (!res.write(`id: ${envelope.seq}\ndata: ${JSON.stringify(envelope)}\n\n`)) {
-      await new Promise<void>(resolve => res.once('drain', resolve));
+      // Waiting for the socket to drain must also end when it closes: a client that left mid-backlog
+      // would otherwise hold this loop, and the record it reads, open for good.
+      await new Promise<void>(resolve => { const done = () => { res.off('drain', done); res.off('close', done); resolve(); }; res.once('drain', done); res.once('close', done); });
     }
   };
 
@@ -18290,6 +18449,7 @@ app.get('/api/projects/:id/agent/threads/:threadId/turns/:turnId/stream', async 
     res.write(': heartbeat\n\n');
     await new Promise(resolve => setTimeout(resolve, events.length ? 50 : 400));
   }
+  recordStream(terminalEnvelopeSeen ? 'resume_completed' : disconnected ? 'resume_abandoned' : 'resume_abandoned', { run: turn.id, ms: Date.now() - startedAt });
   if (!disconnected && !res.writableEnded) res.end();
 });
 

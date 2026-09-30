@@ -1726,6 +1726,7 @@ function settingsMarkup() {
         <div class="settings-card">
           <h3>Instructions pour l’agent</h3>
           <p>Coden les applique à chaque session et à chaque modèle, mode Auto compris, avec la priorité la plus haute après ses règles de sécurité.</p>
+          <p class="personalization-hint">Les phrases qui disent quoi ne <em>jamais</em> faire sans vous demander (par exemple « Ne jamais toucher à la production sans me demander ») sont aussi lues par le contrôle de sécurité des actions : il vous posera la question à chaque fois.</p>
           <div class="settings-field full personalization-field">
             <label for="settings-agent-instructions">Vos instructions</label>
             <textarea id="settings-agent-instructions" data-personalization-instructions maxlength="${MAX_AGENT_INSTRUCTIONS}" rows="8" spellcheck="true" placeholder="Exemples : Réponds toujours en français. Utilise Tailwind et des composants accessibles. Écris des commentaires courts. Demande-moi avant d’ajouter une dépendance."></textarea>
