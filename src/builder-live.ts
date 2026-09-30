@@ -33,6 +33,7 @@ import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, typ
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
 import type { MessageAttachment } from './components/agent/message-attachments';
+import { FIRST_BUILD_EXPECTATION, FIRST_SUCCESS_TEXT, firstBuildPending, markFirstBuildDone } from './lib/first-run';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
 import { connectToolkit, openIntegrationsModal } from './integrations';
 import type { ConnectionChoiceEventDetail } from './components/agent/agent-message';
@@ -3725,6 +3726,18 @@ function bindShareMenu() {
   });
 }
 
+/*
+ * The first build worked: say so once, and offer the three things to do next — change it, publish it, share it.
+ * Shown once per browser (lib/first-run.ts).
+ */
+function showFirstSuccess() {
+  markFirstBuildDone();
+  const card = appendMessage('assistant', FIRST_SUCCESS_TEXT);
+  addInlineAction(card, 'Modifier', () => document.querySelector<HTMLTextAreaElement>('.chat-input-row textarea')?.focus());
+  addInlineAction(card, 'Publier', () => document.querySelector<HTMLButtonElement>('.btn-publish')?.click());
+  addInlineAction(card, 'Partager par lien', () => openProjectMenu());
+}
+
 function bindProjectMenu() {
   const trigger = document.getElementById('project-combo-trigger');
   if (!trigger || trigger.dataset.boundProjectMenu === 'true') return;
@@ -6738,6 +6751,8 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   clearInlineBlocks();
   // An attached run's request is already in the restored conversation.
   if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText, { attachments: displayAttachments });
+  // A first build says how long it takes and that the work goes on if the page is closed.
+  if (!isRecoveryRetry && !attach && promptUiContext === 'project_mission' && firstBuildPending()) appendMessage('system', FIRST_BUILD_EXPECTATION);
 
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
@@ -7290,6 +7305,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     // and checks travel separately so the browser never manufactures a second
     // completion from local copy.
     const finalJoined = finalText;
+    if (!hasNeedsFix && promptUiContext === 'project_mission' && (liveUrl || previewHtml) && firstBuildPending()) showFirstSuccess();
     if (useAgentFlow) {
       flowStatus = hasNeedsFix ? 'failed' : 'done';
       flowIsStreaming = false;

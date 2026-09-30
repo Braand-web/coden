@@ -25,6 +25,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
+import { FirstRunGuide } from './components/first-run-guide';
 import { previewDocumentWithStorageShim } from './lib/preview-document';
 import { CodenLogoMark } from './components/brand/coden-logo';
 import { isLocalPreviewEnabled } from './local-preview';
@@ -710,6 +711,7 @@ function DashboardHome() {
             <div className="coden-dashboard-create-status" role="status" aria-live="polite">
               {creationStatus}
             </div>
+            {!creating ? <FirstRunGuide projectCount={projects.length} loading={projectsQuery.isLoading} /> : null}
           </section>
 
           {/*

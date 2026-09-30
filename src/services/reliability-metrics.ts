@@ -11,6 +11,7 @@
  */
 export type ReliabilityTurn = {
   id?: string;
+  user_id?: string | null;
   status: string;
   created_at: string;
   started_at?: string | null;
@@ -30,7 +31,18 @@ export type ReliabilityReport = {
   duration: { p50Ms: number | null; p90Ms: number | null };
   byModel: ReliabilityGroup[];
   byAction: ReliabilityGroup[];
+  activation: Activation;
 };
+
+/**
+ * How many people who tried got a real result.
+ *
+ * A build is the turn that takes minutes; a chat answer takes seconds. Counting every completed turn as « success »
+ * would hide the people who asked for an app and never got one, so a result is a completed turn of at least
+ * `BUILD_MIN_MS`. `underThreeMinutes` is the share of those people whose first such result came within three minutes.
+ */
+export const BUILD_MIN_MS = 60_000;
+export type Activation = { people: number; withResult: number; rate: number | null; underThreeMinutes: number | null; firstResultP50Ms: number | null };
 
 const ratio = (completed: number, failed: number): number | null => (completed + failed > 0 ? Math.round((completed / (completed + failed)) * 1000) / 1000 : null);
 
@@ -77,6 +89,30 @@ export function buildReliabilityReport(turns: ReliabilityTurn[], options: { days
   });
 
   const completedTurns = inWindow.filter(turn => turn.status === 'completed');
+  const firstResults = new Map<string, number>();
+  const people = new Set<string>();
+  for (const turn of inWindow) {
+    if (!turn.user_id) continue;
+    people.add(turn.user_id);
+    const took = durationMs(turn);
+    if (turn.status !== 'completed' || took === null || took < BUILD_MIN_MS) continue;
+    const at = Date.parse(turn.created_at);
+    const known = firstResults.get(turn.user_id);
+    // The first result of each person: the earliest completed build of the window.
+    if (known === undefined || at < known) firstResults.set(turn.user_id, at);
+  }
+  const firstDurations = [...firstResults.entries()].map(([user]) => {
+    const first = inWindow.filter(turn => turn.user_id === user && turn.status === 'completed' && (durationMs(turn) ?? 0) >= BUILD_MIN_MS)
+      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))[0];
+    return first ? durationMs(first) : null;
+  }).filter((value): value is number => value !== null);
+  const activation: Activation = {
+    people: people.size,
+    withResult: firstResults.size,
+    rate: people.size ? Math.round((firstResults.size / people.size) * 1000) / 1000 : null,
+    underThreeMinutes: firstDurations.length ? Math.round((firstDurations.filter(value => value < 180_000).length / firstDurations.length) * 1000) / 1000 : null,
+    firstResultP50Ms: percentile(firstDurations, 50),
+  };
   const completed = completedTurns.length;
   const failed = inWindow.filter(turn => turn.status === 'failed').length;
   const cancelled = inWindow.filter(turn => turn.status === 'cancelled').length;
@@ -88,6 +124,7 @@ export function buildReliabilityReport(turns: ReliabilityTurn[], options: { days
     duration: { p50Ms: percentile(durations, 50), p90Ms: percentile(durations, 90) },
     byModel: group(inWindow, turn => String(turn.checkpoint?.modelId || '')).slice(0, 12),
     byAction: group(inWindow, turn => String(turn.resolved_action || turn.requested_mode || '')).slice(0, 12),
+    activation,
   };
 }
 

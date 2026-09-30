@@ -14105,7 +14105,7 @@ async function loadReliabilityTurns(sinceMs: number): Promise<{ turns: Reliabili
   if (!client) return { turns: [], error: 'Base indisponible.' };
   const { data, error } = await client
     .from('agent_turns')
-    .select('id,status,created_at,started_at,completed_at,resolved_action,requested_mode,checkpoint')
+    .select('id,user_id,status,created_at,started_at,completed_at,resolved_action,requested_mode,checkpoint')
     .gte('created_at', new Date(sinceMs).toISOString())
     .order('created_at', { ascending: false })
     .limit(5000);
