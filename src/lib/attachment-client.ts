@@ -10,6 +10,7 @@
 import { apiFetch, ApiError } from './api';
 import { getVerifiedSession, refreshVerifiedSession } from './supabase-browser';
 import { isLocalPreviewEnabled } from '../local-preview';
+import { compressImageForUpload } from './image-compress';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -55,9 +56,11 @@ function uploadWithProgress(file: File, token: string, projectId: string | undef
 export function createAttachmentUploader(options: { projectId?: () => string | undefined } = {}): AttachmentUploader {
   return {
     async upload(file, onProgress, signal) {
-      const token = await accessToken();
+      // The token and the compression are independent: both run at once.
+      const [token, prepared] = await Promise.all([accessToken(), compressImageForUpload(file)]);
       if (!token) throw new ApiError('Connectez-vous pour joindre des fichiers.', 401, null);
-      return uploadWithProgress(file, token, options.projectId?.(), onProgress, signal);
+      if (signal.aborted) throw new DOMException('Envoi annulé.', 'AbortError');
+      return uploadWithProgress(prepared.file, token, options.projectId?.(), onProgress, signal);
     },
     async status(id) {
       const payload = await apiFetch<{ attachment: RemoteAttachment }>(`/api/attachments/${encodeURIComponent(id)}`);
