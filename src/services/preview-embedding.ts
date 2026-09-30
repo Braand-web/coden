@@ -14,6 +14,19 @@ import { posix } from 'node:path';
 type PreviewSourceFile = { path: string; content: string };
 
 /**
+ * Which renderer produced a saved preview document.
+ *
+ * A saved `preview_html` is a rendering of the project's files, and it is what
+ * a reopened project shows first. When the renderer learns to reproduce
+ * something it used to drop, every document saved before that is stale in the
+ * same way: bump this and `refreshLegacyPreviewStyles` rebuilds them from the
+ * stored files the next time they are opened.
+ *   imports-v1: follows the app's CSS imports.
+ *   theme-v2:   runs the project's Tailwind config instead of a literal subset.
+ */
+export const CODEN_PREVIEW_RENDERER_VERSION = 'theme-v2';
+
+/**
  * Follow the generated app's imports instead of assuming its entire design
  * lives in index.css or App.css. The lightweight preview does not run Vite, so
  * CSS imports otherwise become no-ops in its module loader. Keep this confined
@@ -219,4 +232,94 @@ export function tailwindThemeLiteral(configSource: string | null | undefined): s
   if (/[`()]|=>|\brequire\b|\bimport\b|\bfunction\b|\bnew\b/.test(literal)) return null;
   if (!/[a-z]/i.test(literal)) return null;
   return literal;
+}
+
+/**
+ * The generated project's Tailwind configuration, as an inline script that
+ * sets `tailwind.config` for the Play CDN.
+ *
+ * `tailwindThemeLiteral` above can only embed a theme that is a plain object
+ * literal, and Coden's own starter is not one: its colours are
+ * `tone('--color-surface')`, a helper that builds a `color-mix()` around a CSS
+ * variable, and its radii and shadows are `var(--radius-card)`. Every one of
+ * those contains a parenthesis, so the literal was refused, the preview ran
+ * stock Tailwind, and `bg-surface`, `text-secondary` and `rounded-card`
+ * resolved to nothing — a saved app reopened looking unstyled although every
+ * file was intact (63 of the 72 stored projects have such a theme).
+ *
+ * The config is model-written code, but it is code the preview already
+ * trusts to that degree: the same document runs the app's own modules through
+ * Babel inside a sandboxed frame. So the config is *run*, not parsed:
+ *
+ *  - imports and `require` become inert stand-ins (a plugin cannot load from
+ *    a CDN anyway, and `plugins` is emptied afterwards);
+ *  - `export default` / `module.exports` become a `return`;
+ *  - the source travels as a JSON string handed to `new Function`, so no
+ *    sequence in it can end the script element, and a config that does not
+ *    evaluate is a caught error rather than a broken document.
+ *
+ * When evaluation fails the plain-literal theme, if there is one, still applies.
+ * Returns null when there is no config to speak of.
+ */
+export function tailwindConfigScript(configSource: string | null | undefined): string | null {
+  const original = String(configSource || '');
+  if (!original.trim() || original.length > 80_000) return null;
+
+  const bindings: string[] = [];
+  let body = original
+    .replace(/^\s*import\s+type\s[^;\n]*;?[ \t]*$/gm, '')
+    .replace(/^\s*import\s+([\s\S]*?)\s+from\s*['"][^'"\n]+['"]\s*;?/gm, (_all, clause: string) => {
+      const named = /\{([^}]*)\}/.exec(clause)?.[1];
+      const rest = clause.replace(/\{[^}]*\}/, '');
+      const namespace = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(rest)?.[1];
+      const def = /^\s*([A-Za-z_$][\w$]*)/.exec(rest.replace(/\*\s*as\s+[A-Za-z_$][\w$]*/, ''))?.[1];
+      if (def) bindings.push(def);
+      if (namespace) bindings.push(namespace);
+      for (const part of String(named || '').split(',')) {
+        const local = part.trim().split(/\s+as\s+/).pop()?.trim();
+        if (local && /^[A-Za-z_$][\w$]*$/.test(local)) bindings.push(local);
+      }
+      return '';
+    })
+    .replace(/^\s*import\s*['"][^'"\n]+['"]\s*;?/gm, '')
+    .replace(/\s+satisfies\s+[A-Za-z_$][\w$.]*(?:<[^>\n]*>)?/g, '')
+    .replace(/\s+as\s+const\b/g, '')
+    .replace(/^(\s*(?:const|let|var)\s+[A-Za-z_$][\w$]*)\s*:\s*[^=\n]+?\s*=(?!=)/gm, '$1 =')
+    // `(name: string): string =>` — the parameter and return annotations of a helper.
+    .replace(/\(([^()]*)\)\s*(?::\s*[A-Za-z_$][\w$.<>[\]| ]*)?\s*=>/g, (_all, params: string) =>
+      `(${params.split(',').map(param => param.replace(/\s*\??:\s*[^,=]+/, '')).join(',')}) =>`)
+    .replace(/\bexport\s+default\s+/, 'return ')
+    .replace(/\bmodule\.exports\s*=\s*/, 'return ')
+    .replace(/^\s*export\s+(?=(?:const|let|var|function)\b)/gm, '');
+  if (!/\breturn\b/.test(body)) return null;
+
+  const declared = [...new Set(bindings)].filter(name => !/^(?:return|default|from)$/.test(name));
+  const prelude = [
+    'var __stub = new Proxy(function () {}, {',
+    '  get: function (t, k) { if (k === Symbol.iterator) return function () { return [][Symbol.iterator](); }; if (k === Symbol.toPrimitive) return function () { return ""; }; if (k === "then") return undefined; return __stub; },',
+    '  apply: function () { return __stub; }, construct: function () { return __stub; }',
+    '});',
+    'var require = function () { return __stub; };',
+    ...(declared.length ? [`var ${declared.map(name => `${name} = __stub`).join(', ')};`] : []),
+  ].join('\n');
+
+  const literal = tailwindThemeLiteral(original);
+  // The literal is model-written text too: it travels as a string, like the
+  // config, so a `</script>` inside one of its values cannot end the element.
+  const fallback = literal ? `window.tailwind.config = { theme: new Function(${scriptSafeJson(JSON.stringify(`return ${literal};`))})() };` : '';
+  const source = JSON.stringify(`${prelude}\n${body}`);
+  return [
+    '(function () {',
+    '  try {',
+    `    var cfg = new Function(${scriptSafeJson(source)})();`,
+    '    if (!cfg || typeof cfg !== "object") throw new Error("the config does not export an object");',
+    '    cfg.plugins = []; delete cfg.content;',
+    '    window.tailwind = window.tailwind || {};',
+    '    window.tailwind.config = cfg;',
+    '  } catch (error) {',
+    '    console.warn("[coden preview] tailwind.config could not be evaluated:", error && error.message);',
+    fallback ? `    try { window.tailwind = window.tailwind || {}; ${fallback} } catch (_) {}` : '',
+    '  }',
+    '})();',
+  ].filter(Boolean).join('\n');
 }

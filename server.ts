@@ -2009,6 +2009,55 @@ async function reapInterruptedAgentRuns(options: { createdBefore?: string } = {}
  * Runs at every boot rather than once, so a regression in the same place
  * corrects itself instead of accumulating silently.
  */
+/**
+ * Refresh the saved previews that the renderer has since learned to do better.
+ *
+ * Three kinds are stale, and all three are what a reopened project shows first
+ * and what its dashboard card is drawn from: an error document produced by a
+ * check that has since been fixed, no document at all, and a rendering from an
+ * older renderer that could not reproduce the app's Tailwind theme (see
+ * CODEN_PREVIEW_RENDERER_VERSION). Only `preview_html` is rewritten — never the
+ * files, the status or the ordering — and only when the project has not been
+ * touched since it was read, so a run finishing at the same moment always wins.
+ */
+async function refreshStaleSavedPreviews(options: { limit?: number } = {}) {
+  const client = getSupabase();
+  if (!client) return { scanned: 0, refreshed: 0 };
+  const limit = options.limit ?? 300;
+  const ids = new Set<string>();
+  const collect = async (query: any) => {
+    const { data, error } = await query.limit(limit);
+    if (error) { console.warn('[coden:preview_refresh_scan_skipped]', { message: error.message }); return; }
+    for (const row of data || []) ids.add(String(row.id));
+  };
+  await collect(client.from('projects').select('id').like('preview_html', '%data-coden-preview-error%'));
+  await collect(client.from('projects').select('id').is('preview_html', null));
+  await collect(client.from('projects').select('id').eq('preview_html', ''));
+  await collect(client.from('projects').select('id').like('preview_html', '%window.__modules__ =%').not('preview_html', 'like', `%content="${CODEN_PREVIEW_RENDERER_VERSION}"%`));
+
+  let refreshed = 0;
+  for (const id of [...ids].slice(0, limit)) {
+    try {
+      const { data: project } = await client.from('projects').select('*').eq('id', id).maybeSingle();
+      if (!project) continue;
+      const files = await loadProjectFiles(id);
+      if (!files.length) continue;
+      const saved = String(project.preview_html || '');
+      const html = !saved.trim() || isPreviewErrorDocument(saved)
+        ? rebuildPreviewFromFiles(project as GeneratedProject, files)
+        : refreshLegacyPreviewStyles(saved, project as GeneratedProject, files, 'preview');
+      if (!html || html === saved) continue;
+      const { data: updated } = await client.from('projects').update({ preview_html: html }).eq('id', id).eq('updated_at', project.updated_at).select('id');
+      if (updated?.length) refreshed += 1;
+    } catch (error: any) {
+      console.warn('[coden:preview_refresh_failed]', { project_id: id, message: redactSecrets(String(error?.message || error), '[redacted]') });
+    }
+    await new Promise(resolve => setTimeout(resolve, 120));
+  }
+  if (ids.size) console.log('[coden:saved_previews_refreshed]', { scanned: ids.size, refreshed, renderer: CODEN_PREVIEW_RENDERER_VERSION });
+  return { scanned: ids.size, refreshed };
+}
+
 async function reconcileScaffoldOnlyPreviews() {
   const client = getSupabase();
   if (!client) return { corrected: 0 };
@@ -3760,7 +3809,10 @@ function buildReactVitePreviewHtml(
 
   // Extract all TS/JS/JSON files for our dynamic module loader
   const modulesObject: Record<string, { code: string }> = {};
-  for (const file of files) {
+  // A pure function of the file set: the database orders paths by its own
+  // collation and a sandbox by the filesystem's, and a preview rebuilt after a
+  // reload must not differ from the one saved before it only by key order.
+  for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
     const ext = file.path.split('.').pop()?.toLowerCase();
     if (ext && ['ts', 'tsx', 'js', 'jsx', 'json'].includes(ext)) {
       modulesObject[file.path] = { code: file.content };
@@ -3769,8 +3821,9 @@ function buildReactVitePreviewHtml(
   const escapedModulesValue = scriptSafeJson(JSON.stringify(modulesObject));
 
   // The Play CDN starts with stock Tailwind, so every token the app defines for
-  // itself renders as nothing. Give it the project's own theme.
-  const themeLiteral = tailwindThemeLiteral(
+  // itself renders as nothing. Run the project's own config in the preview: the
+  // starter's colours are `tone('--color-surface')`, not a plain literal.
+  const tailwindConfig = usesTailwind4 ? null : tailwindConfigScript(
     fileByPath(files, 'tailwind.config.ts')?.content
     || fileByPath(files, 'tailwind.config.js')?.content
     || fileByPath(files, 'tailwind.config.cjs')?.content
@@ -3784,7 +3837,7 @@ function buildReactVitePreviewHtml(
     '  <meta charset="UTF-8" />',
     '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
     `  <meta name="robots" content="${robots}" />`,
-    '  <meta name="coden-preview-css" content="imports-v1" />',
+    `  <meta name="coden-preview-css" content="${CODEN_PREVIEW_RENDERER_VERSION}" />`,
     `  <link rel="canonical" href="${escapeHtml(canonical)}" />`,
     `  <title>${escapeHtml(title)}</title>`,
     `  <meta name="description" content="${escapeHtml(description)}" />`,
@@ -3795,7 +3848,7 @@ function buildReactVitePreviewHtml(
     usesTailwind4
       ? '  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>'
       : '  <script src="https://cdn.tailwindcss.com"></script>',
-    ...(!usesTailwind4 && themeLiteral ? [`  <script>tailwind.config = { theme: ${themeLiteral} };</script>`] : []),
+    ...(tailwindConfig ? [`  <script>\n${tailwindConfig}\n  </script>`] : []),
     '  <script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react/jsx-dev-runtime":"https://esm.sh/react@18.3.1/jsx-dev-runtime","react-dom":"https://esm.sh/react-dom@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client"}}</script>',
     // Pinned. This URL used to float on latest, so when Babel 8 removed the
     // preset options below, every preview in production broke at once with no
@@ -4363,11 +4416,39 @@ function renderPreviewHtml(
  * document carrying the real reason, so this hands back a better message than
  * the generic one it replaces.
  */
+function isPreviewErrorDocument(html: string): boolean {
+  return html.includes('data-coden-preview-error="true"');
+}
+
+/**
+ * A preview rebuilt from the files, or '' when they do not render.
+ *
+ * The saved `preview_html` is derived data — a rendering of `project_files` —
+ * and derived data goes stale. 17 stored projects were showing "Preview
+ * indisponible — Unsafe file path blocked" for a lockfile check that has since
+ * been fixed: the fix never reached documents saved before it, so an intact
+ * app reopened as a failure page. When the saved document only says
+ * "unavailable" (or is missing) and the project's files are on disk, the files
+ * are asked again, with today's checks. A failure that is still real renders
+ * the same honest document as before.
+ */
+function rebuildPreviewFromFiles(project: GeneratedProject, files: GeneratedFile[]): string {
+  if (!files.length) return '';
+  try {
+    const built = runPreviewPipeline(project, files);
+    return built.status === 'ready' ? built.html : '';
+  } catch {
+    return '';
+  }
+}
+
 function getProjectPreviewHtml(project: GeneratedProject, files: GeneratedFile[], environment: 'preview' | 'production' = 'preview'): string {
   const servesThePublic = environment === 'production';
   const verified = project.preview_status === 'verified';
-  if (project.preview_html && (verified || !servesThePublic)) {
-    const savedHtml = refreshLegacyPreviewStyles(project.preview_html, project, files, environment);
+  let saved = project.preview_html || '';
+  if (!servesThePublic && files.length && (!saved.trim() || isPreviewErrorDocument(saved))) saved = rebuildPreviewFromFiles(project, files) || saved;
+  if (saved && (verified || !servesThePublic)) {
+    const savedHtml = refreshLegacyPreviewStyles(saved, project, files, environment);
     const seoHtml = enhanceHtmlSeo(restoreLegacyMotionPreview(savedHtml), project.name, project.prompt || project.name, project.slug || project.id, environment);
     return injectAnalyticsSnippet(seoHtml, project.id, environment);
   }
@@ -4383,7 +4464,7 @@ function refreshLegacyPreviewStyles(html: string, project: GeneratedProject, fil
   // Existing projects retain their saved source files. Refresh only snapshots
   // made by the old lightweight renderer whose code still matches the saved
   // files. An interrupted iteration must keep the last committed preview.
-  if (!files.length || !html.includes('window.__modules__ =') || html.includes('name="coden-preview-css"')) return html;
+  if (!files.length || !html.includes('window.__modules__ =') || html.includes(`name="coden-preview-css" content="${CODEN_PREVIEW_RENDERER_VERSION}"`)) return html;
   const marker = 'window.__modules__ = ';
   const start = html.indexOf(marker);
   const end = html.indexOf(';\n    window.__resolve_path__', start);
@@ -19980,7 +20061,8 @@ import {
 } from './src/services/publish-vercel.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
-import { collectPreviewStyles, insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './src/services/preview-embedding.ts';
+import { extractDesignContract } from './src/services/design-contract.ts';
+import { CODEN_PREVIEW_RENDERER_VERSION, collectPreviewStyles, insertBeforeBodyEnd, insertBeforeHeadEnd, scriptSafeJson, styleSafeCss, tailwindConfigScript } from './src/services/preview-embedding.ts';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 import { buildTargetedRepair } from './src/services/targeted-repair.ts';
 import { renderProjectArchitecture } from './src/services/project-architecture.ts';
@@ -21223,6 +21305,14 @@ const httpServer = app.listen(port, () => {
   void reconcileScaffoldOnlyPreviews().catch((error: any) => {
     console.warn('[coden:scaffold_preview_reconcile_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
+  // After the boot rush, and never in the way of a user: previews saved by an older renderer are rebuilt from their files.
+  if (process.env.CODEN_PREVIEW_REFRESH !== '0') {
+    setTimeout(() => {
+      void refreshStaleSavedPreviews().catch((error: any) => {
+        console.warn('[coden:saved_previews_refresh_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+      });
+    }, 90_000).unref();
+  }
   // Say at boot which build path this deployment can run, instead of letting
   // the first user build discover it.
   if (CODEN_AGENT_FLAGS.multiAgentPipeline && !hostSandboxExecutionAllowed()) {
