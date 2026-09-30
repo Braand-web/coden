@@ -1,0 +1,22 @@
+/* The ideas the agent proposes: small cards above the composer. */
+.coden-proposals { display: grid; gap: 8px; margin: 0 0 8px; }
+.coden-proposals:empty { display: none; }
+.coden-proposal { border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; animation: coden-proposal-in 180ms ease-out both; }
+.coden-proposal[aria-busy="true"] { opacity: .6; pointer-events: none; }
+.coden-proposal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.coden-proposal-kicker { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--text-secondary); }
+.coden-proposal-close { border: 0; background: transparent; color: var(--text-secondary); font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.coden-proposal-close:hover { background: var(--input); color: var(--foreground); }
+.coden-proposal-title { font-size: 13px; font-weight: 600; color: var(--foreground); }
+.coden-proposal-why, .coden-proposal-detail { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.coden-proposal-detail { border-left: 2px solid var(--border); padding-left: 8px; }
+.coden-proposal-note { font-size: 11px; color: var(--text-secondary); }
+.coden-proposal-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.coden-proposal-primary, .coden-proposal-secondary { font: inherit; font-size: 12px; border-radius: 8px; padding: 5px 10px; cursor: pointer; border: 1px solid var(--border); }
+.coden-proposal-primary { background: var(--foreground); color: var(--background); border-color: var(--foreground); font-weight: 600; }
+.coden-proposal-secondary { background: transparent; color: var(--foreground); }
+.coden-proposal-secondary:hover { background: var(--input); }
+.coden-proposal-primary:focus-visible, .coden-proposal-secondary:focus-visible, .coden-proposal-close:focus-visible, .coden-proposal-fewer:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coden-proposal-fewer { justify-self: end; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; padding: 0 2px; }
+@keyframes coden-proposal-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .coden-proposal { animation: none; } }
