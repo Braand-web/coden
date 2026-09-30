@@ -149,7 +149,7 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       const result = await page.evaluate(() => {
         const root = document.querySelector('#root,#app') || document.body;
         const box = root.getBoundingClientRect();
-        return { visible:box.width > 0 && box.height > 0 && getComputedStyle(root).visibility !== 'hidden', overflow:document.documentElement.scrollWidth > innerWidth + 4, overlay:!!document.querySelector('vite-error-overlay'), scaffold:/^Building[.…\s]*$/i.test((root.textContent || '').trim()) };
+        return { visible:box.width > 0 && box.height > 0 && getComputedStyle(root).visibility !== 'hidden', overflow:document.documentElement.scrollWidth > innerWidth + 4 && (() => { /* wider content is a defect only when the page can really be dragged sideways: an app that clips it (overflow-x: hidden on the body, a decorative blob off the edge) does not scroll */ const before = scrollX; scrollTo(innerWidth, 0); const moved = scrollX > before + 2; scrollTo(before, 0); return moved; })(), overlay:!!document.querySelector('vite-error-overlay'), scaffold:/^Building[.…\s]*$/i.test((root.textContent || '').trim()) };
       });
       if (!result.visible || result.overlay) fail(`Preview is blank or displays a build overlay at ${width}px.`);
       if (result.scaffold) fail('Preview still renders the Building scaffold. Implement the requested application in its actual entrypoint; a compiling placeholder is not a completed application.');
