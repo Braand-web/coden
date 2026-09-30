@@ -153,6 +153,6 @@ describe('composer attachments', () => {
     event.clipboardData = { files: [pasted] };
     await act(async () => { textarea.dispatchEvent(event); });
     await settle(50);
-    expect(container.querySelector('.coden-attach-name')?.textContent).toMatch(/^capture-\d{6}\.png$/);
+    expect(container.querySelector('.coden-attach-name')?.textContent).toMatch(/^(Capture d’écran|Image collée) · \d{1,2} h \d{2}$/);
   });
 });
