@@ -34,3 +34,16 @@ export function blocksTheRun(check: { key: string; status: string; severity: str
   if (check.status !== 'fail' || check.severity !== 'high') return false;
   return strict || !ADVISORY_QUALITY_CHECK.test(check.key);
 }
+
+/**
+ * A request for something small: a calculator, a timer, a to-do list, anything said to be « mini » or « simple ».
+ * It is finished when it works. No designer's second look, no polish round: the review only ever found another interface.
+ */
+const SMALL_WORD = /\b(?:mini|simple|simples|petit|petite|basique|basic|small|tiny|minimal|minimaliste|rapide|quick)\b/i;
+const SMALL_TOOL = /\b(?:calculatrice|calculator|chronom[èe]tre|stopwatch|minuteur|timer|compte [àa] rebours|countdown|convertisseur|converter|to-?do|liste de t[âa]ches|pense-b[êe]te|lanceur de d[ée]s?|dice|pile ou face|coin flip|g[ée]n[ée]rateur de mot de passe|password generator|compteur|counter)\b/i;
+
+export function isSmallRequest(prompt: string): boolean {
+  const text = String(prompt || '').trim();
+  if (!text) return false;
+  return SMALL_WORD.test(text) || (text.length <= 100 && SMALL_TOOL.test(text));
+}

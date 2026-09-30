@@ -46,3 +46,23 @@ describe('what may send a working app back for another round', () => {
     expect(blocksTheRun({ key: 'design_touch_targets', status: 'warn', severity: 'medium' }, true)).toBe(false);
   });
 });
+
+describe('a small request is finished when it works', async () => {
+  const { isSmallRequest } = await import('./quality-gate-policy');
+  const { NO_OP_WHEN_NOTHING_TO_UNDO } = await import('./sandbox/acceptance');
+  const { DESIGN_REVIEW_PASS_SCORE } = await import('./design-review-agent');
+
+  it('reads a mini tool as small, and a real product as not', () => {
+    for (const prompt of ['cree une mini calculatrice', 'Une calculatrice', 'un chronomètre tout simple', 'make a simple todo app', 'une liste de tâches', 'Un petit jeu de morpion']) expect(isSmallRequest(prompt), prompt).toBe(true);
+    for (const prompt of ['', 'Une boutique en ligne pour vendre mes bougies avec un panier et le paiement', 'Crée un CRM complet avec pipeline, rapports et gestion des équipes commerciales pour ma PME', 'Un site vitrine premium pour la marque O’Tea avec un blog et une page contact']) expect(isSmallRequest(prompt), prompt).toBe(false);
+  });
+
+  it('a clear or undo control pressed when there is nothing to undo is not a dead control', () => {
+    for (const label of ['Effacer', 'Supprimer le dernier chiffre', 'Changer le signe', '+/-', '±', '⌫', 'C', 'AC', 'Annuler', 'Fermer', 'Réinitialiser']) expect(NO_OP_WHEN_NOTHING_TO_UNDO.test(label), label).toBe(true);
+    for (const label of ['Ajouter une tâche', 'Diviser', 'Calculer', 'Créer une demande', 'Publier', 'Cocher']) expect(NO_OP_WHEN_NOTHING_TO_UNDO.test(label), label).toBe(false);
+  });
+
+  it('the designer\'s review asks for a polish round only for a clearly weak result', () => {
+    expect(DESIGN_REVIEW_PASS_SCORE).toBeLessThanOrEqual(6);
+  });
+});

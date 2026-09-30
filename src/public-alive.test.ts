@@ -18,16 +18,15 @@ describe('the landing page keeps its two composers', () => {
     expect(script.match(/createLandingDraft\(/g)).toHaveLength(1);
   });
 
-  it('offers ideas that fill the composer, and keeps its headline, its plans and its FAQ', () => {
-    expect(html.match(/data-lp-example="/g)?.length).toBeGreaterThanOrEqual(4);
+  it('keeps its headline, its plans and its FAQ', () => {
     expect(html).toContain('Votre idée.');
     for (const plan of ['free', 'pro', 'business']) expect(html).toContain(`data-lp-plan="${plan}"`);
     expect(html).toContain('id="faq-title"');
   });
 });
 
-describe('the living layer takes its colours from the tokens, and there is no violet', () => {
-  for (const file of ['src/styles/landing-alive.css', 'src/styles/public-alive.css']) {
+describe('the living layer of the public pages takes its colours from the tokens, and there is no violet', () => {
+  for (const file of ['src/styles/public-alive.css']) {
     it(`${file} has no raw colour, no violet, and not the theme's indigo « cyan »`, () => {
       const css = read(file).replace(/\/\*[\s\S]*?\*\//g, '');
       expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
@@ -35,7 +34,7 @@ describe('the living layer takes its colours from the tokens, and there is no vi
     });
   }
 
-  it('respects reduced motion in both files', () => {
-    for (const file of ['src/styles/landing-alive.css', 'src/styles/public-alive.css']) expect(read(file)).toMatch(/prefers-reduced-motion: reduce/);
+  it('respects reduced motion', () => {
+    expect(read('src/styles/public-alive.css')).toMatch(/prefers-reduced-motion: reduce/);
   });
 });

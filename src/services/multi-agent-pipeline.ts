@@ -76,7 +76,7 @@ import {
   type AgentTask,
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
-import { blocksTheRun, gatePlatformType } from './quality-gate-policy.ts';
+import { blocksTheRun, gatePlatformType, isSmallRequest } from './quality-gate-policy.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
 import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
 import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
@@ -1319,7 +1319,7 @@ export async function runMultiAgentPipeline(input: {
    * One look at the finished result, by a designer's eye, while there is
    * still a round to act on it. Only where the budget allows it.
    */
-  const review = quality.designReview ? async (report: ValidationReport) => {
+  const review = quality.designReview && !isSmallRequest(input.prompt) ? async (report: ValidationReport) => {
     if (!latestScreenshots.length) return undefined;
     activity('Coden relit le design…', 'Coden is reviewing the design…');
     const findings = report.problems
