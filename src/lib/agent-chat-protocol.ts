@@ -35,7 +35,18 @@ export type ChatEvent =
   /** The model's reasoning as it streams; shown folded, never mixed into the answer. */
   | { type: 'reasoning_delta'; delta: string }
   /** What Auto chose — or switched to — shown discreetly beside the answer. */
-  | { type: 'model_selected'; modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' | 'substitution' }
+  | {
+      type: 'model_selected'; modelId: string; label: string; reasoningLevel: string;
+      /** `supervision`: Coden changed model or effort because of what it observed; `fallback`: the provider failed and another model took over; `suggestion`: the model the person chose is stuck. */
+      reason?: 'initial' | 'escalation' | 'substitution' | 'supervision' | 'fallback' | 'suggestion';
+      /** The model it replaces, for a change. */
+      from?: string;
+      fromLabel?: string;
+      /** Why, in the person's language — shown when the line is opened. */
+      detail?: string;
+      /** The mode the choice was made in, on the first announcement. */
+      mode?: 'economy' | 'balanced' | 'performance';
+    }
   | { type: 'files_touched'; action: FileAction; paths: string[] }
   /** The master's sub-agents: the whole list each time, so a late client catches up. */
   | { type: 'subagents'; agents: SubagentSnapshot[] }
