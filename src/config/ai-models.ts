@@ -89,6 +89,13 @@ export interface ModelDefinition {
   isFast?: boolean;
   isPremium?: boolean;
   isRecommended?: boolean;
+  /**
+   * The environment variable that must be `1` for this model to be offered or
+   * chosen. Off, the model is neither in the picker nor in Auto's pool, and a
+   * pinned request for it is refused as unavailable. It can still be called by
+   * the conformance probes, which is how it is proven before the flag is set.
+   */
+  requiresFlag?: string;
   autoRole?: AutoModelRole;
   description: string;
   capabilities: Omit<ModelCapabilities, 'maxContextTokens' | 'maxOutputTokens'>;
@@ -324,7 +331,45 @@ export const MODEL_REGISTRY = [
       reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'frontier',
       speed: 'deliberate', reliability: 'high', bestFor: ['architecture', 'deep_debug', 'review', 'full_stack_generation', 'complex_reasoning'] },
   },
+  /*
+   * Sonnet 5.5, behind CODEN_MODEL_SONNET_5_5.
+   *
+   * Nothing below is taken from a vendor's page. Context, output ceiling,
+   * parameters, modalities and prices are read from the live OpenRouter
+   * catalogue (model-capability-card.ts) and win everywhere a request is built
+   * or a route is ranked; the values written here are only the offline fallback
+   * and the basis of the per-action credit floor, deliberately set at the top of
+   * the Sonnet range so a floor is never lower than the real price justifies.
+   * The interactive slug only: the batch variant has its own id and is not an
+   * interactive model. The capability levels are the fallback the router uses
+   * until measured results (agent-learning) say otherwise. Offered to Pro and
+   * above; enable it only after the conformance probes pass for it
+   * (POST /api/admin/models/anthropic%2Fclaude-sonnet-5.5/probe).
+   */
+  {
+    ...viaOpenRouter,
+    id: 'anthropic/claude-sonnet-5.5', label: 'Sonnet 5.5', provider: 'anthropic',
+    contextWindow: 1_000_000, maxOutputTokens: 128_000,
+    tier: AIModelTier.PRO, minPlan: UserPlan.PRO, creditFloor: 8,
+    inputUsdPerMillion: 3, outputUsdPerMillion: 15, isNew: true,
+    requiresFlag: 'CODEN_MODEL_SONNET_5_5',
+    description: 'Exécuteur principal des applications fullstack et des interfaces soignées, avec escalade vers un modèle premium quand une étape bloque.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
+      reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'high',
+      speed: 'balanced', reliability: 'high', bestFor: ['full_stack_generation', 'frontend_generation', 'product_design', 'refactor', 'debug', 'tool_use'] },
+  },
 ] as const satisfies readonly ModelDefinition[];
+
+/** Whether a model is behind a feature flag at all (the client needs the server's word before offering it). */
+export function isFlaggedModel(id: string): boolean {
+  return Boolean((MODEL_REGISTRY as readonly ModelDefinition[]).find(model => model.id === id)?.requiresFlag);
+}
+
+/** Whether a model is switched on: no flag, or its flag is `1`. Read at call time, so a restart is all a change needs. */
+export function isModelEnabled(id: string, env: Record<string, string | undefined> = typeof process !== 'undefined' ? process.env : {}): boolean {
+  const flag = (MODEL_REGISTRY as readonly ModelDefinition[]).find(model => model.id === id)?.requiresFlag;
+  return !flag || env[flag] === '1';
+}
 
 /**
  * The model an id names, without its OpenRouter variant suffix.
@@ -495,6 +540,8 @@ export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
   'openai/gpt-6-luna': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
   'openai/gpt-6-sol': ['anthropic/claude-opus-5.5', 'openai/gpt-5.6-sol'],
   'anthropic/claude-opus-5.5': ['openai/gpt-6-sol', 'anthropic/claude-opus-5'],
+  // Falls back to the model it succeeds, then to the next family.
+  'anthropic/claude-sonnet-5.5': ['anthropic/claude-sonnet-5', 'openai/gpt-5.6-terra-pro'],
 };
 
 export type ModelCreditRate = {

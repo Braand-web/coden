@@ -79,20 +79,51 @@ function ReasoningBlock({ part, streaming }: { part: ReasoningPart; streaming: b
   </details>;
 }
 
-/** Which model Auto is using, in one quiet line. */
+const ROUTING_MODE_LABELS: Record<string, string> = { economy: 'Économique', balanced: 'Équilibré', performance: 'Performance' };
+
+/** One switch, in the person's words: what changed, and why. */
+function describeChange(choice: AutoChoice): string {
+  const level = (REASONING_LEVEL_LABELS[choice.reasoningLevel] || choice.reasoningLevel).toLowerCase();
+  if (choice.reason === 'suggestion') return choice.detail || `${choice.label} : ce modèle bloque, passez en Auto pour en essayer un autre.`;
+  if (choice.reason === 'substitution') return `Relais : ${choice.label} · le modèle choisi a refusé cette étape`;
+  if (choice.from && choice.from !== choice.modelId) {
+    return `Changement de modèle : ${choice.fromLabel || choice.from} → ${choice.label}${choice.detail ? ` · raison : ${choice.detail}` : ''}`;
+  }
+  if (choice.reason === 'supervision') return `Raisonnement renforcé (${level})${choice.detail ? ` · raison : ${choice.detail}` : ''}`;
+  // The previous shape of an escalation, without a reason attached.
+  return `Renforcé : ${choice.label} · raisonnement ${level}`;
+}
+
+/**
+ * Which model Auto is using, in one quiet line — and, when Coden changed
+ * model or effort during the run, the same line opens to say what changed and
+ * why. Nothing here interrupts the answer.
+ */
 function AutoChoiceLine({ choices }: { choices: AutoChoice[] }) {
   const current = choices.at(-1);
   if (!current) return null;
-  const level = REASONING_LEVEL_LABELS[current.reasoningLevel] || current.reasoningLevel;
-  // The chosen model refused the request mid-run and Coden carried on with a
-  // compatible one: said once, quietly, instead of stopping on an error.
-  if (current.reason === 'substitution') {
-    return <p className="coden-agent-auto-choice">Relais · {current.label} · le modèle choisi a refusé cette étape</p>;
+  const level = (REASONING_LEVEL_LABELS[current.reasoningLevel] || current.reasoningLevel).toLowerCase();
+  const changes = choices.filter(choice => choice.reason && choice.reason !== 'initial');
+  const mode = choices.find(choice => choice.mode)?.mode;
+  // A model the person chose that is stuck: only ever a suggestion.
+  if (current.reason === 'suggestion' && choices.every(choice => choice.reason === 'suggestion')) {
+    return <p className="coden-agent-auto-choice" role="status">{describeChange(current)}</p>;
   }
-  const escalated = choices.length > 1;
-  return <p className="coden-agent-auto-choice" title={escalated ? choices.map(choice => choice.label).join(' → ') : undefined}>
-    Auto · {current.label} · raisonnement {level.toLowerCase()}{escalated ? ' · renforcé' : ''}
-  </p>;
+  if (!changes.length) {
+    return <p className="coden-agent-auto-choice">Auto{mode ? ` · ${ROUTING_MODE_LABELS[mode]}` : ''} · {current.label} · raisonnement {level}</p>;
+  }
+  const modelChanges = changes.filter(choice => choice.from ? choice.from !== choice.modelId : choice.reason === 'substitution' || choice.reason === 'escalation').length;
+  return (
+    <details className="coden-agent-auto-choice coden-agent-auto-switch">
+      <summary>
+        <span>Auto{mode ? ` · ${ROUTING_MODE_LABELS[mode]}` : ''} · {current.label} · raisonnement {level}{modelChanges ? ` · ${modelChanges > 1 ? `${modelChanges} changements de modèle` : 'a changé de modèle'}` : ' · renforcé'}</span>
+        <svg className="coden-agent-reasoning-chevron" width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 2.5 8 6l-4 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </summary>
+      <ol>
+        {changes.map((choice, index) => <li key={`${choice.modelId}-${index}`}>{describeChange(choice)}</li>)}
+      </ol>
+    </details>
+  );
 }
 
 const SUBAGENT_STATUS: Record<SubagentSnapshot['status'], string> = {

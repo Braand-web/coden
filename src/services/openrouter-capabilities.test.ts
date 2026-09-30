@@ -59,6 +59,9 @@ describe('OpenRouter-only capability contract', () => {
     await expect(catalog.get('test')).rejects.toMatchObject({diagnosticCode:'MODEL_CATALOG_UNAVAILABLE'});
   });
   it('routes by role and refuses a task that cannot meet its capability constraints', () => {
+    // The role table is the previous policy, kept as the rollback (CODEN_ROUTER_V2=0);
+    // the scored policy is covered by model-selection.scored.test.ts.
+    process.env.CODEN_ROUTER_V2 = '0';
     expect(selectModel({task:'conversation',plan:'enterprise'}).modelId).toBe('openai/gpt-5.6-luna');
     expect(selectModel({task:'architecture',plan:'enterprise'}).modelId).toBe('openai/gpt-5.6-sol');
     expect(selectModel({task:'conversation',plan:'enterprise'}).reasoningLevel).toBe('medium');
@@ -66,6 +69,7 @@ describe('OpenRouter-only capability contract', () => {
     expect(selectModel({task:'classification',needs:{vision:true},plan:'enterprise'}).modelId).toBe('google/gemini-3.8-flash');
     expect(selectModel({task:'design',complexity:'complex',plan:'free'}).reason).toContain('best accessible model');
     expect(() => selectModel({task:'architecture',estimatedInputTokens:100000000,plan:'enterprise'})).toThrow('No eligible');
+    delete process.env.CODEN_ROUTER_V2;
   });
 });
 async function* bytes(text:string) { for(const byte of new TextEncoder().encode(text)) yield new Uint8Array([byte]); }

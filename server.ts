@@ -170,6 +170,7 @@ import {
   UserPlan,
   getModelsByProvider,
   isAllowedModelId,
+  isModelEnabled,
   normalizeModelSelectionId,
   type AllowedModelId,
   type ModelDefinition,
@@ -240,6 +241,10 @@ import { inspectVisualPreview } from './src/services/visual-preview-inspector.ts
 import { scanGeneratedSecurity } from './src/services/generated-security-scanner.ts';
 import { assertPublicUrl, createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
 import { collectAgentWebResearch, publicResearchUrl, type PublicResearchSource } from './src/services/agent-web-research.ts';
+import { createRoutingTraceWriter } from './src/services/routing-trace.ts';
+import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
+import { buildCapabilityCard, recordProbeResults, type ProbeName } from './src/services/model-capability-card.ts';
+import { createGatewayProbeChat, runConformanceProbes } from './src/services/model-conformance.ts';
 import { ATTACHMENT_BUCKET, AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
 import { FEEDBACK_LIMITS, FEEDBACK_STATUSES, canSeePost, cleanText, publicDisplayName, publicPost, similarPosts, sortPosts, validateComment, validatePost, type FeedbackPostRow, type FeedbackSort, type FeedbackStatus } from './src/services/feedback/feedback-core.ts';
 import { createMediaHelpers } from './src/services/attachments/media-helpers.ts';
@@ -1132,6 +1137,17 @@ function attachmentService(): AttachmentService {
     );
   }
   return attachmentServiceInstance;
+}
+
+/*
+ * The record of routing decisions (model_routing_events): which model a run
+ * started on and why, every switch and its signal, one summary per run.
+ * Created on first use; without Supabase it records nothing.
+ */
+let routingTraceWriter: ReturnType<typeof createRoutingTraceWriter> | null = null;
+function recordRoutingEvent(event: Parameters<ReturnType<typeof createRoutingTraceWriter>>[0]) {
+  routingTraceWriter ??= createRoutingTraceWriter(getSupabase() as any);
+  routingTraceWriter(event);
 }
 
 /*
@@ -6375,7 +6391,8 @@ function buildPublicModelList() {
       const live = modelAvailability(id, definition);
       return {
         id,
-        available: live.available,
+        // Also off when a feature flag keeps the model back (Sonnet 5.5 until its probes pass).
+        available: live.available && isModelEnabled(id),
         supports_reasoning: live.supportsReasoning,
         supports_tools: live.supportsTools,
         supports_vision: live.supportsVision,
@@ -13763,6 +13780,73 @@ app.get('/api/admin/providers/balance', async (req: any, res) => {
   });
 });
 
+/*
+ * What each model can do (from the live catalogue, with where it disagrees with
+ * the registry), whether its feature flag is on, and what the probes proved.
+ */
+app.get('/api/admin/models/capabilities', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  await openRouterCatalog.ensure().catch(() => undefined);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    catalogue_loaded: openRouterCatalog.loaded,
+    cards: MODEL_REGISTRY.map(model => ({ ...buildCapabilityCard(model.id), enabled: isModelEnabled(model.id), flag: (model as ModelDefinition).requiresFlag || null })),
+  });
+});
+
+/*
+ * Proves a model's announced capabilities with a handful of cheap calls: a
+ * plain call, streaming, an image, a PDF, tools, parallel tools, reasoning,
+ * JSON, a cached prefix — and, on request, a long context. Admin only, one at
+ * a time, and the model under test answers alone (no fallback). It is how
+ * Sonnet 5.5 is checked before its flag is turned on.
+ */
+let modelProbeRunning = false;
+const PROBE_NAMES = new Set<ProbeName>(['simple', 'streaming', 'image', 'pdf', 'tools', 'parallel_tools', 'reasoning', 'json', 'long_context', 'prompt_cache']);
+app.post('/api/admin/models/:modelId/probe', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const modelId = String(req.params.modelId || '');
+  if (!isAllowedModelId(modelId)) return res.status(404).json({ success: false, error: 'Modèle inconnu.' });
+  if (modelProbeRunning) return res.status(409).json({ success: false, error: 'Une vérification est déjà en cours.' });
+  modelProbeRunning = true;
+  try {
+    await openRouterCatalog.ensure().catch(() => undefined);
+    const card = buildCapabilityCard(modelId);
+    if (!card.available) return res.status(422).json({ success: false, error: 'Ce modèle est absent du catalogue OpenRouter.', card });
+    const only = Array.isArray(req.body?.only) ? (req.body.only as unknown[]).map(String).filter((name): name is ProbeName => PROBE_NAMES.has(name as ProbeName)) : undefined;
+    // The costly probe is opt-in and bounded: at most 200k tokens.
+    const longContextTokens = Math.max(0, Math.min(200_000, Math.round(Number(req.body?.longContextTokens) || 0))) || undefined;
+    const results = await runConformanceProbes({ modelId, card, chat: createGatewayProbeChat(providerGateway), only: only?.length ? only : undefined, longContextTokens });
+    recordProbeResults(modelId, results);
+    console.info('[coden:model_probe]', { model: modelId, results: results.map(result => `${result.name}:${result.status}`).join(' ') });
+    res.json({ success: true, results, card: buildCapabilityCard(modelId) });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: String(error?.message || error).slice(0, 240) });
+  } finally {
+    modelProbeRunning = false;
+  }
+});
+
+/*
+ * How routing is going, read from the trace: cost, latency and success per
+ * model, how often runs changed model and how they ended, fallbacks, cache
+ * hits, the costliest runs, and the experiment arms side by side.
+ */
+app.get('/api/admin/routing/overview', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const client = getSupabase();
+  res.setHeader('Cache-Control', 'no-store');
+  if (!client) return res.json({ success: true, days: 0, overview: aggregateRoutingEvents([]), note: 'Base de données indisponible.' });
+  const days = Math.max(1, Math.min(30, Math.round(Number(req.query.days) || 7)));
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const result = await client.from('model_routing_events')
+    .select('kind,run_id,task,mode,policy,arm,from_model,to_model,signal,action,decision_ms,ok,cost_usd,latency_ms,prompt_tokens,cached_tokens,escalations,created_at')
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(20_000);
+  if (result.error) return res.status(500).json({ success: false, error: 'Lecture du journal de routage impossible.' });
+  res.json({ success: true, days, events: (result.data || []).length, overview: aggregateRoutingEvents((result.data || []) as RoutingRow[]) });
+});
+
 async function deliverCostAlerts() {
   const client = getSupabase();
   if (!client) return;
@@ -16075,6 +16159,9 @@ ${resolvedMission}` : resolvedMission;
         selectedModel: requestedModelSelection === 'auto' ? undefined : normalizeProviderModelForBackend(requestedModelSelection) as AllowedModelId,
         visionInputs,
         attachmentBrief: attachmentBrief || undefined,
+        // Économique / Équilibré / Performance, from the composer.
+        routingMode: typeof req.body?.routingMode === 'string' ? req.body.routingMode.slice(0, 24) : undefined,
+        onRoutingEvent: event => recordRoutingEvent({ ...event, runId: pipelineRunId || requestId }),
         library: runLibrary || undefined,
         userPlan: routingPlan,
         credits: routingCredits,
@@ -21503,7 +21590,8 @@ const httpServer = app.listen(port, () => {
   }
   // Every slug checked against the live OpenRouter catalogue: a missing one is
   // logged and hidden, never called, and never stops the server.
-  void validateCatalogModels(MODEL_REGISTRY.map(model => model.id)).then(({ missing }) => {
+  // A model held back by its feature flag is not expected in the catalogue yet: no error line for it.
+  void validateCatalogModels(MODEL_REGISTRY.map(model => model.id).filter(id => isModelEnabled(id))).then(({ missing }) => {
     console.info('[coden:model_catalog_validated]', { models: MODEL_REGISTRY.length, missing: missing.length });
   }).catch(() => undefined);
   // The first new project after a deploy should not pay a cold install.

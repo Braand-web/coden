@@ -1,3 +1,6 @@
+// This file pins the previous cheapest-first policy, which stays available as the rollback
+// (CODEN_ROUTER_V2=0). The scored policy is covered by model-selection.scored.test.ts.
+process.env.CODEN_ROUTER_V2 = '0';
 import assert from 'node:assert/strict';
 import { selectModel, selectModelForAgent, MODELS_BY_COST, blendedCost } from './src/services/model-selection.ts';
 import { AUTO_MODEL_IDS, MODEL_REGISTRY } from './src/config/ai-models.ts';

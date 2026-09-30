@@ -6,7 +6,7 @@ export type ToolPart = { id: string; type: 'tool'; kind: 'read' | 'write'; verb:
 export type ReasoningPart = { id: string; type: 'reasoning'; text: string; done: boolean };
 export type AgentPart = TextPart | ToolPart | ReasoningPart;
 /** What Auto chose for this turn; the last entry is the model now working. */
-export type AutoChoice = { modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' | 'substitution' };
+export type AutoChoice = { modelId: string; label: string; reasoningLevel: string; reason?: 'initial' | 'escalation' | 'substitution' | 'supervision' | 'fallback' | 'suggestion'; from?: string; fromLabel?: string; detail?: string; mode?: 'economy' | 'balanced' | 'performance' };
 export type DecisionNotice = { type: 'decision'; id: string; question: string; options: Array<{ id: string; label: string; description?: string; recommended?: boolean }>; allowFreeText: boolean; questions?: DecisionQuestion[] };
 export type ArtifactNotice = { type: 'artifact'; id: string; artifactType: 'plan' | 'report' | 'diff' | 'screenshot'; title: string; version: number };
 export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number };
@@ -48,7 +48,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
       break;
     }
     case 'model_selected':
-      next.autoChoices = [...(next.autoChoices || []), { modelId: event.modelId, label: event.label, reasoningLevel: event.reasoningLevel, reason: event.reason }];
+      next.autoChoices = [...(next.autoChoices || []), { modelId: event.modelId, label: event.label, reasoningLevel: event.reasoningLevel, reason: event.reason, from: event.from, fromLabel: event.fromLabel, detail: event.detail, mode: event.mode }];
       break;
     case 'subagents': next.subagents = event.agents; next.thinking = true; break;
     case 'text_delta': {

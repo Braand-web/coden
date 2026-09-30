@@ -27,6 +27,8 @@ const EXPECTED_ALLOWED_MODELS = [
   'openai/gpt-6-sol',
   'openai/gpt-6-luna',
   'anthropic/claude-opus-5.5',
+  // Behind CODEN_MODEL_SONNET_5_5; its numbers come from the live catalogue.
+  'anthropic/claude-sonnet-5.5',
 ] as const;
 
 async function runTests() {

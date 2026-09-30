@@ -73,6 +73,10 @@ export type AgentLoopSpend = {
   elapsedMs: number;
   promptTokens: number;
   completionTokens: number;
+  /** Prompt tokens the provider served from its cache — the measure of a stable prefix. */
+  cachedTokens?: number;
+  /** The model the last call was answered by; differs from the requested one after a fallback. */
+  modelUsed?: string;
   costUsd: number;
   compactions: number;
   stoppedBecause: 'answered' | 'step_budget' | 'tool_budget' | 'time_budget' | 'token_budget';
@@ -263,6 +267,12 @@ export async function runLlmToolLoop(input: {
   maxModelAttempts?: number;
   /** Cross-model recovery is allowed only when the caller represents Auto. */
   allowFallback?: boolean;
+  /**
+   * Told when the gateway moved to another model after a failure. The rest of
+   * this loop then stays on that model instead of asking the one that just
+   * failed again on every step.
+   */
+  onFallback?: (event: { from: string; to: string; reason: string }) => void;
   /** Resource budget for this loop. Anything omitted takes the default. */
   budget?: Partial<AgentLoopBudget>;
   /**
@@ -303,8 +313,12 @@ export async function runLlmToolLoop(input: {
   let compactions = 0;
   let promptTokens = 0;
   let completionTokens = 0;
+  let cachedTokens = 0;
   let costUsd = 0;
   let steps = 0;
+  // The model steps are sent to: the requested one until the gateway falls back.
+  let activeModel = input.modelId;
+  let modelUsed: string | undefined;
   let stoppedBecause: AgentLoopSpend['stoppedBecause'] = 'answered';
   const spend = (): AgentLoopSpend => ({
     steps,
@@ -312,6 +326,8 @@ export async function runLlmToolLoop(input: {
     elapsedMs: Date.now() - startedAt,
     promptTokens,
     completionTokens,
+    cachedTokens,
+    modelUsed,
     costUsd,
     compactions,
     stoppedBecause,
@@ -364,18 +380,24 @@ export async function runLlmToolLoop(input: {
       runtimeConfigForModel,
       allowFallback: input.allowFallback === true,
       signal: input.signal,
+      onFallback: (event: { from: string; to: string; reason: string }) => {
+        activeModel = event.to;
+        try { input.onFallback?.(event); } catch { /* observability must never break recovery */ }
+      },
     };
-    result = input.onTextDelta ? await input.gateway.streamingCompletion(input.modelId, messages, {
+    result = input.onTextDelta ? await input.gateway.streamingCompletion(activeModel, messages, {
       ...options,
       onChunk: accumulated => {
         const delta = filter(accumulated.slice(seen)); seen = accumulated.length;
         if (delta) input.onTextDelta?.(delta);
       },
       ...(input.onReasoningDelta ? { onReasoningChunk: input.onReasoningDelta } : {}),
-    }) : await input.gateway.chat(input.modelId, messages, options);
+    }) : await input.gateway.chat(activeModel, messages, options);
     input.onTextEnd?.();
+    modelUsed = result.model || activeModel;
     promptTokens += result.usage?.prompt_tokens || 0;
     completionTokens += result.usage?.completion_tokens || 0;
+    cachedTokens += result.usage?.cached_tokens || 0;
     costUsd += result.cost_usd || 0;
     if (Date.now() >= deadline) { stoppedBecause = 'time_budget'; break; }
     if (!result.tool_calls?.length) return { result, messages, toolExecutions, spend: spend() };

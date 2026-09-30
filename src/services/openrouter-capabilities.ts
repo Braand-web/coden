@@ -7,7 +7,7 @@ export type CatalogModel = {
   architecture?: { input_modalities?: string[]; output_modalities?: string[] };
   top_provider?: { max_completion_tokens?: number | null; context_length?: number | null };
   /** USD per token, as strings, exactly as OpenRouter publishes them. */
-  pricing?: { prompt?: string | number; completion?: string | number; internal_reasoning?: string | number };
+  pricing?: { prompt?: string | number; completion?: string | number; internal_reasoning?: string | number; input_cache_read?: string | number; input_cache_write?: string | number };
 };
 export class CapabilityError extends Error {
   readonly diagnosticCode: string;
