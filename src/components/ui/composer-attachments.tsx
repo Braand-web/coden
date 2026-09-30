@@ -366,7 +366,7 @@ export function AttachmentTray({
                   {item.kind === "video" ? <span className="coden-attach-play" aria-hidden="true" /> : null}
                 </button>
                 <span className="coden-attach-meta">
-                  <span className="coden-attach-name">{truncateMiddle(shown.text, 26)}</span>
+                  <span className="coden-attach-name">{item.kind === "image" ? "Image" : truncateMiddle(shown.text, 26)}</span>
                   <span className={cn("coden-attach-sub", line.tone === "error" && "is-error")} aria-live="polite">
                     {busy ? <Spinner /> : null}
                     {line.text}

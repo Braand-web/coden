@@ -47,7 +47,8 @@ describe('message attachments', () => {
     expect(container.querySelectorAll('.coden-att-tile')).toHaveLength(1);
     expect(container.querySelector('.coden-att-tile img')?.getAttribute('loading')).toBe('lazy');
     expect(container.querySelector('.coden-att-file')).toBeNull();
-    expect(container.querySelector('.coden-att-tile')?.getAttribute('aria-label')).toContain('maquette.png');
+    expect(container.querySelector('.coden-att-tile')?.getAttribute('aria-label')).toBe('Agrandir l’image');
+    expect(container.textContent).not.toContain('maquette');
   });
 
   it('never prints a machine-made name: a hash becomes « Image.jpeg »', () => {
@@ -58,11 +59,10 @@ describe('message attachments', () => {
     expect(container.querySelector('.coden-att-name')?.textContent).toBe('Image.jpeg');
   });
 
-  it('shows a pasted screenshot as « Capture d’écran » or « Image collée » with the time', () => {
-    render([{ name: 'image.png', mimeType: 'image/png', size: 40_000, kind: 'image', previewUrl: PIXEL, createdAt: '2026-09-30T18:22:00' }]);
-    const label = container.querySelector('.coden-att-tile')?.getAttribute('aria-label') || '';
-    expect(label).toMatch(/Capture d’écran|Image collée/);
-    expect(label).toMatch(/18/);
+  it('never names a picture: no file name on the tile, in its tooltip or in the preview', () => {
+    render([image('IMG_4412.png')]);
+    expect(container.textContent).not.toContain('IMG_4412');
+    expect(container.querySelector('.coden-att-tile')?.getAttribute('title')).toBeNull();
   });
 
   it('cuts a 200-character name in the middle: the head gives way, the extension stays', () => {
@@ -185,14 +185,13 @@ describe('message attachments', () => {
   describe('full-screen preview', () => {
     const three = () => [image('un.png'), image('deux.png'), image('trois.png')];
 
-    it('opens on click, names the image, and closes with Échap, returning the focus', () => {
+    it('opens on click, counts the images, and closes with Échap, returning the focus', () => {
       render(three());
       const first = container.querySelector<HTMLButtonElement>('.coden-att-tile')!;
       act(() => { first.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
       const dialog = document.body.querySelector('[role="dialog"]')!;
       expect(dialog.getAttribute('aria-modal')).toBe('true');
-      expect(dialog.getAttribute('aria-label')).toContain('un.png');
-      expect(dialog.getAttribute('aria-label')).toContain('1 sur 3');
+            expect(dialog.getAttribute('aria-label')).toContain('1 sur 3');
       key('Escape');
       expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     });
@@ -201,12 +200,12 @@ describe('message attachments', () => {
       render(three());
       act(() => { container.querySelector('.coden-att-tile')!.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
       const name = () => document.body.querySelector('.coden-att-lightbox-name')?.textContent;
-      expect(name()).toBe('un.png');
+      expect(name()).toBe('Image 1 sur 3');
       key('ArrowRight');
-      expect(name()).toBe('deux.png');
+      expect(name()).toBe('Image 2 sur 3');
       key('ArrowLeft');
       key('ArrowLeft');
-      expect(name()).toBe('trois.png');
+      expect(name()).toBe('Image 3 sur 3');
     });
 
     it('zooms with + and −, never below 100 % nor above 400 %, and offers a download', () => {
@@ -237,9 +236,8 @@ describe('message attachments', () => {
       render(Array.from({ length: 6 }, (_, index) => image(`p${index + 1}.png`)));
       const tiles = container.querySelectorAll('.coden-att-tile');
       act(() => { tiles[MAX_VISIBLE_IMAGES - 1].dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
-      expect(document.body.querySelector('.coden-att-lightbox-name')?.textContent).toBe(`p${MAX_VISIBLE_IMAGES}.png`);
-      expect(document.body.querySelector('.coden-att-lightbox-sub')?.textContent).toContain(`${MAX_VISIBLE_IMAGES} / 6`);
-    });
+      expect(document.body.querySelector('.coden-att-lightbox-name')?.textContent).toBe(`Image ${MAX_VISIBLE_IMAGES} sur 6`);
+          });
   });
 
   it('fetches thumbnails by id for a message reloaded from history, and shows an unavailable one cleanly', async () => {

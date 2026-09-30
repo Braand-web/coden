@@ -116,7 +116,7 @@ function ImageTile({ item, count, hidden, onOpen }: { item: MessageAttachment; c
   const [ratio, setRatio] = useState<number | null>(null);
   const shown = displayFileName(item);
   useEffect(() => { setState(item.previewUrl ? 'loading' : item.status === 'failed' ? 'broken' : 'loading'); }, [item.previewUrl, item.status]);
-  const label = hidden ? `${hidden} autres images, afficher toutes` : `Agrandir ${attachmentAriaLabel(item)}`;
+  const label = hidden ? `${hidden} autres images, afficher toutes` : 'Agrandir l’image';
   const analysing = item.analysis === 'pending';
   return (
     <button
@@ -127,7 +127,6 @@ function ImageTile({ item, count, hidden, onOpen }: { item: MessageAttachment; c
       style={count === 1 && ratio ? { aspectRatio: String(ratio) } : undefined}
       onClick={onOpen}
       aria-label={label}
-      title={shown.original || shown.text}
     >
       {state !== 'broken' && item.previewUrl ? (
         <img
@@ -237,11 +236,12 @@ function Lightbox({ images, start, onClose, opener }: { images: MessageAttachmen
 
   return createPortal(
     <div className="coden-att-lightbox" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <div ref={dialogRef} className="coden-att-lightbox-panel" role="dialog" aria-modal="true" aria-label={`Aperçu : ${shown.text}${images.length > 1 ? `, image ${index + 1} sur ${images.length}` : ''}`}>
+      <div ref={dialogRef} className="coden-att-lightbox-panel" role="dialog" aria-modal="true" aria-label={images.length > 1 ? `Aperçu, image ${index + 1} sur ${images.length}` : 'Aperçu de l’image'}>
         <header className="coden-att-lightbox-bar">
           <span className="coden-att-lightbox-title">
-            <MiddleEllipsis className="coden-att-lightbox-name" text={shown.text} title={shown.original || shown.text} />
-            <span className="coden-att-lightbox-sub">{[images.length > 1 ? `${index + 1} / ${images.length}` : '', fileMetaLine(current)].filter(Boolean).join(' · ')}</span>
+            {/* A picture is shown, not named: the counter and its type stand in for a file name. */}
+            <span className="coden-att-lightbox-name">{images.length > 1 ? `Image ${index + 1} sur ${images.length}` : 'Image'}</span>
+            <span className="coden-att-lightbox-sub">{fileMetaLine(current)}</span>
           </span>
           <span className="coden-att-lightbox-tools">
             <button type="button" onClick={() => setZoom(value => Math.max(1, value - 0.5))} disabled={zoom <= 1} aria-label="Réduire">−</button>
@@ -253,7 +253,7 @@ function Lightbox({ images, start, onClose, opener }: { images: MessageAttachmen
         </header>
         <div className="coden-att-lightbox-stage" data-zoomed={zoom > 1 ? '' : undefined} onDoubleClick={() => setZoom(value => (value > 1 ? 1 : 2))}>
           {source && !broken
-            ? <img src={source} alt={shown.text} draggable={false} style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? 'none' : '100%' }} onError={() => setBroken(true)} />
+            ? <img src={source} alt="Image jointe" draggable={false} style={{ width: `${zoom * 100}%`, maxWidth: zoom > 1 ? 'none' : '100%' }} onError={() => setBroken(true)} />
             : <div className="coden-att-lightbox-broken"><ErrorGlyph /><p>Cette image ne peut pas être affichée.</p>{current.fullUrl ? <a href={current.fullUrl} target="_blank" rel="noopener noreferrer">Ouvrir le fichier</a> : null}</div>}
         </div>
         {images.length > 1 ? (
@@ -262,7 +262,7 @@ function Lightbox({ images, start, onClose, opener }: { images: MessageAttachmen
             <button type="button" className="coden-att-lightbox-nav is-next" onClick={() => go(1)} aria-label="Image suivante">›</button>
           </>
         ) : null}
-        <p className="coden-att-sr" role="status" aria-live="polite">{images.length > 1 ? `Image ${index + 1} sur ${images.length} : ${shown.text}` : ''}</p>
+        <p className="coden-att-sr" role="status" aria-live="polite">{images.length > 1 ? `Image ${index + 1} sur ${images.length}` : ''}</p>
       </div>
     </div>,
     document.body,
