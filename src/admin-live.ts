@@ -28,6 +28,8 @@ type AdminState = {
   runs: JsonRecord[];
   errors: JsonRecord | null;
   models: JsonRecord | null;
+  routing: JsonRecord | null;
+  proposals: JsonRecord | null;
   publish: JsonRecord | null;
   security: JsonRecord | null;
   flags: JsonRecord[];
@@ -49,6 +51,8 @@ const state: AdminState = {
   runs: [],
   errors: null,
   models: null,
+  routing: null,
+  proposals: null,
   publish: null,
   security: null,
   flags: [],
@@ -448,6 +452,13 @@ function renderAgent() {
     ${metric('Base commune', formatNumber(knowledge.visible_patterns ?? 0), `schémas visibles (≥ ${knowledge.min_contributors ?? 2} contributeurs) · ${formatNumber(knowledge.patterns ?? 0)} observés · ${formatNumber(knowledge.curated ?? 0)} curés`)}
     ${metric('Partage des données', `${personalization.share_rate ?? 100} %`, `${formatNumber(personalization.opted_out ?? 0)} désinscription${Number(personalization.opted_out) > 1 ? 's' : ''} sur ${formatNumber(personalization.users ?? 0)} comptes`)}
     ${metric('Personnalisation', formatNumber(personalization.with_instructions ?? 0), `comptes avec des instructions · mémoire privée pour ${formatNumber(personalization.memory_users ?? 0)}`)}
+    ${(() => {
+      const summary = state.proposals?.summary as JsonRecord | null | undefined;
+      if (!summary) return '';
+      const rate = summary.acceptanceRate === null || summary.acceptanceRate === undefined ? '--' : `${Math.round(summary.acceptanceRate * 100)} %`;
+      const by = summary.byStatus || {};
+      return metric('Idées proposées (30 j)', formatNumber(summary.total ?? 0), `${rate} appliquées parmi les réponses · ${formatNumber(by.applied ?? 0)} appliquées · ${formatNumber(by.dismissed ?? 0)} refusées · ${formatNumber(by.later ?? 0)} plus tard`);
+    })()}
     <article class="admin-card full">
       <div class="admin-panel-head">
         <div>
@@ -714,13 +725,60 @@ function topKey(record: JsonRecord = {}) {
   return entries[0]?.[0] || '--';
 }
 
+/**
+ * How routing is going, from the decision trace: cost, latency, success and
+ * cache per model, how often runs changed model and how they ended, the
+ * fallbacks, and the experiment arms side by side. Read-only.
+ */
+function renderRoutingOverview(root: HTMLElement) {
+  const overview = state.routing?.overview as JsonRecord | null | undefined;
+  const metricsHost = root.querySelector<HTMLElement>('[data-routing-metrics]');
+  const detailHost = root.querySelector<HTMLElement>('[data-routing-detail]');
+  const percent = (value: unknown) => (typeof value === 'number' ? `${Math.round(value * 100)} %` : '--');
+  if (!overview || !overview.runs) {
+    if (metricsHost) metricsHost.innerHTML = metric('Routage', '--', state.routing?.note || 'Aucun run tracé sur 7 jours');
+    return;
+  }
+  const switching = overview.switching || {};
+  const fallbacks = overview.fallbacks || {};
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Runs tracés', formatNumber(overview.runs), `${percent(overview.okRate)} réussis`),
+    metric('Coût réel', formatUsd(overview.costUsdTotal, 2), 'Somme des runs tracés'),
+    metric('Décision de routage', overview.decisionMsP95 === null ? '--' : `${overview.decisionMsP95} ms`, 'p95 — cible < 300 ms'),
+    metric('Changements de modèle', percent(switching.switchRate), `${percent(switching.okRateAfterSwitch)} réussis après changement · ${percent(switching.okRateWithoutSwitch)} sans`),
+    metric('Replis fournisseur', formatNumber(fallbacks.count ?? 0), fallbacks.perRun === null || fallbacks.perRun === undefined ? '' : `${fallbacks.perRun} par run`),
+  ].join('');
+  tableIn('routing-models', root.querySelector<HTMLElement>('[data-routing-models]'), {
+    label: 'Routage par modèle', exportName: 'routage-modeles', initialSort: { key: 'costUsdTotal', direction: 'desc' },
+    columns: [
+      { key: 'model', label: 'Modèle', sortable: true, render: row => `<code>${escapeHtml(row.model)}</code>` },
+      { key: 'runs', label: 'Runs', sortable: true },
+      { key: 'okRate', label: 'Réussite', sortable: true, value: row => row.okRate ?? -1, render: row => escapeHtml(percent(row.okRate)) },
+      { key: 'costUsdPerRun', label: '$ / run', sortable: true, value: row => row.costUsdPerRun ?? -1, render: row => escapeHtml(row.costUsdPerRun === null ? '--' : formatUsd(row.costUsdPerRun, 4)) },
+      { key: 'costUsdTotal', label: '$ total', sortable: true, render: row => escapeHtml(formatUsd(row.costUsdTotal, 2)) },
+      { key: 'latencyMsP50', label: 'p50', sortable: true, value: row => row.latencyMsP50 ?? -1, render: row => escapeHtml(row.latencyMsP50 === null ? '--' : `${Math.round(row.latencyMsP50 / 1000)} s`) },
+      { key: 'latencyMsP95', label: 'p95', sortable: true, value: row => row.latencyMsP95 ?? -1, render: row => escapeHtml(row.latencyMsP95 === null ? '--' : `${Math.round(row.latencyMsP95 / 1000)} s`) },
+      { key: 'cacheHitRate', label: 'Cache', sortable: true, value: row => row.cacheHitRate ?? -1, render: row => escapeHtml(percent(row.cacheHitRate)) },
+    ],
+  })?.setRows(overview.models || []);
+  if (!detailHost) return;
+  const list = (rows: JsonRecord[], label: (row: JsonRecord) => string) => rows.length ? `<ul class="admin-list">${rows.map(row => `<li>${escapeHtml(label(row))}</li>`).join('')}</ul>` : '<p class="admin-empty">Aucune donnée.</p>';
+  detailHost.innerHTML = [
+    `<article class="admin-card"><span class="panel-label">Modes d’Auto</span>${list(overview.modes || [], row => `${row.mode} — ${row.runs} runs · ${percent(row.okRate)} réussis · ${row.costUsdPerRun === null ? '--' : formatUsd(row.costUsdPerRun, 4)} / run`)}</article>`,
+    `<article class="admin-card"><span class="panel-label">Bras d’expérience</span>${list(overview.arms || [], row => `${row.arm} — ${row.runs} runs · ${percent(row.okRate)} réussis · ${row.costUsdPerRun === null ? '--' : formatUsd(row.costUsdPerRun, 4)} / run · ${row.escalationsPerRun ?? '--'} escalades / run`)}</article>`,
+    `<article class="admin-card"><span class="panel-label">Décisions du superviseur</span>${list(overview.supervisorActions || [], row => `${row.action} — ${row.count}`)}</article>`,
+    `<article class="admin-card"><span class="panel-label">Runs les plus coûteux</span>${list(overview.costliestRuns || [], row => `${row.model} — ${formatUsd(row.costUsd, 3)} · ${row.task || 'tâche'} · ${row.ok === null ? 'issue inconnue' : row.ok ? 'réussi' : 'échec'}`)}</article>`,
+  ].join('');
+}
+
 function renderModels() {
   const root = qs('#admin-models');
   if (!root) return;
   const costs = state.models?.costs || [];
   const providers = state.models?.providers || [];
   const margins = state.models?.margins || [];
-  frame(root, 'models', `<div class="admin-grid admin-metric-row" data-models-metrics></div><article class="admin-card full"><span class="panel-label">Requêtes récentes</span><div data-models-table></div></article>`);
+  frame(root, 'models', `<div class="admin-grid admin-metric-row" data-routing-metrics></div><article class="admin-card full"><span class="panel-label">Routage par modèle · 7 jours</span><div data-routing-models></div></article><div class="admin-grid" data-routing-detail></div><div class="admin-grid admin-metric-row" data-models-metrics></div><article class="admin-card full"><span class="panel-label">Requêtes récentes</span><div data-models-table></div></article>`);
+  renderRoutingOverview(root);
   const metricsHost = root.querySelector<HTMLElement>('[data-models-metrics]');
   if (metricsHost) metricsHost.innerHTML = [
     metric('Requêtes IA', formatNumber(costs.length), 'Lignes récentes'),
@@ -1076,7 +1134,7 @@ async function loadAdminData() {
     });
     const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
     if (copyButton) copyButton.hidden = false;
-    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live] = await Promise.all([
+    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals] = await Promise.all([
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
       safeAdminFetch('/api/admin/runs', { runs: [], distributions: {}, availability: {} }),
@@ -1090,6 +1148,8 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/agent-learning', { signals: {}, knowledge: {}, personalization: {}, routing: { stats: [] }, availability: {} }),
       safeAdminFetch('/api/admin/integrations', { configured: false, by_toolkit: [], recent: [], totals: {} }),
       safeAdminFetch('/api/admin/live', { live: {}, alerts: [], recent_errors: [] }),
+      safeAdminFetch('/api/admin/routing/overview?days=7', { overview: null }),
+      safeAdminFetch('/api/admin/proposals/overview', { summary: null }),
     ]);
     state.live = live;
     state.overview = overview;
@@ -1101,6 +1161,8 @@ async function loadAdminData() {
     state.runs = allRuns;
     state.errors = errors;
     state.models = { costs: costs.rows || [], providers: providers.rows || [], margins: margins.rows || [], guardrails: margins.guardrails };
+    state.routing = routing;
+    state.proposals = proposals;
     state.publish = publish;
     state.security = security;
     state.flags = flags.flags || [];
