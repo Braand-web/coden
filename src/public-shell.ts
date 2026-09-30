@@ -1,4 +1,5 @@
 import { codenLogoSvg } from './lib/coden-logo';
+import { installShimmerGlow } from './lib/shimmer-glow';
 import { navLabel, PUBLIC_ACTIONS, PUBLIC_LEGAL_LINKS, PUBLIC_NAV } from './config/public-routes';
 import { applySignedInLinks, hasStoredSession } from './lib/stored-session';
 import { trackFunnelEvent } from './conversion-events';
@@ -276,6 +277,7 @@ function bindConversionTracking() {
 }
 
 export function mountPublicShell() {
+  installShimmerGlow();
   if (mounted) return;
   mounted = true;
   document.documentElement.lang = 'fr';

@@ -42,7 +42,7 @@ export function AgentThinkingLine({ label }: { label?: string | null }) {
      * the other: at 0.3s each a change of phrase left the line empty for more
      * than half a second, which read as the run stopping.
      */
-    transition={{ duration: reduced ? 0 : 0.18, ease: [0.32, 0.72, 0, 1] }}
+    transition={{ duration: reduced ? 0 : 0.2, ease: [0.32, 0.72, 0, 1] }}
   >
     <ShimmeringText text={label?.trim() || THINKING_LABEL} />
   </motion.div>;
