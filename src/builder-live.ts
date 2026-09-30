@@ -6135,6 +6135,8 @@ function restoreMessages(payload: ProjectPayload) {
   if (!scroll || scroll.dataset.restored === 'true') return;
   scroll.dataset.restored = 'true';
   let restoredRichStream = false;
+  // What the person last asked, so the last answer — if it died — can be asked again.
+  let lastAsked: { text: string; attachmentIds: string[] } | null = null;
   payload.messages
     .filter(message => {
       const text = messageTextFromParts(message.parts, message.content || '');
@@ -6142,7 +6144,7 @@ function restoreMessages(payload: ProjectPayload) {
       return (text || hasSavedStream) && !/^Project (synchronized|ready)\./i.test(text);
     })
     .slice(-100)
-    .forEach(message => {
+    .forEach((message, index, all) => {
       const role = message.role === 'user' ? 'user' : 'assistant';
       const rawContent = messageTextFromParts(message.parts, message.content || '');
       const speaksFrench = isLikelyFrenchText(rawContent);
@@ -6163,6 +6165,19 @@ function restoreMessages(payload: ProjectPayload) {
         ? message.metadata!.attachments!.filter(item => item && item.name).slice(0, 40).map(item => ({ id: item.id, name: String(item.name), mimeType: item.mimeType, size: item.size, kind: item.kind, fullUrl: item.sourceUrl || undefined }))
         : [];
       const card = appendMessage(role, content, { id: message.ai_message_id || message.id, attachments: storedAttachments });
+      if (role === 'user') lastAsked = { text: rawContent, attachmentIds: storedAttachments.map(item => item.id).filter((id): id is string => Boolean(id)) };
+      // The conversation ends on an answer that failed (a deploy, a dropped connection): ask again in one click,
+      // without typing the request or re-attaching its files. Only the last answer — an old failure is history.
+      if (role === 'assistant' && index === all.length - 1 && storedStream?.status === 'failed' && lastAsked) {
+        const asked = lastAsked;
+        addInlineAction(card, 'Réessayer', () => void generateFromPrompt(
+          asked.text,
+          selectedChatMode,
+          false,
+          { studioContext: studioPromptContextPayload(), ...attachmentExtra(asked.attachmentIds, []), __codenRetry: true },
+          asked.text,
+        ));
+      }
       const restoredId = messageHandleId(card);
       if (storedStream?.events?.length && restoredId && conversationApi?.restoreChat) {
         conversationApi.restoreChat(

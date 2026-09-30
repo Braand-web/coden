@@ -32,6 +32,7 @@ type AdminState = {
   proposals: JsonRecord | null;
   guard: JsonRecord | null;
   streaming: JsonRecord | null;
+  reliability: JsonRecord | null;
   publish: JsonRecord | null;
   security: JsonRecord | null;
   flags: JsonRecord[];
@@ -57,6 +58,7 @@ const state: AdminState = {
   proposals: null,
   guard: null,
   streaming: null,
+  reliability: null,
   publish: null,
   security: null,
   flags: [],
@@ -755,7 +757,8 @@ function renderFailedRuns(rows: JsonRecord[]) {
 function renderRuns() {
   const root = qs('#admin-runs');
   if (!root) return;
-  frame(root, 'runs', `<div class="admin-grid admin-metric-row" data-runs-metrics></div><article class="admin-card full"><span class="panel-label">Runs récents</span><div data-runs-table></div></article><article class="admin-card full"><span class="panel-label">Répartition des intentions</span><div data-runs-intents></div></article>`);
+  frame(root, 'runs', `<div class="admin-grid admin-metric-row" data-reliability-metrics></div><article class="admin-card full"><span class="panel-label">Fiabilité par jour · tours d’agent · 14 jours (UTC)</span><div data-reliability-days></div></article><article class="admin-card full"><span class="panel-label">Fiabilité par modèle et par type d’action</span><div data-reliability-groups></div></article><div class="admin-grid admin-metric-row" data-runs-metrics></div><article class="admin-card full"><span class="panel-label">Runs récents</span><div data-runs-table></div></article><article class="admin-card full"><span class="panel-label">Répartition des intentions</span><div data-runs-intents></div></article>`);
+  renderReliability(root);
   const metricsHost = root.querySelector<HTMLElement>('[data-runs-metrics]');
   if (metricsHost) metricsHost.innerHTML = [
     metric('Runs observés', formatNumber(state.runs.length), '500 derniers runs d’agent', dailyBars(state.runs.map(run => run.created_at))),
@@ -773,6 +776,39 @@ function renderRuns() {
   const intents = Object.entries(state.overview?.distributions?.run_intent || {}).sort((a, b) => Number(b[1]) - Number(a[1]));
   const intentsHost = root.querySelector<HTMLElement>('[data-runs-intents]');
   if (intentsHost) intentsHost.innerHTML = table(['Intention', 'Runs'], intents.map(([intent, count]) => [escapeHtml(intent), escapeHtml(formatNumber(count))]));
+}
+
+/*
+ * Reliability, from the agent turns: the share of finished turns that worked, day by day. A turn the person cancelled
+ * or that stopped to ask a question is not a failure, so it stays out of the rate.
+ */
+function renderReliability(root: HTMLElement) {
+  const report = state.reliability?.report as JsonRecord | null | undefined;
+  const alert = state.reliability?.alert as JsonRecord | null | undefined;
+  const metricsHost = root.querySelector<HTMLElement>('[data-reliability-metrics]');
+  const daysHost = root.querySelector<HTMLElement>('[data-reliability-days]');
+  const groupsHost = root.querySelector<HTMLElement>('[data-reliability-groups]');
+  const percent = (value: unknown) => (typeof value === 'number' ? `${Math.round(value * 100)} %` : '--');
+  const seconds = (value: unknown) => (typeof value === 'number' ? `${Math.round(value / 1000)} s` : '--');
+  if (!report) {
+    if (metricsHost) metricsHost.innerHTML = metric('Fiabilité', '--', 'Données indisponibles');
+    return;
+  }
+  const totals = (report.totals || {}) as JsonRecord;
+  const duration = (report.duration || {}) as JsonRecord;
+  const daily = (report.daily || []) as JsonRecord[];
+  const groups = (rows: JsonRecord[]) => table(['Clé', 'Tours', 'Réussis', 'Échoués', 'Réussite', 'Durée médiane'], rows.map(row => [
+    `<code>${escapeHtml(row.key)}</code>`, escapeHtml(formatNumber(row.turns)), escapeHtml(formatNumber(row.completed)), escapeHtml(formatNumber(row.failed)), escapeHtml(percent(row.successRate)), escapeHtml(seconds(row.durationMsP50)),
+  ]));
+  if (metricsHost) metricsHost.innerHTML = [
+    metric('Réussite · 14 jours', percent(totals.successRate), `${formatNumber(totals.completed)} réussis · ${formatNumber(totals.failed)} échoués · ${formatNumber(totals.cancelled)} annulés`),
+    metric('Dernière heure et demie', alert?.level === 'warn' ? `⚠ ${percent(alert?.successRate)}` : percent(alert?.successRate), alert?.turns ? `${formatNumber(alert.turns)} tours terminés${alert.level === 'warn' ? ' — en baisse' : ''}` : 'Aucun tour terminé'),
+    metric('Durée d’un tour réussi', seconds(duration.p50Ms), `médiane · p90 ${seconds(duration.p90Ms)}`),
+  ].join('');
+  if (daysHost) daysHost.innerHTML = table(['Jour', 'Tours', 'Réussis', 'Échoués', 'Annulés', 'Réussite'], [...daily].reverse().map(day => [
+    escapeHtml(day.day), escapeHtml(formatNumber(day.turns)), escapeHtml(formatNumber(day.completed)), escapeHtml(formatNumber(day.failed)), escapeHtml(formatNumber(day.cancelled)), escapeHtml(percent(day.successRate)),
+  ]));
+  if (groupsHost) groupsHost.innerHTML = `<div class="admin-grid"><div>${groups((report.byModel || []) as JsonRecord[])}</div><div>${groups((report.byAction || []) as JsonRecord[])}</div></div>`;
 }
 
 function averageDuration(rows: JsonRecord[]) {
@@ -1221,7 +1257,7 @@ async function loadAdminData() {
     });
     const copyButton = qs<HTMLButtonElement>('#admin-copy-summary');
     if (copyButton) copyButton.hidden = false;
-    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals, guard, streaming] = await Promise.all([
+    const [users, projects, runs, errors, costs, providers, margins, publish, security, flags, learning, integrations, live, routing, proposals, guard, streaming, reliability] = await Promise.all([
       safeAdminFetch('/api/admin/users', { users: [], availability: {} }),
       safeAdminFetch('/api/admin/projects', { projects: [], availability: {} }),
       safeAdminFetch('/api/admin/runs', { runs: [], distributions: {}, availability: {} }),
@@ -1239,6 +1275,7 @@ async function loadAdminData() {
       safeAdminFetch('/api/admin/proposals/overview', { summary: null }),
       safeAdminFetch('/api/admin/action-guard/overview', { summary: null }),
       safeAdminFetch('/api/admin/streaming/overview', { metrics: null }),
+      safeAdminFetch('/api/admin/reliability?days=14', { report: null, alert: null }),
     ]);
     state.live = live;
     state.overview = overview;
@@ -1254,6 +1291,7 @@ async function loadAdminData() {
     state.proposals = proposals;
     state.guard = guard;
     state.streaming = streaming;
+    state.reliability = reliability;
     state.publish = publish;
     state.security = security;
     state.flags = flags.flags || [];
