@@ -98,7 +98,7 @@ const cloudCss = read('./src/styles/cloud-console.css');
    */
   const title = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy strong {'));
   assert.match(title.slice(0, title.indexOf('}')), /line-height: 20px;/);
-  const timestamp = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy small {'));
+  const timestamp = dashboardCss.slice(dashboardCss.lastIndexOf('.coden-dashboard-project-card-copy small {'));
   assert.match(timestamp.slice(0, timestamp.indexOf('}')), /line-height: 16px;/);
   const copy = dashboardCss.slice(dashboardCss.indexOf('.coden-dashboard-project-card-copy {'));
   assert.match(copy.slice(0, copy.indexOf('}')), /gap: 2px;/);
