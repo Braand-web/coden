@@ -105,3 +105,16 @@ describe('the routes', () => {
     expect(server).toMatch(/outcome\.ok && proposalsEnabled\(\) && !preserveLastVerifiedApp/);
   });
 });
+
+describe('what the admin reads', () => {
+  it('counts what was proposed, applied and refused, per category, without any text', async () => {
+    const { summarizeProposals } = await import('./proposal-engine');
+    const summary = summarizeProposals([
+      { category: 'design', status: 'applied' }, { category: 'design', status: 'dismissed' }, { category: 'quality', status: 'applied' },
+      { category: 'quality', status: 'new' }, { category: 'growth', status: 'later' },
+    ]);
+    expect(summary).toMatchObject({ total: 5, answered: 3, acceptanceRate: 0.67, byStatus: { new: 1, applied: 2, later: 1, dismissed: 1 } });
+    expect(summary.byCategory.find(entry => entry.category === 'design')).toMatchObject({ total: 2, acceptanceRate: 0.5 });
+    expect(summarizeProposals([]).acceptanceRate).toBeNull();
+  });
+});
