@@ -180,7 +180,8 @@ export function libraryRejection(kind: LibraryKind, name: string, definition: Ag
  * What is already there keeps working, and every promotion is logged.
  */
 export function agentEvolutionEnabled(env: Record<string, string | undefined> = typeof process !== 'undefined' ? process.env : {}): boolean {
-  return env.CODEN_AGENT_EVOLUTION !== '0';
+  // The global freeze of the evolution control stops it too.
+  return env.CODEN_AGENT_EVOLUTION !== '0' && env.CODEN_EVOLUTION_FREEZE !== '1';
 }
 
 /* ------------------------------------------------------------------------ */

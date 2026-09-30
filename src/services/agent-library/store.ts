@@ -27,6 +27,7 @@ import {
   type LibraryKind,
   type SkillDefinition,
 } from './library.ts';
+import { checkEvolutionChange, evolutionJournalLine, shouldRollBackVersion, type EvolutionKind } from '../evolution-control.ts';
 import {
   memorySignature,
   observe,
@@ -214,6 +215,17 @@ export class AgentLibraryStore {
     return report;
   }
 
+  /** A version that does clearly worse than the one it replaced, on real runs, goes back: the parent returns, the child is switched off. */
+  private async rollBackIfWorse(item: LibraryItem, now: { uses: number; successes: number }): Promise<void> {
+    try {
+      const { data: parent } = await this.client.from('agent_library_items').select('id,uses,successes,status').eq('id', item.parent_id).maybeSingle();
+      if (!parent || !shouldRollBackVersion(now, { uses: parent.uses, successes: parent.successes })) return;
+      await this.client.from('agent_library_items').update({ is_latest: true, status: 'active', updated_at: nowIso() }).eq('id', parent.id);
+      await this.client.from('agent_library_items').update({ is_latest: false, status: 'disabled', disabled_reason: 'Annulé automatiquement : moins bon que la version précédente sur des exécutions réelles.', updated_at: nowIso() }).eq('id', item.id);
+      this.journal({ kind: item.kind === 'skill' ? 'skill' : 'subagent', target: item.name, decision: 'rolled_back', reason: 'Moins bon que la version précédente sur des exécutions réelles.', baseline: { score: parent.uses ? parent.successes / parent.uses : 0, regressions: 0, costUsd: 0 }, candidate: { score: now.uses ? now.successes / now.uses : 0, regressions: 0, costUsd: 0 }, version: item.version });
+    } catch (error) { warn('library_rollback_failed', error); }
+  }
+
   private async recordUsage(session: LibrarySession, outcome: { success: boolean; cancelled: boolean }): Promise<number> {
     const ids = [...session.usedItemIds];
     if (!ids.length) return 0;
@@ -240,13 +252,39 @@ export class AgentLibraryStore {
         updated_at: nowIso(),
         ...(off ? { status: 'disabled', disabled_reason: `Désactivé automatiquement : ${next.successes} réussite(s) sur ${next.uses} utilisations.` } : {}),
       }).eq('id', id);
+      if (!off && item.parent_id) await this.rollBackIfWorse(item, next);
     }
     return disabled;
   }
 
+  /** How many things the agents added or changed in the shared library since midnight (UTC). */
+  private async changesToday(): Promise<number> {
+    try {
+      const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+      const { count } = await this.client.from('agent_library_items').select('id', { count: 'exact', head: true }).eq('created_by', 'agent').gte('created_at', since.toISOString());
+      return count || 0;
+    } catch { return 0; }
+  }
+
+  /** The evolution journal: why, what was measured, which version. Best effort — it never blocks a run. */
+  private journal(entry: Parameters<typeof evolutionJournalLine>[0]): void {
+    const line = evolutionJournalLine(entry);
+    console.info('[coden:evolution]', line);
+    void Promise.resolve(this.client.from('agent_evolution_journal').insert([{ kind: line.kind, target: String(line.target).slice(0, 200), decision: line.decision, reason: String(line.reason).slice(0, 400), rule: line.rule ?? null, baseline: line.baseline ?? null, candidate: line.candidate ?? null, version: line.version ?? null }])).catch(() => undefined);
+  }
+
   private async promote(session: LibrarySession): Promise<{ created: number; versions: number; merged: number }> {
     const counts = { created: 0, versions: 0, merged: 0 };
-    const eligible = session.candidates.filter(candidate => candidate.kind === 'skill' || candidate.succeeded !== false);
+    const asked = session.candidates.filter(candidate => candidate.kind === 'skill' || candidate.succeeded !== false);
+    if (!asked.length) return counts;
+    // The evolution control: frozen, the protected core, the daily ceiling. A refused change is journaled, nobody is asked.
+    let changesToday = await this.changesToday();
+    const eligible = asked.filter(candidate => {
+      const verdict = checkEvolutionChange({ kind: (candidate.kind === 'skill' ? 'skill' : 'subagent') as EvolutionKind, text: `${candidate.name}\n${candidate.description}\n${JSON.stringify(candidate.definition)}`, changesToday });
+      if (!verdict.allowed) { this.journal({ kind: candidate.kind === 'skill' ? 'skill' : 'subagent', target: candidate.name, decision: 'blocked', reason: verdict.reason, rule: verdict.rule }); return false; }
+      changesToday += 1;
+      return true;
+    });
     if (!eligible.length) return counts;
     const items = await this.loadItems(true);
     const vectors = await this.embed(eligible.map(candidate => embeddingText(candidate)));
@@ -288,6 +326,7 @@ export class AgentLibraryStore {
         if (!error) {
           await this.client.from('agent_library_items').update({ is_latest: false, status: 'archived', updated_at: nowIso() }).eq('id', equivalent.id);
           counts.versions += 1;
+          this.journal({ kind: candidate.kind === 'skill' ? 'skill' : 'subagent', target: candidate.name, decision: 'adopted', reason: 'Nouvelle version d\'une méthode existante ; annulée automatiquement si elle fait moins bien à l\'usage.', version: equivalent.version + 1 });
         }
         continue;
       }
@@ -305,7 +344,7 @@ export class AgentLibraryStore {
         contributors,
         created_by: 'agent',
       }]);
-      if (!error) counts.created += 1;
+      if (!error) { counts.created += 1; this.journal({ kind: candidate.kind === 'skill' ? 'skill' : 'subagent', target: candidate.name, decision: 'adopted', reason: 'Nouvelle méthode, apprise d\'une exécution réussie.', version: 1 }); }
     }
     return counts;
   }
