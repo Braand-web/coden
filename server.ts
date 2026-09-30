@@ -211,6 +211,7 @@ import {
   buildGenerationSystemPrompt,
   buildIntentRouterSystemPrompt,
 } from './src/services/agent-prompt-stack.ts';
+import { classifySocialMessage, routerGuardEnabled } from './src/services/social-message.ts';
 import {
   buildAgentContextPack,
   isAgentV2Enabled,
@@ -5474,6 +5475,32 @@ async function resolveAgentDecision(input: AgentDecisionInput) {
     reason: `Validated server fallback: ${reason}`.slice(0, 240),
     userVisibleReason: fallback.userVisibleReason || 'Coden selected the safest available action for this request.',
   });
+
+  /*
+   * A greeting, a thanks, a compliment: conversation, decided here.
+   *
+   * The model that classifies every message read « parfait » after a build as « go ahead » and started coding; a
+   * greeting is never an order, and a compliment is not one unless Coden had just asked something it answers.
+   * `CODEN_ROUTER_GUARD=0` gives this up.
+   */
+  const social = routerGuardEnabled() && fallback.requestedMode !== 'plan' && (fallback.requestedMode === 'auto' || classifySocialMessage(input.prompt) === 'greeting')
+    ? classifySocialMessage(input.prompt, input.recentHistory)
+    : null;
+  if (social) {
+    return finalize({
+      ...fallback,
+      intent: 'conversation',
+      confidence: 0.96,
+      nextAction: 'answer',
+      requiresFileChanges: false,
+      requiresPreviewRebuild: false,
+      requiresCredits: false,
+      autoPlanRequired: false,
+      routingSource: 'heuristic',
+      reason: social === 'greeting' ? 'A greeting is never a request to build.' : 'A thanks or a compliment, with nothing pending to confirm.',
+      userVisibleReason: social === 'greeting' ? 'This is a greeting, so Coden will answer without changing files.' : 'Coden will answer without changing files.',
+    });
+  }
 
   // Explicit Plan is intentionally deterministic and read-only. It used to
   // skip classifyIntentWithAi and then fail because a null model decision was
