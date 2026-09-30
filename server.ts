@@ -258,6 +258,7 @@ import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-r
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
+import { findCompletedTurnForRun } from './src/services/run-ledger.ts';
 import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
 import { buildReliabilityReport, evaluateReliabilityAlert, reliabilityAlertEnabled, type ReliabilityTurn } from './src/services/reliability-metrics.ts';
 import { buildCapabilityCard, recordProbeResults, type ProbeName } from './src/services/model-capability-card.ts';
@@ -2032,6 +2033,45 @@ async function reapInterruptedAgentRuns(options: { createdBefore?: string } = {}
   const finishedAt = new Date().toISOString();
   let runs = 0;
   let turns = 0;
+
+  /*
+   * A run row left open beside a turn that finished is a bookkeeping gap, not an interruption: settle it as what
+   * the turn says, and only then reap what is really left (services/run-ledger.ts).
+   */
+  try {
+    const open = await client
+      .from('agent_runs')
+      .select('id,project_id,created_at')
+      .in('status', ['running', 'queued'])
+      .lt('created_at', options.createdBefore || new Date().toISOString())
+      .limit(200);
+    const openRuns = (open.data || []) as Array<{ id: string; project_id: string; created_at: string }>;
+    if (!open.error && openRuns.length) {
+      const oldest = openRuns.reduce((min, run) => (run.created_at < min ? run.created_at : min), openRuns[0].created_at);
+      const threads = await client.from('agent_threads').select('id,project_id').in('project_id', [...new Set(openRuns.map(run => run.project_id))]);
+      const projectOfThread = new Map<string, string>((threads.data || []).map((thread: any) => [thread.id, thread.project_id]));
+      if (!threads.error && projectOfThread.size) {
+        const turnRows = await client
+          .from('agent_turns')
+          .select('id,thread_id,status,created_at,completed_at')
+          .in('thread_id', [...projectOfThread.keys()])
+          .eq('status', 'completed')
+          .gte('created_at', new Date(Date.parse(oldest) - 5 * 60_000).toISOString())
+          .limit(1000);
+        const turnsOfProjects = (turnRows.data || []).map((turn: any) => ({ ...turn, project_id: projectOfThread.get(turn.thread_id) || '' }));
+        for (const run of openRuns) {
+          const turn = findCompletedTurnForRun(run, turnsOfProjects);
+          if (!turn) continue;
+          // Settled, not reaped: it is not counted as an interruption.
+          await client.from('agent_runs')
+            .update({ status: 'completed', updated_at: turn.completed_at || finishedAt, completed_at: turn.completed_at || finishedAt })
+            .eq('id', run.id).in('status', ['running', 'queued']);
+        }
+      }
+    }
+  } catch (error: any) {
+    console.warn('[coden:run_ledger_settle_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
 
   const runUpdate = await client
     .from('agent_runs')
