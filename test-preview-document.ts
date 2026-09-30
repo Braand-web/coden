@@ -30,14 +30,18 @@ assert.ok(fn.length > 200, 'getProjectPreviewHtml must be findable');
 assert.match(fn, /const servesThePublic = environment === 'production'/, 'the two audiences must be distinguished');
 assert.match(
   fn,
-  /project\.preview_html && \(verified \|\| !servesThePublic\)/,
+  /saved && \(verified \|\| !servesThePublic\)/,
   'preview must return the saved rendering whatever verification concluded',
 );
+
+// ...and when the saved document is only a failure page (or missing) while the
+// files are on disk, the author's preview is rebuilt from them — never the public's.
+assert.match(fn, /!servesThePublic && files\.length && \(!saved\.trim\(\) \|\| isPreviewErrorDocument\(saved\)\)/, 'a stale failure document is rebuilt for the author only');
 
 // ...and the public does not, unless it passed.
 assert.match(fn, /buildPreviewErrorHtml\(\{/, 'an unverified production request still gets the failure document');
 assert.ok(
-  fn.indexOf('const verified = ') < fn.indexOf('project.preview_html && (verified'),
+  fn.indexOf('const verified = ') < fn.indexOf('saved && (verified'),
   'the verified check must gate the production branch',
 );
 

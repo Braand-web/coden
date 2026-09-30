@@ -7,6 +7,7 @@ import './styles/coherence.css';
 import './styles/publish-panel.css';
 import './styles/cloud-console.css';
 import './styles/code-workshop.css';
+import './styles/version-history.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
 import { initThemeController } from './theme-controller';
@@ -326,7 +327,15 @@ type ProjectVersionSummary = {
   version_number?: number;
   label?: string;
   created_at?: string;
-  diff_summary?: { summary?: string; created?: string[]; modified?: string[]; deleted?: string[] };
+  summary?: string;
+  files_changed?: number;
+  /** null when the version predates verification records. */
+  verified?: boolean | null;
+  /** False for a run that failed verification: kept for reference, never became the project. */
+  committed?: boolean;
+  design_changed?: boolean | null;
+  is_current?: boolean;
+  rollback_to?: string | null;
 };
 
 let currentProjectId = '';
@@ -4139,6 +4148,13 @@ function ensureToolbar() {
 
   document.getElementById('btn-live-cancel')?.addEventListener('click', cancelBuild);
   document.getElementById('action-download-zip')?.addEventListener('click', exportCode);
+  const historyButton = document.getElementById('btn-history');
+  historyButton?.addEventListener('click', () => void openHistoryPanel());
+  historyButton?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    void openHistoryPanel();
+  });
   document.getElementById('btn-preview-refresh')?.addEventListener('click', refreshPreviewFrame);
   document.querySelectorAll<HTMLButtonElement>('.btn-publish').forEach(button => {
     if (button.dataset.publishBound === 'true') return;
@@ -4782,78 +4798,101 @@ function renderHistoryPanel(runs: AgentRunSummary[] = [], versions: ProjectVersi
     </div>
   `;
   }).join('') : '<div class="coden-history-empty">No agent runs recorded yet.</div>';
-  const versionRows = versions.length ? versions.map(version => `
-    <div class="coden-history-row">
-      <div class="coden-history-row__head">
-        <strong>Version ${escapeHtml(String(version.version_number || ''))}</strong>
-        <span class="coden-history-meta">${formatShortDate(version.created_at)}</span>
+  const versionRows = versions.length ? versions.map(version => {
+    const title = version.rollback_to ? `Version ${version.version_number} · restauration` : `Version ${version.version_number}`;
+    const what = version.label || version.summary || 'Version enregistrée.';
+    const badges = [
+      version.is_current ? '<span class="coden-history-badge is-current">Actuelle</span>' : '',
+      version.committed === false ? '<span class="coden-history-badge is-warn" title="Cette modification n’a pas passé la vérification : le projet est resté sur la version précédente.">Non retenue</span>' : '',
+      version.committed !== false && version.verified === true ? '<span class="coden-history-badge is-ok">Vérifiée</span>' : '',
+      version.design_changed === true ? '<span class="coden-history-badge">Design modifié</span>' : '',
+    ].join('');
+    const meta = [formatShortDate(version.created_at), version.files_changed ? `${version.files_changed} fichier${version.files_changed > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+    return `
+    <div class="coden-history-row${version.is_current ? ' is-current' : ''}${version.committed === false ? ' is-uncommitted' : ''}">
+      <div class="coden-history-row__main">
+        <div class="coden-history-row__head"><strong>${escapeHtml(title)}</strong>${badges}<span class="coden-history-meta">${escapeHtml(meta)}</span></div>
+        <div class="coden-history-summary">${escapeHtml(what)}</div>
       </div>
-      <div class="coden-history-summary">${escapeHtml(version.diff_summary?.summary || version.label || 'Saved project version.')}</div>
-      <button class="coden-history-rollback" type="button" data-history-rollback="${escapeHtml(version.id)}">Rollback</button>
-    </div>
-  `).join('') : '<div class="coden-history-empty">No saved versions yet.</div>';
+      ${version.is_current ? '' : `<button class="coden-history-rollback" type="button" data-history-rollback="${escapeHtml(version.id)}" data-history-number="${escapeHtml(String(version.version_number || ''))}">Restaurer</button>`}
+    </div>`;
+  }).join('') : '<div class="coden-history-empty">Aucune version enregistrée pour le moment. Une version est créée après chaque modification.</div>';
 
   root.innerHTML = `
     <section class="coden-history-panel" role="dialog" aria-modal="true" aria-labelledby="coden-history-title">
       <header class="coden-history-head">
         <div>
-          <div class="coden-history-kicker">Project history</div>
-          <h3 id="coden-history-title">Runs, versions and rollback</h3>
+          <div class="coden-history-kicker">Historique</div>
+          <h3 id="coden-history-title">Versions de l’application</h3>
+          <p class="coden-history-lede">Chaque modification crée une version. Restaurer en rétablit les fichiers, le design et l’aperçu ; l’état actuel reste dans l’historique.</p>
         </div>
-        <button class="coden-history-close" type="button" data-history-close aria-label="Close history">×</button>
+        <button class="coden-history-close" type="button" data-history-close aria-label="Fermer l’historique">×</button>
       </header>
       <div class="coden-history-body">
-        ${loading ? '<div class="coden-history-empty">Loading history...</div>' : ''}
+        ${loading ? '<div class="coden-history-empty">Chargement de l’historique…</div>' : ''}
         ${error ? `<div class="coden-history-error" role="alert">${escapeHtml(error)}</div>` : ''}
-        <div class="coden-history-grid">
-          <div class="coden-history-column">
-            <h4>Agent runs</h4>
-            ${runRows}
-          </div>
-          <div class="coden-history-column">
-            <h4>Saved versions</h4>
-            ${versionRows}
-          </div>
-        </div>
+        ${versionRows}
       </div>
     </section>
   `;
   root.querySelector('[data-history-close]')?.addEventListener('click', closeHistoryPanel);
   root.querySelectorAll<HTMLButtonElement>('[data-history-rollback]').forEach(button => {
-    button.addEventListener('click', () => void rollbackToVersion(button.dataset.historyRollback || ''));
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      button.textContent = 'Restauration…';
+      void rollbackToVersion(button.dataset.historyRollback || '', Number(button.dataset.historyNumber || 0));
+    });
   });
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    document.removeEventListener('keydown', onKey);
+    closeHistoryPanel();
+  };
+  document.addEventListener('keydown', onKey);
 }
 
 async function openHistoryPanel() {
   if (!currentProjectId) {
-    appendMessage('system', 'Create or open a project before viewing history.');
+    appendMessage('system', 'Créez ou ouvrez un projet pour voir son historique.');
     return;
   }
   renderHistoryPanel([], [], true);
   try {
-    const [runsPayload, versionsPayload] = await Promise.all([
-      apiFetch<{ success: boolean; runs: AgentRunSummary[] }>(`/api/projects/${encodeURIComponent(currentProjectId)}/agent/runs?limit=12`),
-      apiFetch<{ success: boolean; versions: ProjectVersionSummary[] }>(`/api/projects/${encodeURIComponent(currentProjectId)}/versions`),
-    ]);
-    renderHistoryPanel(runsPayload.runs || [], versionsPayload.versions || []);
+    const payload = await apiFetch<{ success: boolean; versions: ProjectVersionSummary[] }>(`/api/projects/${encodeURIComponent(currentProjectId)}/versions`);
+    renderHistoryPanel([], payload.versions || []);
   } catch (error) {
-    renderHistoryPanel([], [], false, error instanceof Error ? error.message : 'Unable to load project history.');
+    renderHistoryPanel([], [], false, error instanceof Error ? error.message : 'Impossible de charger l’historique.');
   }
 }
 
-async function rollbackToVersion(versionId: string) {
+/**
+ * Restore a saved version — one click, no confirmation dialog.
+ *
+ * The request used to omit `confirmed`, and the server answered 409 to every
+ * click. No confirmation is asked because nothing is lost: the state being
+ * replaced is kept as a version, so the notice that follows offers the way
+ * back rather than a warning beforehand.
+ */
+async function rollbackToVersion(versionId: string, versionNumber = 0) {
   if (!currentProjectId || !versionId) return;
   try {
-    const payload = await apiFetch<{ success: boolean; files: GeneratedFile[]; preview?: { html?: string; status?: string }; project?: { name?: string } }>(`/api/projects/${encodeURIComponent(currentProjectId)}/versions/${encodeURIComponent(versionId)}/rollback`, {
+    const payload = await apiFetch<{ success: boolean; files: GeneratedFile[]; preview?: { html?: string; status?: string }; project?: { name?: string }; undo_version_id?: string | null; version?: { version_number?: number } }>(`/api/projects/${encodeURIComponent(currentProjectId)}/versions/${encodeURIComponent(versionId)}/rollback`, {
       method: 'POST',
-      body: JSON.stringify({ source: 'history_panel' }),
+      body: JSON.stringify({ source: 'history_panel', confirmed: true }),
     });
     renderFiles(payload.files || []);
-    if (payload.preview?.html) setPreview(payload.preview.html, payload.preview.status || 'unknown');
+    // The restored app is what the preview shows; a running dev server reloads it on its own.
+    if (payload.preview?.html && !livePreviewUrl) setPreview(payload.preview.html, payload.preview.status || 'unknown');
+    else if (livePreviewUrl) refreshPreviewFrame();
     if (payload.project?.name) setProjectNameDisplay(payload.project.name);
     closeHistoryPanel();
+    const card = appendMessage('system', versionNumber ? `Version ${versionNumber} restaurée.` : 'Version restaurée.');
+    if (payload.undo_version_id) {
+      const undoId = payload.undo_version_id;
+      addInlineAction(card, 'Annuler', () => void rollbackToVersion(undoId, 0));
+    }
   } catch (error) {
-    renderHistoryPanel([], [], false, error instanceof Error ? error.message : 'Rollback failed.');
+    renderHistoryPanel([], [], false, error instanceof Error ? error.message : 'La restauration a échoué.');
   }
 }
 
@@ -7129,6 +7168,14 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
 
     if (Array.isArray(responsePayload.errors) && responsePayload.errors.length) showFixBugBox(responsePayload.errors);
     if (generationTouchesPreview && !previewHtml && !liveUrl) setEmptyPreviewState('idle', 'Preview non vérifiée');
+    // An iteration is one version, and one click takes it back.
+    const saved = responsePayload.version as { version_number?: number; committed?: boolean; previous_id?: string | null } | undefined;
+    if (saved?.committed && saved.previous_id && !hasNeedsFix) {
+      const previousId = saved.previous_id;
+      const undoCard = appendMessage('system', say(`Modification enregistrée (version ${saved.version_number}).`, `Change saved (version ${saved.version_number}).`));
+      addInlineAction(undoCard, say('Annuler cette modification', 'Undo this change'), () => { removeMessage(undoCard); void rollbackToVersion(previousId, 0); });
+      window.setTimeout(() => removeMessage(undoCard), 120_000);
+    }
     return;
   } catch (error) {
     // The stream reader can surface cancellation as an incomplete stream

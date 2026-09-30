@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { collectPreviewStyles, scriptSafeJson, styleSafeCss, tailwindThemeLiteral } from './preview-embedding.ts';
+import { CODEN_PREVIEW_RENDERER_VERSION, collectPreviewStyles, scriptSafeJson, styleSafeCss, tailwindConfigScript } from './preview-embedding.ts';
 
 type TestFile = { path: string; content: string };
 const file = (path: string, content: string): TestFile => ({ path, content });
@@ -32,7 +32,8 @@ const render = loadServerFunction('buildReactVitePreviewHtml', {
   slugify: () => 'test-app',
   styleSafeCss,
   scriptSafeJson,
-  tailwindThemeLiteral,
+  tailwindConfigScript,
+  CODEN_PREVIEW_RENDERER_VERSION,
   CODEN_PREVIEW_BABEL_VERSION: '8.0.4',
   REDUCED_MOTION_PREVIEW_HOOK: '',
   injectAnalyticsSnippet: (html: string) => html,
@@ -75,11 +76,11 @@ describe('generated app preview styles', () => {
   });
 
   it('refreshes an older saved preview from its persisted files without rewriting real build output', () => {
-    const refresh = loadServerFunction('refreshLegacyPreviewStyles', { buildReactVitePreviewHtml: render }) as
+    const refresh = loadServerFunction('refreshLegacyPreviewStyles', { buildReactVitePreviewHtml: render, CODEN_PREVIEW_RENDERER_VERSION }) as
       (html: string, project: Record<string, string>, sourceFiles: TestFile[], environment: string) => string;
     const project = { id: 'app-1', name: 'Meeting Notes', prompt: 'Notes app', slug: 'meeting-notes' };
     const current = render(files, project.name, project.id);
-    const legacy = current.replace('  <meta name="coden-preview-css" content="imports-v1" />', '')
+    const legacy = current.replace(`  <meta name="coden-preview-css" content="${CODEN_PREVIEW_RENDERER_VERSION}" />`, '')
       .replace(/<style data-coden-css-path="[^"]+">[\s\S]*?<\/style>/g, '');
     expect(refresh(legacy, project, files, 'preview')).toContain('.hero { display: grid; }');
     expect(refresh('<html><style>.built{color:red}</style></html>', project, files, 'preview')).toBe('<html><style>.built{color:red}</style></html>');

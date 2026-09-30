@@ -34,7 +34,7 @@
  */
 
 import type { ProjectSandbox } from './project-sandbox.ts';
-import { createSandboxTools, SANDBOX_TOOL_SCHEMAS } from './sandbox-tools.ts';
+import { createSandboxTools, SANDBOX_TOOL_SCHEMAS, type DesignGuard } from './sandbox-tools.ts';
 import { validateProject, validateBuild, buildRepairInstruction, type ValidationReport } from './validate.ts';
 import { createHash } from 'node:crypto';
 
@@ -160,6 +160,8 @@ export async function runCoderLoop(input: {
    * instead of being cut off in the middle of a call.
    */
   deadline?: number;
+  /** Keeps the app's design layer from being rewritten or emptied while the agent works. */
+  design?: DesignGuard;
   beforeRound?: (round: number) => Promise<string | undefined>;
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
@@ -217,6 +219,7 @@ export async function runCoderLoop(input: {
     const tools = createSandboxTools(input.sandbox.projectId, {
       onChange: paths => paths.forEach(path => touched.add(path)),
       signal: input.signal,
+      design: input.design,
     });
 
     let calls = 0;
