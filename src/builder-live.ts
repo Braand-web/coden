@@ -3567,6 +3567,7 @@ function openProjectMenu() {
   // looked at here, and a poll would spend a request a minute to keep a number
   // fresh that nobody is reading.
   void refreshCreditCounter();
+  void refreshShareMenu();
   positionProjectMenu();
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
@@ -3639,6 +3640,91 @@ async function saveProjectNameFromMenu() {
   }
 }
 
+/*
+ * Share by link, from the project menu: create (the link is shown once), copy, revoke. Only the owner sees it.
+ * The server keeps a hash of the link's secret, so the link cannot be shown again: a new one replaces it.
+ */
+type ShareState = { active: boolean; expires_at: string | null; copy_count: number };
+
+function setShareStatus(message: string) {
+  const status = document.getElementById('project-share-status');
+  if (status) status.textContent = message;
+}
+
+function renderShareState(state: ShareState | null) {
+  const action = document.getElementById('project-share-action');
+  const revoke = document.getElementById('project-share-revoke');
+  const result = document.getElementById('project-share-result');
+  if (result && !state?.active) result.hidden = true;
+  if (action) action.textContent = state?.active ? 'Nouveau lien' : 'Créer un lien';
+  if (revoke) revoke.hidden = !state?.active;
+  if (!state) return;
+  if (!state.active) { setShareStatus('Quiconque a le lien peut voir l’aperçu et en faire sa propre copie.'); return; }
+  const until = state.expires_at ? new Date(state.expires_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) : '';
+  const copies = state.copy_count ? ` · ${state.copy_count} copie${state.copy_count > 1 ? 's' : ''}` : '';
+  setShareStatus(`Un lien est actif${until ? ` jusqu’au ${until}` : ''}${copies}. Il n’est affiché qu’à sa création.`);
+}
+
+async function refreshShareMenu() {
+  const box = document.getElementById('project-menu-share');
+  const divider = document.getElementById('project-share-divider');
+  if (!box || !currentProjectId) return;
+  try {
+    const state = await apiFetch<ShareState & { success: boolean }>(`/api/projects/${encodeURIComponent(currentProjectId)}/share`);
+    box.hidden = false;
+    if (divider) divider.hidden = false;
+    renderShareState(state);
+  } catch {
+    // Not the owner (or offline): the section stays out of the way.
+    box.hidden = true;
+    if (divider) divider.hidden = true;
+  }
+}
+
+function bindShareMenu() {
+  const action = document.getElementById('project-share-action') as HTMLButtonElement | null;
+  if (!action || action.dataset.bound === 'true') return;
+  action.dataset.bound = 'true';
+  action.addEventListener('click', async () => {
+    if (!currentProjectId) return;
+    action.disabled = true;
+    try {
+      const made = await apiFetch<{ url: string; expires_at: string }>(`/api/projects/${encodeURIComponent(currentProjectId)}/share`, { method: 'POST' });
+      const input = document.getElementById('project-share-url') as HTMLInputElement | null;
+      const result = document.getElementById('project-share-result');
+      if (input) input.value = made.url;
+      if (result) result.hidden = false;
+      input?.focus();
+      input?.select();
+      renderShareState({ active: true, expires_at: made.expires_at, copy_count: 0 });
+      setShareStatus('Lien créé. Copiez-le maintenant : il ne sera plus affiché.');
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : 'Le lien n’a pas pu être créé.');
+    } finally {
+      action.disabled = false;
+    }
+  });
+  document.getElementById('project-share-copy')?.addEventListener('click', async event => {
+    const input = document.getElementById('project-share-url') as HTMLInputElement | null;
+    if (!input?.value) return;
+    const button = event.currentTarget as HTMLButtonElement;
+    try { await navigator.clipboard.writeText(input.value); button.textContent = 'Copié'; } catch { input.select(); button.textContent = 'Sélectionné'; }
+    window.setTimeout(() => { button.textContent = 'Copier'; }, 1800);
+  });
+  document.getElementById('project-share-revoke')?.addEventListener('click', async () => {
+    if (!currentProjectId) return;
+    try {
+      await apiFetch(`/api/projects/${encodeURIComponent(currentProjectId)}/share`, { method: 'DELETE' });
+      const input = document.getElementById('project-share-url') as HTMLInputElement | null;
+      if (input) input.value = '';
+      renderShareState({ active: false, expires_at: null, copy_count: 0 });
+      setShareStatus('Lien désactivé : il ne fonctionne plus.');
+    } catch (error) {
+      setShareStatus(error instanceof Error ? error.message : 'Le lien n’a pas pu être désactivé.');
+    }
+  });
+}
+
 function bindProjectMenu() {
   const trigger = document.getElementById('project-combo-trigger');
   if (!trigger || trigger.dataset.boundProjectMenu === 'true') return;
@@ -3655,6 +3741,7 @@ function bindProjectMenu() {
     openUpgradeSettings();
   });
   document.getElementById('project-name-edit')?.addEventListener('click', () => setProjectNameEditor(true));
+  bindShareMenu();
   document.getElementById('project-name-save')?.addEventListener('click', () => void saveProjectNameFromMenu());
   document.getElementById('project-name-input')?.addEventListener('keydown', event => {
     const key = (event as KeyboardEvent).key;

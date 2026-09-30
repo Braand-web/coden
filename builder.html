@@ -394,6 +394,13 @@
       color: var(--accent);
     }
 
+    .project-menu-share { padding: 4px 0 2px; }
+    .project-menu-share[hidden], .project-menu-divider[hidden] { display: none; }
+    .project-menu-share-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; }
+    .project-menu-share-head .project-menu-rename { color: var(--accent); }
+    .project-share-revoke { margin: 0 10px 6px; color: var(--danger); }
+    .project-share-revoke[hidden] { display: none; }
+
     .project-menu-muted {
       min-height: 16px;
       padding: 0 10px 6px;
@@ -4350,6 +4357,19 @@
       </div>
       <div class="project-menu-muted" id="project-name-status" role="status" aria-live="polite" hidden></div>
       <div class="project-menu-divider"></div>
+      <div class="project-menu-share" id="project-menu-share" hidden>
+        <div class="project-menu-share-head">
+          <span class="project-menu-kicker">Partager</span>
+          <button class="project-menu-rename" id="project-share-action" type="button">Créer un lien</button>
+        </div>
+        <div class="project-menu-muted" id="project-share-status" role="status" aria-live="polite">Quiconque a le lien peut voir l’aperçu et en faire sa propre copie.</div>
+        <div class="project-menu-input-row" id="project-share-result" hidden>
+          <input class="project-menu-input" id="project-share-url" type="text" readonly aria-label="Lien de partage" value="">
+          <button class="project-menu-rename" id="project-share-copy" type="button">Copier</button>
+        </div>
+        <button class="project-menu-rename project-share-revoke" id="project-share-revoke" type="button" hidden>Désactiver le lien</button>
+      </div>
+      <div class="project-menu-divider" id="project-share-divider" hidden></div>
       <div class="project-menu-credits" id="project-menu-credits">
         <div class="project-menu-credits-copy">
           <span class="project-menu-kicker">Crédits</span>

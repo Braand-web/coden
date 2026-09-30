@@ -32,13 +32,14 @@ describe('who may duplicate', () => {
 
 describe('the route', () => {
   const server = readFileSync('server.ts', 'utf8');
-  const route = server.slice(server.indexOf("app.post('/api/projects/:id/duplicate'"), server.indexOf("app.get('/api/projects/:id/state'")).replace(/\/\*[\s\S]*?\*\//g, '');
+  const route = server.slice(server.indexOf('async function duplicateProjectInto'), server.indexOf('async function activeShareFor')).replace(/\/\*[\s\S]*?\*\//g, '');
 
   it('needs a signed-in user, limits itself, and checks the role before copying anything', () => {
     expect(route).toMatch(/requireAuthenticatedUser\(req, res\)/);
     expect(route).toMatch(/enforceRateLimit\(`project-duplicate:/);
-    expect(route.indexOf('canDuplicateProject(')).toBeGreaterThan(-1);
-    expect(route.indexOf('canDuplicateProject(')).toBeLessThan(route.indexOf('saveProject('));
+    const handler = route.slice(route.indexOf("app.post('/api/projects/:id/duplicate'"));
+    expect(handler.indexOf('canDuplicateProject(')).toBeGreaterThan(-1);
+    expect(handler.indexOf('canDuplicateProject(')).toBeLessThan(handler.indexOf('duplicateProjectInto('));
   });
 
   it('builds the copy from named fields: nothing of the published site or the backend comes along', () => {

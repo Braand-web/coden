@@ -259,6 +259,7 @@ import { markPreviewUserActive } from './src/services/preview-tool/preview-activ
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
 import { readDesignIdentity } from './src/services/sandbox/design-diversity.ts';
+import { canShareProject, generateShareToken, hashShareToken, isShareActive, isWellFormedShareToken, sameHash, shareExpiry, sharedProjectView } from './src/services/project-share.ts';
 import { canDuplicateProject, duplicateProjectName } from './src/services/project-duplicate.ts';
 import { findCompletedTurnForRun } from './src/services/run-ledger.ts';
 import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
@@ -15233,6 +15234,40 @@ app.delete('/api/projects/:id', async (req: any, res: any) => {
  * Duplicate a project: its files and look, in a new draft. The conversation, the published site and the backend stay
  * with the original (services/project-duplicate.ts).
  */
+async function duplicateProjectInto(input: { source: GeneratedProject; userId: string; organizationId: string; duplicatedVia: 'duplicate' | 'share' }) {
+  const { source, userId } = input;
+  const client = requireSupabase('Project duplication');
+  const files = await loadProjectFiles(source.id);
+  const base = String(source.name || '').replace(/[%_]/g, ' ').replace(/\s*\(copie(?:\s+\d+)?\)\s*$/i, '').trim();
+  const taken = await client.from('projects').select('name').eq('owner_id', userId).ilike('name', `${base}%`).limit(200);
+  const name = sanitizeProjectName(duplicateProjectName(source.name, (taken.data || []).map((row: any) => String(row.name || ''))));
+  const now = new Date().toISOString();
+  const copy: GeneratedProject = {
+    id: randomUUID(),
+    owner_id: userId,
+    organization_id: input.organizationId,
+    created_by: userId,
+    name,
+    slug: await uniqueSlug(name, userId),
+    prompt: source.prompt || '',
+    template: source.template || 'custom',
+    theme: source.theme || 'light',
+    model_id: source.model_id || 'auto',
+    status: 'draft',
+    preview_status: source.preview_status === 'verified' ? 'verified' : 'idle',
+    preview_html: source.preview_html || '',
+    created_at: now,
+    updated_at: now,
+  };
+  await saveProject(copy, files);
+  // The copy looks like its original, so it counts as that look for the person's next project.
+  const identity = readDesignIdentity((source as any).design_identity);
+  if (identity) await saveDesignIdentity(copy.id, identity);
+  await createProjectVersion(copy, files, 'duplicate', { duplicated_from: source.id, via: input.duplicatedVia }).catch(() => null);
+  console.log('[coden:project_duplicated]', { from: source.id, to: copy.id, files: files.length, via: input.duplicatedVia });
+  return { copy, files: files.length };
+}
+
 app.post('/api/projects/:id/duplicate', async (req: any, res: any) => {
   try {
     const authUser = requireAuthenticatedUser(req, res);
@@ -15242,38 +15277,117 @@ app.post('/api/projects/:id/duplicate', async (req: any, res: any) => {
     const source = await loadProject(String(req.params.id), userId, req);
     if (!source) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!canDuplicateProject(getUserProjectRole(req, source))) return res.status(403).json({ success: false, error: 'Vous ne pouvez pas copier ce projet.' });
-    const client = requireSupabase('Project duplication');
-    const files = await loadProjectFiles(source.id);
-    const taken = await client.from('projects').select('name').eq('owner_id', userId).ilike('name', `${String(source.name || '').replace(/[%_]/g, ' ').replace(/\s*\(copie(?:\s+\d+)?\)\s*$/i, '').trim()}%`).limit(200);
-    const name = sanitizeProjectName(duplicateProjectName(source.name, (taken.data || []).map((row: any) => String(row.name || ''))));
-    const now = new Date().toISOString();
-    const copy: GeneratedProject = {
-      id: randomUUID(),
-      owner_id: userId,
-      organization_id: source.organization_id,
-      created_by: userId,
-      name,
-      slug: await uniqueSlug(name, userId),
-      prompt: source.prompt || '',
-      template: source.template || 'custom',
-      theme: source.theme || 'light',
-      model_id: source.model_id || 'auto',
-      status: 'draft',
-      preview_status: source.preview_status === 'verified' ? 'verified' : 'idle',
-      preview_html: source.preview_html || '',
-      created_at: now,
-      updated_at: now,
-    };
-    await saveProject(copy, files);
-    // The copy looks like its original, so it counts as that look for the person's next project.
-    const identity = readDesignIdentity((source as any).design_identity);
-    if (identity) await saveDesignIdentity(copy.id, identity);
-    await createProjectVersion(copy, files, 'duplicate', { duplicated_from: source.id }).catch(() => null);
-    console.log('[coden:project_duplicated]', { from: source.id, to: copy.id, files: files.length });
-    res.json({ success: true, project: { id: copy.id, name: copy.name }, builder_url: `/builder.html?project=${copy.id}`, files: files.length });
+    const { copy, files } = await duplicateProjectInto({ source, userId, organizationId: source.organization_id, duplicatedVia: 'duplicate' });
+    res.json({ success: true, project: { id: copy.id, name: copy.name }, builder_url: `/builder.html?project=${copy.id}`, files });
   } catch (error: any) {
     console.error('[coden:project_duplicate_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
     res.status(500).json({ success: false, error: 'La copie a échoué. Le projet d’origine n’a pas été modifié.' });
+  }
+});
+
+/*
+ * Share a project by link (services/project-share.ts). The owner creates, looks at and revokes the link; a stranger
+ * with the link sees a small read-only view, and a signed-in person can make their own copy of it.
+ */
+async function activeShareFor(projectId: string) {
+  const client = requireSupabase('Project shares');
+  const { data, error } = await client.from('project_shares').select('id,created_at,expires_at,copy_count,last_copied_at').eq('project_id', projectId).is('revoked_at', null).order('created_at', { ascending: false }).limit(1);
+  if (error) throw new Error(error.message);
+  const row = (data || [])[0];
+  return row && isShareActive(row) ? row : null;
+}
+
+app.post('/api/projects/:id/share', async (req: any, res: any) => {
+  try {
+    const authUser = requireAuthenticatedUser(req, res);
+    if (!authUser) return;
+    if (!enforceRateLimit(`project-share:${authUser.id}`, 20, 60_000)) return res.status(429).json({ success: false, error: 'Trop de demandes.' });
+    const project = await loadProject(String(req.params.id), authUser.id, req);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!canShareProject(getUserProjectRole(req, project))) return res.status(403).json({ success: false, error: 'Seul le propriétaire peut partager ce projet.' });
+    const client = requireSupabase('Project shares');
+    // One live link per project: a new one replaces the old.
+    await client.from('project_shares').update({ revoked_at: new Date().toISOString() }).eq('project_id', project.id).is('revoked_at', null);
+    const token = generateShareToken();
+    const expiresAt = shareExpiry();
+    const { error } = await client.from('project_shares').insert([{ project_id: project.id, token_hash: hashShareToken(token), created_by: authUser.id, expires_at: expiresAt }]);
+    if (error) throw new Error(error.message);
+    const origin = String(process.env.PUBLIC_APP_URL || process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, url: `${origin}/share.html?t=${token}`, expires_at: expiresAt });
+  } catch (error: any) {
+    console.error('[coden:project_share_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'Le lien n’a pas pu être créé.' });
+  }
+});
+
+app.get('/api/projects/:id/share', async (req: any, res: any) => {
+  try {
+    const userId = getUserOrgId(req);
+    const project = await loadProject(String(req.params.id), userId, req);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!canShareProject(getUserProjectRole(req, project))) return res.status(403).json({ success: false, error: 'Seul le propriétaire peut partager ce projet.' });
+    const share = await activeShareFor(project.id);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, active: Boolean(share), created_at: share?.created_at || null, expires_at: share?.expires_at || null, copy_count: share?.copy_count || 0 });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: 'État du lien indisponible.' });
+  }
+});
+
+app.delete('/api/projects/:id/share', async (req: any, res: any) => {
+  try {
+    const userId = getUserOrgId(req);
+    const project = await loadProject(String(req.params.id), userId, req);
+    if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+    if (!canShareProject(getUserProjectRole(req, project))) return res.status(403).json({ success: false, error: 'Seul le propriétaire peut partager ce projet.' });
+    const client = requireSupabase('Project shares');
+    await client.from('project_shares').update({ revoked_at: new Date().toISOString() }).eq('project_id', project.id).is('revoked_at', null);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: 'Le lien n’a pas pu être désactivé.' });
+  }
+});
+
+/** A shared link, resolved: the same answer for one that never existed, expired or was revoked. */
+async function resolveShare(token: unknown) {
+  if (!isWellFormedShareToken(token)) return null;
+  const client = requireSupabase('Project shares');
+  const { data } = await client.from('project_shares').select('id,project_id,token_hash,created_at,expires_at,revoked_at,copy_count').eq('token_hash', hashShareToken(token)).maybeSingle();
+  if (!data || !sameHash(data.token_hash, hashShareToken(token)) || !isShareActive(data)) return null;
+  const { data: project } = await client.from('projects').select('*').eq('id', data.project_id).maybeSingle();
+  return project ? { share: data, project: project as GeneratedProject } : null;
+}
+
+app.get('/api/share/:token', async (req: any, res: any) => {
+  try {
+    if (!enforceRateLimit(`share-view:${req.ip}`, 60, 60_000)) return res.status(429).json({ success: false, error: 'Trop de demandes.' });
+    const found = await resolveShare(req.params.token);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    if (!found) return res.status(404).json({ success: false, error: 'Ce lien n’existe pas ou n’est plus actif.' });
+    const files = await loadProjectFiles(found.project.id).catch(() => []);
+    res.json({ success: true, project: sharedProjectView(found.project, { files: files.length, shared_at: found.share.created_at }) });
+  } catch {
+    res.status(500).json({ success: false, error: 'Ce lien ne peut pas être ouvert pour le moment.' });
+  }
+});
+
+app.post('/api/share/:token/copy', async (req: any, res: any) => {
+  try {
+    const authUser = requireAuthenticatedUser(req, res);
+    if (!authUser) return;
+    if (!enforceRateLimit(`share-copy:${authUser.id}`, 10, 60_000)) return res.status(429).json({ success: false, error: 'Trop de copies à la suite : réessayez dans une minute.' });
+    const found = await resolveShare(req.params.token);
+    if (!found) return res.status(404).json({ success: false, error: 'Ce lien n’existe pas ou n’est plus actif.' });
+    const organizationId = await ensurePersonalOrganization(req, authUser.id);
+    const { copy, files } = await duplicateProjectInto({ source: found.project, userId: authUser.id, organizationId, duplicatedVia: 'share' });
+    const client = requireSupabase('Project shares');
+    await client.from('project_shares').update({ copy_count: (found.share.copy_count || 0) + 1, last_copied_at: new Date().toISOString() }).eq('id', found.share.id);
+    res.json({ success: true, project: { id: copy.id, name: copy.name }, builder_url: `/builder.html?project=${copy.id}`, files });
+  } catch (error: any) {
+    console.error('[coden:share_copy_failed]', { message: redactSecrets(String(error?.message || error), '[redacted]').slice(0, 200) });
+    res.status(500).json({ success: false, error: 'La copie a échoué.' });
   }
 });
 
