@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <meta name="referrer" content="no-referrer">
-    <meta name="theme-color" content="#f8f9fb">
     <title>Projet partagé | Coden</title>
     <script>
       (() => {
@@ -19,8 +18,7 @@
       })();
     </script>
     <style>
-      :root { color-scheme: light; font-family: Geist, system-ui, sans-serif; --page:#f8f9fb; --surface:#fff; --border:#e2e4e8; --ink:#1a1c1f; --muted:#656a73; --accent:#3a83f7; --accent-ink:#fff; --danger:#c0392b; --focus:#91baff; background:var(--page); color:var(--ink); }
-      :root[data-theme="dark"] { color-scheme: dark; --page:#111; --surface:#1c1c1c; --border:#313131; --ink:#fcfcfc; --muted:#9f9f9f; --accent:#5b9bff; --accent-ink:#0b0b0b; --danger:#ff8a7a; --focus:#8dbbff; }
+      :root { font-family: Geist, system-ui, sans-serif; --page: var(--background); --ink: var(--foreground); --muted: var(--text-muted); --accent-ink: var(--background); --focus: color-mix(in srgb, var(--accent) 55%, var(--background)); background: var(--page); color: var(--ink); }
       *, *::before, *::after { box-sizing: border-box; }
       body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: 24px; background: var(--page); }
       .shell { width: min(100%, 880px); }
@@ -32,7 +30,7 @@
       .description { max-width: 62ch; margin: 10px 0 0; color: var(--muted); font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
       .frame { margin-top: 22px; aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: color-mix(in srgb, var(--ink) 4%, var(--surface)); }
       .frame { position: relative; }
-      .frame iframe { position: absolute; top: 0; left: 0; display: block; width: 1280px; border: 0; transform-origin: 0 0; pointer-events: none; background: #fff; }
+      .frame iframe { position: absolute; top: 0; left: 0; display: block; width: 1280px; border: 0; transform-origin: 0 0; pointer-events: none; background: var(--background); }
       .frame[hidden] { display: none; }
       .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 24px; }
       button, a.button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 10px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; transition: transform 160ms cubic-bezier(.32,.72,0,1), box-shadow 160ms cubic-bezier(.32,.72,0,1); }
