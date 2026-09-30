@@ -115,6 +115,8 @@ describe('design writes at the tool boundary', () => {
     const main = read(files, 'src/main.tsx');
     expect(checkDesignWrite({ path: 'src/main.tsx', before: main, after: main.replace(/import '\.\/index\.css';\n?/, ''), allowValueChanges: true }).ok).toBe(false);
     expect(checkDesignWrite({ path: 'src/main.tsx', before: main, after: `${main}\n// touched`, allowValueChanges: false }).ok).toBe(true);
+    // Re-pointing the import at a stylesheet that moved is an edit, not a loss.
+    expect(checkDesignWrite({ path: 'src/main.tsx', before: main, after: main.replace("'./index.css'", "'./styles/index.css'"), allowValueChanges: false }).ok).toBe(true);
     const config = read(files, 'tailwind.config.js');
     expect(checkDesignWrite({ path: 'tailwind.config.js', before: config, after: 'export default { theme: { extend: { colors: { brand: "red" } } } };', allowValueChanges: true }).ok).toBe(false);
     expect(checkDesignWrite({ path: 'tailwind.config.js', before: config, after: config.replace("card: 'var(--radius-card)',", "card: 'var(--radius-card)',\n        hero: '32px',"), allowValueChanges: false }).ok).toBe(true);

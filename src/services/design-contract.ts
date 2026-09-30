@@ -333,8 +333,12 @@ export function checkDesignWrite(input: { path: string; before: string | null; a
   // An entry is judged on whether it still imports the stylesheet, which needs
   // the stylesheet to exist: stand in for it, so no sibling has to be read.
   if (ENTRY_CANDIDATES.includes(path)) {
-    const { stylesheet } = entryImportsCss(new Map([[path, { path, content: input.before }]]));
-    if (stylesheet && !siblings.some(file => file.path === stylesheet)) siblings.push({ path: stylesheet, content: '' });
+    // Both sides: moving the stylesheet and re-pointing the import in the same
+    // change is a legitimate edit, and the new target may not be a sibling yet.
+    for (const content of [input.before, input.after]) {
+      const { stylesheet } = entryImportsCss(new Map([[path, { path, content }]]));
+      if (stylesheet && !siblings.some(file => file.path === stylesheet)) siblings.push({ path: stylesheet, content: '' });
+    }
   }
   const before = extractDesignContract([...siblings, { path, content: input.before }]);
   const after = extractDesignContract([...siblings, { path, content: input.after }]);
