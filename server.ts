@@ -11648,6 +11648,16 @@ app.post('/api/attachments', async (req: any, res: any) => {
   }
 });
 
+/* The conversation's thumbnails: fresh signed links for the attachments a message carries (ids only, one person's own). */
+app.post('/api/attachments/resolve', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  if (!enforceRateLimit(`attachment-resolve:${userId}`, 120, 60_000)) return res.status(429).json({ success: false, error: 'Trop de demandes.' });
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id: unknown) => String(id)).slice(0, 40) : [];
+  const attachments = await attachmentService().resolvePublic(ids, userId).catch(() => []);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, attachments });
+});
+
 app.get('/api/attachments/:id', async (req: any, res: any) => {
   const userId = getUserOrgId(req);
   const service = attachmentService();
@@ -16019,6 +16029,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * the files' content, the analysed pages and their images.
    */
   let attachmentBlock = '';
+  // What this message carried, kept with it as structured data: the original name, type and size, never the text of a name.
+  let attachedForMessage: Array<{ id: string; name: string; mimeType: string; size: number; kind: string; sourceUrl?: string }> = [];
   // The standing references as text, for the sub-agents (see TurnContext.brief).
   let attachmentBrief = '';
   try {
@@ -16032,6 +16044,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       onActivity: label => eventStream?.chat({ type: 'activity', label }),
     });
     attachmentBlock = turnAttachments.promptBlock;
+    attachedForMessage = turnAttachments.current.slice(0, 20).map(record => ({ id: record.id, name: String(record.name || '').slice(0, 240), mimeType: String(record.mime_type || ''), size: Number(record.size_bytes) || 0, kind: String(record.kind || ''), ...(record.kind === 'link' && record.source_url ? { sourceUrl: String(record.source_url).slice(0, 500) } : {}) }));
     if (turnAttachments.notices.length) {
       attachmentBlock += `\n\n## À signaler à l’utilisateur, en une phrase, au début de ta réponse\n${turnAttachments.notices.map(notice => `- ${notice}`).join('\n')}`;
     }
@@ -16230,7 +16243,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }
     }
     try {
-      await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode});
+      await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode,...(attachedForMessage.length ? { metadata: { attachments: attachedForMessage } } : {})});
       /*
        * Open the run before the work, so a run that never comes back is still
        * visible as one that started. A row written only on success records

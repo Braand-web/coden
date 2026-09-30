@@ -15,6 +15,8 @@ export type RemoteAttachment = {
   sourceUrl: string | null;
   preview: { title?: string; description?: string; favicon?: string; image?: string; siteName?: string } | null;
   thumbnailUrl: string | null;
+  /** The original file, to open or download it (signed, about an hour). */
+  downloadUrl?: string | null;
   /** An image's description arrives after the file is ready; absent on older servers. */
   analysis?: 'pending' | 'done' | 'none';
 };

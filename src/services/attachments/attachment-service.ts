@@ -147,6 +147,8 @@ export type PublicAttachment = {
   sourceUrl: string | null;
   preview: { title?: string; description?: string; favicon?: string; image?: string; siteName?: string } | null;
   thumbnailUrl: string | null;
+  /** The original file, for opening or downloading it (signed, an hour). Null for a link or a file not ready. */
+  downloadUrl?: string | null;
   /**
    * The model's reading of an image, which lands after the file is ready:
    * `pending` (on its way), `done`, or `none` (nothing to describe, or no
@@ -421,6 +423,15 @@ export class AttachmentService {
     return true;
   }
 
+  /** The public view of several of one person's attachments, in the order asked, for the conversation's thumbnails. */
+  async resolvePublic(ids: string[], userId: string): Promise<PublicAttachment[]> {
+    const wanted = [...new Set(ids.filter(id => /^[0-9a-f-]{36}$/i.test(id)))].slice(0, 40);
+    if (!wanted.length) return [];
+    const records = (await this.backend.listByIds(wanted, userId)).map(staleAsFailed);
+    const byId = new Map(records.map(record => [record.id, record]));
+    return Promise.all(wanted.map(id => byId.get(id)).filter((record): record is AttachmentRecord => Boolean(record)).map(record => this.toPublic(record)));
+  }
+
   async toPublic(record: AttachmentRecord): Promise<PublicAttachment> {
     const thumbnailPath = record.meta?.visionPath || record.meta?.frames?.[0]?.path || record.meta?.screenshots?.[0] || null;
     return {
@@ -435,6 +446,7 @@ export class AttachmentService {
       sourceUrl: record.source_url,
       preview: record.kind === 'link' ? { title: record.meta?.title, description: record.meta?.description, favicon: record.meta?.favicon, image: record.meta?.image, siteName: record.meta?.siteName } : null,
       thumbnailUrl: record.status === 'ready' && thumbnailPath ? await this.backend.signedUrl(thumbnailPath, 3_600).catch(() => null) : null,
+      downloadUrl: record.status === 'ready' && record.kind !== 'link' && record.storage_path ? await this.backend.signedUrl(record.storage_path, 3_600).catch(() => null) : null,
       analysis: record.meta?.described === false ? 'pending' : record.meta?.described === true ? 'done' : 'none',
       createdAt: record.created_at,
     };
