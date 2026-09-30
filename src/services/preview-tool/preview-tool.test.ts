@@ -19,10 +19,10 @@ describe('what an agent may do in the preview', () => {
   });
 
   it('holds consequential controls for an explicit go-ahead', () => {
-    for (const label of ['Supprimer le compte', 'Delete project', 'Payer 49 €', 'Buy now', 'Envoyer', 'Publier', 'Se déconnecter', 'Log out', 'Unsubscribe']) {
+    for (const label of ['Supprimer le compte', 'Delete project', 'Payer 49 €', 'Buy now', 'Envoyer un e-mail', 'Publier', 'Se déconnecter', 'Log out', 'Unsubscribe']) {
       expect(needsConfirmation(label), label).toBe(true);
     }
-    for (const label of ['Ajouter au panier', 'Suivant', 'Filtrer', 'Voir les tarifs', 'Ouvrir le menu']) expect(needsConfirmation(label), label).toBe(false);
+    for (const label of ['Ajouter au panier', 'Suivant', 'Filtrer', 'Voir les tarifs', 'Ouvrir le menu', 'Effacer', 'Supprimer le dernier chiffre', 'Réinitialiser', 'Reset', 'Vider la liste', 'Envoyer', 'Supprimer la tâche']) expect(needsConfirmation(label), label).toBe(false);
   });
 
   it('refuses real card numbers and live secrets, but not payment providers\' test numbers', () => {

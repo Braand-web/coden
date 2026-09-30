@@ -193,8 +193,11 @@ export async function verifyLivePreview(sandbox: ProjectSandbox, signal?: AbortS
       }
     }
     await page.setViewportSize({ width: 1280, height: 800 });
-    if (options.capture) {
+    if (options.capture && process.env.CODEN_DARK_QA === '1') {
       /*
+       * Off unless CODEN_DARK_QA=1. It reloads the page twice before the browser journeys and the control probes run,
+       * and it adds seconds to every check; until it runs after them, on a page of its own, it stays out of the way.
+       *
        * The same screen in the system's dark scheme.
        *
        * The review only ever saw the light version, so an app that half-supports dark mode — a white card

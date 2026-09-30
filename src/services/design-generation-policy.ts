@@ -227,7 +227,6 @@ const keywordGroups: Record<GeneratedAppType, string[]> = {
     'leads',
     'invoice',
     'inventory',
-    'operations',
     'sales reps',
     'facture',
     'stock',
@@ -810,8 +809,15 @@ function normalizePrompt(prompt: string) {
     .trim();
 }
 
+/*
+ * A keyword counts as a word, not as a piece of one. « ios » was found inside « curiosity », « erp » inside
+ * « properly », and « operations » — a calculator's own word — made a calculator a CRM. A plural still matches.
+ */
 function hasAny(text: string, keywords: string[]) {
-  return keywords.some(keyword => text.includes(normalizePrompt(keyword)));
+  return keywords.some(keyword => {
+    const word = normalizePrompt(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[^a-z0-9])${word}(?:s|x)?(?![a-z0-9])`).test(text);
+  });
 }
 
 export function classifyGeneratedAppType(prompt: string): GeneratedAppType {
