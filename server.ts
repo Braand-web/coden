@@ -258,6 +258,7 @@ import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-r
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
+import { readDesignIdentity } from './src/services/sandbox/design-diversity.ts';
 import { canDuplicateProject, duplicateProjectName } from './src/services/project-duplicate.ts';
 import { findCompletedTurnForRun } from './src/services/run-ledger.ts';
 import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
@@ -8414,6 +8415,34 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
   return project;
 }
 
+/*
+ * The look a project was given, remembered (projects.design_identity), so the person's next project can look different
+ * from their recent ones and this project's own hue never changes. Every read and write is best-effort: before the
+ * column exists, or if the database is slow, a project simply gets the look it would have had.
+ */
+async function loadDesignHistory(userId: string, projectId: string): Promise<{ avoidHues: number[]; lockHue: number | null }> {
+  try {
+    const client = getSupabase();
+    if (!client) return { avoidHues: [], lockHue: null };
+    const own = await client.from('projects').select('design_identity').eq('id', projectId).maybeSingle();
+    const lock = own.error ? null : readDesignIdentity(own.data?.design_identity)?.hue ?? null;
+    const recent = await client.from('projects').select('design_identity').eq('owner_id', userId).neq('id', projectId).not('design_identity', 'is', null).order('created_at', { ascending: false }).limit(6);
+    const avoidHues = recent.error ? [] : (recent.data || []).map((row: any) => readDesignIdentity(row.design_identity)?.hue).filter((hue: number | undefined): hue is number => typeof hue === 'number');
+    return { avoidHues, lockHue: lock };
+  } catch {
+    return { avoidHues: [], lockHue: null };
+  }
+}
+
+async function saveDesignIdentity(projectId: string, identity: { hue: number; direction: string; mode: string }) {
+  try {
+    const client = getSupabase();
+    if (client) await client.from('projects').update({ design_identity: identity }).eq('id', projectId);
+  } catch (error: any) {
+    console.warn('[coden:design_identity_skipped]', { message: String(error?.message || error).slice(0, 120) });
+  }
+}
+
 async function loadProject(projectId: string, userId: string, req?: any): Promise<GeneratedProject | null> {
   const client = requireSupabase('Project loading');
   const { data, error } = await client.from('projects').select('*').eq('id', projectId).maybeSingle();
@@ -15236,6 +15265,9 @@ app.post('/api/projects/:id/duplicate', async (req: any, res: any) => {
       updated_at: now,
     };
     await saveProject(copy, files);
+    // The copy looks like its original, so it counts as that look for the person's next project.
+    const identity = readDesignIdentity((source as any).design_identity);
+    if (identity) await saveDesignIdentity(copy.id, identity);
     await createProjectVersion(copy, files, 'duplicate', { duplicated_from: source.id }).catch(() => null);
     console.log('[coden:project_duplicated]', { from: source.id, to: copy.id, files: files.length });
     res.json({ success: true, project: { id: copy.id, name: copy.name }, builder_url: `/builder.html?project=${copy.id}`, files: files.length });
@@ -16548,6 +16580,8 @@ ${resolvedMission}` : resolvedMission;
       });
       const outcome = await runMultiAgentPipeline({
         gateway: providerGateway,
+        designHistory: pipelineRoute === 'new_project' ? await loadDesignHistory(userId, project.id) : undefined,
+        onDesignIdentity: identity => { void saveDesignIdentity(project.id, identity); },
         projectId: project.id,
         projectName: project.name,
         userId,

@@ -41,6 +41,8 @@ export type Starter = {
   files: readonly SandboxFile[];
   /** This project's visual identity, as the prompt should describe it. */
   themeSummary?: string;
+  /** The look chosen for this project, to be remembered: the next project of the same person avoids its hue. */
+  theme?: { hue: number; direction: string; mode: 'light' | 'dark' };
 };
 
 /**
@@ -609,8 +611,8 @@ export function applyStarter(starter: Starter, generated: readonly SandboxFile[]
  * link are written from this project's design direction, seeded by its id so
  * the identity is stable across rounds and different across projects.
  */
-export function themeStarter(starter: Starter, input: { prompt: string; seed?: string; title?: string }): Starter {
-  const theme = buildProjectTheme({ prompt: input.prompt, seed: input.seed });
+export function themeStarter(starter: Starter, input: { prompt: string; seed?: string; title?: string; avoidHues?: number[]; lockHue?: number | null }): Starter {
+  const theme = buildProjectTheme({ prompt: input.prompt, seed: input.seed, avoidHues: input.avoidHues, lockHue: input.lockHue });
   const replacements = new Map<string, string>([
     ['src/index.css', renderThemeCss(theme)],
     ['index.html', renderThemeIndexHtml(theme, input.title)],
@@ -619,6 +621,7 @@ export function themeStarter(starter: Starter, input: { prompt: string; seed?: s
     ...starter,
     files: starter.files.map(file => replacements.has(file.path) ? { path: file.path, content: replacements.get(file.path)! } : file),
     themeSummary: theme.summary,
+    theme: { hue: theme.hue, direction: theme.direction, mode: theme.mode },
   };
 }
 
