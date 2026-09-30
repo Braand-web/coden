@@ -862,11 +862,45 @@ html[data-theme="dark"] body:has(#coden-dashboard-react-root) {
    caption beneath it inside the same frame, so a row reads as a shelf of
    projects rather than floating pictures. */
 .coden-dashboard-project-card {
+  position: relative;
   min-width: 0;
   margin: 0;
   background: transparent;
   border: 0;
 }
+
+/* Duplicate: a small button over the preview's corner — on hover or focus with a pointer, always there on touch. */
+.coden-dashboard-project-copy {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--text-strong, var(--foreground));
+  cursor: pointer;
+  transition: opacity 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+.coden-dashboard-project-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coden-dashboard-project-copy:disabled { cursor: progress; opacity: .6; }
+.coden-dashboard-project-copy[data-state="error"] { border-color: color-mix(in srgb, var(--danger) 55%, var(--border)); color: var(--danger); }
+@media (hover: hover) and (pointer: fine) {
+  .coden-dashboard-project-copy { opacity: 0; }
+  .coden-dashboard-project-card:hover .coden-dashboard-project-copy,
+  .coden-dashboard-project-copy:focus-visible,
+  .coden-dashboard-project-copy[data-state] { opacity: 1; }
+  .coden-dashboard-project-copy:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+}
+@media (pointer: coarse) { .coden-dashboard-project-copy { width: 40px; height: 40px; } }
+@media (prefers-reduced-motion: reduce) { .coden-dashboard-project-copy { transition: none; } }
 
 .coden-dashboard-project-card-link {
   display: flex;

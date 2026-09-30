@@ -22,6 +22,7 @@ import {
   Settings,
   Rocket,
   X,
+  Copy,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { CodenLogoMark } from './components/brand/coden-logo';
@@ -416,6 +417,22 @@ function projectInitials(name: string) {
 }
 
 function ProjectCard({ project }: { project: DashboardProject }) {
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState('');
+  // A copy of the files and the look, in a new draft; the conversation, the published site and the backend stay behind.
+  const duplicate = async () => {
+    if (copying) return;
+    setCopying(true);
+    setCopyError('');
+    try {
+      const result = await apiFetch<{ project?: { id: string } }>(`/api/projects/${encodeURIComponent(project.id)}/duplicate`, { method: 'POST' });
+      if (result.project?.id) window.location.href = builderUrl(result.project.id);
+      else setCopying(false);
+    } catch (error) {
+      setCopyError(error instanceof Error && error.message ? error.message : 'La copie a échoué.');
+      setCopying(false);
+    }
+  };
   const previewHtml = project.preview_html?.trim();
   const isErrorPreview = Boolean(previewHtml && ERROR_PREVIEW.test(previewHtml.slice(0, 20_000)));
   const hasRenderedPreview = Boolean(previewHtml && !isErrorPreview);
@@ -470,6 +487,17 @@ function ProjectCard({ project }: { project: DashboardProject }) {
           <span className="coden-dashboard-project-open" aria-hidden="true"><ArrowRight size={15} /></span>
         </span>
       </a>
+      <button
+        type="button"
+        className="coden-dashboard-project-copy"
+        onClick={() => { void duplicate(); }}
+        disabled={copying}
+        aria-label={`Dupliquer le projet ${project.name}`}
+        title={copyError || 'Dupliquer'}
+        data-state={copying ? 'busy' : copyError ? 'error' : undefined}
+      >
+        <Copy size={15} aria-hidden="true" />
+      </button>
     </article>
   );
 }
