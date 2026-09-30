@@ -39,6 +39,7 @@ import { createAttachmentUploader, createPreviewUploader, waitUntilRead, type At
 import { takePendingFiles } from './lib/pending-files';
 import { isLocalPreviewEnabled } from './local-preview';
 import { DEFAULT_AGENT_EFFORT, normalizeAgentEffort } from './services/agent-effort';
+import { readRoutingMode } from './lib/routing-mode';
 import {
   SELECTED_MODEL_STORAGE_KEY,
   readPreferredEffort,
@@ -3128,6 +3129,8 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
       modelId: selectedModel(),
       // The reasoning level applies to a conversation too, exactly as chosen.
       effort: composerEffort,
+      // Économique / Équilibré / Performance: read by the router when the model is Auto.
+      routingMode: readRoutingMode(),
       projectId: currentProjectId || undefined,
       messages: recentConversationForAssistant(prompt),
       clientMessageId: messageId ? `${messageId}_user` : undefined,
@@ -7035,6 +7038,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
        * Max Effort never bought a longer run.
        */
       effort: composerEffort,
+      routingMode: readRoutingMode(),
       clientMessageId: messageHandleId(status) ? `${messageHandleId(status)}_user` : undefined,
       assistantMessageId: messageHandleId(status) || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),

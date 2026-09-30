@@ -1,10 +1,11 @@
 import * as React from "react";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { cn } from "../../lib/utils";
-import { PUBLIC_MODEL_CATALOG, PROVIDER_META, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
+import { PUBLIC_MODEL_CATALOG, PROVIDER_META, isFlaggedModel, isPlanAtLeast, type CanonicalUserPlan } from "../../config/ai-models";
 import { useModelAvailability } from "../../lib/model-availability";
 import { providerIconSvg } from "../../model-provider-icons";
 import { AGENT_EFFORT_LABELS, AGENT_EFFORT_LEVELS, DEFAULT_AGENT_EFFORT, type AgentEffort } from "../../services/agent-effort";
+import { readRoutingMode, ROUTING_MODES, ROUTING_MODE_HINTS, ROUTING_MODE_LABELS, writeRoutingMode, type RoutingMode } from "../../lib/routing-mode";
 import { ACCEPT_ATTRIBUTE, MAX_ATTACHMENTS_PER_MESSAGE } from "../../lib/attachment-policy";
 import type { AttachmentUploader } from "../../lib/attachment-types";
 import { AttachmentTray, useComposerAttachments, type ComposerSubmission } from "./composer-attachments";
@@ -319,6 +320,8 @@ export interface PromptInputProps {
     meta: {
       model: string;
       effort: string;
+      /** Économique / Équilibré / Performance: read by the router when the model is Auto. */
+      routingMode?: RoutingMode;
       /** Files that stayed in the browser (no uploader): the host sends them later. */
       attachments: File[];
     } & Omit<ComposerSubmission, "localFiles">
@@ -414,7 +417,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
      */
     const availability = useModelAvailability();
     const models = React.useMemo(
-      () => offeredModels.filter(id => id === AUTO_MODEL || availability?.get(id)?.available !== false),
+      // A model held back by a feature flag needs the server to say it is on; every other
+      // model is offered until the catalogue says it is missing.
+      () => offeredModels.filter(id => id === AUTO_MODEL || (isFlaggedModel(id) ? availability?.get(id)?.available === true : availability?.get(id)?.available !== false)),
       [offeredModels, availability],
     );
     /*
@@ -429,6 +434,9 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       () => (defaultEffort && efforts.includes(defaultEffort) ? defaultEffort : DEFAULT_AGENT_EFFORT),
     );
     const [isModelSelectOpen, setIsModelSelectOpen] = useState(false);
+    // Économique / Équilibré / Performance: only meaningful in Auto, and kept
+    // for the next session. The builder reads the same preference when it sends.
+    const [routingMode, setRoutingMode] = useState<RoutingMode>(() => readRoutingMode());
 
     const [activeAttachment, setActiveAttachment] = useState<{ attachment: GalleryImage; rect: DOMRect } | null>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -738,14 +746,22 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       const { localFiles, ...submission } = attachmentState.takeSubmission();
       // Files alone are a request too: the agent is asked to look at them.
       const text = value.trim() === "" ? "Voici des pièces jointes : analyse-les et propose ce que tu peux en faire." : value;
-      onSubmit?.(text, { model: selectedModel, effort: efforts[effortIndex], attachments: localFiles, ...submission });
+      onSubmit?.(text, { model: selectedModel, effort: efforts[effortIndex], routingMode, attachments: localFiles, ...submission });
       handleValueChange("");
       setExpanded(defaultExpanded);
       setIsModelSelectOpen(false);
     };
 
+    const cycleRoutingMode = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const next = ROUTING_MODES[(ROUTING_MODES.indexOf(routingMode) + 1) % ROUTING_MODES.length];
+      setRoutingMode(next);
+      writeRoutingMode(next);
+    };
+
     const cycleEffort = (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (isAutoModel) return cycleRoutingMode(e);
       if (effortLocked) return;
       handleEffortChange(efforts[(effortIndex + 1) % efforts.length]);
     };
@@ -1099,17 +1115,17 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
               <button
                 type="button" onMouseDown={(e) => e.preventDefault()} onClick={cycleEffort}
                 // aria-disabled rather than disabled: a disabled button shows no tooltip.
-                aria-disabled={effortLocked}
-                title={reasoningUnsupported ? REASONING_UNSUPPORTED_HINT : isAutoModel ? AUTO_REASONING_HINT : undefined}
+                aria-disabled={effortLocked && !isAutoModel}
+                title={reasoningUnsupported ? REASONING_UNSUPPORTED_HINT : isAutoModel ? `${ROUTING_MODE_HINTS[routingMode]} Cliquez pour changer. ${AUTO_REASONING_HINT}.` : undefined}
                 className="group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 hover:bg-accent/60 hover:text-foreground outline-none cursor-default aria-disabled:hover:bg-transparent aria-disabled:hover:text-foreground/50 aria-disabled:opacity-60"
                 aria-label={reasoningUnsupported
                   ? `Niveau de raisonnement indisponible : ${REASONING_UNSUPPORTED_HINT}`
                   : isAutoModel
-                    ? "Niveau de raisonnement : choisi automatiquement"
+                    ? `Mode Auto : ${ROUTING_MODE_LABELS[routingMode]}. Cliquez pour changer de mode.`
                     : `Niveau de raisonnement : ${effortLabel(efforts[effortIndex])}`}
               >
                 <DynamicBarsIcon level={reasoningUnsupported ? "None" : isAutoModel ? "Medium" : efforts[effortIndex]} />
-                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={reasoningUnsupported ? effortLabel("None") : isAutoModel ? "Auto" : effortLabel(efforts[effortIndex])} /></span>
+                <span className="text-xs font-semibold select-none transition-colors"><MorphingText text={reasoningUnsupported ? effortLabel("None") : isAutoModel ? ROUTING_MODE_LABELS[routingMode] : effortLabel(efforts[effortIndex])} /></span>
               </button>
 
               <button
