@@ -27,6 +27,7 @@ import {
   classifyGeneratedAppType,
   type DesignDirection,
 } from '../design-generation-policy.ts';
+import { pickDistinctHue } from './design-diversity.ts';
 
 type Mode = 'light' | 'dark';
 
@@ -109,7 +110,7 @@ function fontsFromPair(pair: string): { body: FontSpec | null; display: FontSpec
   return { body: FONTS[match[1].trim()] || null, display: FONTS[match[2].trim()] || null };
 }
 
-export function buildProjectTheme(input: { prompt: string; seed?: string }): ProjectTheme {
+export function buildProjectTheme(input: { prompt: string; seed?: string; /** Hues of the person's recent projects, to stay away from. */ avoidHues?: number[]; /** This project's own stored hue: it never changes once chosen. */ lockHue?: number | null }): ProjectTheme {
   const appType = classifyGeneratedAppType(input.prompt);
   const direction = chooseDesignDirection(appType, input.prompt);
   const dna = buildGeneratedDesignDna({ prompt: input.prompt, appType, designDirection: direction, seed: input.seed });
@@ -120,7 +121,7 @@ export function buildProjectTheme(input: { prompt: string; seed?: string }): Pro
   const mode: Mode = /\b(dark|sombre|nuit|night|noir)\b/.test(text) ? 'dark'
     : /\b(light|clair|blanc|white|lumineux)\b/.test(text) ? 'light'
       : spec.mode;
-  const hue = spec.hues[h % spec.hues.length];
+  const hue = pickDistinctHue(spec.hues, h, input.avoidHues, input.lockHue);
   const { body, display } = fontsFromPair(dna.typographyPair);
   const [control, card, modal] = spec.radius;
   const motion = MOTION[(h >>> 5) % MOTION.length];

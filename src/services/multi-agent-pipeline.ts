@@ -692,6 +692,10 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
 
 export async function runMultiAgentPipeline(input: {
   gateway: ProviderGateway;
+  /** The person's recent looks, to stay away from, and this project's own stored hue (see sandbox/design-diversity.ts). */
+  designHistory?: { avoidHues: number[]; lockHue?: number | null };
+  /** Told which look this project was given, so it can be remembered. */
+  onDesignIdentity?: (identity: { hue: number; direction: string; mode: 'light' | 'dark' }) => void;
   projectId: string;
   projectName?: string;
   userId: string;
@@ -944,8 +948,9 @@ export async function runMultiAgentPipeline(input: {
   // Themed for this project: its palette, type pair, radii and motion are
   // written into the scaffold, seeded by the project id so they never drift.
   const starter = input.route === 'new_project'
-    ? themeStarter(selectStarter(input.prompt), { prompt: input.prompt, seed: input.projectId, title: input.projectName })
+    ? themeStarter(selectStarter(input.prompt), { prompt: input.prompt, seed: input.projectId, title: input.projectName, avoidHues: input.designHistory?.avoidHues, lockHue: input.designHistory?.lockHue })
     : null;
+  if (starter?.theme) { try { input.onDesignIdentity?.(starter.theme); } catch { /* remembering the look never fails a run */ } }
   // What this run can afford: pre-analysis, journeys, exploration, review.
   const quality = resolveQualityPolicy({ route: input.route, credits: input.credits, effort: input.effort, plan: String(input.userPlan || ''), prompt: input.prompt });
 

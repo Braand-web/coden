@@ -797,6 +797,7 @@ function renderReliability(root: HTMLElement) {
   const totals = (report.totals || {}) as JsonRecord;
   const duration = (report.duration || {}) as JsonRecord;
   const daily = (report.daily || []) as JsonRecord[];
+  const activation = (report.activation || {}) as JsonRecord;
   const groups = (rows: JsonRecord[]) => table(['Clé', 'Tours', 'Réussis', 'Échoués', 'Réussite', 'Durée médiane'], rows.map(row => [
     `<code>${escapeHtml(row.key)}</code>`, escapeHtml(formatNumber(row.turns)), escapeHtml(formatNumber(row.completed)), escapeHtml(formatNumber(row.failed)), escapeHtml(percent(row.successRate)), escapeHtml(seconds(row.durationMsP50)),
   ]));
@@ -804,6 +805,7 @@ function renderReliability(root: HTMLElement) {
     metric('Réussite · 14 jours', percent(totals.successRate), `${formatNumber(totals.completed)} réussis · ${formatNumber(totals.failed)} échoués · ${formatNumber(totals.cancelled)} annulés`),
     metric('Dernière heure et demie', alert?.level === 'warn' ? `⚠ ${percent(alert?.successRate)}` : percent(alert?.successRate), alert?.turns ? `${formatNumber(alert.turns)} tours terminés${alert.level === 'warn' ? ' — en baisse' : ''}` : 'Aucun tour terminé'),
     metric('Durée d’un tour réussi', seconds(duration.p50Ms), `médiane · p90 ${seconds(duration.p90Ms)}`),
+    metric('Premier résultat · activation', percent(activation.rate), `${formatNumber(activation.withResult)} personnes sur ${formatNumber(activation.people)} ont obtenu une construction réussie · ${percent(activation.underThreeMinutes)} en moins de 3 min · médiane ${seconds(activation.firstResultP50Ms)}`),
   ].join('');
   if (daysHost) daysHost.innerHTML = table(['Jour', 'Tours', 'Réussis', 'Échoués', 'Annulés', 'Réussite'], [...daily].reverse().map(day => [
     escapeHtml(day.day), escapeHtml(formatNumber(day.turns)), escapeHtml(formatNumber(day.completed)), escapeHtml(formatNumber(day.failed)), escapeHtml(formatNumber(day.cancelled)), escapeHtml(percent(day.successRate)),

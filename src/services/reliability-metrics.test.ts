@@ -77,3 +77,31 @@ describe('the reliability alert', () => {
     expect(reliabilityAlertEnabled({ CODEN_RELIABILITY_ALERT: '0' })).toBe(false);
   });
 });
+
+describe('activation: how many people who tried got a real result', () => {
+  const build = (user: string, agoMin: number, secs: number, status = 'completed') => ({ ...turn(status, agoMin, secs), user_id: user });
+
+  it('counts a result only when it is a build: a chat answer in seconds is not one', () => {
+    const report = buildReliabilityReport([build('a', 100, 5), build('a', 90, 8), build('b', 80, 120), build('c', 70, 200), build('d', 60, 90, 'failed')], { now: NOW, days: 3 });
+    expect(report.activation.people).toBe(4);
+    expect(report.activation.withResult).toBe(2);
+    expect(report.activation.rate).toBe(0.5);
+  });
+
+  it('measures each person’s first result against three minutes', () => {
+    const report = buildReliabilityReport([build('b', 80, 120), build('c', 70, 200), build('e', 50, 90)], { now: NOW, days: 3 });
+    expect(report.activation.underThreeMinutes).toBeCloseTo(0.667, 3);
+    expect(report.activation.firstResultP50Ms).toBe(120_000);
+  });
+
+  it('takes the earliest build of a person, not their fastest', () => {
+    const report = buildReliabilityReport([build('b', 200, 240), build('b', 50, 70)], { now: NOW, days: 3 });
+    expect(report.activation.firstResultP50Ms).toBe(240_000);
+    expect(report.activation.underThreeMinutes).toBe(0);
+  });
+
+  it('has no rate without anyone, and ignores turns with no user', () => {
+    const empty = buildReliabilityReport([turn('completed', 10, 120)], { now: NOW, days: 3 });
+    expect(empty.activation).toMatchObject({ people: 0, withResult: 0, rate: null, underThreeMinutes: null, firstResultP50Ms: null });
+  });
+});
