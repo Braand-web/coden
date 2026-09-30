@@ -1956,21 +1956,74 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
 
   useEffect(() => store.subscribe(() => setVersion((value) => value + 1)), [store]);
 
+  /*
+   * The reader's hand beats the glide.
+   *
+   * While a reply streams, every update restarts a 240 ms glide to the bottom,
+   * and each frame of it moves the scroll position — which the scroll listener
+   * read as "the reader is at the bottom" again. A reader who scrolled up to
+   * re-read was pulled back down within a frame or two, and could never leave:
+   * measured in a real browser, a wheel-up of 800 px was undone at once.
+   *
+   * Scrolling up now detaches the view: the glide is cancelled, following stops,
+   * and it resumes only when the reader comes back to the bottom themselves,
+   * presses « Nouveaux messages », or sends something.
+   */
+  const detachedRef = useRef(false);
+  const lastTopRef = useRef(0);
+  const lastHeightRef = useRef(0);
+  const cancelGlide = () => {
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = null;
+  };
+
   useEffect(() => {
+    let touchStartY = 0;
+    const detach = () => { detachedRef.current = true; isAtBottomRef.current = false; cancelGlide(); host.dataset.follow = 'off'; };
     const syncScrollPosition = () => {
-      const distanceFromBottom = host.scrollHeight - host.clientHeight - host.scrollTop;
-      isAtBottomRef.current = distanceFromBottom < 36;
-      if (isAtBottomRef.current) setHasUnread(false);
+      const top = host.scrollTop;
+      const distanceFromBottom = host.scrollHeight - host.clientHeight - top;
+      // The glide only ever moves down and content growth never moves the top: a decrease is the reader —
+      // unless the content itself got shorter, which makes the browser pull the position up on its own.
+      const shrank = host.scrollHeight < lastHeightRef.current - 1;
+      if (top < lastTopRef.current - 2 && distanceFromBottom > 8 && !shrank) detach();
+      lastTopRef.current = top;
+      lastHeightRef.current = host.scrollHeight;
+      if (distanceFromBottom < 36) { detachedRef.current = false; host.dataset.follow = 'on'; setHasUnread(false); }
+      isAtBottomRef.current = !detachedRef.current;
     };
+    const onWheel = (event: WheelEvent) => { if (event.deltaY < 0) detach(); };
+    const onTouchStart = (event: TouchEvent) => { touchStartY = event.touches[0]?.clientY ?? 0; };
+    const onTouchMove = (event: TouchEvent) => { if ((event.touches[0]?.clientY ?? 0) > touchStartY + 6) detach(); };
     syncScrollPosition();
     host.addEventListener('scroll', syncScrollPosition, { passive: true });
-    return () => host.removeEventListener('scroll', syncScrollPosition);
+    host.addEventListener('wheel', onWheel, { passive: true });
+    host.addEventListener('touchstart', onTouchStart, { passive: true });
+    host.addEventListener('touchmove', onTouchMove, { passive: true });
+    return () => {
+      host.removeEventListener('scroll', syncScrollPosition);
+      host.removeEventListener('wheel', onWheel);
+      host.removeEventListener('touchstart', onTouchStart);
+      host.removeEventListener('touchmove', onTouchMove);
+    };
   }, [host]);
 
   useEffect(() => {
     void version;
     const distanceFromBottom = host.scrollHeight - host.clientHeight - host.scrollTop;
-    const shouldFollow = isAtBottomRef.current || (messages.length !== lastLengthRef.current && distanceFromBottom < 96);
+    // The person sending something is asking to be at the bottom.
+    const justSent = messages.length !== lastLengthRef.current && messages.at(-1)?.role === 'user';
+    if (justSent) { detachedRef.current = false; isAtBottomRef.current = true; host.dataset.follow = 'on'; }
+    /*
+     * Follow until the reader says otherwise — not "while within 36 px of the bottom".
+     *
+     * With that distance test, a reply growing faster than the glide (a long file
+     * streaming in) left the view a little behind, the test failed, following
+     * stopped, and it never resumed: measured against a 70,000-character stream,
+     * the view ended 10,000 px above the end.
+     */
+    void distanceFromBottom;
+    const shouldFollow = !detachedRef.current;
     if (shouldFollow && scrollFrameRef.current === null) {
       const startTop = host.scrollTop;
       const startedAt = performance.now();
@@ -2006,6 +2059,8 @@ function ConversationApp({ store, host, callbacks }: { store: ReturnType<typeof 
   }, []);
 
   const revealNewest = () => {
+    detachedRef.current = false;
+    host.dataset.follow = 'on';
     isAtBottomRef.current = true;
     setHasUnread(false);
     host.scrollTo({ top: Math.max(0, host.scrollHeight - host.clientHeight), behavior: 'smooth' });
