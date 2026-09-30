@@ -66,3 +66,22 @@ describe('a small request is finished when it works', async () => {
     expect(DESIGN_REVIEW_PASS_SCORE).toBeLessThanOrEqual(6);
   });
 });
+
+describe('a small request keeps a small plan and a small run', async () => {
+  const { resolveQualityPolicy } = await import('./quality-tier');
+  const { runPlannerAgent } = await import('./planner-agent');
+  const plannerSource = (await import('node:fs')).readFileSync('src/services/planner-agent.ts', 'utf8');
+
+  it('no specialists and no designer review for a mini tool, even at the highest level; a real product keeps them', () => {
+    const small = resolveQualityPolicy({ route: 'new_project', effort: 'Ultra', credits: 500, prompt: 'cree une mini calculatrice' });
+    expect(small).toMatchObject({ specialists: false, designReview: false, acceptance: true, explore: true });
+    const big = resolveQualityPolicy({ route: 'new_project', effort: 'Ultra', credits: 500, prompt: 'Une boutique en ligne pour vendre mes bougies avec un panier et le paiement' });
+    expect(big).toMatchObject({ specialists: true, designReview: true });
+  });
+
+  it('the planner is told to size the plan to the request, and is asked for no scenario about history or saved data', () => {
+    expect(plannerSource).toMatch(/smallest complete version of exactly what was asked/);
+    expect(plannerSource).toMatch(/isSmallRequest\(input\.prompt\)/);
+    expect(typeof runPlannerAgent).toBe('function');
+  });
+});

@@ -82,6 +82,7 @@ export const ACCEPTANCE_CONTRACT = [
   'Each scenario starts on "/" with empty storage and must contain at least one expect_text. Use the exact labels the interface will show, in the user language.',
   'The app seeds realistic sample items on a first visit, so never assume an empty list at the start: create your own uniquely named item (e.g. "Test Coden 1") and act on that one.',
   'Cover the core journey (create/complete/remove the main object, or submit the main form) and persistence when data is created (reload, then expect it again).',
+  'Targets are matched by accessible name. A control that shows a symbol (× ÷ − + ⌫ ±, an icon) keeps its symbol on screen and carries the word in its aria-label: target that aria-label, and never ask for a word to be written on the face of a key or an icon button.',
   'Never test external services, payments, email delivery or authentication with real credentials.',
 ].join('\n');
 
