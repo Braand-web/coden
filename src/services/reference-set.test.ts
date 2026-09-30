@@ -45,3 +45,17 @@ describe('colours come from the tokens', () => {
     expect(clean.status).toBe('pass');
   });
 });
+
+describe('every generated application has an offline state', async () => {
+  const { STARTERS } = await import('./sandbox/starters');
+  it('the scaffold ships the banner, wires it under the error boundary, and keeps it out of the model\'s hands', () => {
+    for (const starter of Object.values(STARTERS) as any[]) {
+      const banner = starter.files.find((file: any) => file.path === 'src/components/OfflineBanner.tsx');
+      const main = starter.files.find((file: any) => file.path === 'src/main.tsx');
+      expect(banner?.content).toMatch(/navigator\.onLine/);
+      expect(banner?.content).toMatch(/role="status"/);
+      expect(main?.content).toMatch(/<ErrorBoundary>\s*<OfflineBanner \/>\s*<App \/>/);
+      expect(starter.reservedPaths).toContain('src/components/OfflineBanner.tsx');
+    }
+  });
+});

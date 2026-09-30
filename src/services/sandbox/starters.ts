@@ -124,15 +124,45 @@ const MAIN_TSX = `import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { OfflineBanner } from './components/OfflineBanner';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
+      <OfflineBanner />
       <App />
     </ErrorBoundary>
   </StrictMode>,
 );
+`;
+
+/**
+ * The offline state, in the scaffold so that every application has one.
+ *
+ * A screen that simply stops answering when the connection drops reads as a bug. This says what happened, in the
+ * page's language, and goes away by itself when the connection is back. It draws on the tokens only and takes no
+ * space when everything is fine.
+ */
+const OFFLINE_BANNER = `import { useEffect, useState } from 'react';
+
+export function OfflineBanner() {
+  const [offline, setOffline] = useState(typeof navigator !== 'undefined' && navigator.onLine === false);
+  useEffect(() => {
+    const down = () => setOffline(true);
+    const up = () => setOffline(false);
+    window.addEventListener('offline', down);
+    window.addEventListener('online', up);
+    return () => { window.removeEventListener('offline', down); window.removeEventListener('online', up); };
+  }, []);
+  if (!offline) return null;
+  const french = (document.documentElement.lang || '').toLowerCase().startsWith('fr');
+  return (
+    <div role="status" aria-live="polite" className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface-raised px-4 py-3 text-center text-sm text-content shadow-card">
+      {french ? 'Vous êtes hors ligne. Vos modifications reprendront dès le retour de la connexion.' : 'You are offline. Your changes will continue as soon as the connection is back.'}
+    </div>
+  );
+}
 `;
 
 /**
@@ -432,6 +462,7 @@ const BASE_FILES: SandboxFile[] = [
   { path: 'src/main.tsx', content: MAIN_TSX },
   { path: 'src/index.css', content: INDEX_CSS },
   { path: 'src/components/ErrorBoundary.tsx', content: ERROR_BOUNDARY },
+  { path: 'src/components/OfflineBanner.tsx', content: OFFLINE_BANNER },
   { path: 'src/App.tsx', content: APP_PLACEHOLDER },
   ...STARTER_KIT_FILES,
 ];
@@ -445,7 +476,7 @@ const BASE_FILES: SandboxFile[] = [
 const RESERVED = [
   'package.json', 'vite.config.ts', 'tsconfig.json',
   'tailwind.config.js', 'postcss.config.js',
-  'src/main.tsx', 'src/components/ErrorBoundary.tsx',
+  'src/main.tsx', 'src/components/ErrorBoundary.tsx', 'src/components/OfflineBanner.tsx',
 ] as const;
 
 const SUPABASE_CLIENT = `import { createClient } from '@supabase/supabase-js';
