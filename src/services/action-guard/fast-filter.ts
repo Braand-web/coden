@@ -11,6 +11,7 @@ import { lightCheck } from './light-check.ts';
 import { bareName, judgePackage } from './packages.ts';
 import { categoryOf, isReadOnlyIntegrationTool, tierOf } from './action-tiers.ts';
 import type { ActionCategory, ActionTier, GuardContext, GuardDecisionKind, GuardStage, ToolAction } from './action-types.ts';
+import { needsConfirmation } from '../preview-tool/preview-policy.ts';
 
 export type FastVerdict =
   | { kind: 'decided'; decision: GuardDecisionKind; category: ActionCategory; tier: ActionTier; stage: GuardStage; reason: string; question?: string; rule?: string }
@@ -119,6 +120,16 @@ export function fastFilter(action: ToolAction, context: GuardContext): FastVerdi
       return { kind: 'doubt', category, tier, why: `a name one character from a well-known package (${judged.meant})`, fallback: { decision: 'block', reason: `« ${name} » ressemble à « ${judged.meant} » : vérifie l’orthographe du paquet.` } };
     }
     return { kind: 'doubt', category, tier, why: 'a package that is not on the list of common ones', fallback: { decision: 'allow', reason: 'Paquet inconnu, installé sans exécuter ses scripts, dans un environnement isolé.' } };
+  }
+
+  /*
+   * A click in the preview of the app being built. The preview tool has already refused to click
+   * anything with a real-world effect unless the agent says the person asked for it, and the
+   * protected core above has looked at it. Asking the person here stopped finished apps to confirm
+   * a calculator's « Effacer », and the answer restarted the whole run.
+   */
+  if (category === 'ui_action' && !needsConfirmation([action.args.text, action.args.name, action.args.selector, action.args.label].filter(Boolean).join(' '))) {
+    return { kind: 'decided', decision: 'allow', category, tier, stage: 'fast', reason: 'Clic dans l’aperçu de l’application en construction.' };
   }
 
   // Outward categories: consent, or a question.

@@ -21,8 +21,17 @@ export const OBSERVING_ACTIONS: ReadonlySet<PreviewAction> = new Set<PreviewActi
 
 export const isPreviewAction = (value: unknown): value is PreviewAction => (PREVIEW_ACTIONS as readonly string[]).includes(String(value));
 
-/** Labels of controls that delete, spend, send or end a session: never clicked without an explicit `confirm`. */
-const CONSEQUENTIAL_LABEL = /(supprim|delete|remove\b|effac|détrui|destroy|réinitialis|reset\b|vider|clear all|payer|pay\b|checkout|acheter|buy\b|commander|order\b|envoyer|send\b|submit order|publier|publish|déconnect|déconnex|log ?out|sign ?out|désinscri|unsubscribe|résilier|cancel (?:my )?(?:plan|subscription)|annuler l['’]abonnement|déployer|deploy\b)/i;
+/**
+ * Labels of controls with an effect beyond the app itself — money, a message
+ * sent, something published, an account or a session ended — never clicked
+ * without an explicit `confirm`.
+ *
+ * "Effacer", "Réinitialiser", "Supprimer le dernier chiffre" are what a
+ * calculator, a form or a to-do list is made of: they change the app's own
+ * screen and nothing else. Treating them as consequential stopped a finished
+ * calculator to ask for a confirmation.
+ */
+const CONSEQUENTIAL_LABEL = /(supprimer (?:mon |le |ce )?(?:compte|profil|projet|espace)|delete (?:my |the |this )?(?:account|profile|project|workspace)|détruire|destroy|payer|pay\b|pay now|checkout|acheter|buy\b|commander|place order|submit order|envoyer (?:l['’]|le |un )?(?:e-?mail|courriel|sms|message)|send (?:the |an? )?(?:e-?mail|sms)|publier|publish|déconnect|déconnex|log ?out|sign ?out|désinscri|unsubscribe|résilier|cancel (?:my )?(?:plan|subscription)|annuler l['’]abonnement|déployer|deploy\b)/i;
 
 export function needsConfirmation(label: string): boolean {
   return CONSEQUENTIAL_LABEL.test(String(label || ''));
