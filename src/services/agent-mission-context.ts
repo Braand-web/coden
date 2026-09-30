@@ -20,6 +20,19 @@ function recentTranscript(history: Array<{ role: string; content: string }>, bud
   return lines.join('\n\n');
 }
 
+/** « oui », « ok », « vas-y », « continue »: an answer to what Coden just proposed, not a request of its own. */
+const SHORT_CONFIRMATION = /^\s*(?:oui|ouais|ok|okay|yes|yep|yeah|d['’]accord|vas-y|go|continue|c['’]est bon|parfait|fais-le|fais le|lance|lance-toi|corrige(?: tout)?|do it|sure|please do)[\s!.,]*$/i;
+
+export function isShortConfirmation(prompt: string): boolean {
+  return prompt.length <= 40 && SHORT_CONFIRMATION.test(prompt);
+}
+
+/** What Coden last said, cut to what a confirmation can be about. */
+function lastProposal(history: Array<{ role: string; content: string }> | undefined): string {
+  const last = [...(history || [])].reverse().find(turn => turn.role === 'assistant' && String(turn.content || '').trim());
+  return last ? String(last.content).trim().slice(0, 2_000) : '';
+}
+
 export function buildMissionContext(input: {
   prompt: string;
   history?: Array<{ role: string; content: string }>;
@@ -43,7 +56,9 @@ export function buildMissionContext(input: {
   return {
     skillIds: skills.map(skill => skill.id),
     text: [
-      `Current user mission:\n${input.prompt}`,
+      isShortConfirmation(input.prompt) && lastProposal(input.history)
+        ? `Current user mission:\nThe user answered « ${input.prompt.trim()} » to what Coden proposed. That answer means: carry out that proposal now, with file tools, in this project. Coden's last message:\n${lastProposal(input.history)}`
+        : `Current user mission:\n${input.prompt}`,
       'Keep this mission and its constraints throughout every repair. A compiling project is not proof of the requested behavior. Do not remove requested functionality to fix a check.',
       input.approvedPlan ? `User-approved plan (preserve its requirements):\n${input.approvedPlan}` : '',
       input.history?.length
