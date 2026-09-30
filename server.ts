@@ -258,6 +258,8 @@ import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-r
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
+import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
+import { buildReliabilityReport, evaluateReliabilityAlert, reliabilityAlertEnabled, type ReliabilityTurn } from './src/services/reliability-metrics.ts';
 import { buildCapabilityCard, recordProbeResults, type ProbeName } from './src/services/model-capability-card.ts';
 import { createGatewayProbeChat, runConformanceProbes } from './src/services/model-conformance.ts';
 import { ATTACHMENT_BUCKET, AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
@@ -8585,7 +8587,9 @@ async function appendDurableProjectSnapshotItem(input: {
   const retained = itemKey
     ? previous.filter((existing: any) => {
         const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
-        return existingKey !== itemKey;
+        if (existingKey === itemKey) return false;
+        // The same answer saved twice under two ids is one answer.
+        return !(input.item?.role === 'assistant' && isTwinMessage(existing, input.item));
       })
     : previous;
   const row = withoutUndefinedValues({
@@ -8679,7 +8683,7 @@ function recoverProjectPayloadFromSnapshot(input: {
     }
     messageMap.set(key, sanitized);
   });
-  const messages = Array.from(messageMap.values()).sort((a, b) => String(a?.created_at || '').localeCompare(String(b?.created_at || '')));
+  const messages = dedupeTwinMessages(Array.from(messageMap.values()).sort((a, b) => String(a?.created_at || '').localeCompare(String(b?.created_at || ''))));
   const eventMap = new Map<string, any>();
   [...snapshotEvents, ...input.events].forEach((event: any, index) => {
     const key = String(event?.id || `${event?.agent_run_id || ''}:${event?.sequence_number || index}:${event?.event_type || ''}:${event?.message || ''}`);
@@ -10018,6 +10022,32 @@ async function persistProjectMessageRow(client: any, row: any) {
     }
   }
 
+  /*
+   * The server writes an answer when the run ends and the client writes it again under its own id a moment later:
+   * the same words, never the same key. Adopt the row that is already there instead of adding a second one.
+   */
+  if (row.role === 'assistant' && String(row.content || '').trim().length >= 12) {
+    const since = new Date(Date.parse(String(row.created_at || '')) - TWIN_WINDOW_MS || Date.now() - TWIN_WINDOW_MS).toISOString();
+    const twins = await client
+      .from('project_messages')
+      .select('id,role,content,created_at,ai_message_id,parts,metadata')
+      .eq('project_id', row.project_id)
+      .eq('role', 'assistant')
+      .eq('content', row.content)
+      .gte('created_at', since)
+      .limit(3);
+    const twin = !twins.error ? (twins.data || []).find((candidate: any) => isTwinMessage(candidate, row)) : null;
+    if (twin) {
+      row.id = twin.id;
+      row.ai_message_id = row.ai_message_id || twin.ai_message_id || undefined;
+      row.created_at = twin.created_at;
+      if (!row.metadata?.coden_stream && twin.metadata?.coden_stream) row.metadata = twin.metadata;
+      if (!row.parts?.length && twin.parts?.length) row.parts = twin.parts;
+      const { error } = await client.from('project_messages').update(row).eq('id', twin.id);
+      return { error };
+    }
+  }
+
   return await client.from('project_messages').insert([row]);
 }
 
@@ -10089,7 +10119,8 @@ async function listProjectMessages(projectId: string) {
   const { data, error } = await client.from('project_messages').select('*').eq('project_id', projectId).order('created_at');
   if (error && /project_messages|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error.message || '')) return [];
   if (error) throw new Error(`Supabase project message listing failed: ${error.message}`);
-  return (data || []).map(sanitizeProjectMessageForUser);
+  // Answers saved twice before the fix are shown once.
+  return dedupeTwinMessages((data || []).map(sanitizeProjectMessageForUser));
 }
 
 async function listProjectMessagesPage(projectId: string, limitValue: any, beforeValue: any, required = false) {
@@ -10100,7 +10131,7 @@ async function listProjectMessagesPage(projectId: string, limitValue: any, befor
   const { data, error } = await query;
   if (error && /project_messages|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error.message || '') && !required) return [];
   if (error) throw new Error(`Supabase project message page failed: ${error.message}`);
-  return (data || []).reverse().map(sanitizeProjectMessageForUser);
+  return dedupeTwinMessages((data || []).reverse().map(sanitizeProjectMessageForUser));
 }
 
 async function getRecentDecisionHistory(projectId: string, limitValue = 6): Promise<RecentHistoryMessage[]> {
@@ -13992,6 +14023,49 @@ onProviderBalanceSignal(signal => {
       ? `Générations refusées : le solde OpenRouter ne couvre plus qu’environ ${signal.affordable.toLocaleString('fr-FR')} tokens de réponse (modèle ${signal.model}). Rechargez le compte OpenRouter : les utilisateurs voient « modèle momentanément indisponible ».`
       : `Solde OpenRouter bas : une réponse (modèle ${signal.model}) a dû être réduite à ${signal.affordable.toLocaleString('fr-FR')} tokens au lieu de ${signal.requested.toLocaleString('fr-FR')}. Rechargez le compte OpenRouter.`);
 });
+
+/*
+ * Reliability, from the turns: what share of the things people asked for went through, day by day.
+ * `agent_runs` also keeps rows that were opened and never closed, so it reads worse than reality; the turn's
+ * final status is the truth (see `services/reliability-metrics.ts`).
+ */
+async function loadReliabilityTurns(sinceMs: number): Promise<{ turns: ReliabilityTurn[]; error: string | null }> {
+  const client = getSupabase();
+  if (!client) return { turns: [], error: 'Base indisponible.' };
+  const { data, error } = await client
+    .from('agent_turns')
+    .select('id,status,created_at,started_at,completed_at,resolved_action,requested_mode,checkpoint')
+    .gte('created_at', new Date(sinceMs).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(5000);
+  if (error) return { turns: [], error: adminSafeString(error.message, 'Query failed') };
+  return { turns: (data || []) as ReliabilityTurn[], error: null };
+}
+
+app.get('/api/admin/reliability', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const days = Math.min(60, Math.max(1, Math.round(Number(req.query.days) || 14)));
+  const { turns, error } = await loadReliabilityTurns(Date.now() - days * 86_400_000);
+  if (error) return res.status(503).json({ success: false, error });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, report: buildReliabilityReport(turns, { days }), alert: evaluateReliabilityAlert(turns) });
+});
+
+/** Something is wrong now: the operator hears about it before the users have all left. */
+async function checkReliability() {
+  if (!reliabilityAlertEnabled()) return;
+  try {
+    const { turns, error } = await loadReliabilityTurns(Date.now() - 3 * 3_600_000);
+    if (error) return;
+    const alert = evaluateReliabilityAlert(turns);
+    if (alert.level !== 'warn') return;
+    const percent = Math.round((alert.successRate ?? 0) * 100);
+    await alertProviderOnce('reliability', 3 * 3_600_000, 'Fiabilité des agents en baisse',
+      `Fiabilité en baisse : ${alert.completed} tours réussis sur ${alert.turns} terminés sur les ${alert.windowMinutes} dernières minutes (${percent} %). Ouvrez le tableau de bord admin, onglet Runs.`);
+  } catch (error: any) {
+    console.warn('[coden:reliability_check_failed]', { message: String(error?.message || error).slice(0, 160) });
+  }
+}
 
 app.get('/api/admin/providers/balance', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
@@ -22057,6 +22131,9 @@ const httpServer = app.listen(port, () => {
     // The provider balance, on the same cadence, and once shortly after boot.
     setTimeout(() => void checkOpenRouterBalance(), 30_000).unref();
     setInterval(() => void checkOpenRouterBalance(), 15 * 60_000).unref();
+    // The share of turns that work, every 30 minutes (CODEN_RELIABILITY_ALERT=0 turns it off).
+    setTimeout(() => void checkReliability(), 120_000).unref();
+    setInterval(() => void checkReliability(), 30 * 60_000).unref();
     costAlertTimer.unref?.();
     if (CODEN_SKILL_FLAGS.scheduledRuns) {
       const workerId = `workflow_scheduler_${randomUUID()}`;
