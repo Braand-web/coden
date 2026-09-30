@@ -15,12 +15,15 @@ import {
   validateAllowedModel, 
   ModelNotAllowedForPlanError, 
 } from './ai-validator.ts';
+import type { RoutingMode } from '../lib/routing-mode.ts';
 import { MODELS_BY_COST, selectModel, type SelectionResult, type TaskComplexity, type TaskKind } from './model-selection.ts';
 
 export interface RoutingContext {
   plan: UserPlan | 'free' | 'pro' | 'business' | 'scale' | 'enterprise';
   mode: 'Auto' | 'Fast' | 'Balanced' | 'Pro' | 'Premium' | 'Max Quality' | 'Custom';
   userCredits: number;
+  /** The person's Économique / Équilibré / Performance choice, when Auto is routing. */
+  routingMode?: RoutingMode;
   taskComplexity?: TaskComplexity;
   /** What the caller is actually asking for. Drives the competence bar. */
   task?: TaskKind;
@@ -138,6 +141,7 @@ export class ModelRouter {
       const decision = selectModel({
         task: context.task || inferTaskFromCapabilities(context),
         complexity: complexityForMode(context.mode, context.taskComplexity),
+        mode: context.routingMode,
         plan: context.plan,
         credits: context.userCredits,
         interactive: context.interactive,

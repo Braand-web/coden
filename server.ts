@@ -245,6 +245,7 @@ import { createRoutingTraceWriter } from './src/services/routing-trace.ts';
 import { ProposalStore, memoryProposalBackend, supabaseProposalBackend, toView as proposalView } from './src/services/proposals/proposal-store.ts';
 import { proposeAfterRun } from './src/services/proposals/proposal-runner.ts';
 import { isProposalLevel, summarizeProposals } from './src/services/proposals/proposal-engine.ts';
+import { currentRoutingMode, runWithRoutingMode } from './src/services/routing-request-context.ts';
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
@@ -455,6 +456,8 @@ app.use('/api/saspay/webhook', express.raw({ type: 'application/json', limit: '2
 
 // Standard middlewares
 app.use(express.json({ limit: '8mb' }));
+// The person's Économique / Équilibré / Performance choice, for every model pick made on their behalf in this request.
+app.use(['/api/assistant/chat', '/api/projects/:id/generate'], (req: any, _res: any, next: any) => runWithRoutingMode(req.body?.routingMode, next));
 
 // Baseline browser hardening. The generated-app response adds its own opaque
 // sandbox CSP below; this middleware stays compatible with the Builder and
@@ -5829,6 +5832,7 @@ async function resolveAgentProviderModel(input: {
       const substitute = await modelRouter.selectModel({
         plan: accessPlan,
         mode: routingModeForPolicy(input.decision.selectedModelPolicy),
+        routingMode: currentRoutingMode(),
         userCredits: accessBudget,
         task,
         taskComplexity: complexity,
@@ -5854,6 +5858,7 @@ async function resolveAgentProviderModel(input: {
   const model = await modelRouter.selectModel({
     plan: accessPlan,
     mode,
+    routingMode: currentRoutingMode(),
     userCredits: accessBudget,
     task,
     taskComplexity: complexity,
