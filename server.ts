@@ -147,7 +147,7 @@ import {
 import { buildProviderRequestConfig } from './src/services/provider-adapters.ts';
 import { ModelRouter, type RoutingContext } from './src/services/model-router.ts';
 import { CODEN_MONETIZATION_ENABLED, CODEN_PUBLIC_ACCESS, CODEN_UNMETERED_USAGE_BUDGET } from './src/config/product-access.ts';
-import { selectModelForAgent, autoReasoningLevel, affordableReasoning, type TaskKind } from './src/services/model-selection.ts';
+import { selectModel, selectModelForAgent, autoReasoningLevel, affordableReasoning, type TaskKind } from './src/services/model-selection.ts';
 import {
   canReassignProjectSlug,
   deriveProjectName,
@@ -242,6 +242,9 @@ import { scanGeneratedSecurity } from './src/services/generated-security-scanner
 import { assertPublicUrl, createAgentWebProvider, setAgentWebProvider } from './src/services/agent-web.ts';
 import { collectAgentWebResearch, publicResearchUrl, type PublicResearchSource } from './src/services/agent-web-research.ts';
 import { createRoutingTraceWriter } from './src/services/routing-trace.ts';
+import { ProposalStore, memoryProposalBackend, supabaseProposalBackend, toView as proposalView } from './src/services/proposals/proposal-store.ts';
+import { proposeAfterRun } from './src/services/proposals/proposal-runner.ts';
+import { isProposalLevel } from './src/services/proposals/proposal-engine.ts';
 import { markPreviewUserActive } from './src/services/preview-tool/preview-activity.ts';
 import { pickModelFor as pickMediaModel } from './src/services/attachments/media-helpers.ts';
 import { aggregateRoutingEvents, type RoutingRow } from './src/services/routing-stats.ts';
@@ -1143,6 +1146,27 @@ async function describePreviewCapture(dataUrl: string, question: string): Promis
     { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
   ] }], 1, 30_000);
   return String(result.text || '').trim().slice(0, 3_000);
+}
+
+/**
+ * Ideas the agent proposes after a run that worked (proposals/). `CODEN_PROPOSALS=0`
+ * turns it off for everyone; a person can ask for fewer or none.
+ */
+let proposalStoreInstance: ProposalStore | null = null;
+function proposalStore(): ProposalStore {
+  if (!proposalStoreInstance) {
+    const client = getSupabase();
+    proposalStoreInstance = new ProposalStore(client ? supabaseProposalBackend(client) : memoryProposalBackend());
+  }
+  return proposalStoreInstance;
+}
+const proposalsEnabled = () => process.env.CODEN_PROPOSALS !== '0';
+
+/** One small model call, on the cheapest model that qualifies for a summary. */
+async function askForProposals(plan: string, prompt: string): Promise<string> {
+  const chosen = selectModel({ task: 'summary', complexity: 'simple', plan, interactive: false });
+  const result = await openRouter.chat(chosen.modelId, [{ role: 'user', content: prompt }], 1, 25_000);
+  return String(result.text || '');
 }
 
 let attachmentServiceInstance: AttachmentService | null = null;
@@ -16382,6 +16406,32 @@ ${resolvedMission}` : resolvedMission;
           if (decisionsStored) console.log('[coden:project_memory_updated]', { project: project.id, decisions: decisionsStored });
         }
 
+        // Ideas for what to build next, in the background: never awaited, never able to fail the run.
+        if (outcome.ok && proposalsEnabled() && !preserveLastVerifiedApp) {
+          void (async () => {
+            const store = proposalStore();
+            const lastBatch = await store.lastBatchAt(project.id);
+            const versions = await listProjectVersionSummaries(project.id).catch(() => [] as any[]);
+            const runsSince = lastBatch ? versions.filter((item: any) => String(item.created_at) > lastBatch).length : 99;
+            await proposeAfterRun({
+              store,
+              ask: text => askForProposals(routingPlan, text),
+              projectId: project.id,
+              userId,
+              runOk: true,
+              runsSinceLastBatch: runsSince,
+              isFirstRun: !lastBatch && versions.length <= 1,
+              context: {
+                projectName: project.name,
+                request: agentPrompt,
+                summary: outcome.plan?.summary || '',
+                files: visibleFiles.map((file: any) => String(file.path || '')).filter(Boolean),
+                language: frenchActivity ? 'fr' : 'en',
+              },
+            });
+          })().catch(() => undefined);
+        }
+
         return respondJson(200, {
           success: outcome.ok,
           needs_fix: !outcome.ok,
@@ -18609,6 +18659,49 @@ app.post('/api/projects/:id/preview/activity', async (req: any, res: any) => {
   if (!requireProjectCapability(req, res, 'view', project)) return;
   markPreviewUserActive(project.id);
   res.json({ success: true });
+});
+
+/*
+ * Proposals: what the agent suggests building next. Listing needs to see the
+ * project; answering one (which can lead to a change) needs to be able to build.
+ * The instruction behind an idea only leaves the server when it is applied.
+ */
+app.get('/api/projects/:id/proposals', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'view', project)) return;
+  const [rows, level] = await Promise.all([proposalStore().open(project.id).catch(() => []), proposalStore().level(userId)]);
+  res.json({ success: true, proposals: rows.map(proposalView), level });
+});
+
+app.post('/api/projects/:id/proposals/:proposalId/answer', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const project = await loadProject(req.params.id, userId, req);
+  if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const status = String(req.body?.status || '');
+  if (status !== 'applied' && status !== 'later' && status !== 'dismissed') return res.status(400).json({ success: false, error: 'Invalid answer.' });
+  const store = proposalStore();
+  const proposal = await store.get(project.id, String(req.params.proposalId)).catch(() => null);
+  if (!proposal) return res.status(404).json({ success: false, error: 'Proposal not found.' });
+  // An idea already applied or refused is not applied or refused again.
+  if (proposal.status === 'applied' || proposal.status === 'dismissed') return res.status(409).json({ success: false, error: 'Already answered.' });
+  const saved = await store.answer(project.id, proposal.id, status).catch(() => false);
+  if (!saved) return res.status(500).json({ success: false, error: 'Could not save the answer.' });
+  res.json({ success: true, ...(status === 'applied' ? { prompt: proposal.prompt } : {}) });
+});
+
+app.put('/api/users/me/proposal-level', async (req: any, res: any) => {
+  const userId = getUserOrgId(req);
+  const level = req.body?.level;
+  if (!isProposalLevel(level)) return res.status(400).json({ success: false, error: 'Invalid level.' });
+  try {
+    await proposalStore().setLevel(userId, level);
+    res.json({ success: true, level });
+  } catch {
+    res.status(500).json({ success: false, error: 'Could not save the preference.' });
+  }
 });
 
 /** Same paths, same bytes: is `a` the project `b` already holds? */

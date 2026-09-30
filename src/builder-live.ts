@@ -10,8 +10,10 @@ import './styles/code-workshop.css';
 import './styles/version-history.css';
 import './styles/coden-horizon-system.css';
 import './styles/coden-composer.css';
+import './styles/proposals.css';
 import { initThemeController } from './theme-controller';
 import './conversion-events';
+import { createProposalCards } from './lib/proposal-cards';
 import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
 import { composeDecisionInstruction, normalizeDecisionQuestions } from './lib/decision-questions';
@@ -4951,8 +4953,19 @@ function syncSubmitButtonState() {
   renderComposer();
 }
 
+/** The agent's ideas for what to build next, as cards above the composer. */
+const proposalCards = createProposalCards({
+  api: (path, init) => apiFetch(path, init as any),
+  send: instruction => generateFromPrompt(instruction, 'auto', false, {}, instruction),
+  busy: () => isGenerating,
+  projectId: () => currentProjectId,
+});
+
 function setBusy(busy: boolean) {
+  const wasBusy = isGenerating;
   isGenerating = busy;
+  if (busy && !wasBusy) proposalCards.beforeRun();
+  else if (!busy && wasBusy && currentProjectId) proposalCards.afterRun();
   const cancel = document.getElementById('btn-live-cancel') as HTMLButtonElement | null;
   if (cancel) cancel.style.display = busy ? 'inline-flex' : 'none';
   syncSubmitButtonState();
@@ -5850,6 +5863,8 @@ async function ensureProject() {
     // An explicit project link is authoritative. A transient 404 (auth/RLS
     // recovery, storage outage) must never silently turn it into a new empty
     // project and make the user's session appear lost.
+    // The ideas still waiting for an answer, once the page has settled.
+    window.setTimeout(() => void proposalCards.refresh(), 2_500);
     return await apiFetch<ProjectPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}`);
   }
 
