@@ -306,6 +306,13 @@ export function renderScenariosForCoder(scenarios: AcceptanceScenario[] | undefi
   ].join('\n');
 }
 
+/*
+ * Controls whose job is to undo, clear or close: pressed when there is nothing to undo, they change nothing on screen,
+ * and that is correct. A calculator's « Effacer », « Supprimer le dernier chiffre » and « +/- » on an empty display were
+ * reported as dead controls, which failed a finished calculator and sent the agent back to « wire » them.
+ */
+export const NO_OP_WHEN_NOTHING_TO_UNDO = /^\s*(?:effacer|tout effacer|supprimer le dernier|supprimer (?:un|le) chiffre|annuler|r[ée]initialiser|vider|clear|all clear|ac|c|ce|reset|undo|backspace|delete last|del|⌫|←|\+\/?[-−–]|±|changer le signe|inverser le signe|toggle sign|fermer|close|retour|back)(?![\p{L}\p{N}])/iu;
+
 export type ExplorationResult = {
   routes: Array<{ path: string; ok: boolean; reason?: string }>;
   buttons: { attempted: number; changed: number; dead: string[] };
@@ -405,7 +412,7 @@ export async function exploreApplication(page: Page, baseUrl: URL, options: { ma
     const mutated = await page.evaluate(() => (window as unknown as { __codenMutations?: number }).__codenMutations || 0).catch(() => 1);
     const changed = mutated > (quiet > 0 ? quiet + 2 : 0) || page.url() !== before || await popup;
     if (changed) result.buttons.changed += 1;
-    else result.buttons.dead.push(label);
+    else if (!NO_OP_WHEN_NOTHING_TO_UNDO.test(label)) result.buttons.dead.push(label);
   }
   return result;
 }

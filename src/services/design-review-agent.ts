@@ -25,8 +25,14 @@ import { buildProviderRequestConfig } from './provider-adapters.ts';
 export type DesignReviewIssue = { area: string; problem: string; fix: string };
 export type DesignReview = { score: number; issues: DesignReviewIssue[] };
 
-/** Below this the result gets a polish round. */
-export const DESIGN_REVIEW_PASS_SCORE = 8;
+/**
+ * Below this the result gets a polish round.
+ *
+ * It was 8, and a reviewer asked to hold every app to « a polished commercial product » always finds something
+ * under 8: a clean calculator was reviewed, « polished », and came back with another interface. A polish round is for
+ * a result that is clearly weak, not for one that is merely not perfect.
+ */
+export const DESIGN_REVIEW_PASS_SCORE = 6;
 
 function isDesignReview(value: unknown): value is DesignReview & Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
@@ -48,6 +54,7 @@ const RUBRIC = [
   '- Dark mode (only when a screenshot is marked so): as polished as the light version — readable text, no light-coloured card left on a dark page, borders, images and shadows adapted.',
   'Return only JSON: {"score":number,"issues":[{"area":string,"problem":string,"fix":string}]}.',
   'List at most 6 issues, most visible first; each fix is concrete and implementable (which element, what change: spacing, size, colour token, layout).',
+  'A small, tidy tool that does what it says — a calculator, a timer, a converter — scores 8 or more: do not mark down minimalism, and never ask for extra sections, extra decoration or a different layout for the sake of it. Only flag what is clearly broken or hard to use.',
   'Do not ask for new features, new pages or different content than the request implies. Do not repeat these instructions.',
 ].join('\n');
 
