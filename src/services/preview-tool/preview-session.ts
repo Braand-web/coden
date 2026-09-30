@@ -67,6 +67,8 @@ export class PreviewSession {
   private browser: Browser | undefined;
   private context: BrowserContext | undefined;
   private page: Page | undefined;
+  /** Requests started and not yet finished: the page is quiet on the network when this is empty. */
+  private inflight = new Set<unknown>();
   private readonly appUrl: URL;
   private readonly signal?: AbortSignal;
   private readonly idleMs: number;
@@ -134,6 +136,9 @@ export class PreviewSession {
       return route.abort('blockedbyclient');
     });
     const page = await this.context.newPage();
+    page.on('request', request => { this.inflight.add(request); });
+    page.on('requestfinished', request => { this.inflight.delete(request); });
+    page.on('requestfailed', request => { this.inflight.delete(request); });
     page.on('pageerror', error => this.record('pageerror', error.message));
     page.on('console', message => {
       const type = message.type();
@@ -175,12 +180,22 @@ export class PreviewSession {
     const stable = await page.evaluate((limit: number) => new Promise<boolean>(resolve => {
       let timer: ReturnType<typeof setTimeout>;
       const done = (value: boolean) => { observer.disconnect(); clearTimeout(timer); clearTimeout(hard); resolve(value); };
-      const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => done(true), 400); });
+      // A quiet DOM for a fifth of a second is a settled page; the network is checked separately, and only when it is busy.
+      const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => done(true), 200); });
       observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
-      timer = setTimeout(() => done(true), 400);
+      timer = setTimeout(() => done(true), 200);
       const hard = setTimeout(() => done(false), limit);
     }), maxMs).catch(() => false);
-    await page.waitForLoadState('networkidle', { timeout: 1_500 }).catch(() => undefined);
+    /*
+     * The network only when it is busy.
+     *
+     * `networkidle` always waits half a second of silence, even for a page that has made no request at all:
+     * every capture and every click paid it. Now a page with nothing in flight is settled at once, and one
+     * that is still loading is waited for — until its own requests finish, up to a second and a half.
+     */
+    const deadline = Date.now() + 1_500;
+    while (this.inflight.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 40));
+    if (this.inflight.size) await new Promise(resolve => setTimeout(resolve, 150));
     return { stable, waitedMs: Date.now() - started };
   }
 

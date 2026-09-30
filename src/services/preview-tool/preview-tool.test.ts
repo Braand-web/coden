@@ -273,3 +273,20 @@ describe('preview tool wiring', () => {
     expect(team).toMatch(/buildsInterface\(\{ modelTier: tier, role: task\.role \}\)/);
   });
 });
+
+describe('editing an element picked in the preview', () => {
+  it('recognises the sentence the builder writes, in both languages, and only that', async () => {
+    const { isVisualEditPrompt, VISUAL_EDIT_GUIDANCE } = await import('./preview-policy');
+    expect(isVisualEditPrompt('Modifie cet élément de la page : button "Commander" (button.btn-primary). Mets-le en vert.')).toBe(true);
+    expect(isVisualEditPrompt('Edit this element on the page: h1 "Bougies" (h1). Make it bigger.')).toBe(true);
+    expect(isVisualEditPrompt('Modifie la page d’accueil.')).toBe(false);
+    expect(isVisualEditPrompt(undefined)).toBe(false);
+    expect(VISUAL_EDIT_GUIDANCE).toMatch(/inspect/);
+    expect(VISUAL_EDIT_GUIDANCE).toMatch(/only that element/);
+  });
+
+  it('is given to the coder only when the last message picked an element and it has a preview', async () => {
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync('src/services/multi-agent-pipeline.ts', 'utf8')).toMatch(/isVisualEditPrompt\(input\.userMessages\?\.at\(-1\)\)/);
+  });
+});
