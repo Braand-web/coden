@@ -71,7 +71,9 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
 
   const timeoutMs = Math.max(3_000, Math.min(input.timeoutMs || 20_000, 30_000));
   const runtimeErrors: string[] = [];
+  const resourceErrors: string[] = [];
   const clickErrors: string[] = [];
+  let probedControls = 0;
   const findings: BrowserFinding[] = [];
   let browser: any = null;
 
@@ -87,7 +89,21 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.on('pageerror', (error: Error) => runtimeErrors.push(redactError(error.message)));
     page.on('console', (message: any) => {
-      if (message.type?.() === 'error') runtimeErrors.push(redactError(message.text?.() || 'Console error'));
+      if (message.type?.() !== 'error') return;
+      const text = redactError(message.text?.() || 'Console error');
+      /*
+       * A resource that failed to load is not the application throwing.
+       *
+       * The audit browser often cannot reach what a real visitor can — a web
+       * font, a CDN image, the app's own backend (net::ERR_NAME_NOT_RESOLVED,
+       * a 404 on an API the preview has no server for) — and every such line
+       * used to fail the preview as a runtime error, so a working app was
+       * shown as "à corriger" and the repair loop chased a bug that was not in
+       * the code. They are reported, at medium; a script that really failed to
+       * load still shows up as a blank preview or a thrown error.
+       */
+      if (/^Failed to load resource\b|net::ERR_[A-Z_]+/.test(text)) resourceErrors.push(text);
+      else runtimeErrors.push(text);
     });
 
     /*
@@ -158,19 +174,27 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
     }, CONTROL_SELECTOR);
 
     let changedControls = 0;
-    for (const control of controls.slice(0, 8)) {
+    for (const control of controls.slice(0, 12)) {
+      if (probedControls >= 8) break;
       if (control.disabled) continue;
       if (control.tag === 'a' && /^(https?:)?\/\//i.test(control.href)) continue;
       const selector = `[data-coden-probe="${control.index}"]`;
+      // Only what a visitor can see is probed: a control inside a closed menu,
+      // a hidden tab or a collapsed drawer is not broken for being unclickable.
+      const visible = await page.locator(selector).first().isVisible().catch(() => false);
+      if (!visible) continue;
+      probedControls += 1;
       try {
         const locator = page.locator(selector).first();
+        await locator.scrollIntoViewIfNeeded({ timeout: 1_500 }).catch(() => null);
         if (['input', 'textarea'].includes(control.tag) && !/^(button|submit|checkbox|radio|range|file)$/i.test(control.type)) {
-          await locator.fill('Test', { timeout: 1_500 });
+          await locator.fill('Test', { timeout: 3_000 });
         } else if (control.tag === 'select') {
           const values = await locator.evaluate((element: HTMLSelectElement) => Array.from(element.options).map(option => option.value).filter(Boolean));
-          if (values[0]) await locator.selectOption(values[0], { timeout: 1_500 });
+          if (values[0]) await locator.selectOption(values[0], { timeout: 3_000 });
         } else {
-          await locator.click({ timeout: 1_500 });
+          // An entrance animation can hold a control for a moment: give it time.
+          await locator.click({ timeout: 3_000 });
         }
         const afterControl = await page.evaluate(() => ({
           text: document.body?.innerText || '',
@@ -179,7 +203,7 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
         if (afterControl.text !== before.text || afterControl.htmlLength !== before.htmlLength) changedControls += 1;
       } catch (error: any) {
         clickErrors.push(redactError(error?.message || 'Control interaction failed'));
-        findings.push(finding('browser_control_interaction_failed', 'high', `Control could not be interacted with: ${redactError(error?.message || 'Control interaction failed')}`, selector, 'desktop', { label: control.label || control.tag }));
+        findings.push(finding('browser_control_interaction_failed', 'medium', `Control could not be interacted with: ${redactError(error?.message || 'Control interaction failed')}`, selector, 'desktop', { label: control.label || control.tag }));
       }
     }
 
@@ -226,8 +250,13 @@ export async function runBrowserInteractionAuditDetailed(input: BrowserInteracti
     if (runtimeErrors.length) {
       findings.push(finding('browser_no_runtime_errors', 'high', `Preview raised runtime errors: ${runtimeErrors.slice(0, 3).join(' | ')}`));
     }
+    if (resourceErrors.length) {
+      findings.push(finding('browser_resource_load_failed', 'medium', `Some resources did not load in the audit browser: ${resourceErrors.slice(0, 3).join(' | ')}`, undefined, undefined, { count: resourceErrors.length }));
+    }
     if (clickErrors.length) {
-      findings.push(finding('browser_primary_controls_clickable', 'high', `Some visible controls could not be interacted with: ${clickErrors.slice(0, 3).join(' | ')}`));
+      // One stubborn control is worth a note; most of them failing means the page does not respond.
+      const mostlyBroken = clickErrors.length >= 2 && clickErrors.length * 2 > probedControls;
+      findings.push(finding('browser_primary_controls_clickable', mostlyBroken ? 'high' : 'medium', `${clickErrors.length} of ${probedControls} visible controls could not be interacted with: ${clickErrors.slice(0, 3).join(' | ')}`));
     }
     if (!findings.some(item => item.key === 'browser_no_runtime_errors')) {
       findings.push(finding('browser_no_runtime_errors', 'info', 'Preview loaded without browser runtime errors.'));

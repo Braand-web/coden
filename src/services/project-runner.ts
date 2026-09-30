@@ -519,7 +519,17 @@ export class HybridProjectRunner implements RunnerAdapter {
         continue;
       }
       if (!isSafePackageScript(scriptBody)) {
-        checks.push(fail(`script_${scriptName}_safe`, 'high', `Blocked unsafe or unsupported ${scriptName} script.`, 'package.json'));
+        /*
+         * Dangerous (a shell, a download, a chained command) blocks the build.
+         * Merely unfamiliar — `jest`, `playwright test`, npm's placeholder
+         * "echo Error: no test specified" — is not run and not held against
+         * the app: it used to fail the preview at high severity, so a working
+         * application was shown as broken because of one line in package.json.
+         */
+        const dangerous = DANGEROUS_SCRIPT_RE.test(scriptBody) || /\|\||[;|`\n\r]|\$\(/.test(scriptBody);
+        checks.push(dangerous
+          ? fail(`script_${scriptName}_safe`, 'high', `Blocked unsafe ${scriptName} script.`, 'package.json')
+          : { check_type: `script_${scriptName}_safe`, status: 'skipped', severity: 'medium', message: `Unsupported ${scriptName} script was not run.`, file_path: 'package.json' });
         continue;
       }
       checks.push(pass(`script_${scriptName}_safe`, `${scriptName} script is allowed.`, 'package.json'));
