@@ -67,6 +67,29 @@ export const DEFAULT_AGENT_LOOP_BUDGET: AgentLoopBudget = {
 const MIN_VIABLE_CALL_MS = 10_000;
 
 /** Marks the image message a tool's captures ride in, so the next set can replace it. */
+/**
+ * Ends a wait the moment the run is cancelled, even if what it waits on never settles.
+ *
+ * A tool call was awaited as written: the loop looked at the cancel signal between
+ * calls, never during one, so a page that never answered, a provider that stalled or
+ * a handler that ignores signals kept a cancelled run — and the credits it spends —
+ * going until that call gave up by itself. The abandoned call's own result, or
+ * failure, is discarded, and never reported as an unhandled rejection.
+ */
+export function raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  const fail = (reject: (reason: unknown) => void) => { try { signal.throwIfAborted(); reject(new Error('Aborted')); } catch (reason) { reject(reason); } };
+  if (signal.aborted) { promise.catch(() => undefined); return new Promise<T>((_, reject) => fail(reject)); }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => { promise.catch(() => undefined); fail(reject); };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      value => { signal.removeEventListener('abort', onAbort); resolve(value); },
+      error => { signal.removeEventListener('abort', onAbort); reject(error); },
+    );
+  });
+}
+
 export const TOOL_IMAGE_MARK = '[Captures de l’aperçu';
 
 /** What the run actually spent, and what ended it. */
@@ -508,17 +531,17 @@ export async function runLlmToolLoop(input: {
                 reason,
               };
             } else {
-              output = await handler(args);
+              output = await raceAbort(Promise.resolve().then(() => handler(args)), input.signal);
               ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
             }
           } else {
             const early = prefetched.get(call.id);
             if (early) {
-              const settled = await early;
+              const settled = await raceAbort(early, input.signal);
               if (settled.threw) throw settled.threw;
               output = settled.output;
             } else {
-              output = await handler(args);
+              output = await raceAbort(Promise.resolve().then(() => handler(args)), input.signal);
             }
             ok = !(output && typeof output === 'object' && ((output as any).ok === false || (output as any).error));
           }

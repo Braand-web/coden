@@ -66,6 +66,9 @@ export async function loadGuardRules(client: Client | null, userId: string, proj
     const { data, error } = await client.from('agent_guard_rules').select('rule,project_id').eq('user_id', userId).order('created_at', { ascending: true }).limit(60);
     if (error) throw error;
     const rules = (data || []).filter((row: any) => !row.project_id || row.project_id === projectId).map((row: any) => String(row.rule)).slice(0, 20);
+    // Nothing accumulates: entries past their lifetime are dropped as new ones arrive, and the map has a ceiling.
+    for (const [cachedKey, entry] of rulesCache) if (Date.now() - entry.at > RULES_TTL_MS * 4) rulesCache.delete(cachedKey);
+    if (rulesCache.size >= 2_000) rulesCache.delete(rulesCache.keys().next().value as string);
     rulesCache.set(key, { at: Date.now(), rules });
     return [...rules, ...fromInstructions];
   } catch (error) {
