@@ -56,3 +56,21 @@ describe('the coden-design skill is kept as given, and handed to the agents in t
     expect(pipeline.match(/designContractBlock, designPolicy, designSkill/g)?.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('the review-and-polish cycle', async () => {
+  const { designReviewRounds } = await import('./coden-design-skill');
+  const { runCoderLoop } = await import('./sandbox/repair-loop');
+  it('one cycle by default, up to four when asked, never more', () => {
+    expect(designReviewRounds({})).toBe(1);
+    expect(designReviewRounds({ CODEN_DESIGN_REVIEW_ROUNDS: '3' })).toBe(3);
+    expect(designReviewRounds({ CODEN_DESIGN_REVIEW_ROUNDS: '9' })).toBe(4);
+    expect(designReviewRounds({ CODEN_DESIGN_REVIEW_ROUNDS: '0' })).toBe(1);
+    expect(typeof runCoderLoop).toBe('function');
+  });
+  it('the loop counts the reviews it runs', () => {
+    const source = readFileSync('src/services/sandbox/repair-loop.ts', 'utf8');
+    expect(source).toMatch(/reviews < maxReviews/);
+    expect(source).toMatch(/maxReviews\?: number/);
+    expect(readFileSync('src/services/multi-agent-pipeline.ts', 'utf8')).toMatch(/maxReviews: designReviewRounds\(\)/);
+  });
+});

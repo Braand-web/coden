@@ -77,7 +77,7 @@ import {
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
 import { blocksTheRun, gatePlatformType, isSmallRequest } from './quality-gate-policy.ts';
-import { designSkillBlock } from './coden-design-skill.ts';
+import { designReviewRounds, designSkillBlock } from './coden-design-skill.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
 import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
 import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
@@ -1641,6 +1641,7 @@ export async function runMultiAgentPipeline(input: {
     },
     afterRound,
     review,
+    maxReviews: designReviewRounds(),
     beforeRound:async () => {
       if (!ctx) return;
       const instructions = await ctx.harness.consumePendingInstructions(ctx.turnId);

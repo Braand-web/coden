@@ -174,10 +174,12 @@ export async function runCoderLoop(input: {
   /**
    * A design and product review of a result that already passes every check.
    * Returns an instruction for one polish round, or nothing when the result is
-   * good enough. Called at most once, and only while a repair round would
-   * still be left after the polish.
+   * good enough. Called at most `maxReviews` times (once by default), and only
+   * while a repair round would still be left after the polish.
    */
   review?: (report: ValidationReport, round: number) => Promise<string | undefined>;
+  /** How many review-then-polish cycles a result may go through. The coden-design skill allows up to 4. */
+  maxReviews?: number;
 }): Promise<RepairOutcome> {
   const mode = input.mode ?? 'repair';
   if (mode === 'build' && !input.initialInstruction) {
@@ -189,7 +191,8 @@ export async function runCoderLoop(input: {
   const maxToolCalls = input.maxToolCallsPerRound ?? DEFAULT_MAX_TOOL_CALLS;
   const maxStalledRounds = Math.max(1, input.maxStalledRounds ?? DEFAULT_MAX_STALLED_ROUNDS);
   let stalledRounds = 0;
-  let reviewed = false;
+  const maxReviews = Math.max(1, Math.min(4, Math.floor(input.maxReviews ?? 1)));
+  let reviews = 0;
   let polishInstruction = '';
   const rounds: RepairRound[] = [];
   const steeringHistory: string[] = [];
@@ -333,8 +336,8 @@ export async function runCoderLoop(input: {
       if (!pending) {
         // One review of a passing result, while a repair round would still
         // remain after the polish in case it breaks something.
-        if (input.review && !reviewed && round <= maxRounds - 2) {
-          reviewed = true;
+        if (input.review && reviews < maxReviews && round <= maxRounds - 2) {
+          reviews += 1;
           const polish = await input.review(report, round).catch(() => undefined);
           if (polish) { polishInstruction = polish; continue; }
         }

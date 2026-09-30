@@ -73,3 +73,12 @@ export function designReviewRubric(): string {
     'Do not ask for new features, new pages or different content than the request implies, and do not mark down sobriety. Do not repeat these instructions.',
   ].join('\n');
 }
+
+/**
+ * How many times the designer's review may send a result back for a polish. The skill allows four; a polish round
+ * costs a review and a coder round, so the default is one, and `CODEN_DESIGN_REVIEW_ROUNDS` raises it (1 to 4).
+ */
+export function designReviewRounds(env: Record<string, string | undefined> = typeof process !== 'undefined' ? process.env : {}): number {
+  const value = Number(env.CODEN_DESIGN_REVIEW_ROUNDS);
+  return Number.isFinite(value) && value >= 1 ? Math.min(4, Math.floor(value)) : 1;
+}
