@@ -167,7 +167,23 @@ export async function consumeAgentStream(response: Response, onEvent: (event: Ag
   };
   try {
     while (true) {
-      const chunk = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        /*
+         * A connection reset is an interruption too.
+         *
+         * A proxy closing the socket cleanly ends the body and lands in the
+         * check below; a reset — a phone changing network, a load balancer
+         * recycling — makes `read()` itself reject with a bare TypeError.
+         * That is not an `AgentStreamInterruptedError`, so the reconnect loop
+         * was skipped and the Builder started the request over: a second run
+         * for the same message. Only the person's own stop is passed through.
+         */
+        if ((error as { name?: string } | null)?.name === 'AbortError') throw error;
+        throw new AgentStreamInterruptedError(sequence, runId);
+      }
       buffer += chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true });
       let boundary: RegExpExecArray | null;
       while ((boundary = /\r?\n\r?\n/.exec(buffer))) {
