@@ -13,6 +13,7 @@
 import { resolveEmbeddingProvider, type EmbeddingProvider, type EmbeddingVector } from '../embeddings.ts';
 import { fixCategory } from '../agent-learning.ts';
 import {
+  agentEvolutionEnabled,
   embeddingText,
   findEquivalent,
   libraryRejection,
@@ -196,11 +197,13 @@ export class AgentLibraryStore {
     if (!this.client) return report;
     try {
       report.disabled = await this.recordUsage(session, outcome);
-      if (outcome.success && !outcome.cancelled && session.shareAllowed) {
+      if (outcome.success && !outcome.cancelled && session.shareAllowed && agentEvolutionEnabled()) {
         const promoted = await this.promote(session);
         report.promoted = promoted.created;
         report.versions = promoted.versions;
         report.merged = promoted.merged;
+        // The journal of what agents added to the shared library on their own: what, how many, and from which run.
+        if (promoted.created || promoted.versions) console.info('[coden:library_evolution]', { request: session.requestId, created: promoted.created, versions: promoted.versions, merged: promoted.merged, items: session.candidates.map(candidate => `${candidate.kind}:${candidate.name}`).slice(0, 10) });
       }
       if (session.shareAllowed && session.errors.length) report.errors = await this.recordErrors(session, outcome, summarize);
     } catch (error) {
