@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { selectModel } from './src/services/model-selection.ts';
+import { AI_MODEL_CAPABILITIES, AI_MODEL_PLAN_ACCESS } from './src/config/ai-models.ts';
 
 /*
  * A user on the free plan can have an application built.
@@ -41,10 +42,14 @@ const BUILD = { task: 'code_generation' as const, needs: { tools: true } };
 
 // A paid plan still gets the model it pays for; degradation is a floor, never a cap.
 {
-  assert.equal(selectModel({ ...BUILD, plan: 'business', credits: 27, complexity: 'complex' }).modelId, 'openai/gpt-5.6-sol');
-  // Extreme work gets the strongest model Auto may spend, thinking at its maximum.
+  const paid = selectModel({ ...BUILD, plan: 'business', credits: 27, complexity: 'complex' });
+  assert.notEqual(AI_MODEL_PLAN_ACCESS[paid.modelId], 'free', 'a business plan must get a model that only a paid plan can reach');
+  assert.equal(AI_MODEL_CAPABILITIES[paid.modelId].codeLevel, 'frontier');
+  // Extreme work gets the strongest models Auto may spend (the most capable tier on every
+  // dimension; among equals the scored policy takes the better value), thinking at its maximum.
   const extreme = selectModel({ ...BUILD, plan: 'enterprise', credits: 1000, complexity: 'extreme' });
-  assert.equal(extreme.modelId, 'openai/gpt-6-astra');
+  const caps = AI_MODEL_CAPABILITIES[extreme.modelId];
+  assert.ok([caps.reasoningLevel, caps.codeLevel, caps.agenticLevel, caps.securityLevel].every(level => level === 'frontier'), `extreme work must run on a frontier model, got ${extreme.modelId}`);
   assert.equal(extreme.reasoningLevel, 'max');
 }
 

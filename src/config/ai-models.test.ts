@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AI_ALLOWED_MODELS, AI_MODEL_FALLBACKS, MODEL_REGISTRY, AUTO_MODEL_IDS, ASTRA_MODEL_ID, getModelTokenPricing } from './ai-models';
+import { AI_ALLOWED_MODELS, AI_MODEL_FALLBACKS, MODEL_REGISTRY, AUTO_MODEL_IDS, ASTRA_MODEL_ID, getModelTokenPricing, isFlaggedModel, isModelEnabled } from './ai-models';
 
 /**
  * The authorised catalogue, pinned exactly.
@@ -26,12 +26,14 @@ const AUTHORISED = [
   'openai/gpt-6-sol',
   'openai/gpt-6-luna',
   'anthropic/claude-opus-5.5',
+  // Behind CODEN_MODEL_SONNET_5_5; its numbers come from the live catalogue, not from here.
+  'anthropic/claude-sonnet-5.5',
 ];
 
 describe('Coden production model registry', () => {
   it('preserves historical model IDs and adds only the verified interactive models', () => {
     expect([...AI_ALLOWED_MODELS].sort()).toEqual([...AUTHORISED].sort());
-    expect(MODEL_REGISTRY).toHaveLength(18);
+    expect(MODEL_REGISTRY).toHaveLength(19);
     expect(new Set(AI_ALLOWED_MODELS).size).toBe(AI_ALLOWED_MODELS.length);
   });
   it('limits Auto to five roles and keeps Astra as a replacement escalation', () => {
@@ -66,5 +68,21 @@ describe('Coden production model registry', () => {
         expect(to, 'a model must not fall back to itself').not.toBe(from);
       }
     }
+  });
+
+  it('keeps Sonnet 5.5 behind its flag, offered to Pro and above, and never as an Auto role', () => {
+    const id = 'anthropic/claude-sonnet-5.5';
+    expect(isFlaggedModel(id)).toBe(true);
+    expect(isModelEnabled(id, {})).toBe(false);
+    expect(isModelEnabled(id, { CODEN_MODEL_SONNET_5_5: '0' })).toBe(false);
+    expect(isModelEnabled(id, { CODEN_MODEL_SONNET_5_5: '1' })).toBe(true);
+    // Every other model is unaffected by the flag.
+    expect(MODEL_REGISTRY.filter(model => isFlaggedModel(model.id)).map(model => model.id)).toEqual([id]);
+    expect(isModelEnabled('anthropic/claude-sonnet-5', {})).toBe(true);
+    const entry = MODEL_REGISTRY.find(model => model.id === id)!;
+    expect(entry.minPlan).toBe('pro');
+    expect(AUTO_MODEL_IDS).not.toContain(id);
+    // The interactive slug only: the batch variant has its own id and is not an interactive model.
+    expect(AI_ALLOWED_MODELS.filter(model => model.includes('sonnet-5.5'))).toEqual([id]);
   });
 });
