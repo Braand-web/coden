@@ -41,8 +41,8 @@ describe('saved React preview Motion compatibility', () => {
   it('uses the compatibility hook for new and persisted previews', () => {
     const server = readFileSync(new URL('../../server.ts', import.meta.url), 'utf8');
     expect(server).toContain('`      ${REDUCED_MOTION_PREVIEW_HOOK}`');
-    expect(server).toContain('enhanceHtmlSeo(restoreLegacyMotionPreview(project.preview_html)');
+    expect(server).toContain('enhanceHtmlSeo(restoreLegacyMotionPreview(savedHtml)');
     expect(server).toContain('preview_html: restoreLegacyMotionPreview(project.preview_html || \'\')');
-    expect(server).toContain('restoreLegacyMotionPreview(String(snapshotPreview?.html || \'\').trim())');
+    expect(server).toContain('restoreLegacyMotionPreview(refreshLegacyPreviewStyles(String(snapshotPreview?.html || \'\').trim()');
   });
 });

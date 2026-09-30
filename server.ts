@@ -13552,6 +13552,71 @@ app.post('/api/admin/alerts/test', async (req: any, res) => {
  * unique key), so two instances or a restart never send the same alert
  * twice; if every channel fails the claim is released and retried later.
  */
+/*
+ * Coden's OpenRouter balance: every generation is paid from it.
+ *
+ * When it runs low, OpenRouter shrinks what each answer may cost before it
+ * refuses outright — generations then write truncated files, previews break
+ * and runs end "interrupted". The operator hears about it first: from the
+ * balance itself (checked every 15 minutes) and from any request that had to
+ * shrink or was refused for it. Alerts are throttled per level.
+ */
+const OPENROUTER_LOW_BALANCE_USD = Math.max(1, Number(process.env.CODEN_OPENROUTER_LOW_BALANCE_USD || 20));
+let openRouterBalanceCache: { at: number; value: OpenRouterBalance | null; error: string | null } | null = null;
+const providerAlertSentAt = new Map<string, number>();
+
+async function openRouterBalance(force = false) {
+  if (!force && openRouterBalanceCache && Date.now() - openRouterBalanceCache.at < 60_000) return openRouterBalanceCache;
+  try {
+    openRouterBalanceCache = { at: Date.now(), value: await fetchOpenRouterBalance(getOpenRouterApiKey()), error: null };
+  } catch (error: any) {
+    openRouterBalanceCache = { at: Date.now(), value: null, error: String(error?.message || error).slice(0, 160) };
+  }
+  return openRouterBalanceCache;
+}
+
+async function alertProviderOnce(key: string, intervalMs: number, subject: string, message: string) {
+  const last = providerAlertSentAt.get(key) || 0;
+  if (Date.now() - last < intervalMs) return;
+  providerAlertSentAt.set(key, Date.now());
+  console.error('[coden:provider_balance_alert]', { key, message });
+  const config = readNotifierConfig();
+  if (notifierChannels(config).length) await sendCostAlert(message, config, fetch, { subject }).catch(() => undefined);
+}
+
+async function checkOpenRouterBalance() {
+  const snapshot = await openRouterBalance(true);
+  if (!snapshot.value) return;
+  const level = balanceLevel(snapshot.value.remaining_usd, OPENROUTER_LOW_BALANCE_USD);
+  if (level === 'ok') return;
+  const amount = snapshot.value.remaining_usd.toFixed(2);
+  await alertProviderOnce(`balance:${level}`, level === 'critical' ? 60 * 60_000 : 6 * 60 * 60_000,
+    level === 'critical' ? 'Solde OpenRouter presque épuisé' : 'Solde OpenRouter bas',
+    level === 'critical'
+      ? `Solde OpenRouter presque épuisé : ${amount} $. Les générations vont échouer — rechargez le compte OpenRouter maintenant.`
+      : `Solde OpenRouter bas : ${amount} $ (seuil ${OPENROUTER_LOW_BALANCE_USD} $). Rechargez le compte OpenRouter pour éviter des générations dégradées.`);
+}
+
+onProviderBalanceSignal(signal => {
+  void alertProviderOnce(signal.starved ? 'request:starved' : 'request:low', signal.starved ? 30 * 60_000 : 3 * 60 * 60_000,
+    signal.starved ? 'Générations refusées : solde OpenRouter épuisé' : 'Solde OpenRouter bas',
+    signal.starved
+      ? `Générations refusées : le solde OpenRouter ne couvre plus qu’environ ${signal.affordable.toLocaleString('fr-FR')} tokens de réponse (modèle ${signal.model}). Rechargez le compte OpenRouter : les utilisateurs voient « modèle momentanément indisponible ».`
+      : `Solde OpenRouter bas : une réponse (modèle ${signal.model}) a dû être réduite à ${signal.affordable.toLocaleString('fr-FR')} tokens au lieu de ${signal.requested.toLocaleString('fr-FR')}. Rechargez le compte OpenRouter.`);
+});
+
+app.get('/api/admin/providers/balance', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  const snapshot = await openRouterBalance(req.query.refresh === '1');
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    openrouter: snapshot.value
+      ? { ...snapshot.value, level: balanceLevel(snapshot.value.remaining_usd, OPENROUTER_LOW_BALANCE_USD), low_threshold_usd: OPENROUTER_LOW_BALANCE_USD }
+      : { error: snapshot.error || 'Solde indisponible.' },
+  });
+});
+
 async function deliverCostAlerts() {
   const client = getSupabase();
   if (!client) return;
@@ -19931,6 +19996,8 @@ import { describeServerSecrets, isReservedSecretVariable, isValidSecretVariable,
 import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
 import { aggregateCosts, aggregateMargins, alertMessage, eventCostUsd, eventTokens, evaluateCostAlerts, hardCapReached, maskEmail, startOfMonthUtc, type CostAlertRule, type HardCapRule, type SettlementRow, type UsageEventRow } from './src/services/admin-costs.ts';
 import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
+import { balanceLevel, fetchOpenRouterBalance, type OpenRouterBalance } from './src/services/openrouter-balance.ts';
+import { onProviderBalanceSignal } from './src/services/openrouter-service.ts';
 import { DEFAULT_PRICING_CONFIG, creditsForCost, meteredCategory, profitabilityReport, publicPricing, shadowComparison, validatePricingConfig, type PricingConfig } from './src/services/billing/pricing-config.ts';
 import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
@@ -21137,7 +21204,8 @@ const httpServer = app.listen(port, () => {
    * starts are never touched.
    */
   const bootedAt = new Date().toISOString();
-  const reapDelayMs = Math.max(0, Number(process.env.CODEN_REAP_DELAY_MS ?? 16 * 60_000));
+  // Past the previous instance's drain (an hour) and overlap, so a run it is still finishing is never reaped.
+  const reapDelayMs = Math.max(0, Number(process.env.CODEN_REAP_DELAY_MS ?? 62 * 60_000));
   setTimeout(() => {
     void reapInterruptedAgentRuns({ createdBefore: bootedAt }).catch((error: any) => {
       console.warn('[coden:interrupted_run_reap_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
@@ -21290,6 +21358,9 @@ const httpServer = app.listen(port, () => {
     const costAlertStartTimer = setTimeout(() => void deliverCostAlerts(), 60_000);
     costAlertStartTimer.unref?.();
     const costAlertTimer = setInterval(() => void deliverCostAlerts(), 15 * 60_000);
+    // The provider balance, on the same cadence, and once shortly after boot.
+    setTimeout(() => void checkOpenRouterBalance(), 30_000).unref();
+    setInterval(() => void checkOpenRouterBalance(), 15 * 60_000).unref();
     costAlertTimer.unref?.();
     if (CODEN_SKILL_FLAGS.scheduledRuns) {
       const workerId = `workflow_scheduler_${randomUUID()}`;
@@ -21359,7 +21430,10 @@ if (LIVE_SANDBOX_ENABLED) {
  * A child that outlives the server holds a port and memory for nothing, so the
  * sandboxes still stop on the way out.
  */
-const SHUTDOWN_DRAIN_MS = Math.max(0, Number(process.env.CODEN_SHUTDOWN_DRAIN_MS || 14 * 60_000));
+// As long as the longest generation may run (Ultra: an hour), just under the
+// platform's SIGKILL (railway.json drainingSeconds: 3600). An instance with no
+// run in flight still exits at once.
+const SHUTDOWN_DRAIN_MS = Math.max(0, Number(process.env.CODEN_SHUTDOWN_DRAIN_MS || 59 * 60_000));
 let shuttingDown = false;
 function inFlightRuns() {
   return activeHarnessTurnControllers.size + activeAgentRunControllers.size;

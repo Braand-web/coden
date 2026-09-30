@@ -37,6 +37,7 @@ type AdminState = {
   costs: JsonRecord | null;
   backends: JsonRecord | null;
   channels: JsonRecord | null;
+  balance?: JsonRecord | null;
   audit: JsonRecord[];
   loading: boolean;
 };
@@ -758,7 +759,21 @@ function renderCosts() {
   const days: JsonRecord[] = data.by_day || [];
   const max = Math.max(0.0001, ...days.map(day => Number(day.cost_usd || 0)));
   const bars = `<div class="admin-bars" aria-hidden="true">${days.map(day => `<span style="height:${Math.max(6, Math.round((Number(day.cost_usd || 0) / max) * 100))}%"${Number(day.cost_usd) ? '' : ' data-empty'} title="${escapeHtml(day.key)} : ${escapeHtml(formatUsd(day.cost_usd))}"></span>`).join('')}</div>`;
+  const balance = state.balance?.openrouter || null;
+  const balanceMetric = balance && !balance.error
+    ? metric(
+        'Solde OpenRouter',
+        formatUsd(balance.remaining_usd),
+        balance.level === 'critical'
+          ? 'Presque épuisé : les générations échouent — rechargez maintenant'
+          : balance.level === 'low'
+            ? `Bas (seuil ${formatUsd(balance.low_threshold_usd)}) : rechargez bientôt`
+            : `Payé ${formatUsd(balance.total_credits_usd)} · consommé ${formatUsd(balance.total_usage_usd)}`,
+        balance.level === 'ok' ? '' : `<span class="status-pill failed">${balance.level === 'critical' ? 'Critique' : 'Bas'}</span>`,
+      )
+    : metric('Solde OpenRouter', '—', String(balance?.error || 'Chargement…'));
   if (metricsHost) metricsHost.innerHTML = [
+    balanceMetric,
     metric('Aujourd’hui', formatUsd(totals.today_usd), 'coût fournisseur'),
     metric('Ce mois', formatUsd(totals.month_usd), 'depuis le 1er du mois'),
     metric(`${data.days || costDays} derniers jours`, formatUsd(totals.cost_usd), `${formatNumber(totals.requests ?? 0)} requêtes facturées`, bars),
@@ -847,11 +862,13 @@ function renderChannels() {
 }
 
 async function loadCosts() {
-  const [costs, backends, channels] = await Promise.all([
+  const [costs, backends, channels, balance] = await Promise.all([
     safeAdminFetch(`/api/admin/costs?days=${costDays}`, { totals: {}, by_user: [], by_model: [], by_day: [], margins: [], alerts: { rules: [], triggered: [] } }),
     safeAdminFetch('/api/admin/cloud/backends', { backends: [], totals: {}, pricing: {} }),
     safeAdminFetch('/api/admin/alerts/channels', { slack: false, email: false }),
+    safeAdminFetch('/api/admin/providers/balance', { openrouter: { error: 'Solde indisponible.' } }),
   ]);
+  state.balance = balance;
   state.costs = costs;
   state.backends = backends;
   state.channels = channels;

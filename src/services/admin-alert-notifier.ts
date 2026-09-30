@@ -72,7 +72,7 @@ async function postJson(url: string, body: unknown, headers: Record<string, stri
 }
 
 /** Sends one alert on every configured channel; returns the channels that accepted it. */
-export async function sendCostAlert(message: string, config: NotifierConfig, fetchImpl: typeof fetch = fetch): Promise<Array<'slack' | 'email'>> {
+export async function sendCostAlert(message: string, config: NotifierConfig, fetchImpl: typeof fetch = fetch, options: { subject?: string } = {}): Promise<Array<'slack' | 'email'>> {
   const delivered: Array<'slack' | 'email'> = [];
   const text = message.replace(/[\u0000-\u0008\u000b-\u001f]/g, ' ').slice(0, 1_000);
   if (config.slackWebhook && await postJson(config.slackWebhook, { text: `:warning: ${text}` }, {}, fetchImpl)) delivered.push('slack');
@@ -80,7 +80,7 @@ export async function sendCostAlert(message: string, config: NotifierConfig, fet
     const sent = await postJson('https://api.resend.com/emails', {
       from: config.emailFrom,
       to: config.emailTo,
-      subject: text.startsWith('Budget OpenRouter dépassé') ? '[Coden] Budget OpenRouter dépassé' : '[Coden] Budget OpenRouter bientôt atteint',
+      subject: options.subject ? `[Coden] ${options.subject.replace(/[\r\n]/g, ' ').slice(0, 120)}` : text.startsWith('Budget OpenRouter dépassé') ? '[Coden] Budget OpenRouter dépassé' : '[Coden] Budget OpenRouter bientôt atteint',
       text: `${text}\n\nDétails dans la console d’administration, onglet Coûts.`,
     }, { authorization: `Bearer ${config.resendKey}` }, fetchImpl);
     if (sent) delivered.push('email');
