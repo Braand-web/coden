@@ -19,7 +19,7 @@
  */
 
 import { withUserInstructions } from './agent-personalization.ts';
-import type { ChatMessage } from './openrouter-service.ts';
+import { buildVisionMessageContent, type ChatMessage } from './openrouter-service.ts';
 import type { ProviderGateway } from './provider-gateway.ts';
 import { parseOrRepairStructuredObject } from './structured-output.ts';
 import { selectModelForAgent } from './model-selection.ts';
@@ -193,6 +193,13 @@ export type PlannerAgentInput = {
   allowFallback?: boolean;
   /** Ask for acceptance scenarios alongside the file plan. */
   withAcceptance?: boolean;
+  /**
+   * The images attached to this turn and the project's standing design
+   * references. The planner decides which screens exist; deciding that from a
+   * one-line label of a mock-up, while the coder that follows is shown the
+   * mock-up itself, is how a plan misses the pricing section in the picture.
+   */
+  visionInputs?: Array<{ url: string; detail?: 'auto' | 'low' | 'high' }>;
   signal?: AbortSignal;
   /**
    * The planner's reasoning as it is written, for display only. Planning is
@@ -209,7 +216,8 @@ export type PlannerAgentResult = BuildPlan & {
 };
 
 export async function runPlannerAgent(input: PlannerAgentInput): Promise<PlannerAgentResult> {
-  const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits }).modelId;
+  const sees = Boolean(input.visionInputs?.length);
+  const modelId = input.selectedModel || selectModelForAgent('planner', { plan: input.plan, credits: input.credits, needs: sees ? { vision: true } : undefined }).modelId;
   const systemPrompt = withUserInstructions(buildPlannerSystemPrompt(input.designPolicy, input.withAcceptance === true));
   const userMessage = buildPlannerUserMessage(input.prompt, input.existingFiles, input.scaffold, input.memoryContext);
   const runtimeFor = (candidate: import('../config/ai-models.ts').AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({modelId:candidate,task:'planning',allowTools:false,preferStructuredOutput:true,effort:input.effort}));
@@ -217,7 +225,7 @@ export async function runPlannerAgent(input: PlannerAgentInput): Promise<Planner
 
   const planningMessages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: userMessage },
+    { role: 'user', content: sees ? buildVisionMessageContent(userMessage, input.visionInputs!) : userMessage },
   ];
   const buffered = () => input.gateway.chat(modelId, planningMessages, { maxAttempts: 2, allowFallback: input.allowFallback === true, signal: input.signal, runtimeConfig, runtimeConfigForModel: runtimeFor });
   /*

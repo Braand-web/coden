@@ -2,7 +2,7 @@ import * as React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import { classifyAttachment, extractUrls, formatBytes, MAX_ATTACHMENTS_PER_MESSAGE, type AttachmentKind } from "../../lib/attachment-policy";
-import { waitUntilRead, type AttachmentUploader, type RemoteAttachment } from "../../lib/attachment-types";
+import { waitUntilAnalysed, waitUntilRead, type AttachmentUploader, type RemoteAttachment } from "../../lib/attachment-types";
 
 /*
  * What the composer carries besides text: files and links.
@@ -32,6 +32,8 @@ export type ComposerFile = {
   remoteId?: string;
   summary?: string;
   error?: string;
+  /** An image's description, which lands a moment after the file is ready. */
+  analysis?: "pending" | "done" | "none";
 };
 
 export type ComposerLink = {
@@ -82,6 +84,7 @@ export function useComposerAttachments({ uploader, value, maxFiles = MAX_ATTACHM
       status: remote.status === "ready" ? "ready" : remote.status === "failed" ? "failed" : "processing",
       summary: remote.summary || undefined,
       error: remote.error || undefined,
+      analysis: remote.analysis,
       progress: 1,
     });
   }, [patchFile]);
@@ -92,11 +95,17 @@ export function useComposerAttachments({ uploader, value, maxFiles = MAX_ATTACHM
     controllers.current.set(item.key, controller);
     patchFile(item.key, { status: "uploading", progress: 0, error: undefined });
     try {
-      const remote = await uploader.upload(item.file, fraction => patchFile(item.key, { progress: fraction }), controller.signal);
+      let remote = await uploader.upload(item.file, fraction => patchFile(item.key, { progress: fraction }), controller.signal);
       applyRemote(item.key, remote);
       if (remote.status === "processing") {
         const final = await waitUntilRead(uploader, remote.id, 180_000, update => applyRemote(item.key, update));
         applyRemote(item.key, final);
+        remote = final;
+      }
+      // Ready to send; the description follows in the background and the chip
+      // says so when it lands. The send button never waits for it.
+      if (remote.status === "ready" && remote.analysis === "pending") {
+        void waitUntilAnalysed(uploader, remote.id, 30_000, update => applyRemote(item.key, update));
       }
     } catch (error) {
       if ((error as Error)?.name === "AbortError") return;
@@ -256,9 +265,12 @@ function Spinner() {
 
 function fileStatusLine(item: ComposerFile): { text: string; tone?: "error" } {
   if (item.status === "uploading") return { text: `Envoi ${Math.round(item.progress * 100)} %` };
-  if (item.status === "processing") return { text: item.kind === "video" ? "Analyse de la vidéo…" : "Analyse…" };
+  if (item.status === "processing") return { text: item.kind === "video" ? "Analyse de la vidéo…" : "Lecture…" };
   if (item.status === "failed") return { text: item.error || "Échec", tone: "error" };
   if (item.status === "local") return { text: `${item.label} · ${formatBytes(item.size)}` };
+  // Sent, then read (ready to send), then analysed: three honest states.
+  if (item.status === "ready" && item.analysis === "pending") return { text: "Prête · analyse en cours…" };
+  if (item.status === "ready" && item.analysis === "done") return { text: `Analysée · ${formatBytes(item.size)}` };
   return { text: `${item.label} · ${formatBytes(item.size)}` };
 }
 

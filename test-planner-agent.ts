@@ -146,4 +146,30 @@ assert.ok(!source.includes('ProjectSandbox'), 'the planner must not import the s
     'when eligible, the lead role handles planning; unavailable premium access stays gated');
 }
 
+// -- the planner reads the user's mock-up, with a model that can ------------
+{
+  const provider = fakeProvider([VALID_PLAN]);
+  const gateway = new ProviderGateway(provider.service);
+  await runPlannerAgent({
+    gateway,
+    prompt: 'reproduis cette maquette',
+    existingFiles: [],
+    plan: 'enterprise',
+    credits: 9999,
+    visionInputs: [{ url: 'data:image/jpeg;base64,AAAA', detail: 'auto' }],
+  });
+  const messages = provider.calls[0].messages as Array<{ role: string; content: unknown }>;
+  const user = messages.find(message => message.role === 'user')!;
+  assert.ok(Array.isArray(user.content), 'with images attached, the planner message carries content parts');
+  assert.ok((user.content as Array<{ type: string }>).some(part => part.type === 'image_url'), 'the image reaches the planner');
+  assert.equal(MODEL_REGISTRY.find(model => model.id === provider.calls[0].modelId)?.capabilities.supportsVision, true, 'the planner model reads images');
+}
+{
+  const provider = fakeProvider([VALID_PLAN]);
+  const gateway = new ProviderGateway(provider.service);
+  await runPlannerAgent({ gateway, prompt: 'add dark mode', existingFiles: [], plan: 'enterprise', credits: 9999 });
+  const user = (provider.calls[0].messages as Array<{ role: string; content: unknown }>).find(message => message.role === 'user')!;
+  assert.equal(typeof user.content, 'string', 'no attachment: the planner message stays plain text, exactly as before');
+}
+
 console.log('planner agent tests passed');

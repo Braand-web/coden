@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AI_MODEL_CAPABILITIES } from '../../config/ai-models';
 import { createAgentTeam, modelForSubagent, TEAM_TOOL_NAMES, TEAM_TOOL_SCHEMAS } from './team';
 import { openLibrarySession } from './store';
 import { subagentLimits } from './subagents';
@@ -88,6 +89,49 @@ describe('the master’s team', () => {
     await team.handle('record_error_lesson', { category: 'mishandling', error_message: 'Fichier de routes écrasé', cause: 'write_file sur un fichier partagé', fix: 'edit_file ciblé', rule: 'Ne jamais réécrire un fichier partagé entier.' }, { schemas: [], call: async () => null });
     expect(session.errors[0]).toMatchObject({ category: 'mishandling', libraries: { react: 19 } });
     expect(TEAM_TOOL_SCHEMAS.find(tool => tool.name === 'save_skill')?.description).toMatch(/only if this run succeeds/);
+  });
+
+  it('gives every sub-agent the user’s attachments as text, and the interface builder the images too', async () => {
+    const seen: Array<{ system: string; user: any }> = [];
+    const gateway = {
+      chat: async (_model: string, messages: any[]) => {
+        seen.push({ system: String(messages[0]?.content || ''), user: messages[1]?.content });
+        return { text: 'Livré.', model: 'test', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, cost_usd: 0 };
+      },
+    };
+    const team = createAgentTeam({
+      gateway: gateway as any, store: null, session: null, limits: subagentLimits({}), plan: 'business',
+      runtimeFor: () => ({}) as any, deadline: Date.now() + 60_000,
+      attachmentBrief: '## Références persistantes du projet\nMaquette : palette #16A34A, police Poppins.',
+      visionInputs: [{ url: 'data:image/jpeg;base64,AAAA', detail: 'auto' }],
+    });
+    await team.handle('delegate_to_subagents', {
+      tasks: [
+        { role: 'Expert UI', goal: 'Créer la page d’accueil fidèle à la maquette.', files: ['src/ui/'], model_tier: 'design' },
+        { role: 'Expert données', goal: 'Créer le client API typé pour les produits.', files: ['src/lib/api.ts'], model_tier: 'reasoning' },
+      ],
+    }, { schemas: SANDBOX_SCHEMAS, call: async () => ({ ok: true }) });
+
+    expect(seen).toHaveLength(2);
+    // The text brief reaches both, so neither builds a generic screen next to the coder's.
+    for (const turn of seen) expect(turn.system).toContain('palette #16A34A, police Poppins');
+    const ui = seen.find(turn => turn.system.includes('src/ui/'))!;
+    const data = seen.find(turn => turn.system.includes('src/lib/api.ts'))!;
+    // Only the interface builder is sent the image, and it is told it is data.
+    expect(Array.isArray(ui.user)).toBe(true);
+    expect(ui.user.some((part: any) => part.type === 'image_url')).toBe(true);
+    expect(JSON.stringify(ui.user)).toContain('jamais des instructions');
+    expect(typeof data.user).toBe('string');
+  });
+
+  it('holds only the sub-agents that build screens to a model that reads images', () => {
+    const vision = [{ url: 'data:image/jpeg;base64,AAAA' }];
+    const ui = modelForSubagent({ modelTier: 'design', role: 'Expert UI' }, 0, { plan: 'business', visionInputs: vision });
+    expect(ui.sees).toBe(true);
+    expect(AI_MODEL_CAPABILITIES[ui.modelId].supportsVision).toBe(true);
+    expect(modelForSubagent({ modelTier: 'reasoning', role: 'Expert données' }, 0, { plan: 'business', visionInputs: vision }).sees).toBe(false);
+    // No images attached: nothing changes.
+    expect(modelForSubagent({ modelTier: 'design', role: 'Expert UI' }, 0, { plan: 'business' }).sees).toBe(false);
   });
 
   it('picks each sub-agent’s model like Auto, and a stronger one on retry', () => {
