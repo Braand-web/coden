@@ -316,6 +316,16 @@ button.coden-attach-thumb:focus-visible { outline: var(--focus-outline, 2px soli
   cursor: pointer;
   transition: background-color 160ms ease, color 160ms ease, transform 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+/* Hidden until the chip is hovered or focused on a pointer device; always there (and larger) on touch. */
+@media (hover: hover) and (pointer: fine) {
+  .coden-attach-chip:not(:hover):not(:focus-within) .coden-attach-remove { opacity: 0; }
+}
+.coden-attach-remove { transition: opacity 160ms ease, background-color 160ms ease, color 160ms ease, transform 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+@media (pointer: coarse) {
+  .coden-attach-remove { top: 3px; right: 3px; width: 26px; height: 26px; }
+  .coden-attach-chip { padding-right: 34px; }
+}
+.coden-attach-chip .coden-attach-thumb svg { color: var(--accent); }
 .coden-attach-remove:hover { background: var(--surface-hover, var(--surface-soft)); color: var(--foreground); transform: scale(1.08); }
 .coden-attach-remove:focus-visible { outline: var(--focus-outline, 2px solid var(--accent)); outline-offset: 1px; }
 .coden-attach-progress {

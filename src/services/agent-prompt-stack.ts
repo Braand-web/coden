@@ -731,6 +731,7 @@ export function buildIntentRouterSystemPrompt() {
       '- If Coden asked what to build or which option, and the user answers with a description or a choice ("une ville avec des humains", "UNE VILLE", "la deuxième", "Paris"), that is the missing detail: choose build (or edit when the project already has files), with the combined request in normalized_prompt.',
       '- If Coden proposed to build or change something and the user agrees ("oui", "vas-y", "ok go", "fais-le", "d accord"), choose build/edit and put what Coden proposed in normalized_prompt.',
       '- normalized_prompt must always be self-contained: the full request as the user would state it with the conversation resolved, never "oui vas y".',
+      '- A greeting ("bonjour", "salut", "hello"), a thanks or a compliment ("merci", "parfait", "super", "top") is conversation — never a go-ahead. Only an answer to something Coden just asked or offered ("oui", "ok", "vas-y", "fais-le") confirms it.',
       'Otherwise, when unsure between conversation and a change, choose conversation: answering costs nothing and the user can confirm.',
     ].join('\n'),
     [

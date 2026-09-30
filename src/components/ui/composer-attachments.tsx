@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
 import { classifyAttachment, extractUrls, formatBytes, MAX_ATTACHMENTS_PER_MESSAGE, type AttachmentKind } from "../../lib/attachment-policy";
 import { waitUntilAnalysed, waitUntilRead, type AttachmentUploader, type RemoteAttachment } from "../../lib/attachment-types";
+import { attachmentAriaLabel, displayFileName, truncateMiddle } from "../../lib/attachment-display";
+import { makeImageThumbnail } from "../../lib/attachment-thumb";
+import { FileTypeIcon } from "../agent/message-attachments";
+import "../agent/message-attachments.css";
 
 /*
  * What the composer carries besides text: files and links.
@@ -25,6 +29,8 @@ export type ComposerFile = {
   kind: AttachmentKind;
   label: string;
   previewUrl?: string;
+  /** A small copy made in the browser, kept with the message once it is sent. */
+  thumb?: string;
   width?: number;
   height?: number;
   status: "local" | "uploading" | "processing" | "ready" | "failed";
@@ -56,6 +62,21 @@ export type ComposerSubmission = {
   skippedUrls: string[];
   /** What went with the message, for the conversation: file names and link hosts. */
   attachmentNames: string[];
+  /** The same, structured: original name, type, size and a small thumbnail, apart from the text. */
+  items: SubmittedAttachment[];
+};
+
+export type SubmittedAttachment = {
+  id?: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: AttachmentKind;
+  previewUrl?: string;
+  fullUrl?: string;
+  status?: "uploading" | "processing" | "ready" | "failed";
+  analysis?: "pending" | "done" | "none";
+  createdAt: string;
 };
 
 const hostOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
@@ -145,6 +166,8 @@ export function useComposerAttachments({ uploader, value, maxFiles = MAX_ATTACHM
         const image = new Image();
         image.onload = () => patchFile(item.key, { width: image.naturalWidth, height: image.naturalHeight });
         image.src = item.previewUrl;
+        // The message keeps a small copy: the object URL is revoked when the message leaves.
+        void makeImageThumbnail(item.file).then(thumb => { if (thumb) patchFile(item.key, { thumb }); });
       }
       void send(item);
     }
@@ -219,6 +242,30 @@ export function useComposerAttachments({ uploader, value, maxFiles = MAX_ATTACHM
         ...files.filter(item => item.status !== "failed").map(item => item.name),
         ...links.filter(link => link.status !== "failed").map(link => link.host),
       ],
+      items: [
+        ...files.filter(item => item.status !== "failed").map(item => ({
+          id: item.remoteId,
+          name: item.name,
+          mimeType: item.file.type || "",
+          size: item.size,
+          kind: item.kind,
+          previewUrl: item.thumb,
+          status: item.status === "local" ? "ready" as const : item.status,
+          analysis: item.analysis,
+          createdAt: new Date().toISOString(),
+        })),
+        ...links.filter(link => link.status !== "failed").map(link => ({
+          id: link.remoteId,
+          name: link.title || link.host,
+          mimeType: "text/uri-list",
+          size: 0,
+          kind: "link" as AttachmentKind,
+          previewUrl: link.image,
+          fullUrl: link.url,
+          status: "ready" as const,
+          createdAt: new Date().toISOString(),
+        })),
+      ],
     };
     files.forEach(item => { if (item.previewUrl) URL.revokeObjectURL(item.previewUrl); });
     setFiles([]);
@@ -242,15 +289,6 @@ export function useComposerAttachments({ uploader, value, maxFiles = MAX_ATTACHM
 /* Tray                                                                      */
 /* ------------------------------------------------------------------------ */
 
-const KIND_BADGE: Record<AttachmentKind, string> = {
-  image: "IMG", video: "VID", document: "DOC", spreadsheet: "XLS", text: "TXT", code: "</>", archive: "ZIP", link: "URL",
-};
-
-function badgeFor(item: ComposerFile) {
-  const extension = item.name.split(".").pop()?.toUpperCase() || KIND_BADGE[item.kind];
-  return extension.length <= 4 ? extension : KIND_BADGE[item.kind];
-}
-
 function CloseGlyph() {
   return (
     <svg width="8" height="8" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -269,7 +307,7 @@ function fileStatusLine(item: ComposerFile): { text: string; tone?: "error" } {
   if (item.status === "failed") return { text: item.error || "Échec", tone: "error" };
   if (item.status === "local") return { text: `${item.label} · ${formatBytes(item.size)}` };
   // Sent, then read (ready to send), then analysed: three honest states.
-  if (item.status === "ready" && item.analysis === "pending") return { text: "Prête · analyse en cours…" };
+  if (item.status === "ready" && item.analysis === "pending") return { text: item.kind === "image" ? "Analyse de l’image…" : "Prête · analyse en cours…" };
   if (item.status === "ready" && item.analysis === "done") return { text: `Analysée · ${formatBytes(item.size)}` };
   return { text: `${item.label} · ${formatBytes(item.size)}` };
 }
@@ -303,28 +341,32 @@ export function AttachmentTray({
           {files.map((item, index) => {
             const line = fileStatusLine(item);
             const busy = item.status === "uploading" || item.status === "processing";
+            // The person's own file name, cut in the middle; a machine-made name becomes « Image.jpeg », never a hash.
+            const shown = displayFileName({ name: item.name, mimeType: item.file.type, size: item.size, kind: item.kind, createdAt: item.file.lastModified });
+            const fullName = shown.original || shown.text;
             return (
               <li
                 key={item.key}
                 className={cn("coden-attach-chip", item.status === "failed" && "is-failed")}
                 style={{ animationDelay: `${index * 35}ms` }}
-                title={item.summary ? `${item.name} — ${item.summary}` : item.name}
+                title={item.summary ? `${fullName} — ${item.summary}` : fullName}
+                aria-label={attachmentAriaLabel({ name: item.name, mimeType: item.file.type, size: item.size, kind: item.kind, createdAt: item.file.lastModified })}
               >
                 <button
                   type="button"
                   className="coden-attach-thumb"
                   onMouseDown={event => event.preventDefault()}
                   onClick={event => { if (item.kind === "image" && item.previewUrl) onOpenImage(item, event.currentTarget.getBoundingClientRect()); }}
-                  aria-label={item.kind === "image" ? `Agrandir ${item.name}` : item.name}
+                  aria-label={item.kind === "image" ? `Agrandir ${shown.text}` : shown.text}
                   tabIndex={item.kind === "image" ? 0 : -1}
                 >
-                  {item.kind === "image" && item.previewUrl ? <img src={item.previewUrl} alt="" draggable={false} /> : null}
+                  {item.kind === "image" && item.previewUrl ? <img src={item.previewUrl} alt="" draggable={false} decoding="async" /> : null}
                   {item.kind === "video" && item.previewUrl ? <video src={item.previewUrl} muted preload="metadata" playsInline /> : null}
-                  {item.kind !== "image" && item.kind !== "video" ? <span className="coden-attach-badge">{badgeFor(item)}</span> : null}
+                  {item.kind !== "image" && item.kind !== "video" ? <FileTypeIcon kind={item.kind} size={18} /> : null}
                   {item.kind === "video" ? <span className="coden-attach-play" aria-hidden="true" /> : null}
                 </button>
                 <span className="coden-attach-meta">
-                  <span className="coden-attach-name">{item.name}</span>
+                  <span className="coden-attach-name">{item.kind === "image" ? "Image" : truncateMiddle(shown.text, 26)}</span>
                   <span className={cn("coden-attach-sub", line.tone === "error" && "is-error")} aria-live="polite">
                     {busy ? <Spinner /> : null}
                     {line.text}
@@ -338,7 +380,7 @@ export function AttachmentTray({
                   className="coden-attach-remove"
                   onMouseDown={event => event.preventDefault()}
                   onClick={() => onRemoveFile(item.key)}
-                  aria-label={`Retirer ${item.name}`}
+                  aria-label={`Retirer ${shown.text}`}
                 >
                   <CloseGlyph />
                 </button>

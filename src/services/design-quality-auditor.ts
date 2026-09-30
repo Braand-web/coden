@@ -87,6 +87,24 @@ const appRequiredComponentKeywords: Partial<Record<GeneratedAppType, string[]>> 
   gaming_creative: ['canvas', 'play', 'score', 'control', 'reset', 'stage', 'creative'],
 };
 
+/** A few literals are normal (an SVG, a brand mark); a pattern of them is not. */
+export const HARD_CODED_COLOR_LIMIT = 8;
+
+/** Colour literals written outside the files that define the tokens. */
+export function hardCodedColors(files: AgentGeneratedFile[]): { count: number; files: string[] } {
+  const definesTokens = /(?:^|\/)(?:index|globals?|tokens?|theme|variables)\.(?:css|scss)$|(?:^|\/)(?:tailwind|uno|panda)\.config\.[a-z]+$|\.svg$|\.json$/i;
+  const literal = /(?<![\w&/])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b|\b(?:rgba?|hsla?)\(/g;
+  let count = 0;
+  const where: string[] = [];
+  for (const file of files) {
+    const path = normalizePath(file.path);
+    if (!/\.(?:tsx|jsx|ts|js|css|scss)$/i.test(path) || definesTokens.test(path)) continue;
+    const found = (String(file.content || '').match(literal) || []).length;
+    if (found) { count += found; where.push(`${path}: ${found}`); }
+  }
+  return { count, files: where };
+}
+
 export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVerificationCheck[] {
   const bundle = buildBundle(input);
   const checks: AgentVerificationCheck[] = [];
@@ -99,6 +117,16 @@ export function auditGeneratedDesign(input: GeneratedQualityAuditInput): AgentVe
     'medium',
     'Design system tokens are present.',
     'Generated CSS should define reusable design tokens instead of one-off styling.',
+  ));
+
+  // The tokens are the one source of colour: a component that writes its own hex or rgb is off the system.
+  const literals = hardCodedColors(input.files || []);
+  checks.push(result(
+    'design_no_hardcoded_colors',
+    literals.count <= HARD_CODED_COLOR_LIMIT,
+    'medium',
+    'Colours come from the design tokens.',
+    `${literals.count} colours are written in components instead of coming from the tokens (${literals.files.slice(0, 3).join(', ')}). Use the semantic tokens.`,
   ));
 
   checks.push(result(

@@ -21,7 +21,7 @@ function recentTranscript(history: Array<{ role: string; content: string }>, bud
 }
 
 /** « oui », « ok », « vas-y », « continue »: an answer to what Coden just proposed, not a request of its own. */
-const SHORT_CONFIRMATION = /^\s*(?:oui|ouais|ok|okay|yes|yep|yeah|d['’]accord|vas-y|go|continue|c['’]est bon|parfait|fais-le|fais le|lance|lance-toi|corrige(?: tout)?|do it|sure|please do)[\s!.,]*$/i;
+const SHORT_CONFIRMATION = /^\s*(?:oui|ouais|ok|okay|yes|yep|yeah|d['’]accord|vas-y|go|continue|c['’]est bon|fais-le|fais le|lance|lance-toi|corrige(?: tout)?|do it|sure|please do)[\s!.,]*$/i;
 
 export function isShortConfirmation(prompt: string): boolean {
   return prompt.length <= 40 && SHORT_CONFIRMATION.test(prompt);

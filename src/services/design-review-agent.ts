@@ -18,6 +18,7 @@ import type { ProviderGateway } from './provider-gateway.ts';
 import type { AllowedModelId, UserPlan } from '../config/ai-models.ts';
 import { buildVisionMessageContent } from './openrouter-service.ts';
 import { parseStructuredObject } from './structured-output.ts';
+import { CODEN_DESIGN_PASS_SCORE, codenDesignEnabled, designReviewRubric } from './coden-design-skill.ts';
 import { selectModel } from './model-selection.ts';
 import { buildAIModelRuntimeConfig } from './ai-model-runtime.ts';
 import { buildProviderRequestConfig } from './provider-adapters.ts';
@@ -33,6 +34,11 @@ export type DesignReview = { score: number; issues: DesignReviewIssue[] };
  * a result that is clearly weak, not for one that is merely not perfect.
  */
 export const DESIGN_REVIEW_PASS_SCORE = 6;
+
+/** The coden-design skill's bar is 85/100 (8.5 here); without the skill, the earlier bar. */
+export function designReviewPassScore(): number {
+  return codenDesignEnabled() ? CODEN_DESIGN_PASS_SCORE : DESIGN_REVIEW_PASS_SCORE;
+}
 
 function isDesignReview(value: unknown): value is DesignReview & Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
@@ -94,7 +100,7 @@ export async function runDesignReview(input: {
   ].join('\n');
   try {
     const result = await input.gateway.chat(modelId, [
-      { role: 'system', content: RUBRIC },
+      { role: 'system', content: codenDesignEnabled() ? designReviewRubric() : RUBRIC },
       { role: 'user', content: buildVisionMessageContent(request, input.screenshots.slice(0, 3).map(shot => ({ url: shot.dataUrl, detail: 'high' as const }))) as any },
     ], {
       maxAttempts: 1,
@@ -117,7 +123,7 @@ export async function runDesignReview(input: {
     } catch {
       return { review: null, costUsd, modelId };
     }
-    if (review.score >= DESIGN_REVIEW_PASS_SCORE || !review.issues.length) return { review, costUsd, modelId };
+    if (review.score >= designReviewPassScore() || !review.issues.length) return { review, costUsd, modelId };
     return { review, costUsd, modelId, instruction: renderPolishInstruction(review, input.findings, input.french) };
   } catch {
     return { review: null, costUsd: 0, modelId };

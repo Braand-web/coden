@@ -66,6 +66,8 @@
 
   --accent: #3A83F7;
   --accent-soft: #9DBBFF;
+  /* The halo behind a shimmer while something is being thought, generated, analysed. Softer on light. */
+  --glow-blue: color-mix(in srgb, var(--accent) 32%, transparent);
 
   --success: #00A240;
   --success-background: #E7F4E7;
@@ -102,6 +104,7 @@
   --text-muted: #9F9F9F;
 
   --accent: #3A83F7;
+  --glow-blue: color-mix(in srgb, var(--accent) 50%, transparent);
   --accent-track: #2C5CA7;
 
   --success: #00A240;

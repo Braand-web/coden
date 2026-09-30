@@ -16,7 +16,7 @@
  * `CODEN_STRICT_QUALITY_GATES=1` restores the earlier behaviour.
  */
 import { detectAppKind } from './app-playbook.ts';
-import { classifyGeneratedAppType, type GeneratedAppType } from './design-generation-policy.ts';
+import { classifyGeneratedAppType, classifyGeneratedAppTypeScored, type GeneratedAppType } from './design-generation-policy.ts';
 
 export const ADVISORY_QUALITY_CHECK = /^(?:design_(?:platform_fit|no_ai_gradient|no_generic_copy|no_emoji_icons|score)|functionality_score|visual_interaction_probe_score)$/;
 
@@ -24,10 +24,23 @@ export function strictQualityGates(env: Record<string, string | undefined> = pro
   return env.CODEN_STRICT_QUALITY_GATES === '1';
 }
 
-/** The product kind the product-specific checks are held to: the guess only when the request clearly says it. */
+/** Kinds whose own checks are light and whose name in a request is unmistakable (« landing page », « kanban », « jeu »). */
+const SELF_EVIDENT_KINDS: ReadonlySet<GeneratedAppType> = new Set<GeneratedAppType>([
+  'landing_page', 'portfolio', 'admin_panel', 'gaming_creative', 'productivity_tool', 'creative_tool', 'data_tool', 'communication_tool', 'directory_listing', 'mobile_first_app',
+]);
+
+/**
+ * The product kind the product-specific checks are held to.
+ *
+ * Every kind is scored by its own words, and the best one counts when it is backed — by two of its words, by the
+ * request clearly naming the product, or by being a kind whose name is unmistakable. A single stray word of a heavy
+ * kind (a cart, a clinic, a pipeline) is not a product: the checks stay generic.
+ */
 export function gatePlatformType(prompt: string, strict = strictQualityGates()): GeneratedAppType {
-  if (strict || detectAppKind(prompt)) return classifyGeneratedAppType(prompt);
-  return 'generic_web_app';
+  if (strict) return classifyGeneratedAppType(prompt);
+  const { type, hits } = classifyGeneratedAppTypeScored(prompt);
+  if (type === 'generic_web_app') return type;
+  return hits >= 2 || SELF_EVIDENT_KINDS.has(type) || detectAppKind(prompt) ? type : 'generic_web_app';
 }
 
 export function blocksTheRun(check: { key: string; status: string; severity: string }, strict = strictQualityGates()): boolean {

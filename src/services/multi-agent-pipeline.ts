@@ -77,6 +77,7 @@ import {
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
 import { blocksTheRun, gatePlatformType, isSmallRequest } from './quality-gate-policy.ts';
+import { designReviewRounds, designSkillBlock } from './coden-design-skill.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
 import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
 import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
@@ -956,6 +957,8 @@ export async function runMultiAgentPipeline(input: {
   // implements it are designed to the same brief. A planner that has not seen
   // the design system names three files; the coder then designs from nothing.
   const designPolicy = designContextForRoute(input.route, input.prompt, input.existingFiles.length > 0, input.projectId);
+  // The coden-design skill, in the size that fits the request: the planner, the coder and the team design to the same rules.
+  const designSkill = designSkillBlock({ route: input.route, prompt: input.prompt });
   /*
    * The design the project already has, read from its files — not described.
    *
@@ -1192,7 +1195,7 @@ export async function runMultiAgentPipeline(input: {
       // The planner needs it before the coder does: a plan written as if there
       // were no database names a localStorage module, and the coder then
       // builds what the plan asked for.
-      designPolicy: [designContractBlock, designPolicy, backendBriefing].filter(Boolean).join('\n\n') || undefined,
+      designPolicy: [designContractBlock, designPolicy, designSkill, backendBriefing].filter(Boolean).join('\n\n') || undefined,
       plan: input.userPlan,
       credits: input.credits,
       selectedModel: input.selectedModel,
@@ -1453,7 +1456,7 @@ export async function runMultiAgentPipeline(input: {
       // Both in the system message, so a repair round cannot lose either one
       // and quietly swap a real query back out for mock data.
       // The library block (error rules, skills, reusable sub-agents) and the team briefing follow.
-      designPolicy: [...[designContractBlock, designPolicy, backendBriefing, appPlaybook].filter(Boolean), input.library?.block, input.library ? teamBriefing(teamLimits) : ''].filter(Boolean).join('\n\n') || undefined,
+      designPolicy: [...[designContractBlock, designPolicy, designSkill, backendBriefing, appPlaybook].filter(Boolean), input.library?.block, input.library ? teamBriefing(teamLimits) : ''].filter(Boolean).join('\n\n') || undefined,
       team: input.library ? {
         store: input.library.store,
         session: input.library.session,
@@ -1469,7 +1472,7 @@ export async function runMultiAgentPipeline(input: {
         // Sub-agents that build screens can look at the preview, never operate it.
         preview: subagentPreview,
         guard: input.actionGuard,
-        designPolicy: [designContractBlock, designPolicy].filter(Boolean).join('\n\n') || undefined,
+        designPolicy: [designContractBlock, designPolicy, designSkill].filter(Boolean).join('\n\n') || undefined,
         onSubagents: agents => input.onChatEvent?.({ type: 'subagents', agents }),
         onSpend: subSpend => {
           spent.toolCalls += subSpend.toolCalls;
@@ -1638,6 +1641,7 @@ export async function runMultiAgentPipeline(input: {
     },
     afterRound,
     review,
+    maxReviews: designReviewRounds(),
     beforeRound:async () => {
       if (!ctx) return;
       const instructions = await ctx.harness.consumePendingInstructions(ctx.turnId);

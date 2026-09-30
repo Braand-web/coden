@@ -59,6 +59,6 @@ describe('the brief', () => {
     expect(appPlaybookEnabled({ CODEN_APP_PLAYBOOK: '1' })).toBe(true);
     const pipeline = readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
     expect(pipeline).toMatch(/input\.route === 'new_project' \|\| input\.route === 'large_change'\) \? buildAppPlaybook\(input\.prompt\)/);
-    expect(pipeline).toMatch(/designPolicy: \[\.\.\.\[designContractBlock, designPolicy, backendBriefing, appPlaybook\]/);
+    expect(pipeline).toMatch(/designPolicy: \[\.\.\.\[designContractBlock, designPolicy, designSkill, backendBriefing, appPlaybook\]/);
   });
 });

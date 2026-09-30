@@ -32,6 +32,7 @@ import {
 import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, type AllowedModelId } from './config/ai-models';
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
+import type { MessageAttachment } from './components/agent/message-attachments';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
 import { connectToolkit, openIntegrationsModal } from './integrations';
 import type { ConnectionChoiceEventDetail } from './components/agent/agent-message';
@@ -135,7 +136,7 @@ type ProjectPayload = {
     content: string;
     parts?: unknown[];
     intent?: string;
-    metadata?: { coden_stream?: { events?: unknown[]; status?: 'done' | 'failed' | 'cancelled'; final_text?: string; error?: string; run_id?: string } };
+    metadata?: { coden_stream?: { events?: unknown[]; status?: 'done' | 'failed' | 'cancelled'; final_text?: string; error?: string; run_id?: string }; attachments?: Array<{ id?: string; name?: string; mimeType?: string; size?: number; kind?: string; sourceUrl?: string | null }> };
   }>;
   events?: Array<{ event_type: string; message: string; sequence_number: number; payload?: any; public_payload?: any; status?: string; agent_run_id?: string; created_at?: string }>;
   workspace_state?: WorkspaceState | null;
@@ -2276,11 +2277,11 @@ function repairTextEncoding(value: unknown): string {
   return text;
 }
 
-function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean; id?: string } = {}) {
+function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean; id?: string; attachments?: MessageAttachment[] } = {}) {
   const safeBody = repairTextEncoding(redactSecrets(body));
   const api = ensureConversationApi();
   if (api) {
-    const id = api.addMessage({ id: options.id, role: kind, content: safeBody, working: Boolean(options.working) });
+    const id = api.addMessage({ id: options.id, role: kind, content: safeBody, working: Boolean(options.working), attachments: options.attachments });
     return createMessageHandle(id);
   }
 
@@ -6158,7 +6159,10 @@ function restoreMessages(payload: ProjectPayload) {
           ? safeAssistantDisplayText(rawContent, speaksFrench)
           : rawContent;
       const storedStream = role === 'assistant' ? message.metadata?.coden_stream : undefined;
-      const card = appendMessage(role, content, { id: message.ai_message_id || message.id });
+      const storedAttachments: MessageAttachment[] = role === 'user' && Array.isArray(message.metadata?.attachments)
+        ? message.metadata!.attachments!.filter(item => item && item.name).slice(0, 40).map(item => ({ id: item.id, name: String(item.name), mimeType: item.mimeType, size: item.size, kind: item.kind, fullUrl: item.sourceUrl || undefined }))
+        : [];
+      const card = appendMessage(role, content, { id: message.ai_message_id || message.id, attachments: storedAttachments });
       const restoredId = messageHandleId(card);
       if (storedStream?.events?.length && restoredId && conversationApi?.restoreChat) {
         conversationApi.restoreChat(
@@ -6607,7 +6611,7 @@ function applyInitialBuilderLayout() {
   body.dataset.layout = 'workspace';
 }
 
-async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLastPlan = false, extra: Record<string, unknown> = {}, displayText = prompt) {
+async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLastPlan = false, extra: Record<string, unknown> = {}, displayText = prompt, displayAttachments: MessageAttachment[] = []) {
   const safePrompt = repairTextEncoding(redactSecrets(prompt)).trim();
   const safeDisplayText = repairTextEncoding(redactSecrets(displayText));
   const { __codenRetry, __codenAttach, ...requestExtra } = extra;
@@ -6631,7 +6635,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   };
   clearInlineBlocks();
   // An attached run's request is already in the restored conversation.
-  if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText);
+  if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText, { attachments: displayAttachments });
 
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
@@ -8958,7 +8962,7 @@ function bindChat() {
    * field is empty. `syncSubmitButtonState` therefore has nothing left to
    * drive and simply re-renders.
    */
-  const send = (submitted?: string, attached?: { ids: string[]; skippedUrls: string[]; names: string[] }) => {
+  const send = (submitted?: string, attached?: { ids: string[]; skippedUrls: string[]; names: string[]; items?: MessageAttachment[] }) => {
     const value = repairTextEncoding(composerValue).trim() || repairTextEncoding(submitted || '').trim();
     if (!value) return;
     composerValue = '';
@@ -8968,13 +8972,11 @@ function bindChat() {
       void sendActiveHarnessInstruction(value);
       return;
     }
-    const names = attached?.names || [];
-    // The conversation shows what went with the message.
-    const displayText = names.length ? `${value}\n\n📎 ${names.join(' · ')}` : value;
+    // The conversation shows what went with the message — as attachments above the bubble, never as words in it.
     void generateFromPrompt(value, selectedChatMode, false, {
       studioContext: studioPromptContextPayload(),
       ...attachmentExtra(attached?.ids || [], attached?.skippedUrls || []),
-    }, displayText);
+    }, value, attached?.items || []);
   };
 
   /*
@@ -9020,6 +9022,7 @@ function bindChat() {
           ids: [...meta.attachmentIds, ...meta.linkIds],
           skippedUrls: meta.skippedUrls,
           names: meta.attachmentNames,
+          items: meta.items?.length ? meta.items.map(item => ({ ...item })) : undefined,
         });
       },
       uploader: attachmentUploader(),

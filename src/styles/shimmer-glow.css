@@ -1,0 +1,75 @@
+/*
+ * A soft blue glow behind every shimmer, while it runs.
+ *
+ * Coden has several shimmers — the agent's status text (`.coden-shimmer-text`), the AI-element text
+ * (`.coden-shimmer`), skeletons (`.coden-skeleton`) and the small loading pill (`.coden-ui-shimmer`). This
+ * extends them; it does not add another. The colour is the `--glow-blue` token, lighter in the light theme.
+ *
+ * The glow exists exactly as long as its shimmer: it is a pseudo-element of it, so it appears when the shimmer
+ * mounts (a 260 ms fade in) and goes with it (the agent's status line fades out over 200 ms).
+ *
+ * Cost: one layer per instance, blurred once and never re-blurred — only `scale`, `translate` and `opacity`
+ * move, all on the compositor. No animated box-shadow, no animated filter. `pointer-events: none`, and a
+ * pseudo-element is never read by a screen reader. It pauses off screen and in a hidden tab
+ * (`shimmer-glow.ts`), and under « reduce motion » it stays, still and very soft.
+ *
+ * Off switch: `html[data-shimmer-glow="off"]` (localStorage `coden-shimmer-glow` = `off`, or the build flag
+ * `VITE_CODEN_SHIMMER_GLOW=0`).
+ */
+:root { --shimmer-halo: var(--glow-blue); }
+:root:not([data-shimmer-glow="off"]) :is(.coden-shimmer-text, .coden-shimmer, .coden-skeleton, .coden-ui-shimmer) {
+  position: relative;
+  isolation: isolate;
+}
+/* A skeleton clips its own content; the halo has to overflow it a little. It has no content to clip. */
+:root:not([data-shimmer-glow="off"]) :is(.coden-skeleton, .coden-ui-shimmer) { overflow: visible; }
+
+:root:not([data-shimmer-glow="off"]) :is(.coden-shimmer-text, .coden-shimmer, .coden-skeleton, .coden-ui-shimmer)::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -10px -16px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: radial-gradient(ellipse 60% 70% at 50% 50%, var(--shimmer-halo) 0%, transparent 72%);
+  filter: blur(9px); /* static: the blur is painted once, only the layer moves */
+  opacity: 0;
+  will-change: transform, opacity; /* lives and dies with the shimmer it belongs to */
+  /*
+   * Later in the list wins on a shared property. The fade in takes opacity for its 260 ms, then hands it to
+   * the breathing at almost the same value (0.6 → 0.64), so there is no step.
+   */
+  animation:
+    coden-glow-breathe 2.6s ease-in-out infinite,
+    coden-glow-drift 2.1s ease-in-out -0.45s infinite alternate,
+    coden-glow-in 260ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes coden-glow-in { from { opacity: 0; } to { opacity: 0.6; } }
+/* ~2.6 s per cycle: well under three pulses a second. */
+@keyframes coden-glow-breathe {
+  0%, 100% { opacity: 0.6; scale: 0.97; }
+  50% { opacity: 1; scale: 1.05; }
+}
+/* A slight travel, out of phase with the shimmer's own sweep (2.1 s, started 0.45 s earlier). */
+@keyframes coden-glow-drift {
+  from { translate: -7% 0; }
+  to { translate: 7% 0; }
+}
+
+/* Off screen, or in a hidden tab: nothing moves. */
+[data-glow-paused]::before { animation-play-state: paused !important; }
+html[data-tab-hidden] :is(.coden-shimmer-text, .coden-shimmer, .coden-skeleton, .coden-ui-shimmer)::before { animation-play-state: paused !important; }
+
+/* Dark theme: the token is stronger; the halo itself needs nothing else. Text under it stays readable. */
+[data-theme="dark"] :is(.coden-shimmer-text, .coden-shimmer)::before { inset: -8px -14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-shimmer-glow="off"]) :is(.coden-shimmer-text, .coden-shimmer, .coden-skeleton, .coden-ui-shimmer)::before {
+    animation: none;
+    opacity: 0.35;
+    scale: 1;
+    translate: 0 0;
+    will-change: auto;
+  }
+}

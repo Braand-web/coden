@@ -17,8 +17,12 @@
  * supported now live in CSS, so there is no longer a path where the text is
  * hidden and nothing replaces it.
  */
+import { useEffect } from 'react';
 import './shimmering-text.css';
+import '../../styles/shimmer-glow.css';
+import { installShimmerGlow } from '../../lib/shimmer-glow';
 
 export function ShimmeringText({ text, className = '' }: { text: string; className?: string }) {
+  useEffect(() => { installShimmerGlow(); }, []);
   return <span className={`coden-shimmer-text ${className}`.trim()}>{text}</span>;
 }
