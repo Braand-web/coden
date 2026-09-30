@@ -1,4 +1,5 @@
 import './styles/landing-new.css';
+import './styles/landing-alive.css';
 import { mountPromptInput } from './mount-prompt-input';
 import { mountPublicShell } from './public-shell';
 import { hasStoredSession } from './lib/stored-session';
@@ -63,6 +64,16 @@ function setupComposers() {
   });
   draft.subscribe(render);
   render();
+  // An idea under the composer fills it, in the person's own field, and puts the cursor there.
+  document.querySelectorAll<HTMLButtonElement>('[data-lp-example]').forEach(button => button.addEventListener('click', () => {
+    if (draft.busy) return;
+    draft.setValue(button.dataset.lpExample || '');
+    requestAnimationFrame(() => {
+      const field = pairs[0].host?.querySelector<HTMLTextAreaElement>('textarea');
+      field?.focus({ preventScroll: true });
+      field?.setSelectionRange(field.value.length, field.value.length);
+    });
+  }));
   if (hasStoredSession()) {
     void import('./lib/attachment-client').then(({ createAttachmentUploader }) => {
       uploader = createAttachmentUploader();
@@ -167,6 +178,33 @@ function setupReveal() {
   document.documentElement.dataset.lpReveal = 'on';
 }
 
+/** The light that follows the pointer over cards and plans: only where there is a pointer, never under reduced motion. */
+function setupSpotlight() {
+  if (!window.matchMedia('(hover: hover)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let frame = 0;
+  document.addEventListener('pointermove', event => {
+    const card = (event.target as Element | null)?.closest?.<HTMLElement>('.lp-card, .lp-plan');
+    if (!card || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const box = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${event.clientX - box.left}px`);
+      card.style.setProperty('--my', `${event.clientY - box.top}px`);
+    });
+  }, { passive: true });
+}
+
+/** The demo plays only while it is on screen, and only for people who did not ask for less motion. */
+function setupDemo() {
+  const workspace = document.querySelector<HTMLElement>('.lp-workspace');
+  if (!workspace || !('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.documentElement.dataset.lpDemo = 'on';
+  new IntersectionObserver(entries => {
+    workspace.dataset.live = String(entries.some(entry => entry.isIntersecting) && !document.hidden);
+  }, { threshold: 0.25 }).observe(workspace);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) workspace.dataset.live = 'false'; });
+}
+
 function init() {
   mountPublicShell();
   initCodenNavigationTransitions();
@@ -174,6 +212,8 @@ function init() {
   setupPricing();
   setupMarquee();
   setupReveal();
+  setupSpotlight();
+  setupDemo();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
 else init();

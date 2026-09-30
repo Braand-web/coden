@@ -73,13 +73,56 @@ function buildSignal(input: VisualPreviewInspectionInput): VisualSignal {
   };
 }
 
+/*
+ * The attributes of a tag end at the first `>` that is not inside `{…}` or a quoted string.
+ *
+ * `[^>]*` ended them at the first `>` of all, and in React source that is the arrow of the handler:
+ * `<button onClick={() => go('create')}>Créer</button>` was read as a button with no handler and a label
+ * that began with `} onClick=…`, and the run was failed for a dead control on the most ordinary button there is.
+ * 17 of the failed runs in production carried that error.
+ */
+function readTag(source: string, start: number): { attrs: string; end: number } | null {
+  let depth = 0;
+  let quote = '';
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) { if (char === quote && source[index - 1] !== '\\') quote = ''; continue; }
+    if (depth > 0) {
+      if (char === '"' || char === "'" || char === '`') quote = char;
+      else if (char === '{') depth += 1;
+      else if (char === '}') depth -= 1;
+      continue;
+    }
+    if (char === '{') { depth = 1; continue; }
+    if (char === '"' || char === "'") { quote = char; continue; }
+    if (char === '>') return { attrs: source.slice(start, index), end: index + 1 };
+    if (index - start > 4000) return null;
+  }
+  return null;
+}
+
+/** Every `<tag …>body</tag>` in the source, with its attributes read whole. */
+function scanElements(source: string, tag: string, withBody: boolean): Array<{ attrs: string; body: string }> {
+  const found: Array<{ attrs: string; body: string }> = [];
+  const opening = new RegExp(`<${tag}\\b`, 'gi');
+  const closing = `</${tag}>`;
+  let match: RegExpExecArray | null;
+  while ((match = opening.exec(source))) {
+    const read = readTag(source, match.index + match[0].length);
+    if (!read) continue;
+    if (!withBody) { found.push({ attrs: read.attrs, body: '' }); opening.lastIndex = read.end; continue; }
+    if (read.attrs.endsWith('/')) { found.push({ attrs: read.attrs, body: '' }); opening.lastIndex = read.end; continue; }
+    const close = source.toLowerCase().indexOf(closing, read.end);
+    if (close < 0) continue;
+    found.push({ attrs: read.attrs, body: source.slice(read.end, close) });
+    opening.lastIndex = close + closing.length;
+  }
+  return found;
+}
+
 function extractButtons(source: string): VisualControl[] {
   const controls: VisualControl[] = [];
-  const regex = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source))) {
-    const attrs = match[1] || '';
-    const body = match[2] || '';
+  for (const { attrs, body } of scanElements(source, 'button', true)) {
     const label = normalizeLabel(stripTags(body) || attrValue(attrs, 'aria-label') || attrValue(attrs, 'title') || 'button');
     const isSubmit = /\btype=["']submit["']/i.test(attrs);
     controls.push({
@@ -97,11 +140,7 @@ function extractButtons(source: string): VisualControl[] {
 
 function extractLinks(source: string): VisualControl[] {
   const controls: VisualControl[] = [];
-  const regex = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source))) {
-    const attrs = match[1] || '';
-    const body = match[2] || '';
+  for (const { attrs, body } of scanElements(source, 'a', true)) {
     const href = attrValue(attrs, 'href');
     const label = normalizeLabel(stripTags(body) || attrValue(attrs, 'aria-label') || href || 'link');
     controls.push({
@@ -132,11 +171,7 @@ function hasExpressionHref(attrs: string): boolean {
 
 function extractInputs(source: string): VisualControl[] {
   const controls: VisualControl[] = [];
-  const regex = /<(input|select|textarea)\b([^>]*)/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source))) {
-    const tag = (match[1] || 'input').toLowerCase() as VisualControl['tag'];
-    const attrs = match[2] || '';
+  for (const tag of ['input', 'select', 'textarea'] as const) for (const { attrs } of scanElements(source, tag, false)) {
     const label = normalizeLabel(attrValue(attrs, 'aria-label') || attrValue(attrs, 'placeholder') || attrValue(attrs, 'name') || tag);
     controls.push({
       tag,
@@ -153,11 +188,7 @@ function extractInputs(source: string): VisualControl[] {
 
 function extractForms(source: string): VisualControl[] {
   const controls: VisualControl[] = [];
-  const regex = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(source))) {
-    const attrs = match[1] || '';
-    const body = match[2] || '';
+  for (const { attrs, body } of scanElements(source, 'form', true)) {
     controls.push({
       tag: 'form',
       label: normalizeLabel(attrValue(attrs, 'aria-label') || stripTags(body).slice(0, 42) || 'form'),

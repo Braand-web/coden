@@ -1,0 +1,57 @@
+/*
+ * The public pages, alive: features, pricing, documentation, security, privacy, terms.
+ *
+ * The same language as the landing page, on the same tokens: an aurora behind the first screen,
+ * a light that follows the pointer over the cards, a call to action that glows, and a thin
+ * progress line on the long pages. Colours come from the tokens only — the second hue is built
+ * from the accent and the success green, because the dark theme's « cyan » token is an indigo,
+ * and there is no violet in Coden.
+ *
+ * Reduced motion, or no JavaScript, gives the same pages, still.
+ */
+:root { --pa-hue-b: color-mix(in srgb, var(--accent) 52%, var(--success)); }
+body[data-coden-surface='public'], body.coden-pricing-page { overflow-x: clip; }
+
+/* ── Aurora behind the first screen ─────────────────────────────────────── */
+.public-page-hero, .pricing-page-hero { position: relative; isolation: isolate; }
+.public-page-hero::before, .pricing-page-hero::before, .public-page-hero::after, .pricing-page-hero::after { content: ''; position: absolute; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(64px); will-change: transform; }
+.public-page-hero::before, .pricing-page-hero::before { left: 50%; top: -60px; width: min(620px, 90vw); height: 300px; margin-left: -390px; background: color-mix(in srgb, var(--accent) 20%, transparent); animation: pa-drift-a 20s ease-in-out infinite alternate; }
+.public-page-hero::after, .pricing-page-hero::after { left: 50%; top: -10px; width: min(560px, 80vw); height: 260px; margin-left: -60px; background: color-mix(in srgb, var(--pa-hue-b) 18%, transparent); animation: pa-drift-b 24s ease-in-out infinite alternate; }
+@keyframes pa-drift-a { to { transform: translate3d(70px, 40px, 0) scale(1.12); } }
+@keyframes pa-drift-b { to { transform: translate3d(-80px, 46px, 0) scale(1.18); } }
+
+.public-page-kicker { display: inline-flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--surface) 75%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.public-page-kicker::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); animation: pa-pulse 2.6s ease-out infinite; }
+@keyframes pa-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); } 70%, 100% { box-shadow: 0 0 0 8px transparent; } }
+.public-page-hero h1 { background: linear-gradient(180deg, var(--text-strong) 30%, color-mix(in srgb, var(--text-strong) 60%, var(--accent))); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: var(--text-strong); }
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) { .public-page-hero h1 { background: none; -webkit-text-fill-color: currentColor; } }
+
+/* ── Cards: a light that follows the pointer ────────────────────────────── */
+.public-page-content article, .pricing-plan-card { position: relative; overflow: hidden; }
+.public-page-content article::after, .pricing-plan-card::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--accent) 11%, transparent), transparent 65%); transition: opacity 260ms var(--ease-standard, ease-out); }
+.public-page-content article > span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); transition: transform 300ms var(--ease-standard, ease-out); }
+@media (hover: hover) {
+  .public-page-content article:hover::after, .pricing-plan-card:hover::after { opacity: 1; }
+  .public-page-content article:hover > span { transform: rotate(-6deg) scale(1.1); }
+}
+.public-legal-content section { transition: border-color 240ms var(--ease-standard, ease-out); }
+@media (hover: hover) { .public-legal-content section:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); } }
+
+/* ── The closing call to action ─────────────────────────────────────────── */
+.public-page-cta { position: relative; isolation: isolate; overflow: hidden; }
+.public-page-cta::before, .public-page-cta::after { content: ''; position: absolute; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(60px); }
+.public-page-cta::before { left: -8%; top: -40%; width: 46%; height: 140%; background: color-mix(in srgb, var(--accent) 34%, transparent); animation: pa-drift-a 18s ease-in-out infinite alternate; }
+.public-page-cta::after { right: -8%; bottom: -50%; width: 46%; height: 150%; background: color-mix(in srgb, var(--pa-hue-b) 30%, transparent); animation: pa-drift-b 22s ease-in-out infinite alternate; }
+body .public-page-cta > a[href] { position: relative; overflow: hidden; transition: transform 200ms var(--ease-standard, ease-out), box-shadow 200ms var(--ease-standard, ease-out); box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--accent) 80%, transparent); }
+body .public-page-cta > a[href]::after { content: ''; position: absolute; inset: 0; transform: translateX(-120%); background: linear-gradient(105deg, transparent 30%, color-mix(in srgb, var(--text-on-accent, var(--background)) 32%, transparent) 50%, transparent 70%); animation: pa-sheen 5s ease-in-out 1.5s infinite; }
+@keyframes pa-sheen { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+@media (hover: hover) { body .public-page-cta > a[href]:hover { transform: translateY(-2px); } }
+
+/* ── Reading progress on the long pages ─────────────────────────────────── */
+.public-progress { position: fixed; z-index: 60; top: 0; left: 0; right: 0; height: 2px; transform: scaleX(0); transform-origin: left; pointer-events: none; background: linear-gradient(90deg, var(--accent), var(--pa-hue-b)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .public-page-hero::before, .pricing-page-hero::before, .public-page-hero::after, .pricing-page-hero::after, .public-page-cta::before, .public-page-cta::after, .public-page-kicker::before, body .public-page-cta > a[href]::after { animation: none; }
+  .public-page-content article::after, .pricing-plan-card::after, .public-page-content article > span, .public-legal-content section { transition: none; }
+  .public-progress { display: none; }
+}
