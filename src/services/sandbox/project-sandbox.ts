@@ -301,6 +301,32 @@ export class ProjectSandbox {
     return written;
   }
 
+  /**
+   * Make the project on disk exactly `files`: write them, and remove the
+   * project files that are not in the set.
+   *
+   * `writeFiles` only ever adds and overwrites. A sandbox that outlives a run —
+   * which is the point of keeping it warm — therefore kept every file a failed
+   * or rolled-back attempt had created, and the next iteration started from a
+   * project that was the saved one *plus* leftovers: stale components still
+   * imported, a stylesheet from a version that no longer exists. What the
+   * database holds is the project; this makes the sandbox agree. What a tool
+   * owns — lockfiles and `.env*` — is left alone.
+   */
+  async replaceProjectFiles(files: readonly SandboxFile[]): Promise<{ written: string[]; removed: string[] }> {
+    // An empty set is a missing answer, not an instruction to delete the project.
+    if (!files?.length) return { written: [], removed: [] };
+    const wanted = new Set((files || []).filter(file => file && typeof file.path === 'string').map(file => file.path.replace(/\\/g, '/').replace(/^\.\//, '')));
+    const written = await this.writeFiles(files);
+    const removed: string[] = [];
+    for (const existing of await this.listFiles()) {
+      if (wanted.has(existing) || /^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.env(?:\..*)?)$/.test(existing)) continue;
+      await this.deleteProjectFile(existing);
+      removed.push(existing);
+    }
+    return { written, removed };
+  }
+
   async readProjectFile(relativePath: string): Promise<string> {
     this.lastUsedAt = Date.now();
     return readFile(resolveInSandbox(this.projectId, relativePath), 'utf8');

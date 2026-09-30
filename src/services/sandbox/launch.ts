@@ -77,6 +77,12 @@ export async function launchProjectPreview(input: {
   env?: Record<string, string>;
   /** Force a fresh install and a fresh process, whatever is already there. */
   reinstall?: boolean;
+  /**
+   * `files` is the whole project, not a change to it: the sandbox is made to
+   * match exactly, dropping what an earlier attempt left behind. Set when
+   * reopening a saved project, unset when writing a scaffold or an edit.
+   */
+  exact?: boolean;
   onEvent?: (event: LaunchEvent) => void;
   signal?: AbortSignal;
 }): Promise<LaunchResult> {
@@ -103,7 +109,8 @@ export async function launchProjectPreview(input: {
   }
   const reinstall = input.reinstall || changedPaths.some(path => /^(package\.json|package-lock\.json)$/.test(path));
   if (input.reinstall || changedPaths.length) await sandbox.stop();
-  await sandbox.writeFiles(input.files);
+  if (input.exact) await sandbox.replaceProjectFiles(input.files);
+  else await sandbox.writeFiles(input.files);
 
   let installDurationMs: number | null = null;
   if (reinstall || !(await hasDependencies(sandbox))) {
