@@ -1,0 +1,137 @@
+/*
+ * The landing page, alive.
+ *
+ * Everything here is added to landing-new.css and takes its colours from the
+ * tokens only (accent, cyan, success): the page keeps its calm structure and
+ * gains an aurora behind the hero, a demo that plays the journey (describe,
+ * build, check, publish), clickable ideas that fill the composer, and a light
+ * that follows the pointer over the cards.
+ *
+ * Motion is a courtesy, never a requirement: with prefers-reduced-motion, or
+ * without JavaScript, the page is the same page, still.
+ */
+body[data-coden-surface="landing-new"] { overflow-x: clip; }
+/* No violet in Coden: the dark theme's « cyan » token is an indigo, so the second hue is built from the accent and the success green — a teal in both themes. */
+.lp { --lp-hue-b: color-mix(in srgb, var(--accent) 52%, var(--success)); }
+
+/* ── Aurora ─────────────────────────────────────────────────────────────── */
+.lp-hero, .lp-launch { position: relative; isolation: isolate; }
+.lp-aurora { position: absolute; z-index: -1; left: 50%; top: -80px; width: min(1400px, 100vw); height: 620px; transform: translateX(-50%); pointer-events: none; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, var(--foreground) 55%, transparent); mask-image: linear-gradient(to bottom, var(--foreground) 55%, transparent); }
+.lp-aurora i { position: absolute; display: block; border-radius: 50%; filter: blur(70px); will-change: transform; }
+.lp-aurora i:nth-child(1) { left: 6%; top: 8%; width: 46%; height: 62%; background: color-mix(in srgb, var(--accent) 26%, transparent); animation: lp-drift-a 22s ease-in-out infinite alternate; }
+.lp-aurora i:nth-child(2) { right: 4%; top: 0; width: 40%; height: 56%; background: color-mix(in srgb, var(--lp-hue-b) 22%, transparent); animation: lp-drift-b 26s ease-in-out infinite alternate; }
+.lp-aurora i:nth-child(3) { left: 34%; top: 38%; width: 34%; height: 46%; background: color-mix(in srgb, var(--success) 12%, transparent); animation: lp-drift-c 30s ease-in-out infinite alternate; }
+.lp-aurora.is-soft { top: -40px; height: 460px; opacity: .8; }
+.lp-hero::before { content: ''; position: absolute; z-index: -1; left: 50%; top: 0; width: min(1100px, 100vw); height: 520px; transform: translateX(-50%); pointer-events: none; background-image: radial-gradient(color-mix(in srgb, var(--text-muted) 34%, transparent) 1px, transparent 1.4px); background-size: 24px 24px; -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, var(--foreground), transparent 75%); mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, var(--foreground), transparent 75%); opacity: .55; }
+[data-theme="dark"] .lp-aurora i:nth-child(1) { background: color-mix(in srgb, var(--accent) 34%, transparent); }
+[data-theme="dark"] .lp-aurora i:nth-child(2) { background: color-mix(in srgb, var(--lp-hue-b) 26%, transparent); }
+@keyframes lp-drift-a { to { transform: translate3d(9%, 10%, 0) scale(1.14); } }
+@keyframes lp-drift-b { to { transform: translate3d(-10%, 12%, 0) scale(1.1); } }
+@keyframes lp-drift-c { to { transform: translate3d(-8%, -8%, 0) scale(1.22); } }
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+.lp-eyebrow { display: inline-flex; max-width: 100%; text-align: left; align-items: center; gap: 10px; margin: 0 0 28px !important; padding: 7px 14px; border: 1px solid var(--border); border-radius: var(--radius-full, 9999px); background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: var(--text-secondary); font-size: 13px; line-height: 1.4; }
+.lp-eyebrow-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+.lp-eyebrow-dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: var(--success); animation: lp-ping 2.4s var(--lp-ease, ease-out) infinite; }
+@keyframes lp-ping { 0% { transform: scale(1); opacity: .55; } 70%, 100% { transform: scale(3); opacity: 0; } }
+.lp-shine { background: linear-gradient(100deg, var(--accent) 0%, var(--lp-hue-b) 45%, var(--accent) 90%); background-size: 220% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: var(--accent); animation: lp-shine 9s linear infinite; }
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) { .lp-shine { color: var(--accent); background: none; } }
+@keyframes lp-shine { to { background-position: -220% center; } }
+.lp-eyebrow, .lp-hero-subtitle, .lp-hero .lp-composer, .lp-examples { animation: lp-rise 720ms var(--lp-ease, ease-out) both; }
+.lp-eyebrow { animation-delay: 40ms; }
+.lp-hero-subtitle { animation-delay: 200ms; }
+.lp-hero .lp-composer { animation-delay: 300ms; }
+.lp-examples { animation-delay: 460ms; }
+@keyframes lp-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.lp-composer-host .coden-prompt-card { box-shadow: 0 10px 40px -14px color-mix(in srgb, var(--accent) 34%, transparent), 0 2px 10px color-mix(in srgb, var(--foreground) 6%, transparent); }
+
+/* ── Ideas that fill the composer ───────────────────────────────────────── */
+.lp-examples { list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 860px; margin: 20px auto 0; padding: 0; }
+.lp-examples button { appearance: none; font: inherit; font-size: 13px; line-height: 1.2; min-height: 36px; padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-full, 9999px); background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--text-secondary); cursor: pointer; transition: transform 200ms var(--lp-ease, ease-out), border-color 200ms var(--lp-ease, ease-out), color 200ms var(--lp-ease, ease-out), background 200ms var(--lp-ease, ease-out); }
+.lp-examples button:active { transform: scale(.97); }
+@media (hover: hover) { .lp-examples button:hover { transform: translateY(-2px); color: var(--text-strong); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); } }
+
+/* ── Steps ──────────────────────────────────────────────────────────────── */
+.lp-step { display: flex; align-items: center; justify-content: space-between; }
+.lp-step-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)); transition: transform 320ms var(--lp-ease, ease-out); }
+.lp-card, .lp-plan, .lp-workspace { position: relative; }
+.lp-card::after, .lp-plan::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--accent) 11%, transparent), transparent 65%); transition: opacity 260ms var(--lp-ease, ease-out); }
+@media (hover: hover) {
+  .lp-card:hover::after, .lp-plan:hover::after { opacity: 1; }
+  .lp-card:hover .lp-step-icon { transform: rotate(-6deg) scale(1.08); }
+}
+
+/* ── The journey, played ────────────────────────────────────────────────── */
+.lp-product { position: relative; }
+.lp-product::before { content: ''; position: absolute; z-index: -1; left: 50%; top: 22%; width: min(980px, 92vw); height: 420px; transform: translateX(-50%); border-radius: 50%; pointer-events: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 13%, transparent), transparent); }
+.lp-workspace { box-shadow: 0 40px 90px -50px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 12px color-mix(in srgb, var(--foreground) 5%, transparent); }
+.lp-workspace-preview { position: relative; overflow: hidden; }
+.lp-demo-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 13px; color: var(--text-secondary); }
+.lp-demo-steps li { display: flex; align-items: center; gap: 10px; }
+.lp-demo-steps li::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.lp-demo-steps li:last-child::before { background: var(--success); }
+.lp-demo-grid span { position: relative; display: grid; align-content: center; gap: 6px; padding: 0 10px; }
+.lp-demo-grid b, .lp-demo-grid i { display: block; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text-muted) 32%, transparent); }
+.lp-demo-grid b { width: 55%; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.lp-demo-grid i { width: 80%; }
+.lp-demo-publish, .lp-demo-live { position: absolute; right: 20px; bottom: 20px; display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; line-height: 1; }
+.lp-demo-publish { background: var(--accent); color: var(--text-on-accent, var(--background)); }
+.lp-demo-live { color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 40%, var(--border)); background: color-mix(in srgb, var(--success) 9%, var(--surface)); opacity: 0; }
+.lp-demo-live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.lp-demo-cursor { position: absolute; width: 16px; height: 20px; left: 62%; top: 34%; opacity: 0; background: var(--text-strong); -webkit-clip-path: polygon(0 0, 0 100%, 30% 76%, 52% 100%, 66% 92%, 44% 68%, 82% 66%); clip-path: polygon(0 0, 0 100%, 30% 76%, 52% 100%, 66% 92%, 44% 68%, 82% 66%); filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--foreground) 30%, transparent)); }
+/* Still page: the finished state (publish button hidden, nothing moving). */
+.lp-demo-publish { opacity: 0; }
+
+html[data-lp-demo="on"] .lp-workspace { --lp-play: paused; }
+html[data-lp-demo="on"] .lp-workspace[data-live="true"] { --lp-play: running; }
+html[data-lp-demo="on"] .lp-workspace :is(.lp-demo-prompt, .lp-workspace-chat > p, .lp-demo-steps li, .lp-workspace-preview h3, .lp-demo-grid span, .lp-demo-publish, .lp-demo-live, .lp-demo-cursor) { animation-duration: 14s; animation-iteration-count: infinite; animation-fill-mode: both; animation-play-state: var(--lp-play); animation-timing-function: var(--lp-ease, ease-out); }
+html[data-lp-demo="on"] .lp-demo-prompt { animation-name: lp-d-prompt; }
+html[data-lp-demo="on"] .lp-workspace-chat > p { animation-name: lp-d-text; }
+html[data-lp-demo="on"] .lp-demo-steps li:nth-child(1) { animation-name: lp-d-step1; }
+html[data-lp-demo="on"] .lp-demo-steps li:nth-child(2) { animation-name: lp-d-step2; }
+html[data-lp-demo="on"] .lp-demo-steps li:nth-child(3) { animation-name: lp-d-step3; }
+html[data-lp-demo="on"] .lp-workspace-preview h3 { animation-name: lp-d-title; }
+html[data-lp-demo="on"] .lp-demo-grid span:nth-child(1) { animation-name: lp-d-card1; }
+html[data-lp-demo="on"] .lp-demo-grid span:nth-child(2) { animation-name: lp-d-card2; }
+html[data-lp-demo="on"] .lp-demo-grid span:nth-child(3) { animation-name: lp-d-card3; }
+html[data-lp-demo="on"] .lp-demo-publish { animation-name: lp-d-publish; }
+html[data-lp-demo="on"] .lp-demo-live { animation-name: lp-d-live; }
+html[data-lp-demo="on"] .lp-demo-cursor { animation-name: lp-d-cursor; }
+
+@keyframes lp-d-prompt { 0% { clip-path: inset(0 100% 0 0); opacity: 1; } 2% { clip-path: inset(0 100% 0 0); animation-timing-function: steps(22, end); } 16% { clip-path: inset(0 0 0 0); } 94% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 0); opacity: 0; } }
+@keyframes lp-d-text { 0%, 17% { opacity: 0; transform: translateY(6px); } 21%, 94% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lp-d-step1 { 0%, 22% { opacity: 0; transform: translateX(-6px); } 26%, 94% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lp-d-step2 { 0%, 36% { opacity: 0; transform: translateX(-6px); } 40%, 94% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lp-d-step3 { 0%, 58% { opacity: 0; transform: translateX(-6px); } 62%, 94% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes lp-d-title { 0%, 21% { opacity: .12; filter: blur(4px); } 27%, 94% { opacity: 1; filter: none; } 100% { opacity: .12; filter: blur(4px); } }
+@keyframes lp-d-card1 { 0%, 29% { opacity: .25; transform: scale(.94); } 34%, 94% { opacity: 1; transform: none; } 100% { opacity: .25; transform: scale(.94); } }
+@keyframes lp-d-card2 { 0%, 35% { opacity: .25; transform: scale(.94); } 40%, 94% { opacity: 1; transform: none; } 100% { opacity: .25; transform: scale(.94); } }
+@keyframes lp-d-card3 { 0%, 41% { opacity: .25; transform: scale(.94); } 46%, 94% { opacity: 1; transform: none; } 100% { opacity: .25; transform: scale(.94); } }
+@keyframes lp-d-publish { 0%, 55% { opacity: 0; transform: translateY(8px); } 60%, 70% { opacity: 1; transform: none; } 72% { opacity: 1; transform: scale(.94); } 74%, 100% { opacity: 0; transform: scale(.94); } }
+@keyframes lp-d-live { 0%, 73% { opacity: 0; transform: translateY(6px); } 77%, 93% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
+@keyframes lp-d-cursor { 0%, 60% { opacity: 0; left: 46%; top: 30%; } 63% { opacity: 1; left: 46%; top: 30%; } 70% { opacity: 1; left: calc(100% - 64px); top: calc(100% - 44px); } 73% { opacity: 1; left: calc(100% - 64px); top: calc(100% - 44px); transform: scale(.85); } 76% { opacity: 0; left: calc(100% - 64px); top: calc(100% - 44px); } 100% { opacity: 0; left: calc(100% - 64px); top: calc(100% - 44px); } }
+
+/* ── Pricing, launch ────────────────────────────────────────────────────── */
+.lp-plan.is-featured { border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); box-shadow: 0 24px 60px -36px color-mix(in srgb, var(--accent) 60%, transparent); }
+.lp-plan-badge { position: absolute; top: -12px; left: 32px; padding: 4px 12px; border-radius: var(--radius-full, 9999px); background: var(--accent); color: var(--text-on-accent, var(--background)); font-size: 12px; font-weight: 600; line-height: 1.4; }
+.lp-launch h2 { background: linear-gradient(180deg, var(--text-strong), color-mix(in srgb, var(--text-strong) 72%, var(--accent))); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: var(--text-strong); }
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) { .lp-launch h2 { background: none; -webkit-text-fill-color: currentColor; } }
+.lp-faq details { transition: background 240ms var(--lp-ease, ease-out); }
+.lp-faq summary::after { transition: transform 240ms var(--lp-ease, ease-out), color 240ms var(--lp-ease, ease-out); }
+@media (hover: hover) { .lp-faq summary:hover::after { color: var(--accent); transform: scale(1.2); } }
+
+@media (max-width: 760px) {
+  .lp-aurora { height: 460px; top: -60px; }
+  .lp-eyebrow { font-size: 12px; margin-bottom: 20px !important; }
+  .lp-examples { gap: 6px; margin-top: 16px; }
+  .lp-examples button { font-size: 12px; min-height: 40px; padding: 9px 12px; }
+  .lp-plan-badge { left: 24px; }
+  .lp-demo-cursor { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-aurora i, .lp-eyebrow-dot::after, .lp-shine, .lp-eyebrow, .lp-hero-subtitle, .lp-hero .lp-composer, .lp-examples { animation: none; }
+  .lp-demo-cursor, .lp-demo-publish { display: none; }
+  .lp-demo-live { opacity: 1; }
+  .lp-step-icon, .lp-examples button, .lp-card::after, .lp-plan::after { transition: none; }
+}
