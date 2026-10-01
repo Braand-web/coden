@@ -1,0 +1,28 @@
+export type Question = { prompt: string; options: [string, string, string, string]; answer: number; fact: string };
+
+export const QUESTIONS: Question[] = [
+  { prompt: 'Quelle est la capitale de l’Australie ?', options: ['Sydney', 'Canberra', 'Melbourne', 'Perth'], answer: 1, fact: 'Canberra a été créée de toutes pièces pour éviter de choisir entre Sydney et Melbourne.' },
+  { prompt: 'Quel fleuve traverse Le Caire ?', options: ['Le Niger', 'Le Congo', 'Le Nil', 'Le Zambèze'], answer: 2, fact: 'Le Nil mesure environ 6 650 km.' },
+  { prompt: 'Quel est le plus grand pays d’Afrique par sa superficie ?', options: ['La RD Congo', 'L’Algérie', 'Le Soudan', 'La Libye'], answer: 1, fact: 'L’Algérie dépasse 2,3 millions de km².' },
+  { prompt: 'Sur quel continent se trouve le désert de Gobi ?', options: ['L’Afrique', 'L’Amérique du Sud', 'L’Asie', 'L’Océanie'], answer: 2, fact: 'Le Gobi s’étend entre la Mongolie et la Chine.' },
+  { prompt: 'Quelle est la capitale du Canada ?', options: ['Toronto', 'Vancouver', 'Montréal', 'Ottawa'], answer: 3, fact: 'Ottawa est à la frontière entre l’Ontario et le Québec.' },
+  { prompt: 'Quelle chaîne de montagnes abrite l’Everest ?', options: ['Les Alpes', 'L’Himalaya', 'Les Andes', 'Les Rocheuses'], answer: 1, fact: 'L’Everest culmine à 8 849 m.' },
+  { prompt: 'Quel pays compte le plus d’habitants ?', options: ['L’Inde', 'Les États-Unis', 'L’Indonésie', 'Le Brésil'], answer: 0, fact: 'L’Inde a dépassé la Chine en 2023.' },
+  { prompt: 'Quelle est la capitale du Cameroun ?', options: ['Douala', 'Garoua', 'Yaoundé', 'Bafoussam'], answer: 2, fact: 'Douala est la plus grande ville, Yaoundé la capitale politique.' },
+  { prompt: 'Quel océan borde la côte ouest de l’Afrique ?', options: ['L’océan Indien', 'L’océan Atlantique', 'L’océan Pacifique', 'L’océan Arctique'], answer: 1, fact: 'Le golfe de Guinée fait partie de l’Atlantique.' },
+  { prompt: 'Dans quel pays se trouve la ville de Tombouctou ?', options: ['Le Niger', 'Le Mali', 'La Mauritanie', 'Le Tchad'], answer: 1, fact: 'Tombouctou fut un grand centre du savoir au Moyen Âge.' },
+  { prompt: 'Quel est le plus long fleuve d’Europe ?', options: ['Le Danube', 'Le Rhin', 'La Loire', 'La Volga'], answer: 3, fact: 'La Volga mesure environ 3 530 km.' },
+  { prompt: 'Quelle mer sépare l’Europe de l’Afrique à l’ouest de l’Italie ?', options: ['La mer Baltique', 'La mer Noire', 'La mer Méditerranée', 'La mer Rouge'], answer: 2, fact: 'La Méditerranée relie trois continents.' },
+  { prompt: 'Quelle est la capitale du Brésil ?', options: ['Rio de Janeiro', 'São Paulo', 'Salvador', 'Brasília'], answer: 3, fact: 'Brasília a été inaugurée en 1960.' },
+  { prompt: 'Quel pays est entièrement entouré par l’Afrique du Sud ?', options: ['Le Lesotho', 'Le Botswana', 'La Namibie', 'Le Zimbabwe'], answer: 0, fact: 'Le Lesotho est une enclave au cœur de l’Afrique du Sud.' },
+  { prompt: 'Quelle est la plus grande île du monde ?', options: ['Madagascar', 'Bornéo', 'Le Groenland', 'La Nouvelle-Guinée'], answer: 2, fact: 'Le Groenland couvre plus de 2 millions de km².' },
+  { prompt: 'Quel détroit sépare l’Espagne du Maroc ?', options: ['Le Bosphore', 'Gibraltar', 'Ormuz', 'Malacca'], answer: 1, fact: 'Le détroit de Gibraltar fait environ 14 km au plus étroit.' },
+  { prompt: 'Quelle est la capitale du Japon ?', options: ['Osaka', 'Kyoto', 'Tokyo', 'Nagoya'], answer: 2, fact: 'Kyoto fut capitale impériale jusqu’en 1868.' },
+  { prompt: 'Quel est le plus haut sommet d’Afrique ?', options: ['Le mont Kenya', 'Le Kilimandjaro', 'Le mont Cameroun', 'Le Toubkal'], answer: 1, fact: 'Le Kilimandjaro culmine à 5 895 m, en Tanzanie.' },
+  { prompt: 'Quel pays est surnommé « le pays du Soleil-Levant » ?', options: ['La Chine', 'La Corée du Sud', 'Le Japon', 'Le Vietnam'], answer: 2, fact: '« Nippon » signifie « origine du soleil ».' },
+  { prompt: 'Quelle est la capitale de l’Argentine ?', options: ['Santiago', 'Buenos Aires', 'Montevideo', 'Lima'], answer: 1, fact: 'Buenos Aires est surnommée « le Paris de l’Amérique du Sud ».' },
+  { prompt: 'Quel désert couvre le nord de l’Afrique ?', options: ['Le Kalahari', 'Le Namib', 'Le Sahara', 'Le Gobi'], answer: 2, fact: 'Le Sahara est à peu près grand comme les États-Unis.' },
+  { prompt: 'Combien y a-t-il de continents habités (selon le modèle le plus courant) ?', options: ['Cinq', 'Six', 'Sept', 'Huit'], answer: 1, fact: 'Six continents habités, plus l’Antarctique.' },
+  { prompt: 'Quelle est la capitale de la Côte d’Ivoire ?', options: ['Abidjan', 'Bouaké', 'Yamoussoukro', 'San-Pédro'], answer: 2, fact: 'Abidjan reste la capitale économique.' },
+  { prompt: 'Quel pays possède le plus grand nombre de fuseaux horaires ?', options: ['La Russie', 'Les États-Unis', 'La France', 'Le Canada'], answer: 2, fact: 'Avec ses territoires d’outre-mer, la France en compte douze.' },
+];

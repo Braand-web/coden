@@ -139,7 +139,9 @@ function Templates({ categories, onUse }: { categories: Array<{ slug: string; la
     setBusy(slug);
     try {
       const result = await communityApi.useTemplate(slug);
-      onUse(result.prompt);
+      // A complete app is already a project in the person's account: open it. A brief goes to the agent as a first request.
+      if (result.builderUrl) window.location.href = result.builderUrl;
+      else if (result.prompt) onUse(result.prompt);
     } catch (error) {
       toast(errorText(error, 'Ce template n’a pas pu être lancé.'), 'error');
       setBusy(null);

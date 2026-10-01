@@ -13,6 +13,8 @@ export type OfficialTemplate = {
   description: string;
   category: string;
   brief: string;
+  /** `app`: a complete, tested app (files in `templates/community/<slug>/`); `brief`: a request the agent builds from. */
+  kind?: 'app' | 'brief';
   /** Measured by the template test run (see docs/community-verification.md); absent until it has been run. */
   designScore?: number;
 };
@@ -20,6 +22,23 @@ export type OfficialTemplate = {
 const COMMON = ' Fais un design soigné et cohérent, responsive du mobile au bureau, avec thème clair et sombre, états de chargement, vide et erreur, navigation au clavier et focus visible. Utilise du contenu d’exemple réaliste en français, sans donnée personnelle réelle.';
 
 export const OFFICIAL_TEMPLATES: readonly OfficialTemplate[] = Object.freeze([
+  // Three complete apps, tested in a real browser (scripts/community/test-template-apps.mjs): a person who picks one gets a
+  // working project in their account, ready to publish, and the agent can change it like any other.
+  {
+    slug: 'budget-clair', kind: 'app', title: 'Budget Clair', category: 'tableau-de-bord',
+    description: 'Suivi de dépenses du mois : budget, répartition par catégorie, filtres et export CSV.',
+    brief: 'Suivi de dépenses du mois : budget, répartition par catégorie, filtres et export CSV.',
+  },
+  {
+    slug: 'chez-marcel', kind: 'app', title: 'Chez Marcel', category: 'reservation-evenements',
+    description: 'Site de restaurant : carte par onglets, horaires et réservation de table avec créneaux.',
+    brief: 'Site de restaurant : carte par onglets, horaires et réservation de table avec créneaux.',
+  },
+  {
+    slug: 'cap-sur-le-monde', kind: 'app', title: 'Cap sur le monde', category: 'jeux',
+    description: 'Quiz de géographie : dix questions, chrono, meilleur score et correction détaillée.',
+    brief: 'Quiz de géographie : dix questions, chrono, meilleur score et correction détaillée.',
+  },
   {
     slug: 'site-vitrine-entreprise', title: 'Site vitrine d’entreprise', category: 'site-vitrine',
     description: 'Page d’accueil, services, réalisations, équipe et contact pour présenter une activité.',

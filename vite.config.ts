@@ -7,7 +7,8 @@ import {defineConfig} from 'vite';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function discoverHtmlInputs(root: string) {
-  const ignored = new Set(['dist', 'node_modules', '.git', '.vscode', '.railway']);
+  // `templates` holds the template apps' own pages (templates/community): they are built as separate apps, never as pages of Coden.
+  const ignored = new Set(['dist', 'node_modules', '.git', '.vscode', '.railway', 'templates']);
   const inputs: Record<string, string> = {};
 
   function walk(dir: string) {

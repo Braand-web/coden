@@ -1,0 +1,3 @@
+/* Cap sur le monde : vert océan, neutres froids du starter. */
+html:root { --color-accent: oklch(0.68 0.14 160); --color-accent-hover: oklch(0.74 0.14 160); --color-on-accent: oklch(0.16 0.02 160); }
+html:root[data-theme="light"] { --color-accent: oklch(0.5 0.12 160); --color-accent-hover: oklch(0.44 0.12 160); --color-on-accent: oklch(0.99 0.004 160); }

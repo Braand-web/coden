@@ -15484,13 +15484,13 @@ const communityService = createCommunityService({
     const project = await loadProject(projectId, userId, req);
     return project && project.owner_id === userId ? project : null;
   },
-  createProjectFromFiles: async ({ userId, req, name, prompt, files, reason, meta }) => {
+  createProjectFromFiles: async ({ userId, req, name, prompt, files, reason, meta, verified }) => {
     const organizationId = await ensurePersonalOrganization(req, userId);
     const now = new Date().toISOString();
     const projectName = sanitizeProjectName(name);
     const copy: GeneratedProject = {
       id: randomUUID(), owner_id: userId, organization_id: organizationId, created_by: userId, name: projectName, slug: await uniqueSlug(projectName, userId),
-      prompt, template: 'custom', theme: 'light', model_id: 'auto', status: 'draft', preview_status: 'idle', preview_html: '', created_at: now, updated_at: now,
+      prompt, template: 'custom', theme: 'light', model_id: 'auto', status: 'draft', preview_status: verified ? 'verified' : 'idle', preview_html: '', created_at: now, updated_at: now,
     };
     const generated: GeneratedFile[] = files.map(file => ({ path: file.path, content: file.content, updated_at: now }));
     await saveProject(copy, generated);
