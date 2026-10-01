@@ -10,6 +10,10 @@
  *  - lighter on phones (fewer pixels);
  *  - absent when WebGL 2 is not available — the CSS light underneath stays.
  * The palette follows the theme toggle live.
+ *
+ * It also answers the visitor: the colours lean toward the pointer (or a touch)
+ * and swirl harder near it, a click sends a ripple through the gradient, and
+ * everything eases back to rest when the pointer leaves. Not with reduced motion.
  */
 export type BrandMeshVariant = 'hero' | 'soft' | 'footer';
 
@@ -50,6 +54,57 @@ function whenIdle(run: () => void) {
   const idle = (window as any).requestIdleCallback as ((cb: () => void, options?: { timeout: number }) => number) | undefined;
   if (idle) idle(run, { timeout: 1500 });
   else window.setTimeout(run, 300);
+}
+
+type Rest = { u_originX: number; u_originY: number; u_swirl: number; u_distortion: number };
+
+/** Eases the mesh toward the pointer. The loop only runs while something is still moving. */
+function bindPointer(host: HTMLElement, apply: (uniforms: Rest) => void, rest: Rest) {
+  const restState: Rest = { u_originX: rest.u_originX, u_originY: rest.u_originY, u_swirl: rest.u_swirl, u_distortion: rest.u_distortion };
+  const now: Rest = { ...restState };
+  const target: Rest = { ...restState };
+  let pulse = 0;
+  let frame = 0;
+  let visible = true;
+  const tick = () => {
+    frame = 0;
+    pulse *= 0.93;
+    if (pulse < 0.002) pulse = 0;
+    let moving = pulse > 0;
+    (Object.keys(now) as (keyof Rest)[]).forEach(key => {
+      const goal = key === 'u_distortion' ? target[key] + pulse * 0.9 : key === 'u_swirl' ? target[key] + pulse * 0.6 : target[key];
+      const delta = goal - now[key];
+      if (Math.abs(delta) > 0.002) { now[key] += delta * 0.08; moving = true; } else now[key] = goal;
+    });
+    apply({ ...now });
+    if (moving) frame = requestAnimationFrame(tick);
+  };
+  const wake = () => { if (!frame && visible && !document.hidden) frame = requestAnimationFrame(tick); };
+  const point = (event: PointerEvent) => {
+    const box = host.getBoundingClientRect();
+    if (!box.width || !box.height) return null;
+    const x = (event.clientX - box.left) / box.width;
+    const y = (event.clientY - box.top) / box.height;
+    return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
+  };
+  const lean = (event: PointerEvent) => {
+    const at = point(event);
+    if (!at) return leave();
+    target.u_originX = 0.5 + (at.x - 0.5) * 0.9;
+    target.u_originY = 0.5 + (at.y - 0.5) * 0.9;
+    target.u_swirl = restState.u_swirl + 0.35;
+    target.u_distortion = restState.u_distortion + 0.25;
+    wake();
+  };
+  const leave = () => {
+    Object.assign(target, restState);
+    wake();
+  };
+  window.addEventListener('pointermove', lean, { passive: true });
+  window.addEventListener('pointerdown', event => { if (point(event)) { lean(event); pulse = 1; wake(); } }, { passive: true });
+  document.documentElement.addEventListener('pointerleave', leave);
+  window.addEventListener('blur', leave);
+  if ('IntersectionObserver' in window) new IntersectionObserver(entries => { visible = entries.some(entry => entry.isIntersecting); if (visible) wake(); }).observe(host);
 }
 
 /** Mounts the mesh into `host` (an empty, absolutely positioned element). Returns nothing: it manages itself. */
@@ -103,6 +158,7 @@ export function mountBrandMesh(host: HTMLElement | null, variant: BrandMeshVaria
         return;
       }
       host.dataset.meshMounted = 'ready';
+      if (!reduced) bindPointer(host, (uniforms) => mount.setUniforms(uniforms), uniformsFor(currentTheme()));
       // Fade in after the first frames, over the CSS light that was there first.
       window.setTimeout(() => host.classList.add('is-ready'), 120);
       new MutationObserver(() => mount.setUniforms(uniformsFor(currentTheme())))
