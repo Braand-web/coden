@@ -22,17 +22,17 @@ type Palette = { light: string[]; dark: string[] };
 const PALETTES: Record<BrandMeshVariant, Palette> = {
   // Pale in light so the dark title keeps its contrast; a deep blue stage in dark.
   hero: {
-    light: ['#F5F9FF', '#CFE3FF', '#8EC0FF', '#A8EDF8', '#E6F0FF'],
+    light: ['#EAF3FF', '#9CC6FF', '#5E9FFF', '#6FE3F5', '#C4DCFF'],
     dark: ['#0E2F7A', '#2A74FF', '#5AA2FF', '#45DDF2', '#1B50BF'],
   },
   // Quieter, for the middle sections: a wash of colour that never competes with the content.
   soft: {
-    light: ['#FAFCFF', '#DCEAFF', '#B5D6FF', '#CBF3FA', '#F0F6FF'],
+    light: ['#F2F8FF', '#B9D7FF', '#82B5FF', '#8DE8F7', '#DCEBFF'],
     dark: ['#0E2A68', '#2467E8', '#4A90F5', '#2CC0DC', '#173F9C'],
   },
   // Richer: the footer card is opaque, only its edges and the space above show it.
   footer: {
-    light: ['#EAF3FF', '#7FB2FF', '#3A83F7', '#7FE3F5', '#F4F8FF'],
+    light: ['#E4F0FF', '#6FA8FF', '#3A83F7', '#5CDDF2', '#EAF3FF'],
     dark: ['#0E2F7A', '#2A74FF', '#5AA2FF', '#45DDF2', '#1B50BF'],
   },
 };
