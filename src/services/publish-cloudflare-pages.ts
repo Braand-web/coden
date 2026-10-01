@@ -145,6 +145,30 @@ export function missingCloudflareSettings(env: Record<string, string | undefined
   return CLOUDFLARE_PUBLISH_VARIABLES.filter(name => !String(env[name] || '').trim());
 }
 
+/**
+ * Settings that are present but are not what they should be, by name only. The classic mistake: pasting the whole
+ * « curl … -H "Authorization: Bearer <token>" » test command that Cloudflare shows next to a new token, instead of the
+ * token itself. That value is not a valid header and, worse, would be echoed in an error message.
+ */
+export function malformedCloudflareSettings(env: Record<string, string | undefined> = process.env): string[] {
+  const shapes: Record<string, RegExp> = {
+    CLOUDFLARE_ACCOUNT_ID: /^[0-9a-f]{32}$/i,
+    CLOUDFLARE_ZONE_ID_CODEN_FUN: /^[0-9a-f]{32}$/i,
+    CLOUDFLARE_API_TOKEN: /^[A-Za-z0-9_-]{20,}$/,
+  };
+  return CLOUDFLARE_PUBLISH_VARIABLES.filter(name => {
+    const value = String(env[name] || '').trim();
+    return value !== '' && !shapes[name].test(value);
+  });
+}
+
+/** Never let a Cloudflare credential reach a log, whatever the message it was embedded in. */
+export function redactCloudflareCredentials(text: string): string {
+  return String(text)
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/\bcf[a-z]{1,3}_[A-Za-z0-9_-]{12,}/g, '[redacted]');
+}
+
 /** The diagnostic for a failure that names a missing Cloudflare setting, else null. Checked before any generic rule. */
 export function cloudflareConfigurationDiagnostic(message: string) {
   if (!/CLOUDFLARE_(?:ACCOUNT_ID|API_TOKEN|ZONE_ID)/i.test(message)) return null;

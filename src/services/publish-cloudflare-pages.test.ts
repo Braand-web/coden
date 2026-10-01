@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cloudflareConfigurationDiagnostic, missingCloudflareSettings, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
+import { cloudflareConfigurationDiagnostic, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
 
 const ok = { verified: true, baseUrl: 'x', checks: [] };
 const ko = { verified: false, baseUrl: '', checks: [{ url: 'https://x.pages.dev/', status: 404, ok: false, error: 'HTTP 404' }] };
@@ -87,5 +87,30 @@ describe('Cloudflare settings', () => {
   it('reports a missing Cloudflare setting as such, not as a Vercel one', () => {
     expect(cloudflareConfigurationDiagnostic('Missing environment variable CLOUDFLARE_ACCOUNT_ID')).toMatchObject({ diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED', status: 503 });
     expect(cloudflareConfigurationDiagnostic('Missing VERCEL_TOKEN')).toBeNull();
+  });
+});
+
+describe('a Cloudflare setting that is present but wrong', () => {
+  const good = { CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_ZONE_ID_CODEN_FUN: 'b'.repeat(32), CLOUDFLARE_API_TOKEN: 'cfut_' + 'x'.repeat(40) };
+
+  it('accepts well-formed settings', () => {
+    expect(malformedCloudflareSettings(good)).toEqual([]);
+  });
+
+  it('flags a token pasted together with the whole curl test command', () => {
+    const pasted = 'curl "https://api.cloudflare.com/client/v4/user/tokens/verify" \\\n  -H "Authorization: Bearer cfut_' + 'x'.repeat(40) + '"';
+    expect(malformedCloudflareSettings({ ...good, CLOUDFLARE_API_TOKEN: pasted })).toEqual(['CLOUDFLARE_API_TOKEN']);
+  });
+
+  it('flags ids of the wrong shape, and ignores absent ones (reported as missing instead)', () => {
+    expect(malformedCloudflareSettings({ ...good, CLOUDFLARE_ACCOUNT_ID: 'not-an-id' })).toEqual(['CLOUDFLARE_ACCOUNT_ID']);
+    expect(malformedCloudflareSettings({ ...good, CLOUDFLARE_ZONE_ID_CODEN_FUN: '' })).toEqual([]);
+  });
+
+  it('removes credentials from any text before it is logged', () => {
+    const text = 'Headers.append: "Bearer cfut_' + 'k'.repeat(40) + '" is an invalid header value; also cfut_' + 'z'.repeat(30);
+    const clean = redactCloudflareCredentials(text);
+    expect(clean).not.toMatch(/cfut_[A-Za-z0-9]{10,}/);
+    expect(clean).toContain('[redacted]');
   });
 });
