@@ -1588,6 +1588,14 @@ function diagnosePublishError(error: any) {
       status: 503,
     };
   }
+  if (/deployment could not be verified|promoted publication could not be verified/i.test(message)) {
+    return {
+      message: 'Le site a été déployé mais n’est pas encore joignable publiquement. L’application en ligne n’a pas changé ; réessayez dans un instant.',
+      diagnostic_code: 'PUBLISH_VERIFICATION_FAILED',
+      suggested_action: 'retry',
+      status: 502,
+    };
+  }
   if ([401, 403].includes(statusCode) || /401|403|unauthorized|forbidden|invalid token|authentication error/i.test(message)) {
     return {
       message: 'Vercel a refusé les identifiants de publication. Vérifiez le token Vercel et redéployez le serveur.',
@@ -21104,6 +21112,8 @@ import {
   rollbackVercelDeployment,
   pauseVercelProject,
   unpauseVercelProject,
+  disableVercelDeploymentProtection,
+  blockedByProviderLogin,
 } from './src/services/publish-vercel.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
@@ -21454,6 +21464,10 @@ const activePublishOperations = new Map<string, string>();
 
 async function publishVercelProjectForRequest(req: any, res: any) {
   const requestId = `pub_${randomUUID()}`;
+  // Where the minutes go: each phase's end, in ms since the click. Logged once, on success and on failure alike.
+  const publishStartedAtMs = Date.now();
+  const publishPhases: Record<string, number> = {};
+  const markPublishPhase = (phase: string) => { publishPhases[phase] = Date.now() - publishStartedAtMs; };
   const projectId = String(req.params.id || '');
   let publishLockKey = '';
   let publishLockToken = '';
@@ -21599,6 +21613,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
        */
       const buildOnProvider = !localBuildAllowed();
       const sourceFiles = { files: extractStaticFiles(project, contract.files) };
+      markPublishPhase('prepared');
       const distDir = buildOnProvider
         ? (materializeStaticSource(sourceFiles, workDir), workDir)
         : await buildStaticSource(sourceFiles, {
@@ -21608,6 +21623,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
             outputDirectory: contract.manifest.outputDirectory,
             publicEnv: publicBuildEnv,
           });
+      markPublishPhase(buildOnProvider ? 'sources_staged' : 'built_locally');
       await persistGeneratedRuntimeContract(project, contract.manifest);
       result = await publishProjectToVercel({
         slug,
@@ -21619,17 +21635,29 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         buildOnProvider,
       });
       publishProviderResult = result;
+      markPublishPhase('provider_ready');
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes
             .filter((route: any) => route?.kind === 'public')
             .map((route: any) => String(route.path || '/'))
         : ['/'];
-      const deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+      let deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+      if (!deploymentVerification.verified && blockedByProviderLogin(deploymentVerification.checks)) {
+        // Vercel Authentication answers 401 on every new project's preview: not a broken site. Lift it for this
+        // Coden-owned project (a published site is public by definition) and look again.
+        console.warn('[coden:publish_preview_protected]', { request_id: requestId, project: result.projectName });
+        await disableVercelDeploymentProtection(result.projectId || result.projectName).catch((error: any) => {
+          console.warn('[coden:publish_protection_disable_failed]', { request_id: requestId, message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
+        });
+        for (let attempt = 0; attempt < 3 && !deploymentVerification.verified; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
+          deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+        }
+      }
+      markPublishPhase('preview_verified');
       if (!deploymentVerification.verified) {
-        const lastCheck = deploymentVerification.checks.at(-1);
-        throw new Error(
-          `Vercel deployment could not be verified${lastCheck ? ` (${lastCheck.url}: ${lastCheck.status || lastCheck.error || 'unreachable'})` : ''}.`,
-        );
+        const summary = deploymentVerification.checks.slice(0, 4).map(check => `${check.url}: ${check.status || check.error || 'unreachable'}${check.status && check.error ? ` ${check.error}` : ''}`).join(' | ');
+        throw new Error(`Vercel deployment could not be verified (${summary || 'no response'}).`);
       }
       // Persist the verified candidate before touching any production alias.
       // Only status=ready is visible as the public version.
@@ -21650,6 +21678,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       promotionAttempted = true;
       result = await activateVercelPublication(result, slug);
       publishProviderResult = result;
+      markPublishPhase('promoted');
       const liveCandidate = result.codenUrl || result.defaultUrl || result.deploymentUrl;
       // Promotion and domain aliases can take a few seconds to propagate.
       // Verify the public address, not a private provider bypass URL.
@@ -21668,6 +21697,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       }
       if (!liveVerification.verified) throw new Error('The promoted publication could not be verified.');
       verifiedPublicUrl = liveVerification.baseUrl;
+      markPublishPhase('live_verified');
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
@@ -21745,6 +21775,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       snapshot: { publicUrl: verifiedPublicUrl, deploymentId: stagedDeploymentId, artifactHash, files: contract.files.map(file => ({ path: String(file.path), content: String(file.content ?? '') })) },
       plan: context.plan,
     }).catch((error: any) => console.warn('[coden:community_publish_hook_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 160) }));
+    markPublishPhase('saved');
+    console.info('[coden:publish_timing]', { request_id: requestId, project_id: projectId, outcome: 'published', phases_ms: publishPhases });
     const nextStatus = buildPublishStatus({ ...context, latestDeployment: deploy });
     return res.json({
       success: true,
@@ -21783,7 +21815,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       }
     }
     const diagnostic = diagnosePublishError(e);
-    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e) });
+    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
     if (publishAttemptStarted && publishProjectRecord && !stagedDeploymentId) {
       await saveDeploymentRecord({
         id: randomUUID(),
