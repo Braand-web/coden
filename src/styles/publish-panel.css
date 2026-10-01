@@ -560,3 +560,10 @@
   font-weight: 700;
   color: var(--foreground);
 }
+
+/* Community notice and the one-time offer, in the publish panel */
+.cdn-pub__community { margin: 6px 0 0; color: var(--text-secondary); font-size: 12.5px; line-height: 18px; }
+.cdn-pub__community a { color: var(--accent); font-weight: 600; }
+.cdn-pub__offer { display: grid; gap: 6px; margin-top: 10px; padding: 12px; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: 12px; }
+.cdn-pub__offer strong { font-size: 13.5px; }
+.cdn-pub__offer p { margin: 0; color: var(--text-secondary); font-size: 12.5px; line-height: 18px; }

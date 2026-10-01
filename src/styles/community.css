@@ -1,0 +1,145 @@
+/* Communauté (dashboard #community). Coden's tokens only: light and dark follow. Animations: transform and opacity only. */
+.coden-community, .coden-community-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; width: min(100%, 1180px); margin: 0 auto; padding: 28px 0 56px; color: var(--foreground); }
+.coden-community > *, .coden-community-detail > * { min-width: 0; }
+.coden-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.coden-community-head h1 { margin: 0; font-size: 26px; line-height: 32px; font-weight: 700; letter-spacing: -.01em; }
+.coden-community-head p { max-width: 640px; margin: 6px 0 0; color: var(--text-muted); font-size: 14px; line-height: 21px; }
+
+/* Tabs and chips */
+.coden-community-tabs { display: flex; gap: 3px; padding: 4px; overflow-x: auto; scrollbar-width: none; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: 999px; width: fit-content; max-width: 100%; }
+.coden-community-tabs::-webkit-scrollbar { display: none; }
+.coden-community-tabs button, .coden-community-chips button, .coden-community-segment button { display: inline-flex; flex: 0 0 auto; min-height: 32px; align-items: center; gap: 6px; padding: 0 13px; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; background: transparent; border: 0; border-radius: 999px; cursor: pointer; transition: color 140ms var(--ease-standard, ease-out), background-color 140ms var(--ease-standard, ease-out); }
+.coden-community-tabs button:hover, .coden-community-chips button:hover, .coden-community-segment button:hover { color: var(--foreground); }
+.coden-community-tabs button.is-active, .coden-community-segment button.is-active { color: var(--foreground); background: var(--surface); box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 16%, transparent); }
+.coden-community-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.coden-community-chips::-webkit-scrollbar { display: none; }
+.coden-community-chips button { min-height: 32px; background: var(--surface); border: 1px solid var(--border); }
+.coden-community-chips button.is-active { color: var(--foreground); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.coden-community-segment { display: inline-flex; gap: 3px; padding: 3px; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: 999px; }
+.coden-community-tabs button:focus-visible, .coden-community-chips button:focus-visible, .coden-community-segment button:focus-visible, .coden-community-button:focus-visible, .coden-community-card-link:focus-visible, .coden-community-back:focus-visible, .coden-community-link:focus-visible, .coden-community-search:focus-within, .coden-community-preview-start:focus-visible, .coden-community-field input:focus-visible, .coden-community-field textarea:focus-visible, .coden-community-field select:focus-visible, .coden-community-select select:focus-visible, .coden-community-switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.coden-community-toolbar { display: flex; gap: 10px; }
+.coden-community-search { display: flex; flex: 1; max-width: 520px; height: 40px; align-items: center; gap: 8px; padding: 0 12px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.coden-community-search input { flex: 1; min-width: 0; color: var(--foreground); font: inherit; font-size: 14px; background: transparent; border: 0; outline: 0; }
+
+/* Grid and cards: the thumbnail's size is reserved (16/10) so nothing moves when images arrive */
+.coden-community-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.coden-community-card { content-visibility: auto; contain-intrinsic-size: auto 300px; overflow: hidden; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 12px); transition: border-color 160ms var(--ease-standard, ease-out), box-shadow 160ms var(--ease-standard, ease-out), transform 160ms var(--ease-standard, ease-out); }
+@media (hover: hover) { .coden-community-card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow: var(--shadow-md); transform: translateY(-2px); } }
+.coden-community-card-link { display: grid; height: 100%; color: inherit; text-decoration: none; align-content: start; }
+.coden-community-thumb { position: relative; aspect-ratio: 16 / 10; overflow: hidden; background: var(--surface-soft); }
+.coden-community-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.coden-community-thumb-empty { display: grid; width: 100%; height: 100%; place-items: center; color: var(--text-muted); background: linear-gradient(135deg, var(--surface-soft), color-mix(in srgb, var(--accent) 9%, var(--surface-soft))); }
+.coden-community-card-body { display: grid; gap: 5px; padding: 12px 14px 14px; }
+.coden-community-card-body > strong { font-size: 15px; line-height: 20px; font-weight: 650; overflow-wrap: anywhere; }
+.coden-community-byline { color: var(--text-muted); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; }
+.coden-community-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.coden-community-count { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.coden-community-pill { display: inline-flex; align-items: center; padding: 1px 8px; color: var(--text-secondary); font-size: 11px; font-weight: 650; line-height: 18px; background: var(--surface-soft); border-radius: 999px; }
+.coden-community-pill.is-official { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.coden-community-pill.is-choice { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.coden-community-card.is-template .coden-community-button { margin-top: 8px; justify-self: start; }
+
+/* Loading: the shared skeleton, with a sheen that moves by transform only */
+.coden-community-shimmer { position: relative; overflow: hidden; }
+.coden-community-shimmer::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground) 7%, transparent), transparent); animation: coden-community-sheen 1.4s ease-in-out infinite; }
+@keyframes coden-community-sheen { to { transform: translateX(100%); } }
+.coden-community-card.is-skeleton .coden-community-card-body { padding: 14px; gap: 9px; }
+.coden-community-sentinel { height: 1px; }
+
+/* Empty and error */
+.coden-community-empty { display: grid; justify-items: center; gap: 8px; padding: 40px 16px; color: var(--text-muted); font-size: 13px; text-align: center; background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius-md, 12px); }
+.coden-community-empty strong { color: var(--foreground); font-size: 15px; }
+.coden-community-empty.is-error { border-style: solid; border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+
+/* Buttons */
+.coden-community-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; color: var(--foreground); font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: border-color 140ms var(--ease-standard, ease-out), background-color 140ms var(--ease-standard, ease-out); }
+.coden-community-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.coden-community-button.is-primary { color: var(--background); background: var(--accent); border-color: var(--accent); }
+.coden-community-button.is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--foreground)); }
+.coden-community-button.is-large { min-height: 44px; font-size: 14px; }
+.coden-community-button.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.coden-community-button.is-quiet { color: var(--text-muted); background: transparent; }
+.coden-community-button:disabled { opacity: .55; cursor: not-allowed; }
+.coden-community-link { padding: 0; color: var(--accent); font: inherit; font-size: 13px; font-weight: 600; background: none; border: 0; cursor: pointer; }
+.coden-community-link:hover { text-decoration: underline; }
+.coden-community-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Detail */
+.coden-community-back { display: inline-flex; width: fit-content; align-items: center; gap: 6px; padding: 4px 2px; color: var(--text-muted); font: inherit; font-size: 13px; font-weight: 600; background: none; border: 0; cursor: pointer; }
+.coden-community-back:hover { color: var(--foreground); }
+.coden-community-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.coden-community-stage { display: grid; gap: 10px; }
+.coden-community-stage-bar { display: flex; justify-content: flex-end; }
+.coden-community-preview { display: grid; place-items: center; aspect-ratio: 16 / 10; overflow: hidden; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 12px); }
+.coden-community-preview.is-mobile { background: var(--surface-soft); }
+.coden-community-frame { width: 100%; height: 100%; border: 0; background: var(--surface); }
+.coden-community-preview.is-mobile .coden-community-frame { width: min(390px, 100%); border-inline: 1px solid var(--border); }
+.coden-community-preview-start { position: relative; display: block; width: 100%; height: 100%; padding: 0; background: none; border: 0; cursor: pointer; }
+.coden-community-preview-start .coden-community-thumb { height: 100%; aspect-ratio: auto; }
+.coden-community-preview-start > span { position: absolute; left: 50%; bottom: 18px; padding: 9px 16px; color: var(--foreground); font-size: 13px; font-weight: 650; background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--border); border-radius: 999px; transform: translateX(-50%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.coden-community-side { display: grid; gap: 12px; }
+.coden-community-side h1 { margin: 0; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.coden-community-description { margin: 0; font-size: 14px; line-height: 22px; color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-line; }
+.coden-community-fine { margin: 0; color: var(--text-muted); font-size: 12.5px; line-height: 18px; }
+.coden-community-fine.is-warn { color: var(--syntax-orange, var(--text-secondary)); }
+.coden-community-similar h2 { margin: 12px 0 10px; font-size: 16px; }
+
+/* Modal */
+.coden-community-modal { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 16px; background: var(--overlay); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.coden-community-modal-panel { display: grid; gap: 12px; width: min(100%, 460px); max-height: calc(100dvh - 32px); overflow: auto; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-overlay); }
+.coden-community-modal-panel h2 { margin: 0; font-size: 18px; }
+.coden-community-reasons { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; font-size: 14px; }
+.coden-community-reasons label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.coden-community-reconnect { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.coden-community-reconnect li { display: grid; gap: 1px; padding: 8px 10px; font-size: 13px; background: var(--surface-soft); border-radius: 10px; }
+.coden-community-reconnect span { color: var(--text-muted); font-size: 12.5px; }
+
+/* Forms */
+.coden-community-field { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; }
+.coden-community-field input, .coden-community-field textarea, .coden-community-field select, .coden-community-select select { width: 100%; padding: 8px 10px; color: var(--foreground); font: inherit; font-size: 14px; font-weight: 400; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.coden-community-select select { width: auto; padding: 5px 9px; font-size: 13px; }
+.coden-community-form { display: grid; gap: 12px; padding: 14px; margin-top: 4px; background: var(--surface-soft); border-radius: 12px; }
+
+/* Mes publications */
+.coden-community-mine { display: grid; gap: 14px; }
+.coden-community-note { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 14px; font-size: 13px; line-height: 19px; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: 12px; }
+.coden-community-note p { flex: 1 1 320px; margin: 0; color: var(--text-secondary); }
+.coden-community-note.is-warn { border-color: color-mix(in srgb, var(--syntax-orange, var(--accent)) 40%, var(--border)); }
+.coden-community-rows { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.coden-community-row { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 16px; padding: 12px; background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 12px); }
+.coden-community-row > .coden-community-thumb { border-radius: 8px; align-self: start; }
+.coden-community-row-main { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.coden-community-row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.coden-community-row-title strong { font-size: 15px; overflow-wrap: anywhere; }
+.coden-community-status { display: inline-flex; padding: 1px 9px; color: var(--text-secondary); font-size: 11px; font-weight: 650; line-height: 18px; background: var(--surface-soft); border-radius: 999px; }
+.coden-community-status.is-ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.coden-community-status.is-wait { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.coden-community-status.is-warn { color: var(--syntax-orange, var(--text-secondary)); background: color-mix(in srgb, var(--syntax-orange, var(--text-muted)) 14%, transparent); }
+.coden-community-status.is-bad { color: var(--danger); background: color-mix(in srgb, var(--danger) 11%, transparent); }
+.coden-community-stats { display: flex; flex-wrap: wrap; gap: 12px; color: var(--text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.coden-community-stats span { display: inline-flex; align-items: center; gap: 4px; }
+.coden-community-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.coden-community-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.coden-community-switch input { width: 36px; height: 20px; appearance: none; -webkit-appearance: none; position: relative; margin: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background-color 140ms var(--ease-standard, ease-out); }
+.coden-community-switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: var(--background); border-radius: 50%; transition: transform 140ms var(--ease-standard, ease-out); }
+.coden-community-switch input:checked { background: var(--accent); }
+.coden-community-switch input:checked::after { transform: translateX(16px); }
+.coden-community-switch input:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 900px) {
+  .coden-community-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .coden-community, .coden-community-detail { padding-top: 16px; }
+  .coden-community-grid { grid-template-columns: minmax(0, 1fr); }
+  .coden-community-row { grid-template-columns: minmax(0, 1fr); }
+  .coden-community-row > .coden-community-thumb { max-width: 240px; }
+  .coden-community-tabs { border-radius: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coden-community-card, .coden-community-button, .coden-community-tabs button, .coden-community-chips button, .coden-community-switch input, .coden-community-switch input::after { transition: none; }
+  .coden-community-shimmer::after { animation: none; }
+  .coden-community-card:hover { transform: none; }
+}

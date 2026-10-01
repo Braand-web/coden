@@ -297,6 +297,10 @@ function saspayData<T>(payload: any): T {
   return (payload && typeof payload === 'object' && payload.data && typeof payload.data === 'object' ? payload.data : payload) as T;
 }
 
+/** Told when an account's plan really changes (the Community reacts to it); never allowed to disturb billing. */
+let planChangeHook: ((change: { accountId: string; from: string; to: string }) => void | Promise<void>) | null = null;
+export function setPlanChangeHook(hook: typeof planChangeHook) { planChangeHook = hook; }
+
 export class SaspayService {
   private readonly apiBase = String(process.env.SASPAY_API_URL || 'https://api.saspay.me/api/v1').replace(/\/+$/, '');
   private readonly apiKey = String(process.env.SASPAY_API_KEY || '').trim();
@@ -521,7 +525,9 @@ export class SaspayService {
       updated_at: now.toISOString(),
     }], { onConflict: 'provider_subscription_id' });
     if (error) throw new Error(`Plan persistence failed: ${error.message}`);
+    const previousPlan = await this.readPlanKey(intent.account_id);
     await this.supabase.from('organizations').update({ plan: plan.key, updated_at: now.toISOString() }).eq('id', intent.account_id);
+    this.emitPlanChange(intent.account_id, previousPlan, plan.key);
     await this.grantMonthlyPlanCredits(intent.account_id, plan, intent.credit_tier, monthlyNetRevenueUsd, `saspay:${transaction.id}:initial`, monthlyExpiry.toISOString());
   }
 
@@ -638,8 +644,22 @@ export class SaspayService {
     return issued;
   }
 
+  private async readPlanKey(accountId: string): Promise<string> {
+    try {
+      const { data } = await this.supabase.from('organizations').select('plan').eq('id', accountId).maybeSingle();
+      return String(data?.plan || 'free');
+    } catch { return 'free'; }
+  }
+
+  private emitPlanChange(accountId: string, from: string, to: string) {
+    if (from === to || !planChangeHook) return;
+    try { void Promise.resolve(planChangeHook({ accountId, from, to })).catch(() => undefined); } catch { /* billing never waits for it */ }
+  }
+
   private async demoteToFreePlan(accountId: string) {
+    const previousPlan = await this.readPlanKey(accountId);
     await this.supabase.from('organizations').update({ plan: 'free', updated_at: new Date().toISOString() }).eq('id', accountId);
+    this.emitPlanChange(accountId, previousPlan, 'free');
     await this.supabase.from('credit_grants').update({ frozen_at: new Date().toISOString() }).eq('account_id', accountId).in('kind', ['monthly_plan', 'rollover']);
   }
 }

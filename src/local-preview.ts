@@ -226,6 +226,12 @@ export function getLocalPreviewApiResult(path: string, method = 'GET'): LocalPre
   if (path.startsWith('/api/feedback')) {
     return { handled: true, payload: localPreviewFeedbackPayload(path) };
   }
+  if (path.startsWith('/api/community')) {
+    return { handled: true, payload: localPreviewCommunityPayload(path) };
+  }
+  if (path.startsWith('/api/admin/community')) {
+    return { handled: true, payload: localPreviewCommunityAdminPayload(path) };
+  }
   if (path.startsWith('/api/admin/')) {
     return { handled: true, payload: localPreviewAdminPayload(path.replace('/api/admin/', '').split('?')[0]) };
   }
@@ -556,5 +562,81 @@ function localPreviewFeedbackPayload(path: string) {
     ],
     is_team: false,
     local_preview: true,
+  };
+}
+
+
+/* Communauté, with sample apps so the screens can be seen without a backend. Thumbnails are plain generated colour fields. */
+function localPreviewThumb(hue: number) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 55% 42%)"/><stop offset="1" stop-color="hsl(${(hue + 330) % 360} 60% 60%)"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/><rect x="60" y="70" width="320" height="34" rx="8" fill="rgba(255,255,255,.85)"/><rect x="60" y="124" width="520" height="16" rx="8" fill="rgba(255,255,255,.6)"/><rect x="60" y="154" width="440" height="16" rx="8" fill="rgba(255,255,255,.45)"/><rect x="60" y="230" width="200" height="190" rx="14" fill="rgba(255,255,255,.35)"/><rect x="290" y="230" width="200" height="190" rx="14" fill="rgba(255,255,255,.35)"/><rect x="520" y="230" width="200" height="190" rx="14" fill="rgba(255,255,255,.35)"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+const COMMUNITY_CATEGORIES = [
+  { slug: 'site-vitrine', label: 'Site vitrine' }, { slug: 'portfolio', label: 'Portfolio' }, { slug: 'saas-outils', label: 'SaaS et outils' }, { slug: 'tableau-de-bord', label: 'Tableau de bord' },
+  { slug: 'e-commerce', label: 'E-commerce' }, { slug: 'jeux', label: 'Jeux' }, { slug: 'reservation-evenements', label: 'Réservation et événements' }, { slug: 'blog-contenu', label: 'Blog et contenu' },
+  { slug: 'education', label: 'Éducation' }, { slug: 'autre', label: 'Autre' },
+];
+
+function localPreviewCommunityListings() {
+  const names: Array<[string, string, string, number, string]> = [
+    ['Atelier Lumière', 'portfolio', 'Lina K.', 190, 'Portfolio de photographe : galerie, parcours et contact.'],
+    ['Thé & Cie', 'e-commerce', 'Créateur anonyme', 28, 'Boutique de thés en vrac, panier et paiement simulé.'],
+    ['Quiz Géo', 'jeux', 'Samuel', 150, 'Un quiz de géographie avec scores et niveaux.'],
+    ['Suivi des ventes', 'tableau-de-bord', 'Awa T.', 215, 'Indicateurs, graphiques et export CSV.'],
+    ['Studio Rive', 'site-vitrine', 'Studio Rive', 200, 'Site vitrine d’un cabinet d’architecture.'],
+    ['Réserve ta salle', 'reservation-evenements', 'Créateur anonyme', 20, 'Réservation de salles par créneaux.'],
+    ['Carnet de recettes', 'blog-contenu', 'Nina', 40, 'Un blog culinaire lisible et rapide.'],
+    ['Cours de code', 'education', 'Prof. Diallo', 175, 'Parcours d’initiation avec quiz de fin de module.'],
+  ];
+  return names.map(([title, category, creator, hue, description], index) => ({
+    id: `00000000-0000-4000-8000-0000000c0${String(index).padStart(3, '0')}`, title, description, category, tags: [], creator, creatorProfile: null, remixable: index !== 5,
+    thumbnail: localPreviewThumb(hue), thumbnailAlt: `Aperçu de « ${title} »`, featured: index === 0 || index === 3, likes: 42 - index * 4, remixes: 12 - index, listedAt: new Date(Date.now() - index * 86_400_000).toISOString(),
+  }));
+}
+
+function localPreviewCommunityPayload(path: string) {
+  const [route] = path.split('?');
+  const listings = localPreviewCommunityListings();
+  if (route === '/api/community/config') return { success: true, enabled: true, frozen: false };
+  if (route === '/api/community/categories') return { success: true, categories: COMMUNITY_CATEGORIES };
+  if (route === '/api/community/listings') return { success: true, items: listings, nextCursor: null };
+  if (route === '/api/community/templates') {
+    return { success: true, templates: [
+      ['site-vitrine-entreprise', 'Site vitrine d’entreprise', 'Page d’accueil, services, réalisations, équipe et contact.', 'site-vitrine'],
+      ['portfolio-createur', 'Portfolio de créateur', 'Galerie de projets filtrable, page de projet et contact.', 'portfolio'],
+      ['tableau-de-bord-ventes', 'Tableau de bord des ventes', 'Indicateurs, graphiques, filtres et tableau exportable.', 'tableau-de-bord'],
+      ['boutique-en-ligne', 'Boutique en ligne', 'Catalogue, fiche produit, panier et commande.', 'e-commerce'],
+    ].map(([slug, title, description, category]) => ({ slug, title, description, category, version: 1, min_plan: 'free', use_count: 0, official: true, available: true })) };
+  }
+  if (route === '/api/community/mine') {
+    const own = listings.slice(0, 3).map((item, index) => ({
+      id: item.id, projectId: `00000000-0000-4000-8000-0000000d0${index}00`, title: item.title, description: item.description, category: item.category, creatorAlias: index === 1 ? null : item.creator,
+      status: index === 2 ? 'needs_fix' : 'online', statusLabel: index === 2 ? 'À corriger' : 'En ligne', statusReason: index === 2 ? 'Le titre ou la description contient une adresse e-mail ou un numéro de téléphone, qui serait visible de tous.' : null,
+      statusCode: index === 2 ? 'personal_data_in_text' : 'checks_passed', origin: 'free_auto', optedIn: false, remixable: true, featured: index === 0, qualityScore: index === 2 ? null : 88 - index * 9,
+      stats: { views: 320 - index * 90, likes: item.likes, remixes: item.remixes }, thumbnail: item.thumbnail, canContest: false, updatedAt: new Date().toISOString(),
+    }));
+    return { success: true, plan: 'free', controls: { canChoose: false, mode: 'automatic' }, profile: { displayName: '', bio: '', public: false }, listings: own, categories: COMMUNITY_CATEGORIES, notice: null, unlisted: [], freeNotice: 'Sur le plan gratuit, cette app apparaîtra dans la Communauté dans quelques minutes. Vous pouvez modifier le titre, la description et la catégorie. Passez à un plan payant pour choisir.' };
+  }
+  const detail = /^\/api\/community\/listings\/([0-9a-f-]{36})$/i.exec(route);
+  if (detail) {
+    const listing = listings.find(item => item.id === detail[1]) || listings[0];
+    return { success: true, listing: { ...listing, publicUrl: null, views: 128, indexable: true }, similar: listings.filter(item => item.id !== listing.id && item.category === listing.category).concat(listings.slice(1, 4)).slice(0, 3), categories: COMMUNITY_CATEGORIES };
+  }
+  return { success: true };
+}
+
+function localPreviewCommunityAdminPayload(path: string) {
+  const [route] = path.split('?');
+  const day = (offset: number) => new Date(Date.now() - offset * 3_600_000).toISOString();
+  if (route === '/api/admin/community/listings') {
+    return { success: true, listings: localPreviewCommunityListings().map((item, index) => ({ id: item.id, title: item.title, status: index === 6 ? 'hidden' : index === 7 ? 'refused' : 'online', status_code: index === 7 ? 'secret_in_browser_code' : null, origin: index % 3 === 0 ? 'paid_opt_in' : 'free_auto', quality_score: 90 - index * 6, report_count: index === 6 ? 3 : 0, featured: index === 0, updated_at: day(index * 5) })) };
+  }
+  return {
+    success: true,
+    overview: { totals: { listings: 24, online: 17, pending: 2, needsFix: 2, refused: 1, hidden: 1, removedByUser: 1, removedByModeration: 0 }, delay: { medianMinutes: 6.5, p90Minutes: 19, sample: 17 }, refusals: [{ code: 'empty_render', count: 2 }, { code: 'secret_in_browser_code', count: 1 }], reports: { open: 1, upheld: 2, dismissed: 3, byReason: [{ reason: 'spam', count: 3 }, { reason: 'scam', count: 2 }] }, remixes: { last30Days: 41 }, origins: { freeAuto: 12, paidOptIn: 5, paidShareAdded: 0.3 }, quality: { average: 74, featured: 3 }, openAppeals: 1, upgradeClicks: 6 },
+    switches: { enabled: true, hidden: false, frozen: false, bonusCredits: false },
+    events: [{ id: 'e1', actor_type: 'system', event: 'listed', to_status: 'online', reason: 'Toutes les vérifications sont passées.', created_at: day(1) }, { id: 'e2', actor_type: 'system', event: 'listing_blocked', to_status: 'refused', reason: 'Une clé privée semble livrée au navigateur.', created_at: day(3) }],
+    appeals: [{ id: 'a1', listing_id: '00000000-0000-4000-8000-0000000c0007', message: 'Cette app est un exercice de cours, pas une vraie page de connexion.', created_at: day(5) }],
   };
 }

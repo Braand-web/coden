@@ -4,6 +4,7 @@ import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
 import { mountAdminPricing } from './admin-pricing';
 import { mountAdminFeedback } from './admin-feedback';
+import { mountAdminCommunity } from './admin-community';
 import { mountDataTable, type DataTable, type DataTableColumn, type DataTableFilter } from './admin-table';
 import { confirmDialog, toast } from './lib/ui-feedback';
 import './styles/admin-console.css';
@@ -92,6 +93,7 @@ const SECTION_LABELS: Record<string, string> = {
   costs: 'Coûts',
   pricing: 'Tarifs',
   feedback: 'Suggestions',
+  community: 'Communauté',
   integrations: 'Intégrations',
   publish: 'Publication',
   security: 'Sécurité',
@@ -1349,6 +1351,14 @@ function ensureAdminPricing() {
 
 /* Suggestions reload on every visit: members keep writing while the console is open. */
 let adminFeedback: ReturnType<typeof mountAdminFeedback> | null = null;
+let adminCommunity: ReturnType<typeof mountAdminCommunity> | null = null;
+function ensureAdminCommunity() {
+  const root = qs('#admin-community');
+  if (!root) return;
+  if (!adminCommunity) adminCommunity = mountAdminCommunity(root);
+  void adminCommunity.load();
+}
+
 function ensureAdminFeedback() {
   const root = qs('#admin-feedback');
   if (!root) return;
@@ -1360,6 +1370,7 @@ function activateSection(tab: string) {
   if (!adminDataAvailable && tab !== 'overview') return;
   if (tab === 'library') ensureAdminLibrary();
   if (tab === 'feedback') ensureAdminFeedback();
+  if (tab === 'community') ensureAdminCommunity();
   if (tab === 'pricing') ensureAdminPricing();
   if (tab === 'costs' && !state.costs) void loadCosts();
   if (tab === 'audit' && !tables.audit) { renderAudit(); void loadAudit(); }
