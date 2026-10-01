@@ -19,21 +19,19 @@ export type BrandMeshVariant = 'hero' | 'soft' | 'footer';
 
 type Palette = { light: string[]; dark: string[] };
 
+// Calm, low-chroma blues: a tint of colour rather than a colour wash. One faint cyan at most, never violet.
 const PALETTES: Record<BrandMeshVariant, Palette> = {
-  // Pale in light so the dark title keeps its contrast; a deep blue stage in dark.
   hero: {
-    light: ['#EAF3FF', '#9CC6FF', '#5E9FFF', '#6FE3F5', '#C4DCFF'],
-    dark: ['#0E2F7A', '#2A74FF', '#5AA2FF', '#45DDF2', '#1B50BF'],
+    light: ['#F8FBFF', '#E3EEFF', '#CFE0FB', '#E4F2F8', '#EEF4FF'],
+    dark: ['#13224A', '#1E3770', '#2B4C93', '#1F4D66', '#182C5A'],
   },
-  // Quieter, for the middle sections: a wash of colour that never competes with the content.
   soft: {
-    light: ['#F2F8FF', '#B9D7FF', '#82B5FF', '#8DE8F7', '#DCEBFF'],
-    dark: ['#0E2A68', '#2467E8', '#4A90F5', '#2CC0DC', '#173F9C'],
+    light: ['#FBFDFF', '#EEF4FF', '#DFEAFC', '#EAF5F9', '#F5F8FF'],
+    dark: ['#101D3E', '#182C58', '#223C74', '#1A4057', '#142347'],
   },
-  // Richer: the footer card is opaque, only its edges and the space above show it.
   footer: {
-    light: ['#E4F0FF', '#6FA8FF', '#3A83F7', '#5CDDF2', '#EAF3FF'],
-    dark: ['#0E2F7A', '#2A74FF', '#5AA2FF', '#45DDF2', '#1B50BF'],
+    light: ['#F4F8FF', '#DCE9FD', '#C4D9F8', '#DDEFF6', '#EAF1FE'],
+    dark: ['#13224A', '#1F3A7A', '#2D52A0', '#1F4D66', '#182C5A'],
   },
 };
 
@@ -72,7 +70,7 @@ function bindPointer(host: HTMLElement, apply: (uniforms: Rest) => void, rest: R
     if (pulse < 0.002) pulse = 0;
     let moving = pulse > 0;
     (Object.keys(now) as (keyof Rest)[]).forEach(key => {
-      const goal = key === 'u_distortion' ? target[key] + pulse * 0.9 : key === 'u_swirl' ? target[key] + pulse * 0.6 : target[key];
+      const goal = key === 'u_distortion' ? target[key] + pulse * 0.4 : key === 'u_swirl' ? target[key] + pulse * 0.25 : target[key];
       const delta = goal - now[key];
       if (Math.abs(delta) > 0.002) { now[key] += delta * 0.08; moving = true; } else now[key] = goal;
     });
@@ -92,8 +90,8 @@ function bindPointer(host: HTMLElement, apply: (uniforms: Rest) => void, rest: R
     if (!at) return leave();
     target.u_originX = 0.5 + (at.x - 0.5) * 0.9;
     target.u_originY = 0.5 + (at.y - 0.5) * 0.9;
-    target.u_swirl = restState.u_swirl + 0.35;
-    target.u_distortion = restState.u_distortion + 0.25;
+    target.u_swirl = restState.u_swirl + 0.18;
+    target.u_distortion = restState.u_distortion + 0.12;
     wake();
   };
   const leave = () => {
@@ -125,12 +123,12 @@ export function mountBrandMesh(host: HTMLElement | null, variant: BrandMeshVaria
         return {
           u_colors: colors,
           u_colorsCount: colors.length,
-          u_distortion: 0.8,
-          u_swirl: 0.12,
+          u_distortion: variant === 'hero' ? 0.55 : 0.45,
+          u_swirl: 0.06,
           u_grainMixer: 0,
-          u_grainOverlay: 0,
+          u_grainOverlay: 0.03,
           u_fit: ShaderFitOptions.cover,
-          u_scale: 1,
+          u_scale: variant === 'hero' ? 1 : 1.5,
           u_rotation: 0,
           u_originX: 0.5,
           u_originY: 0.5,
@@ -147,7 +145,7 @@ export function mountBrandMesh(host: HTMLElement | null, variant: BrandMeshVaria
           meshGradientFragmentShader,
           uniformsFor(currentTheme()),
           { alpha: true, premultipliedAlpha: false, antialias: false },
-          reduced ? 0 : variant === 'hero' ? 0.28 : variant === 'soft' ? 0.16 : 0.2,
+          reduced ? 0 : variant === 'hero' ? 0.16 : 0.1,
           // A fixed starting point, so the first frame always looks composed.
           variant === 'hero' ? 12_000 : variant === 'soft' ? 30_000 : 48_000,
           phone ? 1 : 1.5,
