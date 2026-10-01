@@ -21138,7 +21138,7 @@ import {
   disableVercelDeploymentProtection,
   blockedByProviderLogin,
 } from './src/services/publish-vercel.ts';
-import { cloudflareConfigurationDiagnostic, missingCloudflareSettings, publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
+import { cloudflareConfigurationDiagnostic, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { extractDesignContract } from './src/services/design-contract.ts';
@@ -21627,9 +21627,10 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
     if (publishProvider === 'cloudflare') {
       const missingSettings = missingCloudflareSettings();
-      if (missingSettings.length) {
+      const malformedSettings = malformedCloudflareSettings();
+      if (missingSettings.length || malformedSettings.length) {
         // Answer before spending a build on a publication that cannot reach its host.
-        console.error('[coden:publish_provider_not_configured]', { request_id: requestId, provider: 'cloudflare', missing: missingSettings });
+        console.error('[coden:publish_provider_not_configured]', { request_id: requestId, provider: 'cloudflare', missing: missingSettings, malformed: malformedSettings });
         return res.status(503).json({
           success: false,
           error: 'La publication est momentanément indisponible. Votre projet est conservé.',
@@ -21906,13 +21907,13 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       }
     }
     const diagnostic = diagnosePublishError(e);
-    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, provider_status: Number(e?.statusCode || 0) || undefined, provider_code: e?.providerCode || undefined, message: e?.message || String(e), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
+    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, provider_status: Number(e?.statusCode || 0) || undefined, provider_code: e?.providerCode || undefined, message: redactCloudflareCredentials(redactSecrets(e?.message || String(e), '[redacted]')), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
     if (publishAttemptStarted && publishProjectRecord && !stagedDeploymentId) {
       await saveDeploymentRecord({
         id: randomUUID(),
         organization_id: publishProjectRecord.organization_id,
         project_id: publishProjectRecord.id,
-        provider: 'vercel',
+        provider: publishProvider === 'cloudflare' ? 'cloudflare-pages' : 'vercel',
         provider_deployment_id: publishProviderResult?.deploymentId || null,
         deployment_url: '',
         public_url: '',
@@ -22456,7 +22457,7 @@ app.use((req: any, res: any) => {
 
 const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
-  console.info('[coden:publish_provider]', { provider: publishProviderChoice(), cloudflare_missing: missingCloudflareSettings() });
+  console.info('[coden:publish_provider]', { provider: publishProviderChoice(), cloudflare_missing: missingCloudflareSettings(), cloudflare_malformed: malformedCloudflareSettings() });
   communityService.startWorkers();
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
