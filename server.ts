@@ -22,6 +22,7 @@ import { modelAvailability, openRouterCatalog, validateCatalogModels } from './s
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream, expandPersistedEnvelope } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
+import { captureSince, captureTurnCosts, costCaptureEnabled } from './src/services/turn-cost-capture.ts';
 import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
 import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
 import {
@@ -16990,6 +16991,11 @@ ${resolvedMission}` : resolvedMission;
                 real_cost_usd: pipelineCompleteCostUsd,
                 prompt_tokens: outcome.tokens?.prompt || 0,
                 completion_tokens: outcome.tokens?.completion || 0,
+                cached_tokens: outcome.tokens?.cached || 0,
+                // Lets the cost capture know this turn is already in the ledger.
+                turn_id: harnessContext?.turn.id || null,
+                routing_mode: outcome.routing?.mode || null,
+                outcome: 'completed',
               },
             });
             await settleUnifiedUsage({
@@ -17013,7 +17019,7 @@ ${resolvedMission}` : resolvedMission;
                 allocatedPlatformCostUsd: 0.0001,
                 completeCostUsd: pipelineCompleteCostUsd,
                 idempotencyKey: `pipeline:${requestId}:failed-usage`,
-                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false, prompt_tokens: outcome.tokens?.prompt || 0, completion_tokens: outcome.tokens?.completion || 0 },
+                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false, prompt_tokens: outcome.tokens?.prompt || 0, completion_tokens: outcome.tokens?.completion || 0, cached_tokens: outcome.tokens?.cached || 0, turn_id: harnessContext?.turn.id || null, routing_mode: outcome.routing?.mode || null, outcome: 'failed_verification' },
               });
             }
             await releaseUnifiedUsage(pipelineReservation);
@@ -22475,6 +22481,27 @@ const httpServer = app.listen(port, () => {
       .catch((error: any) => console.warn('[coden:cloudflare_access_failed]', { message: redactCloudflareCredentials(String(error?.message || error)).slice(0, 160) }));
   }
   communityService.startWorkers();
+  if (costCaptureEnabled()) {
+    // The cost of turns that never reached the billing path (cancelled, blocked, crashed, timed out): measurement only.
+    let capturing = false;
+    const captureCosts = () => {
+      const client = getSupabase();
+      if (!client || capturing) return;
+      capturing = true;
+      captureTurnCosts(client as any, {
+        insert: row => insertUnifiedUsageEvent(client, row as any),
+        fee: withProviderPurchaseFee,
+        priceVersion: `${BILLING_V2_VERSION}:capture`,
+        since: captureSince(),
+      }).then(report => {
+        if (report.captured || report.failed) console.info('[coden:turn_cost_capture]', report);
+      }).catch((error: any) => {
+        console.warn('[coden:turn_cost_capture_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
+      }).finally(() => { capturing = false; });
+    };
+    setTimeout(captureCosts, 90_000).unref();
+    setInterval(captureCosts, 10 * 60_000).unref();
+  }
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
   });
