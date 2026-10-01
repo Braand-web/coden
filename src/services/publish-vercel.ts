@@ -717,7 +717,14 @@ export async function unpauseVercelProject(project: string): Promise<'active' | 
 }
 
 export async function promoteVercelDeployment(project: string, deploymentId: string): Promise<void> {
-  await vercelRequest(`/v10/projects/${encodeURIComponent(project)}/promote/${encodeURIComponent(deploymentId)}`, { method: 'POST' });
+  try {
+    await vercelRequest(`/v10/projects/${encodeURIComponent(project)}/promote/${encodeURIComponent(deploymentId)}`, { method: 'POST' });
+  } catch (error: any) {
+    // The first deployment of a Vercel project is made the production deployment on its own, whatever its target:
+    // promoting it answers « already the current production deployment ». The goal is reached, not a failure.
+    if (/already the current production deployment/i.test(String(error?.message || ''))) return;
+    throw error;
+  }
 }
 
 /** A previously live deployment uses Vercel's rollback operation, not promote. */
