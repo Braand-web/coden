@@ -223,6 +223,21 @@ export function createCommunityService(ctx: CommunityContext) {
     await s.transition(listing, 'removed_by_user', { actor: actor.type, actorId: actor.id, event: 'unpublished', code: 'not_published', reason: 'L’app a été dépubliée : elle a quitté la Communauté.', patch: { indexable: false, featured: false } as Partial<ListingRow> });
   }
 
+  /** The project is being deleted: the listing and its thumbnails go first, so nothing of it can be seen for another second. */
+  async function onProjectDeleted(projectId: string): Promise<void> {
+    if (!envSwitches.enabled) return;
+    const client = ctx.getSupabase();
+    if (!client) return;
+    const s = store();
+    const listing = await s.byProject(projectId);
+    if (!listing) return;
+    await s.journal({ listing_id: null, project_id: projectId, actor_type: 'user', event: 'project_deleted', code: 'project_deleted', reason: 'Le projet a été supprimé : l’app a quitté la Communauté.' });
+    const { data } = await client.from('community_listing_versions').select('thumbnail_path').eq('listing_id', listing.id);
+    const paths = [listing.thumbnail_path, ...(data || []).map((row: any) => row.thumbnail_path)].filter(Boolean);
+    if (paths.length) await client.storage.from('community-thumbs').remove(paths).catch(() => undefined);
+    await client.from('community_listings').delete().eq('id', listing.id);
+  }
+
   /** The account is being erased: every trace in the Community goes with it. Remixed copies belong to other people and stay. */
   async function purgeUser(userId: string): Promise<void> {
     if (!envSwitches.enabled && !ctx.getSupabase()) return;
@@ -720,7 +735,7 @@ Votre app reste publiée. Vous pouvez contester cette décision depuis « Mes pu
   }
 
   return {
-    switches, ensureVisible, store, onPublished, onUnpublished, onPlanChanged, purgeUser, mine, publishInfo, updateListing, answerOffer, offerAlreadyAnswered, refreshThumbnail, appeal,
+    switches, ensureVisible, store, onPublished, onUnpublished, onProjectDeleted, onPlanChanged, purgeUser, mine, publishInfo, updateListing, answerOffer, offerAlreadyAnswered, refreshThumbnail, appeal,
     list, detail, recordView, like, report, thumbnail, remix, remixOrigin, templates, useTemplate, recordTemplateProject, refreshRankings, sweepPending, applyDueNotices, startWorkers,
     validateProfileText, recordUpgradeClick, setSwitch, adminOverview, adminAction, resolveAppeal, applySanction, enqueue, queueSize: () => queued, limits,
   };
