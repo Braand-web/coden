@@ -23,6 +23,7 @@ import {
   Rocket,
   X,
   Copy,
+  Users,
 } from 'lucide-react';
 import { apiFetch } from './lib/api';
 import { FirstRunGuide } from './components/first-run-guide';
@@ -48,6 +49,7 @@ import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
 import { maybeOpenOnboarding } from './lib/onboarding-launcher';
+import { communityApi, communitySeen, parseCommunityHash } from './lib/community-client';
 import { fetchSuggestionsSummary, suggestionsBadge, type SuggestionsSummary } from './lib/suggestions-summary';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
@@ -84,12 +86,15 @@ const isLocal = isLocalPreviewEnabled();
 
 // Loaded on first visit: most sessions never open it.
 const SuggestionsPage = lazy(() => import('./components/suggestions/suggestions-page'));
+const CommunityPage = lazy(() => import('./components/community/community-page'));
 
 /* #suggestions and #suggestions/<id>: the page lives inside the dashboard. */
 function readDashboardView() {
   const hash = window.location.hash || '';
   const match = /^#suggestions(?:\/([0-9a-f-]{36}))?$/i.exec(hash);
-  return match ? { view: 'suggestions' as const, postId: match[1] || null } : { view: 'projects' as const, postId: null };
+  if (match) return { view: 'suggestions' as const, postId: match[1] || null, community: null };
+  const community = parseCommunityHash(hash);
+  return community ? { view: 'community' as const, postId: null, community } : { view: 'projects' as const, postId: null, community: null };
 }
 
 // The dashboard is a React entrypoint, so it does not pass through the public
@@ -198,6 +203,8 @@ function projectState(project: DashboardProject) {
 }
 
 function Sidebar({
+  communityEnabled,
+  communityActive,
   suggestionsActive,
   suggestions,
   open,
@@ -207,6 +214,8 @@ function Sidebar({
   onClose,
   onToggleCollapsed,
 }: {
+  communityEnabled: boolean;
+  communityActive: boolean;
   suggestionsActive: boolean;
   suggestions?: SuggestionsSummary | null;
   open: boolean;
@@ -273,6 +282,20 @@ function Sidebar({
           <span>Suggestions</span>
           {badge && <em className={`coden-dashboard-suggest-badge${/\d/.test(badge) ? '' : ' is-new'}`} aria-label={/\d/.test(badge) ? `${badge} nouveauté${badge === '1' ? '' : 's'}` : 'Nouveau'}>{badge}</em>}
         </a>
+
+        {communityEnabled && (
+          <a
+            className={`coden-dashboard-suggest-link${communityActive ? ' is-active' : ''}`}
+            href="#community"
+            aria-current={communityActive ? 'page' : undefined}
+            title="Communauté : des apps et des templates à remixer"
+            onClick={onClose}
+          >
+            <Users size={16} aria-hidden="true" />
+            <span>Communauté</span>
+            {!communityActive && !communitySeen() && <em className="coden-dashboard-suggest-badge is-new" aria-label="Nouveau">Nouveau</em>}
+          </a>
+        )}
 
         <nav className="coden-dashboard-project-nav" aria-label="Projets récents">
           <span className="coden-dashboard-nav-label">Projets</span>
@@ -515,6 +538,8 @@ function DashboardHome() {
     refetchInterval: 5 * 60_000,
     retry: false,
   });
+  // One question, answered once: is the Community on for everyone? Off (or unreachable) means no sidebar entry at all.
+  const communityConfig = useQuery({ queryKey: ['coden-community-config'], queryFn: communityApi.config, staleTime: 60_000, retry: false });
   const navigate = (hash: string) => {
     // Home drops the hash altogether, so the address stays /dashboard.html.
     if (!hash) {
@@ -642,6 +667,8 @@ function DashboardHome() {
   return (
     <div className="coden-dashboard-shell">
       <Sidebar
+        communityEnabled={Boolean(communityConfig.data?.enabled)}
+        communityActive={view.view === 'community'}
         suggestionsActive={view.view === 'suggestions'}
         suggestions={suggestionsQuery.data}
         open={sidebarOpen}
@@ -661,7 +688,21 @@ function DashboardHome() {
           <a className="coden-dashboard-mobile-new" href={builderUrl()}><Plus size={16} aria-hidden="true" /> Nouveau projet</a>
         </header>
 
-        {view.view === 'suggestions' ? (
+        {view.view === 'community' && view.community && communityConfig.data?.enabled ? (
+          <div className="coden-dashboard-content">
+            <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement de la Communauté…</div>}>
+              <CommunityPage
+                tab={view.community.tab}
+                listingId={view.community.listingId}
+                navigate={navigate}
+                projects={projects.map(project => ({ id: project.id, name: project.name }))}
+                onUpgrade={() => openUpgrade(profile)}
+                onUseTemplate={prompt => { void createFromPrompt(prompt, { model: readPreferredModelSelection(), effort: readPreferredEffort() } as any); }}
+                builderUrl={builderUrl}
+              />
+            </Suspense>
+          </div>
+        ) : view.view === 'suggestions' ? (
           <div className="coden-dashboard-content">
             <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement des suggestions…</div>}>
               <SuggestionsPage postId={view.postId} navigate={navigate} />

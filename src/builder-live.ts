@@ -4578,6 +4578,33 @@ function publishBlockerAction(key: string): { action: string; label: string } | 
   return null;
 }
 
+/*
+ * What the Community says about this project's publication (services/community): on the free plan the app is listed
+ * automatically and the person is told so at publication; on a paid plan it is offered once, never imposed. All of it
+ * is optional: when the Community is off, or the request fails, the panel is exactly what it was.
+ */
+type CommunityPublishInfo = { enabled: boolean; kind?: 'free' | 'paid' | 'unknown'; notice?: string; canOffer?: boolean; offerState?: string | null };
+let communityInfo: CommunityPublishInfo | null = null;
+async function loadCommunityInfo(projectId: string): Promise<void> {
+  try {
+    const info = await apiFetch<CommunityPublishInfo & { success?: boolean }>(`/api/community/projects/${encodeURIComponent(projectId)}/publish-info`);
+    communityInfo = info?.enabled ? info : null;
+  } catch { communityInfo = null; }
+}
+async function answerCommunityOffer(answer: 'accept' | 'later' | 'declined') {
+  if (!currentProjectId) return;
+  const projectId = currentProjectId;
+  try {
+    await apiFetch(`/api/community/projects/${encodeURIComponent(projectId)}/offer`, { method: 'POST', body: JSON.stringify({ answer }) });
+    showTransientNotice(answer === 'accept' ? 'Ajoutée : elle apparaîtra dans la Communauté après vérification.' : answer === 'later' ? 'D’accord, vous pourrez l’ajouter plus tard depuis la Communauté.' : 'Compris, nous ne vous le reproposerons pas.', 5000);
+  } catch (error) {
+    showTransientNotice(error instanceof Error ? error.message : 'Action impossible pour le moment.', 5000);
+  }
+  // Answered: the card is gone for good, whatever the answer was.
+  if (communityInfo) communityInfo = { ...communityInfo, canOffer: false };
+  if (document.getElementById('coden-publish-panel')) void openPublishPanel();
+}
+
 let publishStartedAt = 0;
 let publishJustSucceeded = false;
 let publishTimer: number | null = null;
@@ -4669,6 +4696,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           <div class="cdn-pub__confirm">
             <strong>${status.state === 'published' || status.state === 'changes_unpublished' ? 'Mettre à jour cette application ?' : 'Publier cette application ?'}</strong>
             <p>${liveUrl ? 'La version actuelle reste en ligne pendant la vérification.' : 'Une adresse publique sera créée après vérification.'}</p>
+            ${communityInfo?.notice ? `<p class="cdn-pub__community">${escapeHtml(communityInfo.notice)}</p>` : ''}
             <div class="cdn-pub__actions-row">
               <button type="button" class="cdn-pub__secondary" data-publish-action="main" ${isPublishing ? 'disabled' : ''}>Annuler</button>
               <button type="button" class="cdn-pub__primary" data-publish-action="confirm-publish" ${canPublish ? '' : 'disabled'}>${escapeHtml(primaryLabel)}</button>
@@ -4707,6 +4735,17 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
         ${summary && !isPublishing && !blockers.length && !justPublished ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
         ${justPublished && liveUrl ? '<p class="cdn-pub__summary" role="status">Votre application est en ligne.</p>' : ''}
+        ${justPublished && communityInfo?.kind === 'free' ? `<p class="cdn-pub__community" role="status">${escapeHtml(communityInfo.notice || '')} <a href="/dashboard.html#community/mine" target="_blank" rel="noopener">Modifier la fiche</a></p>` : ''}
+        ${justPublished && communityInfo?.kind !== 'free' && communityInfo?.canOffer && communityInfo?.offerState !== 'declined' ? `
+          <div class="cdn-pub__offer" role="group" aria-label="Communauté">
+            <strong>Ajouter à la communauté ?</strong>
+            <p>Montrez cette app aux autres créateurs de Coden. Vous pouvez la retirer à tout moment.</p>
+            <div class="cdn-pub__actions-row">
+              <button type="button" class="cdn-pub__primary" data-publish-action="community-add">Ajouter</button>
+              <button type="button" class="cdn-pub__secondary" data-publish-action="community-later">Plus tard</button>
+              <button type="button" class="cdn-pub__secondary" data-publish-action="community-no">Non</button>
+            </div>
+          </div>` : ''}
         ${mainBlocker && !isPublishing ? `
           <div class="cdn-pub__blockers" role="status">
             <strong>Avant de publier</strong>
@@ -4784,6 +4823,9 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, false, error);
       }
       if (action === 'confirm-publish') void publishCurrentProject(payload);
+      if (action === 'community-add') void answerCommunityOffer('accept');
+      if (action === 'community-later') void answerCommunityOffer('later');
+      if (action === 'community-no') void answerCommunityOffer('declined');
       if (action === 'see-plans') window.location.href = '/pricing.html';
       if (action === 'back-to-chat') {
         closePublishPanel();
@@ -4814,6 +4856,7 @@ async function openPublishPanel() {
   if (!publishInFlight) publishJustSucceeded = false;
   const projectId = currentProjectId;
   renderPublishPanel(null, Boolean(publishInFlight), '', true);
+  void loadCommunityInfo(projectId);
   try {
     const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`);
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
@@ -4885,6 +4928,7 @@ async function publishCurrentProject(previousPayload: PublishApiPayload | null) 
   try {
     const payload = await request;
     publishJustSucceeded = true;
+    await loadCommunityInfo(projectId);
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) renderPublishPanel(payload);
     // The panel may have been closed during the wait; the result still lands.
     else if (currentProjectId === projectId && payload?.publish?.public_url) showTransientNotice(`Application publiée : ${formatPublishUrl(payload.publish.public_url)}`, 6000);
