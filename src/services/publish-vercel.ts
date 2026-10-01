@@ -561,9 +561,9 @@ export async function publishProjectToVercel(params: {
     method: 'POST',
     body: JSON.stringify({
       name: projectName,
-      // A preview deployment does not move an existing production alias.
-      // Promotion happens only after Coden has verified this exact artifact.
-      target: 'preview',
+      // No `target`: a deployment without one is a preview and does not move the production alias. Vercel accepts
+      // only 'production', 'staging' or a custom environment here, so 'preview' is rejected on every project that
+      // already exists. Promotion happens only after Coden has verified this exact artifact.
       files: files.map(({ file, sha, size }) => ({ file, sha, size })),
       projectSettings,
       ...(Object.keys(publicEnv).length ? { env: publicEnv, build: { env: publicEnv } } : {}),
