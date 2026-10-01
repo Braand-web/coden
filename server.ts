@@ -21724,6 +21724,9 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       status: 'ready',
       public_url: verifiedPublicUrl,
       custom_domain: deploy.custom_domain,
+      // The production deployment can differ from the staged candidate when the provider refused to promote it.
+      provider_deployment_id: result.deploymentId,
+      deployment_url: result.deploymentUrl || result.defaultUrl,
       updated_at: createdAt,
     }).eq('id', stagedDeploymentId).eq('project_id', project.id).select('id');
     if (activationError || activatedRows?.length !== 1) {
@@ -21815,7 +21818,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       }
     }
     const diagnostic = diagnosePublishError(e);
-    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, message: e?.message || String(e), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
+    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, provider_status: Number(e?.statusCode || 0) || undefined, provider_code: e?.providerCode || undefined, message: e?.message || String(e), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
     if (publishAttemptStarted && publishProjectRecord && !stagedDeploymentId) {
       await saveDeploymentRecord({
         id: randomUUID(),

@@ -604,9 +604,45 @@ export function blockedByProviderLogin(checks: Array<{ status: number; error?: s
   return checks.length > 0 && checks.every(check => check.status === 401 || check.error === 'VERCEL_LOGIN_REDIRECT');
 }
 
+/** Same files, already uploaded and verified, served as the production deployment (no re-upload, no rebuild locally). */
+export async function redeployAsProduction(result: VercelPublishResult): Promise<VercelPublishResult> {
+  const created = await vercelRequest<VercelDeployment>('/v13/deployments', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: result.projectName,
+      deploymentId: result.deploymentId,
+      target: 'production',
+      meta: { coden: 'true' },
+    }),
+  }, { forceNew: 1, skipAutoDetectionConfirmation: 1 });
+  if (!created?.id) throw new Error('Vercel did not return a production deployment id.');
+  const ready = await waitForDeployment(created.id);
+  const deploymentUrl = asHttpsUrl(ready.url || created.url);
+  if (!deploymentUrl) throw new Error('Vercel did not return a production deployment URL.');
+  return {
+    ...result,
+    projectId: ready.projectId || result.projectId,
+    deploymentId: ready.id || created.id,
+    deploymentUrl,
+    defaultUrl: deploymentUrl,
+  };
+}
+
 /** Promote only a verified preview, then connect the permanent Coden address. */
 export async function activateVercelPublication(result: VercelPublishResult, slug: string): Promise<VercelPublishResult> {
-  await promoteVercelDeployment(result.projectId || result.projectName, result.deploymentId);
+  try {
+    await promoteVercelDeployment(result.projectId || result.projectName, result.deploymentId);
+  } catch (error: any) {
+    // Vercel can refuse to promote a READY preview (422 « Resource cannot be processed »). The artifact was already
+    // verified, so serving the very same files as the production deployment is equivalent: redeploy it as production.
+    console.warn('[coden:vercel_promote_failed]', {
+      project: result.projectName,
+      status: Number(error?.statusCode || 0) || undefined,
+      code: error?.providerCode || undefined,
+      message: redactProviderMessage(error?.message || 'promote failed').slice(0, 200),
+    });
+    result = await redeployAsProduction(result);
+  }
   const host = vercelCodenHostForSlug(slug);
   let defaultUrl = result.deploymentUrl;
   try {
