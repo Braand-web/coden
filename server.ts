@@ -23,6 +23,8 @@ import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream, expandPersistedEnvelope } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import { captureSince, captureTurnCosts, costCaptureEnabled } from './src/services/turn-cost-capture.ts';
+import { costReconcileEnabled, reconcileOpenRouterUsage, reconciliationAlertMessage } from './src/services/cost-reconciliation.ts';
+import { priceDriftMessage, priceSyncEnabled, syncModelPrices } from './src/services/model-price-sync.ts';
 import { OPENROUTER_PURCHASE_FEE_RATE, withProviderPurchaseFee } from './src/services/unified-billing.ts';
 import { buildResumeBrief, isResumableCheckpoint, isResumableFailure, type ResumeCheckpoint } from './src/services/resume-brief.ts';
 import {
@@ -14101,6 +14103,21 @@ async function alertProviderOnce(key: string, intervalMs: number, subject: strin
 async function checkOpenRouterBalance() {
   const snapshot = await openRouterBalance(true);
   if (!snapshot.value) return;
+  if (costReconcileEnabled()) {
+    // Once a day: what OpenRouter says it charged against what the ledger recorded. Read-only, never corrects anything.
+    const reconcileClient = getSupabase();
+    if (reconcileClient) {
+      void reconcileOpenRouterUsage(reconcileClient as any, { at: snapshot.value.fetched_at, totalUsageUsd: snapshot.value.total_usage_usd }, { feeRate: OPENROUTER_PURCHASE_FEE_RATE })
+        .then(outcome => {
+          if (outcome.action !== 'reconciled') return;
+          console.info('[coden:cost_reconciliation]', outcome.plan);
+          if (outcome.plan.status === 'investigate') {
+            void alertProviderOnce(`reconcile:${outcome.plan.periodEnd.slice(0, 10)}`, 20 * 60 * 60_000, 'Rapprochement OpenRouter : écart à expliquer', reconciliationAlertMessage(outcome.plan));
+          }
+        })
+        .catch((error: any) => console.warn('[coden:cost_reconciliation_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) }));
+    }
+  }
   const level = balanceLevel(snapshot.value.remaining_usd, OPENROUTER_LOW_BALANCE_USD);
   if (level === 'ok') return;
   const amount = snapshot.value.remaining_usd.toFixed(2);
@@ -22481,6 +22498,27 @@ const httpServer = app.listen(port, () => {
       .catch((error: any) => console.warn('[coden:cloudflare_access_failed]', { message: redactCloudflareCredentials(String(error?.message || error)).slice(0, 160) }));
   }
   communityService.startWorkers();
+  if (priceSyncEnabled()) {
+    // Live OpenRouter prices against the registry, with a dated history in provider_cost_catalog. Reports; never edits the registry.
+    const syncPrices = async () => {
+      const client = getSupabase();
+      if (!client) return;
+      try {
+        await openRouterCatalog.ensure();
+        const result = await syncModelPrices(client as any, {
+          registry: MODEL_REGISTRY.map(model => ({ id: model.id, inputUsdPerMillion: model.inputUsdPerMillion, outputUsdPerMillion: model.outputUsdPerMillion })),
+          live: id => modelAvailability(id, undefined).pricing ? { id, ...modelAvailability(id, undefined).pricing! } : null,
+        });
+        if (result.changed) console.info('[coden:model_prices_synced]', { listed: result.listed, changed: result.changed });
+        const message = priceDriftMessage(result.drift);
+        if (message) void alertProviderOnce(`prices:${new Date().toISOString().slice(0, 10)}`, 20 * 60 * 60_000, 'Prix de modèles modifiés', message);
+      } catch (error: any) {
+        console.warn('[coden:model_price_sync_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
+      }
+    };
+    setTimeout(() => { void syncPrices(); }, 3 * 60_000).unref();
+    setInterval(() => { void syncPrices(); }, 6 * 3_600_000).unref();
+  }
   if (costCaptureEnabled()) {
     // The cost of turns that never reached the billing path (cancelled, blocked, crashed, timed out): measurement only.
     let capturing = false;
