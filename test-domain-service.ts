@@ -205,17 +205,20 @@ assert.equal(canAddCustomDomain(1, 1, true), true);
 assert.equal(canAddCustomDomain(null, 10_000), true);
 assert.ok(RESERVED_SUBDOMAINS.has('admin') && RESERVED_SUBDOMAINS.has('api'));
 
-// Nothing may reintroduce Cloudflare into the custom-domain path. Only
-// executable lines count — comments document the migration without affecting
-// this regression check.
+// Both providers remain available; domain routing must follow the persisted
+// deployment provider so old Vercel apps do not lose their domains.
 const source = await import('node:fs').then(fs => fs.readFileSync('src/services/domain-service.ts', 'utf8'));
 const code = source
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
   .filter(line => !line.trim().startsWith('//'))
   .join('\n');
-assert.ok(/vercel/i.test(code), 'domains are served by Vercel only');
+assert.ok(/createVercelDomainProvider/.test(code), 'dedicated Vercel publications remain compatible');
 assert.ok(/publish-vercel/.test(code), 'the provider must come from the Vercel publish path');
-assert.ok(!/cloudflare/i.test(code), 'Cloudflare must not be reintroduced through the domain service');
+assert.ok(/createCloudflarePagesDomainProvider/.test(code), 'Cloudflare publications have their own domain provider');
+const server = await import('node:fs').then(fs => fs.readFileSync('server.ts', 'utf8'));
+const routing = server.slice(server.indexOf('async function createProjectDomainProvider'), server.indexOf('type PublicationUsage'));
+assert.ok(/getLatestPublishedDeployment\(project.id\)/.test(routing), 'domain provider follows the stored deployment');
+assert.ok(/published\?\.provider === 'cloudflare-pages'/.test(routing), 'Cloudflare domain operations never target Vercel');
 
 console.log('domain service tests passed');

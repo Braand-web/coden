@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cloudflareConfigurationDiagnostic, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
+import { cloudflareConfigurationDiagnostic, cloudflarePublicationSlug, publicationHostingConfigured, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
 
 const ok = { verified: true, baseUrl: 'x', checks: [] };
 const ko = { verified: false, baseUrl: '', checks: [{ url: 'https://x.pages.dev/', status: 404, ok: false, error: 'HTTP 404' }] };
@@ -33,6 +33,13 @@ describe('publishing a static app on Cloudflare Pages', () => {
     const deps = makeDeps({ verify: vi.fn(async () => { order.push('verify'); return ok; }) });
     await publishStaticAppToCloudflarePages({ ...params, onDeployed: async () => { order.push('recorded'); } }, deps);
     expect(order[0]).toBe('recorded');
+  });
+
+  it('restores the previous live version when saving the candidate fails', async () => {
+    const deps = makeDeps();
+    await expect(publishStaticAppToCloudflarePages({ ...params, previousDeploymentId: 'dep_0', onDeployed: async () => { throw new Error('database unavailable'); } }, deps)).rejects.toThrow('database unavailable');
+    expect(deps.rollback).toHaveBeenCalledWith('coden-mon-app', 'dep_0');
+    expect(deps.verify).not.toHaveBeenCalled();
   });
 
   it('falls back to the pages.dev address, without failing, when the Coden address does not answer yet', async () => {
@@ -78,6 +85,25 @@ describe('the Coden address upgrade and the provider choice', () => {
 });
 
 describe('Cloudflare settings', () => {
+  it('uses globally unique stable app identities, not owner-scoped project names', () => {
+    const a = cloudflarePublicationSlug('11111111-1111-4111-8111-111111111111');
+    const b = cloudflarePublicationSlug('22222222-2222-4222-8222-222222222222');
+    expect(a).not.toBe(b); expect(a.length).toBeLessThan(53);
+    expect(() => cloudflarePublicationSlug('../other')).toThrow();
+  });
+  it('requires Cloudflare and production isolation, not Vercel, for the publish button', () => {
+    const env = { NODE_ENV: 'production', E2B_API_KEY: 'isolated', CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), CLOUDFLARE_ZONE_ID_CODEN_FUN: 'b'.repeat(32), CLOUDFLARE_API_TOKEN: 'x'.repeat(40) };
+    expect(publicationHostingConfigured(env)).toBe(true);
+    expect(publicationHostingConfigured({ ...env, E2B_API_KEY: '' })).toBe(false);
+    expect(publicationHostingConfigured({ ...env, CLOUDFLARE_API_TOKEN: '' })).toBe(false);
+    expect(publicationHostingConfigured({ CODEN_PUBLISH_PROVIDER: 'vercel', VERCEL_TOKEN: 'existing' })).toBe(true);
+  });
+  it('checks the immutable deployment alone before looking at production', async () => {
+    const deps = makeDeps();
+    await publishStaticAppToCloudflarePages(params, deps);
+    expect(deps.verify).toHaveBeenNthCalledWith(1, expect.objectContaining({ defaultUrl: '', deploymentUrl: 'https://abc.coden-mon-app.pages.dev' }), ['/']);
+    expect(deps.verify).toHaveBeenNthCalledWith(2, expect.objectContaining({ defaultUrl: 'https://coden-mon-app.pages.dev', deploymentUrl: '' }), ['/']);
+  });
   it('names the missing settings without reading their values', () => {
     expect(missingCloudflareSettings({})).toEqual(['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID_CODEN_FUN']);
     expect(missingCloudflareSettings({ CLOUDFLARE_ACCOUNT_ID: 'a', CLOUDFLARE_API_TOKEN: ' ', CLOUDFLARE_ZONE_ID_CODEN_FUN: 'z' })).toEqual(['CLOUDFLARE_API_TOKEN']);

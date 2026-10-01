@@ -68,6 +68,7 @@ export const CODEN_ROOT_DOMAIN = codenRootDomain();
 async function cf<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${CF_API}${path}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(30_000),
     headers: {
       Authorization: `Bearer ${apiToken()}`,
       'Content-Type': 'application/json',
@@ -97,7 +98,7 @@ export async function ensurePagesProject(cfName: string): Promise<{ name: string
     const p = await cf<any>(`/accounts/${accountId()}/pages/projects/${cfName}`);
     return { name: p.name, subdomain: p.subdomain };
   } catch (e: any) {
-    if (e.statusCode !== 404) throw e;
+    if (e.statusCode !== 404 && !e.cfErrors?.some((item: any) => item.code === 8000007)) throw e;
   }
   const created = await cf<any>(`/accounts/${accountId()}/pages/projects`, {
     method: 'POST',
@@ -169,6 +170,7 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
     });
     const data: any = await response.json();
     if (!response.ok || data?.success === false) {
@@ -179,9 +181,18 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
 
   // Step 2: hash + prepare manifest
   const files = walkFiles(distDir);
+  const assetFiles = Object.entries(files);
+  if (!assetFiles.length || assetFiles.length > 2_000) throw new Error('Cloudflare asset count limit');
+  let totalBytes = 0;
+  for (const [, file] of assetFiles) {
+    const size = fs.statSync(file).size;
+    totalBytes += size;
+    if (size > 25 * 1024 * 1024 || totalBytes > 100 * 1024 * 1024) throw new Error('Cloudflare asset size limit');
+  }
   const manifest: Record<string, string> = {};
   const payloads: Record<string, { base64: string; metadata: { contentType: string } }> = {};
   for (const [rel, abs] of Object.entries(files)) {
+    if (['/_headers', '/_redirects', '/_routes.json'].includes(rel)) continue;
     const buf = fs.readFileSync(abs);
     const base64 = buf.toString('base64');
     manifest[rel] = pagesAssetHash(base64, rel);
@@ -198,9 +209,16 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   }
 
   // Step 4: upload missing in batches
-  const batchSize = 5;
-  for (let i = 0; i < missing.length; i += batchSize) {
-    const batch = missing.slice(i, i + batchSize).map((h: string) => ({
+  for (let i = 0; i < missing.length;) {
+    const hashes: string[] = [];
+    let bytes = 0;
+    while (i < missing.length && hashes.length < 5) {
+      const hash = missing[i];
+      const size = payloads[hash].base64.length;
+      if (hashes.length && bytes + size > 40 * 1024 * 1024) break;
+      hashes.push(hash); bytes += size; i += 1;
+    }
+    const batch = hashes.map((h: string) => ({
       key: h,
       value: payloads[h].base64,
       metadata: payloads[h].metadata,
@@ -208,16 +226,23 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
     }));
     await assets('upload', batch);
   }
+  // Keep cached assets alive between subsequent publications, as Wrangler does.
+  await assets('upsert-hashes', { hashes: Object.values(manifest) });
 
   // Step 5: create deployment (multipart) — trigger deployment referencing manifest
   const form = new FormData();
   form.append('manifest', JSON.stringify(manifest));
   form.append('branch', 'main');
+  for (const name of ['_headers', '_redirects']) {
+    const file = files[`/${name}`];
+    if (file) form.append(name, new Blob([fs.readFileSync(file)], { type: 'text/plain' }), name);
+  }
 
   const deployRes = await fetch(`${CF_API}/accounts/${accountId()}/pages/projects/${cfName}/deployments`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiToken()}` },
     body: form as any,
+    signal: AbortSignal.timeout(60_000),
   });
   const deployJson: any = await deployRes.json();
   if (!deployRes.ok || deployJson?.success === false) {
@@ -253,7 +278,7 @@ export async function cloudflareAccessReport(): Promise<Record<'token' | 'pages'
     const verified: any = await cf('/user/tokens/verify').catch(() => cf(`/accounts/${accountId()}/tokens/verify`));
     if (verified?.status && verified.status !== 'active') throw Object.assign(new Error('inactive'), { statusCode: verified.status });
   });
-  await probe('pages', () => cf(`/accounts/${accountId()}/pages/projects?per_page=1`));
+  await probe('pages', () => cf(`/accounts/${accountId()}/pages/projects`));
   await probe('zone', () => cf(`/zones/${codenZoneId()}`));
   await probe('dns', () => cf(`/zones/${codenZoneId()}/dns_records?per_page=1`));
   return report;
@@ -282,6 +307,8 @@ export async function upsertCnameOnCodenFun(subdomain: string, target: string): 
   const existing = await cf<any[]>(`/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`);
   const record = { type: 'CNAME', name, content: target, ttl: 1, proxied: true };
   if (existing?.length) {
+    // Never overwrite an unrelated A/TXT/CNAME record, even when the name matches.
+    if (existing.length !== 1 || existing[0].type !== 'CNAME' || String(existing[0].content).toLowerCase().replace(/\.$/, '') !== target.toLowerCase()) throw new Error('CODEN_PUBLICATION_DNS_CONFLICT');
     await cf(`/zones/${zoneId}/dns_records/${existing[0].id}`, {
       method: 'PUT',
       body: JSON.stringify(record),
@@ -291,6 +318,28 @@ export async function upsertCnameOnCodenFun(subdomain: string, target: string): 
       method: 'POST',
       body: JSON.stringify(record),
     });
+  }
+}
+
+/** Resolve a Pages project only from the provider URL persisted for this app. */
+export function pagesProjectFromDeploymentUrl(value: string): string {
+  const url = new URL(value);
+  const match = /^(?:[a-z0-9-]+\.)?(coden-[a-z0-9-]+)\.pages\.dev$/.exec(url.hostname);
+  if (url.protocol !== 'https:' || url.username || url.password || !match) throw new Error('INVALID_PAGES_DEPLOYMENT_URL');
+  return match[1];
+}
+
+/** An unpublish must actually remove hosting, and must not hide provider failures. */
+export async function removePagesPublication(cfName: string, subdomain: string): Promise<void> {
+  if (!/^coden-[a-z0-9-]+$/.test(cfName)) throw new Error('INVALID_PAGES_PROJECT');
+  try { await cf(`/accounts/${accountId()}/pages/projects/${cfName}`, { method: 'DELETE' }); }
+  catch (error: any) { if (error.statusCode !== 404) throw error; }
+  const name = `${codenSubdomainForSlug(subdomain)}.${CODEN_ROOT_DOMAIN}`;
+  const records = await cf<any[]>(`/zones/${codenZoneId()}/dns_records?name=${encodeURIComponent(name)}`);
+  for (const record of records || []) {
+    if (record.type === 'CNAME' && String(record.content).replace(/\.$/, '') === `${cfName}.pages.dev`) {
+      await cf(`/zones/${codenZoneId()}/dns_records/${record.id}`, { method: 'DELETE' });
+    }
   }
 }
 

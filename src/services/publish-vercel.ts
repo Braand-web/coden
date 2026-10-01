@@ -431,6 +431,7 @@ export async function verifyVercelDeployment(
   result: Pick<VercelPublishResult, 'defaultUrl' | 'deploymentUrl' | 'codenUrl'>,
   routePaths: string[] = ['/'],
   fetchImpl: typeof fetch = fetch,
+  options: { expectedPublicationId?: string } = {},
 ): Promise<{ verified: boolean; baseUrl: string; checks: Array<{ url: string; status: number; ok: boolean; error?: string }> }> {
   const bases = Array.from(new Set([result.codenUrl, result.defaultUrl, result.deploymentUrl].filter(Boolean))) as string[];
   const routes = Array.from(new Set(['/', ...routePaths]))
@@ -487,11 +488,15 @@ export async function verifyVercelDeployment(
           : '';
         const hasDocument = /<!doctype\s+html|<html\b|<body\b/i.test(html);
         const body = /<body\b[^>]*>([\s\S]*)/i.exec(html)?.[1] || '';
-        const hasAppContent = /<script\b|<(?:main|h[1-6]|p|button|input|img|svg|canvas|iframe|form|a)\b/i.test(body)
+        // Vite places module scripts in <head>, while React mounts into an initially empty root.
+        const hasSpaEntry = /<script\b[^>]*\bsrc\s*=\s*["'][^"']+["']/i.test(html)
+          && /<(?:div|main)\b[^>]*\bid\s*=\s*["'](?:root|app|__next)["']/i.test(body);
+        const hasAppContent = hasSpaEntry || /<script\b|<(?:main|h[1-6]|p|button|input|img|svg|canvas|iframe|form|a)\b/i.test(body)
           || /[^\s<>][^<>]*</.test(body.replace(/<(?:style|script)\b[\s\S]*?<\/\s*(?:style|script)\s*>/gi, ''));
         const providerError = /<title[^>]*>\s*(?:404:\s*NOT_FOUND|Application Error|Internal Server Error)\s*<\/title>/i.test(html);
         let error = !response.ok ? `HTTP ${response.status}` : redirectedToLogin ? 'VERCEL_LOGIN_REDIRECT'
           : !html ? 'NON_HTML_RESPONSE' : providerError ? 'ERROR_DOCUMENT' : !hasDocument || !hasAppContent ? 'EMPTY_HTML_DOCUMENT' : undefined;
+        if (!error && options.expectedPublicationId && !html.includes(`name="coden-build" content="${options.expectedPublicationId}"`)) error = 'STALE_APP_ARTIFACT';
         if (!error) {
           for (const assetUrl of assetPaths(html, response.url || url)) {
             if (verifiedAssets.has(assetUrl)) continue;
@@ -511,6 +516,7 @@ export async function verifyVercelDeployment(
       } finally {
         clearTimeout(timeout);
       }
+      if (attemptChecks.at(-1)?.ok === false) break;
     }
     checks.push(...attemptChecks);
     if (attemptChecks.length && attemptChecks.every(check => check.ok)) return { verified: true, baseUrl: base, checks };

@@ -12,6 +12,7 @@
 
 import { UserPlan } from '../config/ai-models.ts';
 import { attachVercelCustomDomain, getVercelCustomDomainStatus, removeVercelCustomDomain } from './publish-vercel.ts';
+import { attachCustomDomain, getCustomDomainStatus, removeCustomDomain } from './publish-cloudflare.ts';
 
 export const RESERVED_SUBDOMAINS = new Set([
   'admin', 'api', 'www', 'app', 'billing', 'support', 'assets', 'jobs', 'portal',
@@ -85,6 +86,22 @@ export function createVercelDomainProvider(projectName: string): DomainHostProvi
     async detach(domain: string) {
       await removeVercelCustomDomain(projectName, domain);
     },
+  };
+}
+
+/** Domain operations follow the app's actual host, not a server-wide default. */
+export function createCloudflarePagesDomainProvider(projectName: string): DomainHostProvider {
+  if (!/^coden-[a-z0-9-]+$/.test(projectName)) throw new Error('INVALID_PAGES_PROJECT');
+  return {
+    async attach(domain) {
+      await attachCustomDomain(projectName, domain);
+      return { instructions: [{ type: 'CNAME', name: domain, value: `${projectName}.pages.dev`, status: 'pending' }] };
+    },
+    async status(domain) {
+      const result = await getCustomDomainStatus(projectName, domain, 'static-assets');
+      return { active: result.status === 'active', detail: result.status, certificate: result.certificate_status };
+    },
+    async detach(domain) { await removeCustomDomain(projectName, domain, 'static-assets'); },
   };
 }
 
