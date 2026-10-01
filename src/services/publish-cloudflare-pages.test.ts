@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
+import { cloudflareConfigurationDiagnostic, missingCloudflareSettings, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
 
 const ok = { verified: true, baseUrl: 'x', checks: [] };
 const ko = { verified: false, baseUrl: '', checks: [{ url: 'https://x.pages.dev/', status: 404, ok: false, error: 'HTTP 404' }] };
@@ -74,5 +74,18 @@ describe('the Coden address upgrade and the provider choice', () => {
     expect(publishProviderChoice({ CODEN_PUBLISH_PROVIDER: 'cloudflare' })).toBe('cloudflare');
     expect(publishProviderChoice({ CODEN_PUBLISH_PROVIDER: 'vercel' })).toBe('vercel');
     expect(publishProviderChoice({ CODEN_PUBLISH_PROVIDER: 'nonsense' })).toBe('cloudflare');
+  });
+});
+
+describe('Cloudflare settings', () => {
+  it('names the missing settings without reading their values', () => {
+    expect(missingCloudflareSettings({})).toEqual(['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID_CODEN_FUN']);
+    expect(missingCloudflareSettings({ CLOUDFLARE_ACCOUNT_ID: 'a', CLOUDFLARE_API_TOKEN: ' ', CLOUDFLARE_ZONE_ID_CODEN_FUN: 'z' })).toEqual(['CLOUDFLARE_API_TOKEN']);
+    expect(missingCloudflareSettings({ CLOUDFLARE_ACCOUNT_ID: 'a', CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_ZONE_ID_CODEN_FUN: 'z' })).toEqual([]);
+  });
+
+  it('reports a missing Cloudflare setting as such, not as a Vercel one', () => {
+    expect(cloudflareConfigurationDiagnostic('Missing environment variable CLOUDFLARE_ACCOUNT_ID')).toMatchObject({ diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED', status: 503 });
+    expect(cloudflareConfigurationDiagnostic('Missing VERCEL_TOKEN')).toBeNull();
   });
 });

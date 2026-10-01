@@ -1556,6 +1556,9 @@ function diagnosePublishError(error: any) {
       status: statusCode,
     };
   }
+  // A missing Cloudflare setting must not be reported as a Vercel one by the generic rules below.
+  const cloudflareConfiguration = cloudflareConfigurationDiagnostic(message);
+  if (cloudflareConfiguration) return cloudflareConfiguration;
   /*
    * A build that failed on Vercel is the app's problem, and the one message
    * that says which: the compiler's own line. It fell through to "Vercel a
@@ -1585,14 +1588,6 @@ function diagnosePublishError(error: any) {
       message: 'La publication Vercel n’est pas configurée sur le serveur. Ajoutez VERCEL_TOKEN, redéployez, puis réessayez.',
       diagnostic_code: 'VERCEL_NOT_CONFIGURED',
       suggested_action: 'configure_vercel',
-      status: 503,
-    };
-  }
-  if (/CLOUDFLARE_(?:ACCOUNT_ID|API_TOKEN|ZONE_ID)/i.test(message)) {
-    return {
-      message: 'La publication Cloudflare n’est pas configurée sur le serveur. Votre projet est conservé.',
-      diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED',
-      suggested_action: 'configure_cloudflare',
       status: 503,
     };
   }
@@ -21143,7 +21138,7 @@ import {
   disableVercelDeploymentProtection,
   blockedByProviderLogin,
 } from './src/services/publish-vercel.ts';
-import { publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
+import { cloudflareConfigurationDiagnostic, missingCloudflareSettings, publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { extractDesignContract } from './src/services/design-contract.ts';
@@ -21630,6 +21625,21 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         suggested_action: 'connect_backend_then_publish',
       });
     }
+    if (publishProvider === 'cloudflare') {
+      const missingSettings = missingCloudflareSettings();
+      if (missingSettings.length) {
+        // Answer before spending a build on a publication that cannot reach its host.
+        console.error('[coden:publish_provider_not_configured]', { request_id: requestId, provider: 'cloudflare', missing: missingSettings });
+        return res.status(503).json({
+          success: false,
+          error: 'La publication est momentanément indisponible. Votre projet est conservé.',
+          message: 'La publication est momentanément indisponible. Votre projet est conservé.',
+          diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED',
+          request_id: requestId,
+          suggested_action: 'configure_cloudflare',
+        });
+      }
+    }
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
     let result!: Awaited<ReturnType<typeof publishProjectToVercel>>;
     let verifiedPublicUrl = '';
@@ -21921,7 +21931,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
     const userMessage = diagnostic.suggested_action === 'fix_build_then_publish'
       ? 'Cette version n’a pas pu être préparée. Demandez à Coden de la corriger, puis réessayez.'
-      : diagnostic.suggested_action === 'configure_vercel' || diagnostic.suggested_action === 'update_vercel_token'
+      : diagnostic.suggested_action === 'configure_vercel' || diagnostic.suggested_action === 'update_vercel_token' || diagnostic.suggested_action === 'configure_cloudflare'
         ? 'La publication est momentanément indisponible. Votre projet est conservé.'
         : 'La publication n’a pas abouti. Votre projet est conservé et vous pouvez réessayer.';
     return res.status(diagnostic.status).json({
@@ -22446,6 +22456,7 @@ app.use((req: any, res: any) => {
 
 const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
+  console.info('[coden:publish_provider]', { provider: publishProviderChoice(), cloudflare_missing: missingCloudflareSettings() });
   communityService.startWorkers();
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });

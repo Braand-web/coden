@@ -137,3 +137,21 @@ export async function upgradeToCodenAddress(slug: string, publicRoutes: string[]
 export function publishProviderChoice(env: Record<string, string | undefined> = process.env): 'vercel' | 'cloudflare' {
   return String(env.CODEN_PUBLISH_PROVIDER || '').trim().toLowerCase() === 'vercel' ? 'vercel' : 'cloudflare';
 }
+
+export const CLOUDFLARE_PUBLISH_VARIABLES = ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ZONE_ID_CODEN_FUN'] as const;
+
+/** Which Cloudflare settings are missing, by name only (a value is never read out). */
+export function missingCloudflareSettings(env: Record<string, string | undefined> = process.env): string[] {
+  return CLOUDFLARE_PUBLISH_VARIABLES.filter(name => !String(env[name] || '').trim());
+}
+
+/** The diagnostic for a failure that names a missing Cloudflare setting, else null. Checked before any generic rule. */
+export function cloudflareConfigurationDiagnostic(message: string) {
+  if (!/CLOUDFLARE_(?:ACCOUNT_ID|API_TOKEN|ZONE_ID)/i.test(message)) return null;
+  return {
+    message: 'La publication est momentanément indisponible : l’hébergement n’est pas encore configuré sur le serveur. Votre projet est conservé.',
+    diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED',
+    suggested_action: 'configure_cloudflare',
+    status: 503,
+  };
+}
