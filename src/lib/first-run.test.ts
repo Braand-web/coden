@@ -50,7 +50,7 @@ describe('where the builder uses it', () => {
   const builder = readFileSync('src/builder-live.ts', 'utf8');
 
   it('announces the wait only for a real build, once, never on a retry or a chat', () => {
-    expect(builder).toMatch(/!isRecoveryRetry && !attach && promptUiContext === 'project_mission' && firstBuildPending\(\)\) appendMessage\('system', FIRST_BUILD_EXPECTATION\)/);
+    expect(builder).toMatch(/!isRecoveryRetry && !attach && promptUiContext === 'project_mission' && firstBuildPending\(\)\) \{\n    appendMessage\('system', FIRST_BUILD_EXPECTATION\);/);
   });
 
   it('celebrates only a build that worked and showed something, and offers change / publish / share', () => {
@@ -58,5 +58,30 @@ describe('where the builder uses it', () => {
     const fn = builder.slice(builder.indexOf('function showFirstSuccess'), builder.indexOf('function bindProjectMenu'));
     expect(fn.indexOf('markFirstBuildDone()')).toBeLessThan(fn.indexOf('appendMessage('));
     for (const label of ["'Modifier'", "'Publier'", "'Partager par lien'"]) expect(fn).toContain(label);
+  });
+});
+
+describe('help for a first build that is slow or fails', () => {
+  it('asks for a deliberately simple first version, once, in the language of the request', async () => {
+    const { simplerRetryPrompt } = await import('./first-run');
+    const fr = simplerRetryPrompt('Crée un CRM complet', true);
+    expect(fr.startsWith('Crée un CRM complet')).toBe(true);
+    expect(fr).toMatch(/volontairement simple/);
+    expect(simplerRetryPrompt(fr, true)).toBe(fr);
+    expect(simplerRetryPrompt('Build a CRM', false)).toMatch(/deliberately simple/);
+  });
+
+  it('tells a slow build — after four minutes, past the median of two — that the work goes on', async () => {
+    const { FIRST_BUILD_SLOW, FIRST_BUILD_SLOW_MS } = await import('./first-run');
+    expect(FIRST_BUILD_SLOW_MS).toBe(240_000);
+    expect(FIRST_BUILD_SLOW).toMatch(/Le travail continue/);
+  });
+
+  it('is wired once per first build: a timer cleared when the run ends, and a simple retry that never loops', () => {
+    const builder = readFileSync('src/builder-live.ts', 'utf8');
+    expect(builder).toMatch(/slowFirstBuildTimer = window\.setTimeout\(\(\) => \{ if \(isGenerating\) appendMessage\('system', FIRST_BUILD_SLOW\); \}, FIRST_BUILD_SLOW_MS\)/);
+    expect(builder).toMatch(/if \(slowFirstBuildTimer !== null\) window\.clearTimeout\(slowFirstBuildTimer\)/);
+    expect(builder).toMatch(/promptUiContext === 'project_mission' && firstBuildPending\(\) && !isRecoveryRetry\) \{\n        const help = appendMessage\('system', FIRST_BUILD_FAILED\)/);
+    expect(builder).toMatch(/addInlineAction\(help, 'Réessayer en version simple'/);
   });
 });

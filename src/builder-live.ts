@@ -34,7 +34,7 @@ import { MODEL_REGISTRY, PROVIDER_META, AI_MODEL_PLAN_ACCESS, isPlanAtLeast, typ
 import { providerIconSvg } from './model-provider-icons';
 import { mountBuilderConversation, type CodenConversationApi } from './builder-conversation-island';
 import type { MessageAttachment } from './components/agent/message-attachments';
-import { FIRST_BUILD_EXPECTATION, FIRST_SUCCESS_TEXT, firstBuildPending, markFirstBuildDone } from './lib/first-run';
+import { FIRST_BUILD_EXPECTATION, FIRST_BUILD_FAILED, FIRST_BUILD_SLOW, FIRST_BUILD_SLOW_MS, FIRST_SUCCESS_TEXT, firstBuildPending, markFirstBuildDone, simplerRetryPrompt } from './lib/first-run';
 import { mountAgentModeComposer } from './components/agent/agent-mode-composer';
 import { connectToolkit, openIntegrationsModal } from './integrations';
 import type { ConnectionChoiceEventDetail } from './components/agent/agent-message';
@@ -6766,7 +6766,12 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   // An attached run's request is already in the restored conversation.
   if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText, { attachments: displayAttachments });
   // A first build says how long it takes and that the work goes on if the page is closed.
-  if (!isRecoveryRetry && !attach && promptUiContext === 'project_mission' && firstBuildPending()) appendMessage('system', FIRST_BUILD_EXPECTATION);
+  let slowFirstBuildTimer: number | null = null;
+  if (!isRecoveryRetry && !attach && promptUiContext === 'project_mission' && firstBuildPending()) {
+    appendMessage('system', FIRST_BUILD_EXPECTATION);
+    // A long wait with no word is when people leave: say once that it is taking longer, and that the work goes on.
+    slowFirstBuildTimer = window.setTimeout(() => { if (isGenerating) appendMessage('system', FIRST_BUILD_SLOW); }, FIRST_BUILD_SLOW_MS);
+  }
 
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
@@ -7425,10 +7430,22 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
         retry();
       };
       showRuntimeRecovery(status, error, speaksFrench, { retry, useAuto });
+      // A first build that fails is where most newcomers stop: offer to start smaller, in one click.
+      if (promptUiContext === 'project_mission' && firstBuildPending() && !isRecoveryRetry) {
+        const help = appendMessage('system', FIRST_BUILD_FAILED);
+        addInlineAction(help, 'Réessayer en version simple', () => void generateFromPrompt(
+          simplerRetryPrompt(safePrompt, speaksFrench),
+          requestedMode,
+          useLastPlan,
+          { ...effectiveExtra, __codenRetry: true },
+          safeDisplayText,
+        ));
+      }
       if (generationTouchesPreview) setEmptyPreviewState('idle', 'Preview non vérifiée');
       }
     }
   } finally {
+    if (slowFirstBuildTimer !== null) window.clearTimeout(slowFirstBuildTimer);
     if (journalTimer !== null) window.clearInterval(journalTimer);
     if (journalFlushTimer !== null) window.clearTimeout(journalFlushTimer);
     if (journalFrame) window.cancelAnimationFrame(journalFrame);

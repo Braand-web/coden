@@ -105,3 +105,42 @@ describe('activation: how many people who tried got a real result', () => {
     expect(empty.activation).toMatchObject({ people: 0, withResult: 0, rate: null, underThreeMinutes: null, firstResultP50Ms: null });
   });
 });
+
+describe('the activation funnel', () => {
+  const NOW2 = Date.parse('2026-09-30T20:00:00Z');
+  const daysAgo = (n: number) => new Date(NOW2 - n * 86_400_000).toISOString();
+  const built = (user: string) => ({ user_id: user, status: 'completed', created_at: daysAgo(1), started_at: daysAgo(1), completed_at: new Date(Date.parse(daysAgo(1)) + 120_000).toISOString() });
+  const chat = (user: string) => ({ user_id: user, status: 'completed', created_at: daysAgo(1), started_at: daysAgo(1), completed_at: new Date(Date.parse(daysAgo(1)) + 5_000).toISOString() });
+  const failed = (user: string) => ({ user_id: user, status: 'failed', created_at: daysAgo(1), started_at: daysAgo(1), completed_at: new Date(Date.parse(daysAgo(1)) + 600_000).toISOString() });
+
+  it('follows the people who signed up, step by step', async () => {
+    const { buildActivationFunnel } = await import('./reliability-metrics');
+    const users = ['a', 'b', 'c', 'd'].map(id => ({ id, created_at: daysAgo(2) }));
+    const funnel = buildActivationFunnel({ users, projects: [{ owner_id: 'a' }, { owner_id: 'b' }, { owner_id: 'c' }], turns: [built('a'), failed('b'), chat('c')], now: NOW2, days: 14 });
+    expect(funnel.steps.map(step => step.people)).toEqual([4, 3, 3, 1]);
+    expect(funnel.steps[3]).toMatchObject({ key: 'result', rateOfSignups: 0.25, rateOfPrevious: 0.333 });
+    expect(funnel.lostAt).toBe('result');
+  });
+
+  it('names the step where most people stop', async () => {
+    const { buildActivationFunnel } = await import('./reliability-metrics');
+    const users = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id, created_at: daysAgo(1) }));
+    const funnel = buildActivationFunnel({ users, projects: [{ owner_id: 'a' }], turns: [built('a')], now: NOW2 });
+    expect(funnel.lostAt).toBe('project');
+  });
+
+  it('counts only people who signed up in the window, and what they did since — not other people’s', async () => {
+    const { buildActivationFunnel } = await import('./reliability-metrics');
+    const funnel = buildActivationFunnel({ users: [{ id: 'old', created_at: daysAgo(60) }, { id: 'new', created_at: daysAgo(3) }], projects: [{ owner_id: 'old' }, { owner_id: 'new' }], turns: [built('old'), built('new')], now: NOW2, days: 14 });
+    expect(funnel.steps.map(step => step.people)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('has no rates without anyone, and no loss when nobody is lost', async () => {
+    const { buildActivationFunnel } = await import('./reliability-metrics');
+    const empty = buildActivationFunnel({ users: [], projects: [], turns: [], now: NOW2 });
+    expect(empty.steps.every(step => step.rateOfSignups === null)).toBe(true);
+    expect(empty.lostAt).toBeNull();
+    const all = buildActivationFunnel({ users: [{ id: 'a', created_at: daysAgo(1) }], projects: [{ owner_id: 'a' }], turns: [built('a')], now: NOW2 });
+    expect(all.lostAt).toBeNull();
+  });
+});
