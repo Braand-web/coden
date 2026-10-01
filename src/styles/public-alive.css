@@ -12,11 +12,8 @@
 :root { --pa-hue-b: color-mix(in srgb, var(--accent) 52%, var(--success)); }
 body[data-coden-surface='public'], body.coden-pricing-page { overflow-x: clip; }
 
-/* ── Aurora behind the first screen ─────────────────────────────────────── */
+/* ── First screen: the brand mesh (src/lib/page-motion.ts) sits behind it, as on the landing ── */
 .public-page-hero, .pricing-page-hero { position: relative; isolation: isolate; }
-.public-page-hero::before, .pricing-page-hero::before, .public-page-hero::after, .pricing-page-hero::after { content: ''; position: absolute; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(64px); will-change: transform; }
-.public-page-hero::before, .pricing-page-hero::before { left: 50%; top: -60px; width: min(620px, 90vw); height: 300px; margin-left: -390px; background: color-mix(in srgb, var(--accent) 20%, transparent); animation: pa-drift-a 20s ease-in-out infinite alternate; }
-.public-page-hero::after, .pricing-page-hero::after { left: 50%; top: -10px; width: min(560px, 80vw); height: 260px; margin-left: -60px; background: color-mix(in srgb, var(--pa-hue-b) 18%, transparent); animation: pa-drift-b 24s ease-in-out infinite alternate; }
 @keyframes pa-drift-a { to { transform: translate3d(70px, 40px, 0) scale(1.12); } }
 @keyframes pa-drift-b { to { transform: translate3d(-80px, 46px, 0) scale(1.18); } }
 
@@ -51,7 +48,7 @@ body .public-page-cta > a[href]::after { content: ''; position: absolute; inset:
 .public-progress { position: fixed; z-index: 60; top: 0; left: 0; right: 0; height: 2px; transform: scaleX(0); transform-origin: left; pointer-events: none; background: linear-gradient(90deg, var(--accent), var(--pa-hue-b)); }
 
 @media (prefers-reduced-motion: reduce) {
-  .public-page-hero::before, .pricing-page-hero::before, .public-page-hero::after, .pricing-page-hero::after, .public-page-cta::before, .public-page-cta::after, .public-page-kicker::before, body .public-page-cta > a[href]::after { animation: none; }
+  .public-page-cta::before, .public-page-cta::after, .public-page-kicker::before, body .public-page-cta > a[href]::after { animation: none; }
   .public-page-content article::after, .pricing-plan-card::after, .public-page-content article > span, .public-legal-content section { transition: none; }
   .public-progress { display: none; }
 }

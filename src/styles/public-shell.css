@@ -129,3 +129,15 @@ html[data-theme="dark"] .coden-public-cta { box-shadow: 0 0 0 1px color-mix(in s
   .coden-public-header, .coden-public-nav a, .coden-public-signin, .coden-public-cta, .coden-public-menu-icon i, .coden-public-mobile-panel, .coden-public-mobile-panel a, .coden-public-footer-column a, .coden-public-footer-logo, .coden-public-theme-toggle { animation: none !important; transition: none !important; }
   .coden-public-mobile-panel a { opacity: 1; transform: none; }
 }
+
+/* Animated brand mesh (src/lib/brand-mesh.ts), shared by the landing and every public page: full-bleed behind a section, faded at its edges, drawn only once WebGL is ready. */
+.lp-mesh { position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; margin-left: -50vw; opacity: 0; pointer-events: none; transform: translate3d(0, var(--py, 0px), 0); transition: opacity 1800ms ease; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 38%, #000 62%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0%, #000 38%, #000 62%, transparent 100%); }
+.lp-mesh[data-lp-mesh="hero"] { top: -96px; -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 100%); }
+.public-page-hero > .lp-mesh { top: -136px; }
+.pricing-page-hero > .lp-mesh { top: -144px; }
+.lp-mesh.is-ready { opacity: .9; }
+.lp-mesh[data-lp-mesh="soft"].is-ready { opacity: .7; }
+:root[data-theme='dark'] .lp-mesh.is-ready { opacity: 1; }
+:root[data-theme='dark'] .lp-mesh[data-lp-mesh="soft"].is-ready { opacity: .85; }
+.lp-mesh canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+@media (prefers-reduced-motion: reduce) { .lp-mesh { transition: none; transform: none; } }
