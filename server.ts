@@ -17029,14 +17029,15 @@ ${resolvedMission}` : resolvedMission;
                 projectId: project.id,
                 runId: pipelineRunId || null,
                 category: 'build',
-                resource: `${pipelineRoute}_failed`,
+                // Billing is in shadow mode (no reservation), so a run that verified lands here too: say so.
+                resource: outcome.ok ? `${pipelineRoute}_shadow` : `${pipelineRoute}_failed`,
                 provider: 'openrouter',
                 model: outcome.modelId,
                 providerCostUsd: pipelineProviderCostUsd,
                 allocatedPlatformCostUsd: 0.0001,
                 completeCostUsd: pipelineCompleteCostUsd,
                 idempotencyKey: `pipeline:${requestId}:failed-usage`,
-                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: false, prompt_tokens: outcome.tokens?.prompt || 0, completion_tokens: outcome.tokens?.completion || 0, cached_tokens: outcome.tokens?.cached || 0, turn_id: harnessContext?.turn.id || null, routing_mode: outcome.routing?.mode || null, outcome: 'failed_verification' },
+                providerPayload: { route: pipelineRoute, customer_credits_charged: 0, verification_ok: Boolean(outcome.ok), prompt_tokens: outcome.tokens?.prompt || 0, completion_tokens: outcome.tokens?.completion || 0, cached_tokens: outcome.tokens?.cached || 0, turn_id: harnessContext?.turn.id || null, routing_mode: outcome.routing?.mode || null, outcome: outcome.ok ? 'completed_unbilled' : 'failed_verification' },
               });
             }
             await releaseUnifiedUsage(pipelineReservation);
