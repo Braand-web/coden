@@ -8,6 +8,9 @@ import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProje
 import type { AttachmentUploader } from './lib/attachment-types';
 import { stashPendingFiles } from './lib/pending-files';
 import { mountBrandMesh, type BrandMeshVariant } from './lib/brand-mesh';
+import { enhanceSelect, type SelectMenu } from './lib/select-menu';
+import { installMeshParallax, installPointerLight, installReadingProgress } from './lib/page-motion';
+import './styles/public-alive.css';
 import { createLandingDraft } from './lib/landing-draft';
 import { readPreferredEffort, readPreferredModelSelection, writePreferredEffort, writePreferredModelSelection } from './lib/composer-preferences';
 import { ANNUAL_DISCOUNT, BILLING_PLANS, planFeatures, priceFor, type BillingInterval } from './config/billing-v2';
@@ -72,12 +75,29 @@ function setupComposers() {
   }
 }
 
+/** Counts a price up or down to its new value, so a change of tier or period is felt, not just swapped. */
+function tweenText(node: Element, to: number, format: (value: number) => string) {
+  const el = node as HTMLElement;
+  const from = Number(el.dataset.value ?? to);
+  el.dataset.value = String(to);
+  if (from === to || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = format(to); return; }
+  const start = performance.now();
+  const tick = (now: number) => {
+    const t = Math.min(1, (now - start) / 420);
+    el.textContent = format(Math.round(from + (to - from) * (1 - Math.pow(1 - t, 3))));
+    if (t < 1 && el.dataset.value === String(to)) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 function setupPricing() {
   const section = document.querySelector<HTMLElement>('[data-lp-pricing]');
   if (!section) return;
   let interval: BillingInterval = 'monthly';
   let currentPlan: string | null = null;
   let signedIn = hasStoredSession();
+  const chosen: Partial<Record<'pro' | 'business', number>> = {};
+  const menus: SelectMenu[] = [];
   const format = (amount: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(amount);
   section.querySelector('[data-lp-discount]')!.textContent = '−' + format(ANNUAL_DISCOUNT * 100) + ' %';
   const render = () => {
@@ -85,7 +105,9 @@ function setupPricing() {
       button.setAttribute('aria-pressed', String(button.dataset.lpInterval === interval));
     });
     for (const plan of ['free', 'pro', 'business'] as const) {
-      const credits = BILLING_PLANS[plan].tiers[0] ?? BILLING_PLANS[plan].baseCredits;
+      const credits = plan === 'free'
+        ? (BILLING_PLANS[plan].tiers[0] ?? BILLING_PLANS[plan].baseCredits)
+        : (chosen[plan] ?? BILLING_PLANS[plan].tiers[0] ?? BILLING_PLANS[plan].baseCredits);
       const cta = section.querySelector<HTMLAnchorElement>('[data-lp-plan-cta="' + plan + '"]');
       if (cta) {
         cta.href = currentPlan === plan && signedIn ? '/dashboard.html?settings=facturation' : planChoiceHref({ plan, credits, interval }, signedIn);
@@ -93,7 +115,9 @@ function setupPricing() {
       }
       if (plan === 'free') continue;
       const price = priceFor(plan, credits, interval);
-      section.querySelector('[data-lp-amount="' + plan + '"]')!.textContent = format(price.monthlyEquivalent);
+      tweenText(section.querySelector('[data-lp-amount="' + plan + '"]')!, price.monthlyEquivalent, format);
+      const unit = section.querySelector('[data-lp-plan="' + plan + '"] [data-lp-unit]');
+      if (unit) unit.textContent = interval === 'annual' ? '/ mois, facturé par an' : '/ mois';
       section.querySelector('[data-lp-note="' + plan + '"]')!.textContent = interval === 'annual'
         ? format(price.amount) + ' FCFA facturés par an' : format(credits) + ' crédits par mois';
       const list = section.querySelector('[data-lp-features="' + plan + '"]');
@@ -103,7 +127,22 @@ function setupPricing() {
         return li;
       }));
     }
+    menus.forEach(menu => menu.refresh());
   };
+  // The credit tiers come from the catalogue, never typed twice: each row carries its monthly price.
+  section.querySelectorAll<HTMLSelectElement>('[data-lp-tier]').forEach(select => {
+    const plan = select.dataset.lpTier === 'business' ? 'business' : 'pro';
+    select.replaceChildren(...BILLING_PLANS[plan].tiers.map(credits => {
+      const option = document.createElement('option');
+      option.value = String(credits);
+      option.textContent = format(credits) + ' crédits';
+      return option;
+    }));
+    select.value = String(BILLING_PLANS[plan].tiers[0]);
+    select.addEventListener('change', () => { chosen[plan] = Number(select.value); render(); });
+    menus.push(enhanceSelect(select, { describe: value => format(priceFor(plan, Number(value), 'monthly').monthlyEquivalent) + ' FCFA / mois' }));
+    select.closest<HTMLElement>('.lp-tier')?.removeAttribute('hidden');
+  });
   section.querySelectorAll<HTMLButtonElement>('[data-lp-interval]').forEach(button => button.addEventListener('click', () => {
     interval = button.dataset.lpInterval === 'annual' ? 'annual' : 'monthly';
     render();
@@ -163,6 +202,8 @@ function setupReveal() {
     observer.unobserve(entry.target);
     window.setTimeout(() => entry.target.removeAttribute('data-lp-reveal'), 900);
   }), { rootMargin: '0px 0px -24px 0px', threshold: 0 });
+  // Siblings rise one after the other.
+  nodes.forEach(node => { const siblings = node.parentElement ? Array.from(node.parentElement.children).filter(child => child.hasAttribute('data-lp-reveal')) : []; node.style.setProperty('--si', String(Math.max(0, siblings.indexOf(node)))); });
   nodes.forEach(node => observer.observe(node));
   // Opt in only once the observer is installed. No JS means visible content.
   document.documentElement.dataset.lpReveal = 'on';
@@ -180,6 +221,9 @@ function init() {
   setupMarquee();
   setupReveal();
   setupMesh();
+  installPointerLight('.lp-card, .lp-plan, .lp-workspace');
+  installReadingProgress();
+  installMeshParallax();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
 else init();
