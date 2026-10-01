@@ -156,3 +156,25 @@ describe('composer attachments', () => {
     expect(container.querySelector('.coden-attach-name')?.textContent).toBe('Image');
   });
 });
+
+describe('the cursor for a newcomer', () => {
+  it('goes into the field once on a pointer device, and never on a touch screen', async () => {
+    const original = window.matchMedia;
+    try {
+      window.matchMedia = ((query: string) => ({ matches: /hover: hover/.test(query), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as any;
+      act(() => root.render(<PromptInput defaultExpanded autoFocus />));
+      await settle(150);
+      expect(document.activeElement).toBe(container.querySelector('textarea'));
+      act(() => root.render(<PromptInput defaultExpanded />));
+      (document.activeElement as HTMLElement | null)?.blur();
+      window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as any;
+      act(() => root.unmount());
+      root = createRoot(container);
+      act(() => root.render(<PromptInput defaultExpanded autoFocus />));
+      await settle(150);
+      expect(document.activeElement).not.toBe(container.querySelector('textarea'));
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+});

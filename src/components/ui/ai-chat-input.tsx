@@ -368,6 +368,11 @@ export interface PromptInputProps {
   expandedWidth?: number;
   /** Start open, for a surface whose composer is the point of the page. */
   defaultExpanded?: boolean;
+  /**
+   * Put the cursor in the field once, when this turns true — for a newcomer whose one task is to write the first request.
+   * Never on a touch screen: it would raise the keyboard over the page before anyone has read it.
+   */
+  autoFocus?: boolean;
   disabled?: boolean;
   /**
    * A run is in flight. The Builder's action button has to become a stop
@@ -402,6 +407,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       collapsedWidth = 320,
       expandedWidth = 480,
       defaultExpanded = false,
+      autoFocus = false,
       disabled = false,
       isBusy = false,
       onStop,
@@ -672,6 +678,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [value, expanded, hasAttachments]);
+
+    useEffect(() => {
+      if (!autoFocus || typeof window === "undefined" || !window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
+      const timer = window.setTimeout(() => textareaRef.current?.focus({ preventScroll: true }), 80);
+      return () => window.clearTimeout(timer);
+    }, [autoFocus]);
 
     useEffect(() => {
       if (expanded && !isRecording && !defaultExpanded) {

@@ -705,6 +705,8 @@ function DashboardHome() {
               uploader={uploader}
               disabled={creating}
               defaultExpanded
+              // Someone with no project yet has one thing to do here: the cursor is already where they write it.
+              autoFocus={!projectsQuery.isLoading && !projectsQuery.isError && projects.length === 0}
               collapsedWidth={560}
               expandedWidth={700}
             />
