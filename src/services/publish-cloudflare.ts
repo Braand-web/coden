@@ -234,6 +234,31 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   return { id: dep.id, url: dep.url };
 }
 
+/**
+ * What this token can actually do, one probe per right Coden needs. Statuses and Cloudflare error codes only, never a
+ * value: a 403 on `pages` with `token: ok` means the Pages right is missing (or the account id is not the token's).
+ */
+export async function cloudflareAccessReport(): Promise<Record<'token' | 'pages' | 'zone' | 'dns', string>> {
+  const report = { token: 'unknown', pages: 'unknown', zone: 'unknown', dns: 'unknown' };
+  const probe = async (key: keyof typeof report, call: () => Promise<unknown>) => {
+    try {
+      await call();
+      report[key] = 'ok';
+    } catch (error: any) {
+      const code = error?.cfErrors?.[0]?.code;
+      report[key] = /Missing environment variable/i.test(String(error?.message)) ? 'missing_setting' : `${error?.statusCode || 'error'}${code ? ` (code ${code})` : ''}`;
+    }
+  };
+  await probe('token', async () => {
+    const verified: any = await cf('/user/tokens/verify').catch(() => cf(`/accounts/${accountId()}/tokens/verify`));
+    if (verified?.status && verified.status !== 'active') throw Object.assign(new Error('inactive'), { statusCode: verified.status });
+  });
+  await probe('pages', () => cf(`/accounts/${accountId()}/pages/projects?per_page=1`));
+  await probe('zone', () => cf(`/zones/${codenZoneId()}`));
+  await probe('dns', () => cf(`/zones/${codenZoneId()}/dns_records?per_page=1`));
+  return report;
+}
+
 /** Production goes back to an earlier deployment of the same Pages project (instant, no rebuild). */
 export async function rollbackPagesDeployment(cfName: string, deploymentId: string): Promise<void> {
   await cf(`/accounts/${accountId()}/pages/projects/${cfName}/deployments/${encodeURIComponent(deploymentId)}/rollback`, { method: 'POST' });

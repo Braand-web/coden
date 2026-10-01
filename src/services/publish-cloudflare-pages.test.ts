@@ -114,3 +114,25 @@ describe('a Cloudflare setting that is present but wrong', () => {
     expect(clean).toContain('[redacted]');
   });
 });
+
+describe('the Cloudflare access report', () => {
+  it('tells which right is missing without exposing any value', async () => {
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'a'.repeat(32));
+    vi.stubEnv('CLOUDFLARE_ZONE_ID_CODEN_FUN', 'b'.repeat(32));
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', 'cfut_' + 'x'.repeat(40));
+    vi.stubGlobal('fetch', vi.fn(async (input: any) => {
+      const url = String(input);
+      const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+      if (url.includes('/user/tokens/verify')) return answer(200, { success: true, result: { id: 't', status: 'active' } });
+      if (url.includes('/pages/projects')) return answer(403, { success: false, errors: [{ code: 10000, message: 'Authentication error' }] });
+      if (url.includes('/dns_records')) return answer(200, { success: true, result: [] });
+      return answer(200, { success: true, result: { id: 'z' } });
+    }));
+    const { cloudflareAccessReport } = await import('./publish-cloudflare.ts');
+    const report = await cloudflareAccessReport();
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    expect(report).toEqual({ token: 'ok', pages: '403 (code 10000)', zone: 'ok', dns: 'ok' });
+    expect(JSON.stringify(report)).not.toContain('cfut_');
+  });
+});

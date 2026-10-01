@@ -1599,6 +1599,15 @@ function diagnosePublishError(error: any) {
       status: 502,
     };
   }
+  if (Array.isArray(error?.cfErrors) && [401, 403].includes(statusCode)) {
+    // Cloudflare's own refusal (the Vercel wording below would send the owner to the wrong dashboard).
+    return {
+      message: 'Cloudflare a refusé les droits du jeton de publication. Vérifiez ses autorisations (Pages, DNS) et le compte choisi.',
+      diagnostic_code: 'CLOUDFLARE_AUTH_FAILED',
+      suggested_action: 'update_cloudflare_token',
+      status: 503,
+    };
+  }
   if ([401, 403].includes(statusCode) || /401|403|unauthorized|forbidden|invalid token|authentication error/i.test(message)) {
     return {
       message: 'Vercel a refusé les identifiants de publication. Vérifiez le token Vercel et redéployez le serveur.',
@@ -21138,6 +21147,7 @@ import {
   disableVercelDeploymentProtection,
   blockedByProviderLogin,
 } from './src/services/publish-vercel.ts';
+import { cloudflareAccessReport } from './src/services/publish-cloudflare.ts';
 import { cloudflareConfigurationDiagnostic, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
@@ -21907,7 +21917,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       }
     }
     const diagnostic = diagnosePublishError(e);
-    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, provider_status: Number(e?.statusCode || 0) || undefined, provider_code: e?.providerCode || undefined, message: redactCloudflareCredentials(redactSecrets(e?.message || String(e), '[redacted]')), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
+    console.error('[coden:publish-vercel]', { request_id: requestId, project_id: projectId, diagnostic_code: diagnostic.diagnostic_code, provider_status: Number(e?.statusCode || 0) || undefined, provider_code: e?.providerCode || e?.cfErrors?.[0]?.code || undefined, message: redactCloudflareCredentials(redactSecrets(e?.message || String(e), '[redacted]')), phases_ms: publishPhases, total_ms: Date.now() - publishStartedAtMs });
     if (publishAttemptStarted && publishProjectRecord && !stagedDeploymentId) {
       await saveDeploymentRecord({
         id: randomUUID(),
@@ -21932,7 +21942,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     }
     const userMessage = diagnostic.suggested_action === 'fix_build_then_publish'
       ? 'Cette version n’a pas pu être préparée. Demandez à Coden de la corriger, puis réessayez.'
-      : diagnostic.suggested_action === 'configure_vercel' || diagnostic.suggested_action === 'update_vercel_token' || diagnostic.suggested_action === 'configure_cloudflare'
+      : diagnostic.suggested_action === 'configure_vercel' || diagnostic.suggested_action === 'update_vercel_token' || diagnostic.suggested_action === 'configure_cloudflare' || diagnostic.suggested_action === 'update_cloudflare_token'
         ? 'La publication est momentanément indisponible. Votre projet est conservé.'
         : 'La publication n’a pas abouti. Votre projet est conservé et vous pouvez réessayer.';
     return res.status(diagnostic.status).json({
@@ -22458,6 +22468,12 @@ app.use((req: any, res: any) => {
 const httpServer = app.listen(port, () => {
   console.log(`Coden SaaS backend listening at http://localhost:${port}`);
   console.info('[coden:publish_provider]', { provider: publishProviderChoice(), cloudflare_missing: missingCloudflareSettings(), cloudflare_malformed: malformedCloudflareSettings() });
+  if (publishProviderChoice() === 'cloudflare' && !missingCloudflareSettings().length && !malformedCloudflareSettings().length) {
+    // Which Cloudflare right is missing, read from the logs of any deploy: no publication attempt needed.
+    void Promise.race([cloudflareAccessReport(), new Promise<null>(resolve => setTimeout(() => resolve(null), 20_000))])
+      .then(report => console.info('[coden:cloudflare_access]', report || 'timeout'))
+      .catch((error: any) => console.warn('[coden:cloudflare_access_failed]', { message: redactCloudflareCredentials(String(error?.message || error)).slice(0, 160) }));
+  }
   communityService.startWorkers();
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
