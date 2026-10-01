@@ -1,0 +1,10 @@
+/* Chez Marcel : terre cuite chaude, serif d'affichage, neutres légèrement crème. */
+html:root {
+  --font-display: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --color-accent: oklch(0.66 0.13 45); --color-accent-hover: oklch(0.72 0.13 45); --color-on-accent: oklch(0.16 0.01 60);
+  --color-bg: oklch(0.17 0.012 60); --color-surface: oklch(0.21 0.012 60); --color-surface-raised: oklch(0.25 0.014 60); --color-border: oklch(0.32 0.016 60); --color-border-subtle: oklch(0.26 0.014 60);
+}
+html:root[data-theme="light"] {
+  --color-accent: oklch(0.52 0.13 45); --color-accent-hover: oklch(0.46 0.13 45); --color-on-accent: oklch(0.99 0.004 80);
+  --color-bg: oklch(0.975 0.012 85); --color-surface: oklch(0.995 0.006 85); --color-surface-raised: oklch(0.955 0.014 85); --color-border: oklch(0.89 0.018 80); --color-border-subtle: oklch(0.93 0.014 80);
+}

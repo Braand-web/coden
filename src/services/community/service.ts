@@ -14,6 +14,7 @@ import { attributionNote, neutralizeConnections, reconnectList, remixMetadata, s
 import { communityVisible, isReportReason, nextSanction, readEnvSwitches, readLimits, remixAllowed, reportsAction, trendingScore, type CommunitySwitches } from './rules.ts';
 import { ANONYMOUS_CREATOR, CommunityStore, STATUS_LABELS, type ListingRow, type ListTab } from './store.ts';
 import { buildCommunityOverview } from './admin-metrics.ts';
+import { assembleTemplate } from './template-apps.ts';
 import { OFFICIAL_TEMPLATES } from './templates.ts';
 import { decideListing, FREE_PUBLISH_NOTICE, graceEndsAt, ownerControls, PAID_PUBLISH_NOTICE, planKind } from './visibility.ts';
 
@@ -28,7 +29,7 @@ export type CommunityContext = {
   listPublishedProjects: (ownerId: string) => Promise<Array<{ projectId: string; organizationId: string }>>;
   loadProjectOwned: (projectId: string, userId: string, req?: any) => Promise<any | null>;
   /** Creates a project for the person from files, and returns it. */
-  createProjectFromFiles: (input: { userId: string; req?: any; name: string; prompt: string; template?: string; theme?: string; files: SourceFile[]; reason: string; meta: Record<string, unknown> }) => Promise<{ id: string; name: string }>;
+  createProjectFromFiles: (input: { userId: string; req?: any; name: string; prompt: string; template?: string; theme?: string; files: SourceFile[]; reason: string; meta: Record<string, unknown>; /** The files were tested as a whole (build and browser) by Coden: the project starts with a verified preview. */ verified?: boolean }) => Promise<{ id: string; name: string }>;
   accountCreatedAt: (userId: string) => Promise<string | null>;
   sendUserEmail: (userId: string, subject: string, text: string) => Promise<boolean>;
   /** A vision model verdict on a screenshot: only used when the text left a doubt. */
@@ -592,10 +593,28 @@ export function createCommunityService(ctx: CommunityContext) {
   async function templates(plan: string) {
     await ensureVisible();
     const s = store();
-    await s.seedTemplates(OFFICIAL_TEMPLATES.map((template, index) => ({ slug: template.slug, title: template.title, description: template.description, category: template.category, brief: template.brief, position: index, design_score: template.designScore })));
+    await s.seedTemplates(OFFICIAL_TEMPLATES.map((template, index) => ({ slug: template.slug, title: template.title, description: template.description, category: template.category, brief: template.brief, kind: template.kind || 'brief', position: template.kind === 'app' ? index - 100 : index, design_score: template.designScore })));
     const rows = await s.templates();
     const order = ['free', 'pro', 'business', 'enterprise'];
-    return rows.map(row => ({ ...row, official: true, available: order.indexOf(plan) >= order.indexOf(row.min_plan) || order.indexOf(row.min_plan) < 0 }));
+    // A template app that has lost its files (a deploy without the folder) is not offered: it could not be used.
+    return rows
+      .filter(row => row.kind !== 'app' || assembleTemplate(row.slug).length > 0)
+      .map(({ preview_url, ...row }) => ({
+        ...row, official: true, available: order.indexOf(plan) >= order.indexOf(row.min_plan) || order.indexOf(row.min_plan) < 0,
+        thumbnail: row.kind === 'app' ? `/community-templates/${row.slug}.webp` : null, previewUrl: preview_url || null,
+      }));
+  }
+
+  /** A template app becomes a project of the person: Coden's starter and the app's files, independent from then on. */
+  async function createFromTemplateApp(userId: string, template: { slug: string; title: string; description: string; version: number }, req?: any) {
+    const files = assembleTemplate(template.slug);
+    if (!files.length) throw new CommunityError(409, 'Ce template n’est pas disponible pour le moment.', 'TEMPLATE_FILES_MISSING');
+    const created = await ctx.createProjectFromFiles({
+      userId, req, name: template.title, prompt: `Template Coden : ${template.title}. ${template.description}`, files, reason: 'template',
+      meta: { template: template.slug, template_version: template.version }, verified: true,
+    });
+    await store().recordRemix({ template_id: template.slug, new_project_id: created.id, user_id: userId });
+    return created;
   }
 
   async function useTemplate(userId: string, slug: string, plan: string, req?: any) {
@@ -605,6 +624,14 @@ export function createCommunityService(ctx: CommunityContext) {
     if (!template || !template.active) throw new CommunityError(404, 'Ce template n’existe pas.', 'NOT_FOUND');
     const order = ['free', 'pro', 'business', 'enterprise'];
     if (order.indexOf(plan) < order.indexOf(template.min_plan)) throw new CommunityError(403, 'Ce template est réservé à un plan supérieur.', 'PLAN_REQUIRED');
+    if (template.kind === 'app') {
+      const history = await s.remixHistory(userId, null);
+      const allowed = remixAllowed(history, limits);
+      if (!allowed.ok) throw new CommunityError(429, allowed.reason, `REMIX_${allowed.code.toUpperCase()}`);
+      const created = await createFromTemplateApp(userId, template, req);
+      await s.bumpTemplateUse(slug);
+      return { project: created, builderUrl: `/builder.html?project=${created.id}`, title: template.title, templateId: template.slug, version: template.version };
+    }
     await s.bumpTemplateUse(slug);
     // The project is created by the dashboard's normal flow, with the template's brief as the first request to the agent.
     return { prompt: template.brief, title: template.title, templateId: template.slug, version: template.version };
@@ -612,6 +639,36 @@ export function createCommunityService(ctx: CommunityContext) {
 
   async function recordTemplateProject(userId: string, slug: string, projectId: string) {
     await store().recordRemix({ template_id: slug, new_project_id: projectId, user_id: userId });
+  }
+
+  /**
+   * Puts template apps into a given account, once.
+   *
+   * Driven by one row of `community_settings` (`install_showcase`: `{ user_id, slugs }`), which only someone with database
+   * access can write: it is how Coden's own team fills a showcase account with the official apps, without an interface
+   * that could create projects in anyone's account. Idempotent: an app already installed (recorded in the row) is left
+   * alone, so a restart never creates a second copy.
+   */
+  async function installShowcase(): Promise<{ installed: string[] }> {
+    const client = ctx.getSupabase();
+    if (!client || !envSwitches.enabled) return { installed: [] };
+    const { data } = await client.from('community_settings').select('value').eq('key', 'install_showcase').maybeSingle();
+    const request = data?.value as null | { user_id?: string; slugs?: string[]; done?: Record<string, string> };
+    if (!request?.user_id || !Array.isArray(request.slugs) || !request.slugs.length) return { installed: [] };
+    const done = { ...(request.done || {}) };
+    const installed: string[] = [];
+    const s = store();
+    for (const slug of request.slugs.slice(0, 10)) {
+      if (done[slug]) continue;
+      const template = await s.template(slug);
+      if (!template || template.kind !== 'app') { log('showcase_skipped', { slug, reason: 'not_an_app_template' }); continue; }
+      const created = await createFromTemplateApp(request.user_id, template, { auth: { userId: request.user_id, user: { id: request.user_id }, email: null } });
+      done[slug] = created.id;
+      installed.push(slug);
+      await client.from('community_settings').update({ value: { ...request, done }, updated_at: new Date().toISOString() }).eq('key', 'install_showcase');
+      await s.journal({ project_id: created.id, actor_type: 'admin', actor_id: request.user_id, event: 'showcase_installed', code: slug, reason: `Template « ${template.title} » installé dans le compte de démonstration.` });
+    }
+    return { installed };
   }
 
   /** « Passer à un plan payant » clicked from the Community: counted, nothing more. */
@@ -733,12 +790,14 @@ Votre app reste publiée. Vous pouvez contester cette décision depuis « Mes pu
     // Soon after boot: finish what a restart interrupted.
     const first = setTimeout(safe('sweep', sweepPending), 60_000);
     first.unref?.();
+    const showcase = setTimeout(safe('showcase', installShowcase), 25_000);
+    showcase.unref?.();
   }
 
   return {
     switches, ensureVisible, store, onPublished, onUnpublished, onProjectDeleted, onPlanChanged, purgeUser, mine, publishInfo, updateListing, answerOffer, offerAlreadyAnswered, refreshThumbnail, appeal,
     list, detail, recordView, like, report, thumbnail, remix, remixOrigin, templates, useTemplate, recordTemplateProject, refreshRankings, sweepPending, applyDueNotices, startWorkers,
-    validateProfileText, recordUpgradeClick, setSwitch, adminOverview, adminAction, resolveAppeal, applySanction, enqueue, queueSize: () => queued, limits,
+    validateProfileText, recordUpgradeClick, setSwitch, adminOverview, adminAction, resolveAppeal, installShowcase, applySanction, enqueue, queueSize: () => queued, limits,
   };
 }
 

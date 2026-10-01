@@ -55,17 +55,21 @@ export function TemplateCard({ template, categories, onUse, busy }: { template: 
   return (
     <article className="coden-community-card is-template">
       <div className="coden-community-card-link">
-        <Thumb src={null} alt={`Template ${template.title}`} fallback={<LayoutTemplate size={26} aria-hidden="true" />} />
+        <Thumb src={template.thumbnail} alt={`Aperçu du template ${template.title}`} fallback={<LayoutTemplate size={26} aria-hidden="true" />} />
         <div className="coden-community-card-body">
           <strong>{template.title}</strong>
           <span className="coden-community-byline">{template.description}</span>
           <div className="coden-community-meta">
             <span className="coden-community-pill is-official">Officiel</span>
             <span className="coden-community-pill">{categoryLabel(categories, template.category)}</span>
+            {template.kind === 'app' && <span className="coden-community-pill">App complète</span>}
           </div>
-          <button type="button" className="coden-community-button is-primary" onClick={onUse} disabled={busy || !template.available}>
-            {template.available ? (busy ? 'Création…' : 'Utiliser ce template') : 'Réservé à un plan supérieur'}
-          </button>
+          <div className="coden-community-actions">
+            <button type="button" className="coden-community-button is-primary" onClick={onUse} disabled={busy || !template.available}>
+              {template.available ? (busy ? 'Création…' : 'Utiliser ce template') : 'Réservé à un plan supérieur'}
+            </button>
+            {template.previewUrl && <a className="coden-community-button" href={template.previewUrl} target="_blank" rel="noopener noreferrer">Aperçu en direct</a>}
+          </div>
         </div>
       </div>
     </article>

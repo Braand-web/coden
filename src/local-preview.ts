@@ -603,11 +603,14 @@ function localPreviewCommunityPayload(path: string) {
   if (route === '/api/community/listings') return { success: true, items: listings, nextCursor: null };
   if (route === '/api/community/templates') {
     return { success: true, templates: [
+      ['budget-clair', 'Budget Clair', 'Suivi de dépenses du mois : budget, catégories, filtres et export CSV.', 'tableau-de-bord', 'app'],
+      ['chez-marcel', 'Chez Marcel', 'Site de restaurant : carte par onglets, horaires et réservation de table.', 'reservation-evenements', 'app'],
+      ['cap-sur-le-monde', 'Cap sur le monde', 'Quiz de géographie : dix questions, chrono et meilleur score.', 'jeux', 'app'],
       ['site-vitrine-entreprise', 'Site vitrine d’entreprise', 'Page d’accueil, services, réalisations, équipe et contact.', 'site-vitrine'],
       ['portfolio-createur', 'Portfolio de créateur', 'Galerie de projets filtrable, page de projet et contact.', 'portfolio'],
       ['tableau-de-bord-ventes', 'Tableau de bord des ventes', 'Indicateurs, graphiques, filtres et tableau exportable.', 'tableau-de-bord'],
       ['boutique-en-ligne', 'Boutique en ligne', 'Catalogue, fiche produit, panier et commande.', 'e-commerce'],
-    ].map(([slug, title, description, category]) => ({ slug, title, description, category, version: 1, min_plan: 'free', use_count: 0, official: true, available: true })) };
+    ].map(([slug, title, description, category, kind]) => ({ slug, title, description, category, version: 1, min_plan: 'free', use_count: 0, official: true, available: true, kind: kind || 'brief', thumbnail: kind === 'app' ? `/community-templates/${slug}.webp` : null, previewUrl: null })) };
   }
   if (route === '/api/community/mine') {
     const own = listings.slice(0, 3).map((item, index) => ({

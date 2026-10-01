@@ -429,16 +429,16 @@ export class CommunityStore {
 
   // ── Templates ───────────────────────────────────────────────────────────────────────────────────────────────────
   async templates() {
-    const { data } = await this.client.from('community_templates').select('slug,title,description,category,version,min_plan,design_score,use_count,position').eq('active', true).order('position', { ascending: true });
-    return (data || []) as Array<{ slug: string; title: string; description: string; category: string; version: number; min_plan: string; design_score: number | null; use_count: number; position: number }>;
+    const { data } = await this.client.from('community_templates').select('slug,title,description,category,version,min_plan,design_score,use_count,position,kind,preview_url').eq('active', true).order('position', { ascending: true });
+    return (data || []) as Array<{ slug: string; title: string; description: string; category: string; version: number; min_plan: string; design_score: number | null; use_count: number; position: number; kind: 'app' | 'brief'; preview_url: string | null }>;
   }
 
   async template(slug: string) {
-    const { data } = await this.client.from('community_templates').select('slug,title,description,category,brief,version,min_plan,active').eq('slug', slug).maybeSingle();
-    return (data as null | { slug: string; title: string; description: string; category: string; brief: string; version: number; min_plan: string; active: boolean }) || null;
+    const { data } = await this.client.from('community_templates').select('slug,title,description,category,brief,version,min_plan,active,kind').eq('slug', slug).maybeSingle();
+    return (data as null | { slug: string; title: string; description: string; category: string; brief: string; version: number; min_plan: string; active: boolean; kind: 'app' | 'brief' }) || null;
   }
 
-  async seedTemplates(rows: Array<{ slug: string; title: string; description: string; category: string; brief: string; position: number; design_score?: number }>) {
+  async seedTemplates(rows: Array<{ slug: string; title: string; description: string; category: string; brief: string; position: number; kind?: 'app' | 'brief'; design_score?: number }>) {
     const { data } = await this.client.from('community_templates').select('slug');
     const known = new Set((data || []).map((row: any) => row.slug));
     const fresh = rows.filter(row => !known.has(row.slug));
