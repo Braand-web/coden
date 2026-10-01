@@ -589,11 +589,16 @@ export function createCommunityService(ctx: CommunityContext) {
     return { kind: 'listing' as const, title: listing?.title || 'une app de la Communauté', listingId: listing && listing.status === 'online' ? listing.id : null, creator: listing?.creator_alias || ANONYMOUS_CREATOR };
   }
 
+  /** Registers the official templates in the database (once each), so they can be listed, counted and switched off. */
+  async function seedOfficialTemplates() {
+    await store().seedTemplates(OFFICIAL_TEMPLATES.map((template, index) => ({ slug: template.slug, title: template.title, description: template.description, category: template.category, brief: template.brief, kind: template.kind || 'brief', position: template.kind === 'app' ? index - 100 : index, design_score: template.designScore })));
+  }
+
   // ── Official templates ──────────────────────────────────────────────────────────────────────────────────────────
   async function templates(plan: string) {
     await ensureVisible();
     const s = store();
-    await s.seedTemplates(OFFICIAL_TEMPLATES.map((template, index) => ({ slug: template.slug, title: template.title, description: template.description, category: template.category, brief: template.brief, kind: template.kind || 'brief', position: template.kind === 'app' ? index - 100 : index, design_score: template.designScore })));
+    await seedOfficialTemplates();
     const rows = await s.templates();
     const order = ['free', 'pro', 'business', 'enterprise'];
     // A template app that has lost its files (a deploy without the folder) is not offered: it could not be used.
@@ -658,6 +663,8 @@ export function createCommunityService(ctx: CommunityContext) {
     const done = { ...(request.done || {}) };
     const installed: string[] = [];
     const s = store();
+    // The templates may not have been registered yet (nobody has opened the Templates tab): register them first.
+    await seedOfficialTemplates();
     for (const slug of request.slugs.slice(0, 10)) {
       if (done[slug]) continue;
       const template = await s.template(slug);
@@ -783,6 +790,8 @@ Votre app reste publiée. Vous pouvez contester cette décision depuis « Mes pu
     const safe = (name: string, job: () => Promise<unknown>) => () => { void job().catch(error => log(`${name}_failed`, { message: String(error?.message || error).slice(0, 160) })); };
     timers = [
       setInterval(safe('sweep', sweepPending), 5 * 60_000),
+      // Cheap when there is nothing to install (one read), and it retries what a failure left undone.
+      setInterval(safe('showcase', installShowcase), 5 * 60_000),
       setInterval(safe('rankings', refreshRankings), 10 * 60_000),
       setInterval(safe('notices', applyDueNotices), 60 * 60_000),
     ];
