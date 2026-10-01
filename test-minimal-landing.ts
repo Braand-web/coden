@@ -8,15 +8,8 @@ const css = read('./src/styles/landing-new.css');
 const builder = read('./builder.html');
 const live = read('./src/builder-live.ts');
 const dashboard = read('./src/dashboard-react.tsx');
-assert.equal((html.match(/<section /g) || []).length, 10, 'ten primary sections: hero, product, examples, features, audience, integrations, trust, pricing, faq, launch');
+assert.equal((html.match(/<section /g) || []).length, 6, 'six primary sections only');
 assert.equal((html.match(/<h1 /g) || []).length, 1);
-for (const [, path] of html.matchAll(/src="(\/community-templates\/[^"]+)"/g)) assert.ok(existsSync(new URL('./public' + path, import.meta.url)), 'real template capture exists: ' + path);
-assert.equal((html.match(/\/community-templates\//g) || []).length, 3, 'three real template captures');
-for (const id of ['produit', 'exemples', 'fonctionnalites', 'pour-qui', 'integrations', 'confiance', 'tarifs', 'faq']) assert.match(html, new RegExp('id="' + id + '"'));
-assert.match(html, /href="\/security\.html"/);
-assert.match(html, /data-lp-demo/);
-assert.match(script, /setupDemo\(\)/);
-assert.match(css, /\.lp-demo \*, \.lp-demo\[data-run\] \* \{ animation: none/, 'the demo stands still with reduced motion');
 assert.match(html, /Votre idée\.<br \/>Votre application\./);
 for (const removed of ['Essayez :', '5 crédits offerts', 'Sans carte bancaire', 'Preview privée', 'Le plus choisi', 'Prête à publier']) {
   assert.ok(!html.toLowerCase().includes(removed.toLowerCase()), 'no unnecessary or unverified copy: ' + removed);

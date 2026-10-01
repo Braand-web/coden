@@ -168,21 +168,6 @@ function setupReveal() {
   document.documentElement.dataset.lpReveal = 'on';
 }
 
-function setupDemo() {
-  const demo = document.querySelector<HTMLElement>('[data-lp-demo]');
-  if (!demo) return;
-  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  // Without motion (or without JS) the demo simply shows its final state: idea, preview and live link.
-  const update = () => { if (motion.matches) demo.removeAttribute('data-run'); else demo.setAttribute('data-run', ''); };
-  motion.addEventListener('change', update);
-  update();
-  let onScreen = true;
-  const pause = () => { demo.dataset.paused = String(!onScreen || document.hidden); };
-  document.addEventListener('visibilitychange', pause);
-  if ('IntersectionObserver' in window) new IntersectionObserver(entries => { onScreen = entries.some(entry => entry.isIntersecting); pause(); }).observe(demo);
-  pause();
-}
-
 function setupMesh() {
   document.querySelectorAll<HTMLElement>('[data-lp-mesh]').forEach(host => mountBrandMesh(host, host.dataset.lpMesh as BrandMeshVariant));
 }
@@ -194,7 +179,6 @@ function init() {
   setupPricing();
   setupMarquee();
   setupReveal();
-  setupDemo();
   setupMesh();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
