@@ -234,6 +234,11 @@ export async function deployDirectory(cfName: string, distDir: string): Promise<
   return { id: dep.id, url: dep.url };
 }
 
+/** Production goes back to an earlier deployment of the same Pages project (instant, no rebuild). */
+export async function rollbackPagesDeployment(cfName: string, deploymentId: string): Promise<void> {
+  await cf(`/accounts/${accountId()}/pages/projects/${cfName}/deployments/${encodeURIComponent(deploymentId)}/rollback`, { method: 'POST' });
+}
+
 export async function attachCustomDomain(cfName: string, domain: string): Promise<void> {
   try {
     await cf(`/accounts/${accountId()}/pages/projects/${cfName}/domains`, {
