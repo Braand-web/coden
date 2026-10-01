@@ -8,17 +8,17 @@ assert.ok(truncate('x'.repeat(80)).endsWith('\u2026'));
 
 // French instruction references the element text and selector.
 const frInstruction = buildInstruction(
-  { selector: 'button.cta', tag: 'button', text: 'Sign up' },
+  { path: 'main > section.hero > button.cta', selector: 'button.cta', tag: 'button', text: 'Sign up', label: '' },
   true,
 );
 assert.ok(frInstruction.includes('button'));
-assert.ok(frInstruction.includes('"Sign up"'));
-assert.ok(frInstruction.includes('button.cta'));
+assert.ok(frInstruction.includes('\u00ab Sign up \u00bb'));
+assert.ok(frInstruction.includes('main > section.hero > button.cta'));
 assert.ok(/Modifie cet/i.test(frInstruction));
 
 // English instruction without visible text falls back to the selector.
 const enInstruction = buildInstruction(
-  { selector: 'div#hero', tag: 'div', text: '' },
+  { path: 'div#hero', selector: 'div#hero', tag: 'div', text: '', label: '' },
   false,
 );
 assert.ok(/Edit this element/i.test(enInstruction));

@@ -401,6 +401,17 @@
     .project-share-revoke { margin: 0 10px 6px; color: var(--danger); }
     .project-share-revoke[hidden] { display: none; }
 
+    .coden-target-chip { margin: 8px 10px 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border)); border-radius: 10px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); text-align: left; }
+    .coden-target-chip[hidden] { display: none; }
+    .coden-target-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .coden-target-kicker { flex: none; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+    .coden-target-main strong { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); font-size: 12px; font-weight: 650; }
+    .coden-target-main code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11px; }
+    .coden-target-clear { flex: none; width: 24px; height: 24px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; }
+    .coden-target-clear:hover { background: var(--surface-soft); color: var(--foreground); }
+    .coden-target-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .coden-target-scope { margin: 4px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+
     .project-menu-muted {
       min-height: 16px;
       padding: 0 10px 6px;
@@ -4411,6 +4422,15 @@
         <!-- Chat submit block at footer -->
         <div class="chat-input-row">
           <div class="input-wrapper" style="width: 100%; border-radius: 12px; border: 1px solid var(--border); background: var(--input); box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent) inset, 0 10px 30px color-mix(in srgb, var(--foreground) 12%, transparent); transition: all 300ms cubic-bezier(0.22, 1, 0.36, 1); position: relative; overflow: visible; text-align: left;">
+            <div class="coden-target-chip" id="coden-target-chip" hidden role="group" aria-label="Élément ciblé">
+              <div class="coden-target-main">
+                <span class="coden-target-kicker">Cible</span>
+                <strong data-target-title></strong>
+                <code data-target-where></code>
+                <button type="button" id="coden-target-clear" class="coden-target-clear" aria-label="Retirer la cible" title="Retirer la cible">✕</button>
+              </div>
+              <p class="coden-target-scope" data-target-scope></p>
+            </div>
             <div class="coden-workshop-context" id="coden-workshop-context" aria-live="polite">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 3l1.35 4.15L17.5 8.5l-4.15 1.35L12 14l-1.35-4.15L6.5 8.5l4.15-1.35L12 3z"></path>
