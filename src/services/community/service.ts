@@ -9,10 +9,11 @@ import { createHash } from 'node:crypto';
 import { classifyCategory, isKnownCategory } from './categories.ts';
 import { findPersonalData, moderateText, type SourceFile, type Verdict } from './checks.ts';
 import { inspectPublicPage, type Inspection } from './inspector.ts';
-import { runListingChecks, visibilityForListing, type PipelineDeps, type VisionVerdict } from './pipeline.ts';
+import { discoverRank, runListingChecks, visibilityForListing, type PipelineDeps, type VisionVerdict } from './pipeline.ts';
 import { attributionNote, neutralizeConnections, reconnectList, remixMetadata, selectRemixFiles, type Reconnect } from './remix.ts';
 import { communityVisible, isReportReason, nextSanction, readEnvSwitches, readLimits, remixAllowed, reportsAction, trendingScore, type CommunitySwitches } from './rules.ts';
 import { ANONYMOUS_CREATOR, CommunityStore, STATUS_LABELS, type ListingRow, type ListTab } from './store.ts';
+import { buildCommunityOverview } from './admin-metrics.ts';
 import { OFFICIAL_TEMPLATES } from './templates.ts';
 import { decideListing, FREE_PUBLISH_NOTICE, graceEndsAt, ownerControls, PAID_PUBLISH_NOTICE, planKind } from './visibility.ts';
 
@@ -597,6 +598,85 @@ export function createCommunityService(ctx: CommunityContext) {
     await store().recordRemix({ template_id: slug, new_project_id: projectId, user_id: userId });
   }
 
+  /** « Passer à un plan payant » clicked from the Community: counted, nothing more. */
+  async function recordUpgradeClick(userId: string, from: string) {
+    await store().journal({ actor_type: 'user', actor_id: userId, event: 'upgrade_click', code: from.slice(0, 40), reason: 'Clic sur « Passer à un plan payant » depuis la Communauté.' });
+  }
+
+  // ── Profiles ────────────────────────────────────────────────────────────────────────────────────────────────────
+  async function validateProfileText(text: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const personal = findPersonalData(text);
+    if (personal.emails.length || personal.phones.length) return { ok: false, reason: 'Retirez l’adresse e-mail ou le numéro de téléphone : ils seraient visibles de tous.' };
+    if (moderateText(text).verdict !== 'clear') return { ok: false, reason: 'Ce texte ne respecte pas les règles de la Communauté.' };
+    return { ok: true };
+  }
+
+  // ── Admin ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  async function setSwitch(key: 'hidden' | 'frozen', value: boolean, adminId: string) {
+    const s = store();
+    await s.setSetting(key, value, adminId);
+    await s.journal({ actor_type: 'admin', actor_id: adminId || null, event: `switch_${key}`, code: value ? 'on' : 'off', reason: key === 'hidden' ? (value ? 'Communauté masquée.' : 'Communauté de nouveau visible.') : (value ? 'Nouveaux listings suspendus.' : 'Nouveaux listings rétablis.') });
+    switchCache = null;
+  }
+
+  async function adminOverview() {
+    const s = store();
+    const data = await s.adminOverview(new Date(Date.now() - 30 * 86_400_000).toISOString());
+    const client = ctx.getSupabase();
+    const featured = data.listings.filter((row: any) => row.status === 'online').length ? (await client.from('community_listings').select('id', { count: 'exact', head: true }).eq('status', 'online').eq('featured', true)).count || 0 : 0;
+    const organizations = await client.from('organizations').select('id,plan').in('plan', ['pro', 'business', 'enterprise']).limit(5000);
+    const paidIds = new Set((organizations.data || []).map((row: any) => row.id));
+    const listingOwners = new Set((await client.from('community_listings').select('owner_id,organization_id').eq('origin', 'paid_opt_in').limit(5000)).data?.map((row: any) => row.organization_id) || []);
+    const overview = buildCommunityOverview({ ...data, featured, paidAccounts: paidIds.size, paidAccountsWithListing: [...listingOwners].filter(id => paidIds.has(id)).length });
+    return { overview, switches: await switches(true), events: data.events, appeals: (await client.from('community_appeals').select('id,listing_id,message,created_at').eq('status', 'open').order('created_at', { ascending: true }).limit(50)).data || [] };
+  }
+
+  async function adminAction(listingId: string, action: 'remove' | 'restore' | 'feature' | 'unfeature' | 'dismiss_reports', adminId: string, reason: string, sanction: boolean) {
+    const s = store();
+    const listing = await s.byId(listingId);
+    if (!listing) throw new CommunityError(404, 'Annonce introuvable.', 'NOT_FOUND');
+    const why = reason || 'Décision de la modération.';
+    if (action === 'remove') {
+      const next = await s.transition(listing, 'removed_by_moderation', { actor: 'admin', actorId: adminId, event: 'admin_removed', code: 'removed_by_moderation', reason: why, patch: { featured: false, indexable: false } as Partial<ListingRow> });
+      await s.resolveReports(listingId, 'upheld');
+      if (sanction) await applySanction(listing.owner_id, why);
+      else await ctx.sendUserEmail(listing.owner_id, `« ${listing.title} » a été retirée de la Communauté`, `${why}
+
+Votre app reste publiée. Vous pouvez contester cette décision depuis « Mes publications ».`).catch(() => false);
+      return next;
+    }
+    if (action === 'restore') {
+      // Back through the checks, never straight to « en ligne »: the override is the right to lift a removal, not to skip the safety checks.
+      const next = await s.transition(listing, 'pending', { actor: 'admin', actorId: adminId, event: 'admin_restored', code: 'restored', reason: why });
+      const snapshot = await ctx.loadPublishedSnapshot(listing.project_id).catch(() => null);
+      if (snapshot) enqueue(listing.id, await s.createVersion({ listing_id: listing.id, deployment_id: snapshot.deploymentId, artifact_hash: snapshot.artifactHash, public_url: snapshot.publicUrl, files: snapshot.files }));
+      return next;
+    }
+    if (action === 'dismiss_reports') {
+      await s.resolveReports(listingId, 'dismissed');
+      const next = listing.status === 'hidden' ? await s.transition(listing, 'online', { actor: 'admin', actorId: adminId, event: 'admin_dismissed_reports', code: 'reports_dismissed', reason: why }) : listing;
+      await ctx.getSupabase().from('community_listings').update({ report_count: 0 }).eq('id', listingId);
+      return next;
+    }
+    const featured = action === 'feature';
+    const next = await s.update(listingId, { featured, discover_rank: discoverRank({ quality: listing.quality_score, featured, listedAt: listing.listed_at || listing.created_at }) } as Partial<ListingRow>);
+    await s.journal({ listing_id: listingId, project_id: listing.project_id, actor_type: 'admin', actor_id: adminId, event: featured ? 'admin_featured' : 'admin_unfeatured', code: action, reason: why });
+    return next;
+  }
+
+  async function resolveAppeal(appealId: string, decision: 'accepted' | 'declined', adminId: string) {
+    const client = ctx.getSupabase();
+    const s = store();
+    const { data } = await client.from('community_appeals').select('id,listing_id,status').eq('id', appealId).maybeSingle();
+    if (!data || data.status !== 'open') throw new CommunityError(404, 'Contestation introuvable.', 'NOT_FOUND');
+    await client.from('community_appeals').update({ status: decision, resolved_at: new Date().toISOString() }).eq('id', appealId);
+    const listing = await s.byId(data.listing_id);
+    if (!listing) return;
+    await s.journal({ listing_id: listing.id, project_id: listing.project_id, actor_type: 'admin', actor_id: adminId, event: `appeal_${decision}`, code: decision, reason: decision === 'accepted' ? 'Contestation acceptée : l’app repasse par les vérifications.' : 'Contestation refusée.' });
+    if (decision === 'accepted') await adminAction(listing.id, 'restore', adminId, 'Contestation acceptée.', false);
+    await ctx.sendUserEmail(listing.owner_id, decision === 'accepted' ? `Votre contestation pour « ${listing.title} » a été acceptée` : `Votre contestation pour « ${listing.title} » a été examinée`, decision === 'accepted' ? 'L’app repasse par les vérifications automatiques et réapparaîtra dans la Communauté si elles sont concluantes.' : 'Après examen, la décision est maintenue. Votre app reste publiée.').catch(() => false);
+  }
+
   // ── Ranking & periodic work ─────────────────────────────────────────────────────────────────────────────────────
   async function refreshRankings(): Promise<number> {
     const s = store();
@@ -642,7 +722,7 @@ export function createCommunityService(ctx: CommunityContext) {
   return {
     switches, ensureVisible, store, onPublished, onUnpublished, onPlanChanged, purgeUser, mine, publishInfo, updateListing, answerOffer, offerAlreadyAnswered, refreshThumbnail, appeal,
     list, detail, recordView, like, report, thumbnail, remix, remixOrigin, templates, useTemplate, recordTemplateProject, refreshRankings, sweepPending, applyDueNotices, startWorkers,
-    applySanction, enqueue, queueSize: () => queued, limits,
+    validateProfileText, recordUpgradeClick, setSwitch, adminOverview, adminAction, resolveAppeal, applySanction, enqueue, queueSize: () => queued, limits,
   };
 }
 
