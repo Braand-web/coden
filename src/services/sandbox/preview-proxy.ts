@@ -22,6 +22,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import http from 'node:http';
 import https from 'node:https';
 import type { Duplex } from 'node:stream';
+import { injectPreviewInspector, previewPickerEnabled } from './preview-inspector-script.ts';
+
+/** The largest document the proxy will read whole to add the inspector to it. */
+const MAX_DOCUMENT_BYTES = 2_000_000;
 
 /** Hop-by-hop headers. Forwarding these breaks keep-alive and upgrades. */
 const HOP_BY_HOP = new Set([
@@ -116,6 +120,14 @@ export function proxyHttp(
   }
   const url = stripBase(req.url || '/', basePath);
   const up = upstreamFor(target);
+  /*
+   * A page that can be pointed at: the document the browser asks for is read whole and given the inspector
+   * (preview-inspector-script.ts), so the builder can select an element in it. Only a GET for HTML — never the
+   * modules, assets or sockets — and the dev server is asked not to compress that one answer, so it can be read.
+   */
+  const wantsDocument = req.method === 'GET' && /text\/html/i.test(String(req.headers.accept || '')) && previewPickerEnabled();
+  const upstreamHeaders = forwardableHeaders(req.headers, up.hostHeader);
+  if (wantsDocument) upstreamHeaders['accept-encoding'] = 'identity';
   const upstream = up.client.request(
     {
       host: up.host,
@@ -123,7 +135,7 @@ export function proxyHttp(
       servername: up.servername,
       method: req.method,
       path: url,
-      headers: forwardableHeaders(req.headers, up.hostHeader),
+      headers: upstreamHeaders,
     },
     upstreamRes => {
       /*
@@ -159,8 +171,34 @@ export function proxyHttp(
       }
       Object.assign(headers, SANDBOXED_FRAME_CORS);
       res.removeHeader('X-Frame-Options');
-      res.writeHead(upstreamRes.statusCode || 502, headers);
-      upstreamRes.pipe(res);
+      const isDocument = wantsDocument
+        && upstreamRes.statusCode === 200
+        && /text\/html/i.test(String(upstreamRes.headers['content-type'] || ''))
+        && !upstreamRes.headers['content-encoding'];
+      if (!isDocument) {
+        res.writeHead(upstreamRes.statusCode || 502, headers);
+        upstreamRes.pipe(res);
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let tooBig = false;
+      upstreamRes.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_DOCUMENT_BYTES) tooBig = true;
+        else chunks.push(chunk);
+      });
+      upstreamRes.on('end', () => {
+        // A document too large to be an app's page is passed through untouched: nothing is worth a megabyte of buffering.
+        const body = tooBig ? null : Buffer.from(injectPreviewInspector(Buffer.concat(chunks).toString('utf8')), 'utf8');
+        if (!body) { upstream.destroy(); if (!res.headersSent) writeUnavailable(res, 'The document was too large.'); return; }
+        delete headers['content-length'];
+        delete headers.etag;
+        headers['content-length'] = String(body.length);
+        res.writeHead(200, headers);
+        res.end(body);
+      });
+      upstreamRes.on('error', () => { if (!res.headersSent) writeUnavailable(res, 'The dev server stopped answering.'); else res.destroy(); });
     },
   );
   upstream.on('error', error => {

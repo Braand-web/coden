@@ -18,7 +18,8 @@ import { ApiError, apiFetch } from './lib/api';
 import { AgentStreamInterruptedError, consumeAgentStream, type AgentEnvelope } from './lib/agent-chat-protocol';
 import { composeDecisionInstruction, normalizeDecisionQuestions } from './lib/decision-questions';
 import { getVerifiedSession, refreshVerifiedSession } from './lib/supabase-browser';
-import { setVisualEditMode, isVisualEditModeActive, type VisualEditTarget } from './visual-edit-mode';
+import { createPreviewPicker, scopeSummary, type PreviewPicker, type VisualEditTarget } from './visual-edit-mode';
+import { injectPreviewInspector } from './services/sandbox/preview-inspector-script';
 import { normalizeAiChatInputs } from './ai-chat-input-normalizer';
 import { initCodenMotion } from './coden-motion';
 import { initCodenNavigationTransitions } from './navigation-transitions';
@@ -1157,7 +1158,8 @@ function withHiddenPreviewScrollbars(html: string) {
 }
 
 function setPreviewSourceDocument(frame: HTMLIFrameElement, html: string) {
-  frame.srcdoc = withHiddenPreviewScrollbars(html);
+  // The saved rendering can be pointed at too: it carries the same inspector as the live preview.
+  frame.srcdoc = injectPreviewInspector(withHiddenPreviewScrollbars(html));
 }
 
 function hideLivePreviewScrollbars(frame: HTMLIFrameElement) {
@@ -1202,46 +1204,60 @@ function syncInternalPreviewTheme() {
   }
 }
 
+const detectFrenchUi = () => (document.documentElement.lang || navigator.language || '').toLowerCase().startsWith('fr');
+let previewPicker: PreviewPicker | null = null;
+
 /**
- * When the user picks an element in visual edit mode, prefill the composer
- * with a scoped edit instruction and focus it. The normal autonomous edit
- * path then turns this into a targeted patch — no full prompt required.
+ * The person pointed at an element: say what will change and what will not, and start the sentence for them.
+ * The composer is a React island, so its text is set through the value the island renders — not on the DOM node.
  */
 function applyVisualEditTarget(target: VisualEditTarget) {
-  const composer = chatComposer();
-  if (!composer) return;
-  const existing = composer.value.trim();
-  composer.value = existing ? `${target.instruction}${existing}` : target.instruction;
-  composer.dispatchEvent(new Event('input', { bubbles: true }));
-  composer.focus();
-  // Place the caret at the end so the user types the change right after the target.
-  composer.setSelectionRange(composer.value.length, composer.value.length);
+  const existing = composerValue.trim();
+  composerValue = existing && !/^(?:Modifie cet \u00e9l\u00e9ment de la page|Edit this element on the page)\s*:/i.test(existing) ? `${target.instruction}${existing}` : target.instruction;
+  renderComposer();
+  scheduleWorkspaceSave();
+  showTargetChip(target);
+  chatComposer()?.focus();
+}
+
+function showTargetChip(target: VisualEditTarget) {
+  const chip = document.getElementById('coden-target-chip');
+  if (!chip) return;
+  const summary = scopeSummary(target, detectFrenchUi());
+  const title = chip.querySelector('[data-target-title]');
+  const where = chip.querySelector('[data-target-where]');
+  const scope = chip.querySelector('[data-target-scope]');
+  if (title) title.textContent = summary.title;
+  if (where) where.textContent = summary.where;
+  if (scope) scope.textContent = summary.scope;
+  chip.hidden = false;
+}
+
+/** The target is spent (sent) or dropped: the chip goes, and so does the outline in the preview. */
+function clearVisualEditTarget() {
+  const chip = document.getElementById('coden-target-chip');
+  if (chip && !chip.hidden) { chip.hidden = true; previewPicker?.clearSelection(); }
 }
 
 function bindVisualEditMode() {
   const toggle = document.getElementById('btn-visual-edit');
-  if (!toggle) return;
-  const detectFrenchUi = () => {
-    const lang = (document.documentElement.lang || navigator.language || '').toLowerCase();
-    return lang.startsWith('fr');
-  };
-  const options = {
-    getIframe: () => document.getElementById('preview-iframe-element') as HTMLIFrameElement | null,
-    onPick: applyVisualEditTarget,
-    isFrench: detectFrenchUi,
-  };
-  const reflect = () => {
-    const on = isVisualEditModeActive();
+  if (!toggle || previewPicker) return;
+  const reflect = (on: boolean) => {
     toggle.setAttribute('aria-pressed', String(on));
     toggle.classList.toggle('active', on);
   };
+  previewPicker = createPreviewPicker({
+    getIframe: () => document.getElementById('preview-iframe-element') as HTMLIFrameElement | null,
+    isFrench: detectFrenchUi,
+    onPick: applyVisualEditTarget,
+    onChange: reflect,
+  });
+  reflect(false);
   const toggleMode = () => {
-    // Only meaningful when a real generated preview is mounted.
-    if (!isUsablePreviewHtml(currentPreviewHtml)) return;
-    setVisualEditMode(!isVisualEditModeActive(), options);
-    reflect();
+    // Only meaningful when a real app is showing: an empty or loading preview has nothing to point at.
+    if (!hasReadyAppPreview()) return;
+    previewPicker?.toggle();
   };
-  reflect();
   toggle.addEventListener('click', toggleMode);
   toggle.addEventListener('keydown', (event) => {
     const key = (event as KeyboardEvent).key;
@@ -1250,9 +1266,7 @@ function bindVisualEditMode() {
       toggleMode();
     }
   });
-  // Picking an element exits the mode inside the module; keep the button in sync.
-  const refresh = () => reflect();
-  document.addEventListener('coden:visual-edit-picked', refresh);
+  document.getElementById('coden-target-clear')?.addEventListener('click', () => clearVisualEditTarget());
 }
 
 function bindPreviewThemeSync() {
@@ -9085,6 +9099,7 @@ function bindChat() {
     if (!value) return;
     composerValue = '';
     renderComposer();
+    clearVisualEditTarget();
     scheduleWorkspaceSave({ draft_prompt: '', selected_mode: selectedChatMode }, true);
     if (isGenerating) {
       void sendActiveHarnessInstruction(value);
