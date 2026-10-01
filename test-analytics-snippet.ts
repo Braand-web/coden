@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { buildAnalyticsSnippet } from './src/services/analytics-snippet.ts';
 
 /** The script body, as the browser would parse and run it. */
@@ -15,6 +17,8 @@ function scriptBody(snippet: string): string {
  */
 function runIn(options: { origin: string; storageThrows?: boolean; apiBase?: string }) {
   const sent: string[] = [];
+  const beacons: string[] = [];
+  const requests: Array<{ url: string; options: RequestInit }> = [];
   const consoleErrors: string[] = [];
   const store = new Map<string, string>();
   const storage = {
@@ -40,10 +44,10 @@ function runIn(options: { origin: string; storageThrows?: boolean; apiBase?: str
   const sandbox: any = {
     window,
     document: { referrer: '', addEventListener: () => {} },
-    navigator: { sendBeacon: (url: string) => { sent.push(url); return true; } },
+    navigator: { sendBeacon: (url: string) => { sent.push(url); beacons.push(url); return true; } },
     Blob: class { constructor(_parts: any[], _opts: any) {} },
     crypto: { randomUUID: () => 'uuid-0000' },
-    fetch: (url: string) => { sent.push(url); return Promise.resolve(); },
+    fetch: (url: string, options: RequestInit) => { sent.push(url); requests.push({ url, options }); return Promise.resolve(); },
     URL,
     setInterval: () => 1,
     clearInterval: () => {},
@@ -61,7 +65,7 @@ function runIn(options: { origin: string; storageThrows?: boolean; apiBase?: str
   } catch (error: any) {
     threw = error;
   }
-  return { threw, sent, consoleErrors, stored: store };
+  return { threw, sent, beacons, requests, consoleErrors, stored: store };
 }
 
 // The regression this module exists for. The beacon read `localStorage` at the
@@ -84,6 +88,8 @@ assert.deepEqual(blockedStorage.sent, ['https://app.example/api/analytics/collec
 const normal = runIn({ origin: 'https://app.example' });
 assert.equal(normal.threw, null);
 assert.deepEqual(normal.sent, ['https://app.example/api/analytics/collect']);
+assert.equal(normal.beacons.length, 1, 'same-origin page exits may still use sendBeacon');
+assert.equal(normal.requests.length, 0);
 assert.equal(normal.stored.get('coden_visitor_id'), 'uuid-0000');
 assert.equal(normal.stored.get('coden_session_id'), 'uuid-0000');
 
@@ -91,6 +97,22 @@ assert.equal(normal.stored.get('coden_session_id'), 'uuid-0000');
 const configured = runIn({ origin: 'null', storageThrows: true, apiBase: 'https://api.coden.fun/' });
 assert.equal(configured.threw, null);
 assert.deepEqual(configured.sent, ['https://api.coden.fun/api/analytics/collect']);
+assert.equal(configured.beacons.length, 0, 'an opaque preview must not send a credentialed cross-origin beacon');
+assert.equal(configured.requests[0]?.options.credentials, 'omit');
+assert.equal(configured.requests[0]?.options.keepalive, true);
+
+// Production publications and the browser audit live outside the Coden API
+// origin. The public collector accepts a project-bound token, never cookies.
+for (const origin of ['https://preview.coden.local', 'https://demo.pages.dev', 'https://demo.coden.fun']) {
+  const crossOrigin = runIn({ origin, apiBase: 'https://coden.fun' });
+  assert.equal(crossOrigin.threw, null);
+  assert.equal(crossOrigin.beacons.length, 0, origin);
+  assert.equal(crossOrigin.requests.length, 1, origin);
+  assert.equal(crossOrigin.requests[0].options.credentials, 'omit', origin);
+  assert.equal(crossOrigin.requests[0].options.method, 'POST', origin);
+  assert.equal(crossOrigin.requests[0].options.keepalive, true, origin);
+  assert.equal(new Headers(crossOrigin.requests[0].options.headers).get('Content-Type'), 'application/json', origin);
+}
 
 // Structure: no storage read may sit outside the guard, and the body must be
 // wrapped so a future line cannot escape either.
@@ -108,5 +130,22 @@ assert.equal(buildAnalyticsSnippet({ projectId: '', environment: 'preview' }), '
 
 // The snippet must not be able to close its own script element.
 assert.ok(!/<\/script/i.test(body), 'the body must not carry a closing script tag');
+
+// The actual server injector must target Coden even when a new deployment has
+// no separate API override. A Pages origin has no Coden analytics collector.
+const serverSource = ts.createSourceFile('server.ts', readFileSync(new URL('./server.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
+const injectorDeclaration = serverSource.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'injectAnalyticsSnippet');
+assert.ok(injectorDeclaration);
+const injectorCode = ts.transpileModule(injectorDeclaration.getText(serverSource), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+for (const override of ['', 'https://api.coden.fun']) {
+  const captured: Array<{ apiBase: string }> = [];
+  const inject = new Function('buildAnalyticsSnippet', 'analyticsTokenForProject', 'getCodenPublicOrigin', 'insertBeforeBodyEnd', 'process', `${injectorCode}; return injectAnalyticsSnippet;`)(
+    (input: { apiBase: string }) => { captured.push(input); return '<script>test</script>'; },
+    () => 'public-project-token', () => 'https://coden.fun', (html: string, extra: string) => html + extra,
+    { env: { CODEN_PUBLIC_API_URL: override } },
+  );
+  inject('<html></html>', 'test-project', 'preview');
+  assert.equal(captured[0].apiBase, override || 'https://coden.fun');
+}
 
 console.log('analytics snippet tests passed');

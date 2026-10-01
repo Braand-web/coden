@@ -3584,7 +3584,7 @@ function injectAnalyticsSnippet(html: string, projectId?: string, environment: '
     projectId,
     environment,
     token: analyticsTokenForProject(projectId, environment),
-    apiBase: process.env.CODEN_PUBLIC_API_URL || '',
+    apiBase: process.env.CODEN_PUBLIC_API_URL || getCodenPublicOrigin(),
   });
   if (!snippet) return html;
   return insertBeforeBodyEnd(html, snippet);

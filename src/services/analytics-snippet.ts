@@ -51,6 +51,7 @@ export function buildAnalyticsSnippet(input: AnalyticsSnippetInput): string {
     const base = apiBase || (origin && origin !== 'null' ? origin : '');
     if (!base) return;
     const endpoint = base.replace(/\\/$/, '') + '/api/analytics/collect';
+    const sameOrigin = new URL(endpoint).origin === origin;
 
     const safeId = () => {
       try {
@@ -92,10 +93,13 @@ export function buildAnalyticsSnippet(input: AnalyticsSnippetInput): string {
           analytics_token: analyticsToken,
         };
         const requestBody = JSON.stringify(payload);
-        if (navigator.sendBeacon) {
+        // sendBeacon uses credentials: include. Cross-origin JSON beacons
+        // therefore cannot use the collector's public, credential-free CORS.
+        // The project-bound token authorizes analytics; cookies are unnecessary.
+        if (sameOrigin && navigator.sendBeacon) {
           if (navigator.sendBeacon(endpoint, new Blob([requestBody], { type: 'application/json' }))) return;
         }
-        fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody, keepalive: true }).catch(() => {});
+        fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: requestBody, keepalive: true, credentials: 'omit' }).catch(() => {});
       } catch (e) {}
     };
 
