@@ -11,6 +11,16 @@ body[data-coden-surface="landing-new"] { margin: 0; min-width: 320px; background
 .lp p { text-wrap: pretty; }
 .lp a { color: inherit; }
 .lp :where(a,button,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.lp-hero, .lp-product, .lp-pricing, .lp-launch { position: relative; isolation: isolate; }
+/* Animated brand mesh (src/lib/brand-mesh.ts): full-bleed behind a section, faded at its edges, drawn only once WebGL is ready. */
+.lp-mesh { position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; margin-left: -50vw; opacity: 0; pointer-events: none; transition: opacity 1400ms ease; -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%); }
+.lp-mesh[data-lp-mesh="hero"] { top: -96px; -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%); }
+.lp-mesh.is-ready { opacity: .85; }
+.lp-mesh[data-lp-mesh="soft"].is-ready { opacity: .55; }
+:root[data-theme='dark'] .lp-mesh.is-ready { opacity: .7; }
+:root[data-theme='dark'] .lp-mesh[data-lp-mesh="soft"].is-ready { opacity: .45; }
+.lp-mesh canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+body[data-coden-surface="landing-new"] { overflow-x: clip; }
 .lp-hero { padding: 160px 0 96px; text-align: center; }
 .lp-hero h1 { font-size: 60px; line-height: 1.08; font-weight: 600; }
 .lp-hero-subtitle { margin-top: 24px !important; font-size: 18px; line-height: 1.5; color: var(--text-secondary); }
@@ -121,6 +131,7 @@ html[data-lp-reveal="on"] [data-lp-reveal] { transition: opacity 480ms var(--lp-
   .lp-marquee-track { gap: 32px; padding-right: 32px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .lp-mesh { transition: none; }
   html { scroll-behavior: auto; }
   .lp [data-lp-reveal], html[data-lp-reveal="on"] [data-lp-reveal]:not(.is-visible) { opacity: 1; transform: none; transition: none; }
   .lp .lp-word, .lp .lp-marquee-belt { animation: none; }

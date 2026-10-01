@@ -2,7 +2,7 @@
  * Coden's animated mesh: a slow, living gradient in the brand's blues and
  * cyans (never violet), rendered by Paper Shaders' mesh gradient on WebGL 2.
  *
- * Mounted behind the landing hero and the footer. It is decoration only, so it
+ * Mounted behind several landing sections (hero, product, pricing, final call to action). It is decoration only, so it
  * never gets in the way:
  *  - loaded after the page is interactive, and faded in once it has drawn;
  *  - paused by the shader itself when off screen or in a hidden tab;
@@ -11,7 +11,7 @@
  *  - absent when WebGL 2 is not available — the CSS light underneath stays.
  * The palette follows the theme toggle live.
  */
-export type BrandMeshVariant = 'hero' | 'footer';
+export type BrandMeshVariant = 'hero' | 'soft' | 'footer';
 
 type Palette = { light: string[]; dark: string[] };
 
@@ -20,6 +20,11 @@ const PALETTES: Record<BrandMeshVariant, Palette> = {
   hero: {
     light: ['#F5F9FF', '#CFE3FF', '#8EC0FF', '#A8EDF8', '#E6F0FF'],
     dark: ['#040C24', '#0B4FD9', '#3A83F7', '#22D3EE', '#0A2A6B'],
+  },
+  // Quieter, for the middle sections: a wash of colour that never competes with the content.
+  soft: {
+    light: ['#FAFCFF', '#DCEAFF', '#B5D6FF', '#CBF3FA', '#F0F6FF'],
+    dark: ['#050B1F', '#0A3FB8', '#1F5FD6', '#157C95', '#071A4A'],
   },
   // Richer: the footer card is opaque, only its edges and the space above show it.
   footer: {
@@ -87,9 +92,9 @@ export function mountBrandMesh(host: HTMLElement | null, variant: BrandMeshVaria
           meshGradientFragmentShader,
           uniformsFor(currentTheme()),
           { alpha: true, premultipliedAlpha: false, antialias: false },
-          reduced ? 0 : variant === 'hero' ? 0.28 : 0.2,
+          reduced ? 0 : variant === 'hero' ? 0.28 : variant === 'soft' ? 0.16 : 0.2,
           // A fixed starting point, so the first frame always looks composed.
-          variant === 'hero' ? 12_000 : 48_000,
+          variant === 'hero' ? 12_000 : variant === 'soft' ? 30_000 : 48_000,
           phone ? 1 : 1.5,
           phone ? 900_000 : 1920 * 1080,
         );
