@@ -36,6 +36,44 @@ export type AcceptanceScenario = { name: string; steps: AcceptanceStep[] };
 
 export type ScenarioResult = { name: string; ok: boolean; failedStep?: number; error?: string };
 
+
+/**
+ * Journeys are written before the interface exists, so what they expect to read is a guess. Comparing it strictly turned
+ * « Tâche ajoutée » against « Tache ajoutee » (or an apostrophe of the wrong kind, or a double space) into a failed
+ * journey, and the coder was sent to repair an app that worked. `CODEN_JOURNEY_TOLERANT=0` restores the strict comparison.
+ */
+export const journeyMatchingTolerant = (env: Record<string, string | undefined> = process.env) => env.CODEN_JOURNEY_TOLERANT !== '0';
+
+/** A text without accents, case, typographic quotes or repeated spaces: the form two texts are compared in. */
+export function normalizeForMatch(value: string): string {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[’‘`´]/g, "'").replace(/[“”«»]/g, '"').replace(/\s+/g, ' ').trim();
+}
+
+const COMMON_WORDS = new Set(['le', 'la', 'les', 'un', 'une', 'des', 'de', 'du', 'et', 'au', 'aux', 'en', 'pour', 'sur', 'par', 'avec', 'comme', 'ce', 'cette', 'mon', 'ma', 'mes', 'the', 'and', 'for', 'with', 'your', 'you']);
+const significantWords = (value: string) => normalizeForMatch(value).split(/[^a-z0-9]+/).filter(word => word.length > 2 && !COMMON_WORDS.has(word));
+
+/**
+ * Whether the page shows the text a journey expects.
+ *
+ * Always: the same text, ignoring accents, case, quotes and spacing, and a closing punctuation mark. Only when asked for
+ * the text to be present (never for its absence, which must stay exact): a longer sentence whose significant words are
+ * almost all on the page. Short texts (fewer than three significant words, a unique item name) are never matched loosely.
+ */
+export function pageShowsText(pageText: string, expected: string, options: { tolerant: boolean; present: boolean }): boolean {
+  const haystack = normalizeForMatch(pageText);
+  const needle = normalizeForMatch(expected);
+  if (!needle) return true;
+  if (haystack.includes(needle)) return true;
+  if (!options.tolerant || !options.present) return false;
+  const trimmed = needle.replace(/[.!?…:;,\s]+$/, '');
+  if (trimmed && haystack.includes(trimmed)) return true;
+  const words = [...new Set(significantWords(needle))];
+  if (words.length < 3) return false;
+  const have = new Set(significantWords(haystack));
+  return words.filter(word => have.has(word)).length / words.length >= 0.85;
+}
+
 const MAX_SCENARIOS = 5;
 const MAX_STEPS = 12;
 const text = (value: unknown, max = 160) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -214,18 +252,45 @@ async function fuzzyLocate(page: Page, target: string, kind: LocateKind): Promis
   return found ? page.locator(`[data-coden-target="${marker}"]`).first() : null;
 }
 
-async function visibleText(page: Page, value: string): Promise<boolean> {
-  const needle = value.toLowerCase();
-  return page.evaluate((search) => (document.body.innerText || '').toLowerCase().includes(search), needle).catch(() => false);
+async function bodyText(page: Page): Promise<string> {
+  return page.evaluate(() => document.body.innerText || '').catch(() => '');
 }
 
 async function waitForText(page: Page, value: string, present: boolean, timeoutMs = 3_000): Promise<boolean> {
+  const tolerant = journeyMatchingTolerant();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if ((await visibleText(page, value)) === present) return true;
+    if (pageShowsText(await bodyText(page), value, { tolerant, present }) === present) return true;
     await page.waitForTimeout(120);
   }
   return false;
+}
+
+/**
+ * What the page actually offers, said to whoever has to repair a failed step: the names of its visible controls and
+ * fields, or the start of its text. A failed journey used to say only what was missing, so the coder renamed controls
+ * that worked to match a guess; knowing what is there lets it fix the real gap, or leave the app alone.
+ */
+async function describePage(page: Page, what: 'controls' | 'text'): Promise<string> {
+  if (!journeyMatchingTolerant()) return '';
+  if (what === 'text') {
+    const text = (await bodyText(page)).replace(/\s+/g, ' ').trim().slice(0, 220);
+    return text ? ` The page shows: « ${text} ».` : ' The page shows no text.';
+  }
+  const names = await page.evaluate(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const el of Array.from(document.querySelectorAll('button, a[href], [role=button], [role=tab], input:not([type=hidden]), textarea, select'))) {
+      const box = (el as HTMLElement).getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0) continue;
+      const html = el as HTMLElement & { placeholder?: string; labels?: NodeListOf<HTMLLabelElement> };
+      const name = (el.getAttribute('aria-label') || [...(html.labels || [])].map(label => label.textContent || '').join(' ') || html.placeholder || html.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      if (name && !seen.has(name)) { seen.add(name); out.push(name); }
+      if (out.length >= 14) break;
+    }
+    return out;
+  }).catch(() => [] as string[]);
+  return names.length ? ` Visible controls and fields: ${names.map(name => `« ${name} »`).join(', ')}.` : '';
 }
 
 function describe(step: AcceptanceStep): string {
@@ -257,16 +322,16 @@ export async function runAcceptanceScenarios(page: Page, baseUrl: URL, scenarios
         const fail = (reason: string) => { failedStep = index + 1; error = `${describe(step)}: ${reason}`; };
         if (step.action === 'click') {
           const element = await locate(page, step.target);
-          if (!element) { fail('no visible element with this text or label'); break; }
+          if (!element) { fail(`no visible element with this text or label.${await describePage(page, 'controls')}`); break; }
           await element.click({ timeout: 3_000 });
           await page.waitForTimeout(250);
         } else if (step.action === 'fill') {
           const element = await locate(page, step.target, 'fill');
-          if (!element) { fail('no visible field with this label or placeholder'); break; }
+          if (!element) { fail(`no visible field with this label or placeholder.${await describePage(page, 'controls')}`); break; }
           await element.fill(step.value, { timeout: 3_000 });
         } else if (step.action === 'select') {
           const element = await locate(page, step.target, 'select');
-          if (!element) { fail('no visible select with this label'); break; }
+          if (!element) { fail(`no visible select with this label.${await describePage(page, 'controls')}`); break; }
           await element.selectOption({ label: step.value }, { timeout: 3_000 }).catch(() => element.selectOption(step.value, { timeout: 3_000 }));
         } else if (step.action === 'press') {
           await page.keyboard.press(step.key);
@@ -278,7 +343,7 @@ export async function runAcceptanceScenarios(page: Page, baseUrl: URL, scenarios
           await page.reload({ waitUntil: 'domcontentloaded', timeout: 15_000 });
           await page.waitForTimeout(300);
         } else if (step.action === 'expect_text') {
-          if (!(await waitForText(page, step.text, true))) { fail('the text never appeared'); break; }
+          if (!(await waitForText(page, step.text, true))) { fail(`the text never appeared.${await describePage(page, 'text')}`); break; }
         } else if (step.action === 'expect_no_text') {
           if (!(await waitForText(page, step.text, false))) { fail('the text is still visible'); break; }
         }
