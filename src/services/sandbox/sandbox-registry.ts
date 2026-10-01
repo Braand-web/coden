@@ -72,8 +72,24 @@ export function defaultMaxRunning(totalBytes = availableMemoryBytes()): number {
   return Math.max(1, Math.min(6, Math.floor(budgetMb / MB_PER_SANDBOX)));
 }
 
+/**
+ * How many runs may be in flight at once.
+ *
+ * The memory-derived number above protects a host that runs the dev servers itself. With a remote sandbox (E2B) the
+ * builds run elsewhere and this host only orchestrates, so a 1 GB container is not a reason to let a single person's
+ * build lock everyone else out: a second request failed at once with « All execution slots are busy » while the first
+ * was still working. The remote ceiling is its own, larger, setting.
+ */
+export function defaultMaxRuns(env: Record<string, string | undefined> = process.env, totalBytes = availableMemoryBytes()): number {
+  const explicit = Number(env.CODEN_SANDBOX_MAX_RUNNING);
+  if (explicit > 0) return Math.floor(explicit);
+  const remote = Boolean(String(env.E2B_API_KEY || '').trim()) && env.CODEN_SANDBOX_PROVIDER !== 'local';
+  if (remote) return Math.max(2, Math.floor(Number(env.CODEN_SANDBOX_MAX_REMOTE_RUNS) || 8));
+  return defaultMaxRunning(totalBytes);
+}
+
 export const DEFAULT_LIMITS: RegistryLimits = {
-  maxRunning: Number(process.env.CODEN_SANDBOX_MAX_RUNNING) || defaultMaxRunning(),
+  maxRunning: defaultMaxRuns(),
   idleMs: Number(process.env.CODEN_SANDBOX_IDLE_MS || 15 * 60_000),
 };
 
@@ -93,6 +109,35 @@ export class SandboxRegistry {
     if (this.activeRuns.size >= this.limits.maxRunning) throw Object.assign(new Error('All execution slots are busy.'), {diagnosticCode:'SANDBOX_CAPACITY'});
     this.activeRuns.add(projectId);
     return () => { this.activeRuns.delete(projectId); };
+  }
+
+  private readonly waiting: Array<() => void> = [];
+
+  /**
+   * A run's slot, waiting for one when they are all taken.
+   *
+   * Refusing at once turns « two people building at the same time » into a failed build for the second. The request
+   * waits its turn instead (up to `waitMs`), and only then fails with the capacity error. A project that already has a
+   * run is still refused immediately: that is a different request for the same work, not a queue.
+   */
+  async acquireRun(projectId: string, options: { signal?: AbortSignal; waitMs?: number } = {}): Promise<() => void> {
+    const deadline = Date.now() + (options.waitMs ?? 3 * 60_000);
+    for (;;) {
+      options.signal?.throwIfAborted();
+      try {
+        const release = this.reserveRun(projectId);
+        return () => { release(); this.waiting.shift()?.(); };
+      } catch (error: any) {
+        if (error?.diagnosticCode !== 'SANDBOX_CAPACITY' || Date.now() >= deadline) throw error;
+      }
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(done, Math.min(5_000, Math.max(250, deadline - Date.now())));
+        timer.unref?.();
+        function done() { clearTimeout(timer); options.signal?.removeEventListener('abort', done); resolve(); }
+        options.signal?.addEventListener('abort', done, { once: true });
+        this.waiting.push(done);
+      });
+    }
   }
 
   /** The sandbox for this project, created on first use. */

@@ -37,20 +37,4 @@ export const FIRST_TIPS = [
   'Un mot sur le style (sobre, chaleureux, sombre…) suffit : Coden choisit le reste.',
 ] as const;
 
-export const FIRST_BUILD_EXPECTATION = 'Première création : comptez 2 à 4 minutes. Vous pouvez fermer cette page, le travail continue et vous le retrouverez dans vos projets.';
 export const FIRST_SUCCESS_TEXT = 'Votre première application est prête. Voici la suite : changez-la en une phrase, publiez-la, ou envoyez un lien pour qu’on en fasse sa copie.';
-
-/** After this long, a first build is told it is taking longer than usual (the median build takes about two minutes). */
-export const FIRST_BUILD_SLOW_MS = 4 * 60_000;
-export const FIRST_BUILD_SLOW = 'Cela prend plus de temps que d’habitude. Le travail continue : vous pouvez attendre ici, ou fermer la page et le retrouver dans vos projets.';
-
-export const FIRST_BUILD_FAILED = 'Cette première construction n’a pas abouti. Votre demande est conservée. Une version plus simple d’abord réussit plus souvent : vous ajouterez le reste ensuite.';
-
-/** The same request, asked to start small: one main screen, a few functions, nothing more. */
-export function simplerRetryPrompt(prompt: string, french: boolean): string {
-  const base = String(prompt || '').trim();
-  const note = french
-    ? 'Fais d’abord une première version volontairement simple : l’écran principal et une ou deux fonctions essentielles, sans options en plus. On complétera ensuite.'
-    : 'Make a deliberately simple first version first: the main screen and one or two essential features, with no extras. We will add the rest afterwards.';
-  return base.includes(note) ? base : `${base}\n\n${note}`;
-}

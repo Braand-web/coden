@@ -775,7 +775,7 @@ export async function runMultiAgentPipeline(input: {
   signal?: AbortSignal;
   onSnapshot?: (files: MultiAgentPipelineFile[]) => Promise<void>;
 }): Promise<MultiAgentPipelineOutcome> {
-  const releaseRun = sandboxRegistry.reserveRun(input.projectId);
+  const releaseRun = await sandboxRegistry.acquireRun(input.projectId, { signal: input.signal });
   // The agents' browsers on the running app: closed with the run, whatever ended it.
   const previewTools: PreviewTool[] = [];
   try {
