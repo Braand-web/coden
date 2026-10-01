@@ -94,25 +94,54 @@
       <div class="lp-composer"><div id="landing-composer" class="lp-composer-host" aria-label="Créer mon application"><div class="lp-composer-skeleton" role="status" aria-label="Chargement du champ de création"><span class="coden-skeleton" aria-hidden="true"></span><span class="coden-skeleton" aria-hidden="true"></span></div></div><p id="landing-composer-status" class="lp-composer-status" role="status" aria-live="polite"></p></div>
       <noscript><a class="lp-button" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Créer mon application</a></noscript>
     </section>
-    <section class="lp-section" id="produit" aria-labelledby="product-title">
+    <section class="lp-section lp-product" id="produit" aria-labelledby="product-title">
+      <div class="lp-mesh" data-lp-mesh="soft" aria-hidden="true"></div>
       <header class="lp-heading" data-lp-reveal><h2 id="product-title">De l’idée au premier lien.</h2><p>Un seul espace, trois étapes.</p></header>
       <div class="lp-cards">
         <article class="lp-card" data-lp-reveal><span class="lp-step">01</span><h3>Décrivez</h3><p>Expliquez ce que votre application doit faire.</p></article>
         <article class="lp-card" data-lp-reveal><span class="lp-step">02</span><h3>Ajustez</h3><p>Voyez le résultat et affinez-le par la conversation.</p></article>
         <article class="lp-card" data-lp-reveal><span class="lp-step">03</span><h3>Publiez</h3><p>Partagez votre application avec une adresse Coden.</p></article>
       </div>
-    </section>
-    <section class="lp-section lp-product" id="exemples" aria-labelledby="workspace-title">
-      <div class="lp-mesh" data-lp-mesh="soft" aria-hidden="true"></div>
-      <header class="lp-heading" data-lp-reveal><h2 id="workspace-title" data-lp-words>Moins d’outils. Plus de concret.</h2><p>La conversation, l’aperçu et votre Cloud restent ensemble.</p></header>
-      <figure class="lp-workspace" data-lp-reveal aria-labelledby="workspace-caption">
-        <div class="lp-workspace-toolbar"><span><img src="/favicon.svg" width="24" height="24" alt="" /> Coden</span><span>Aperçu <span aria-hidden="true">·</span> Cloud</span></div>
+      <figure class="lp-workspace lp-demo" data-lp-demo data-lp-reveal aria-labelledby="workspace-caption">
+        <div class="lp-workspace-toolbar"><span><img src="/favicon.svg" width="24" height="24" alt="" /> Coden</span><ol class="lp-demo-steps" aria-hidden="true"><li data-step="1">Décrire</li><li data-step="2">Aperçu</li><li data-step="3">Lien</li></ol></div>
         <div class="lp-workspace-body">
-          <div class="lp-workspace-chat"><span class="lp-demo-prompt">Une application pour gérer mes rendez-vous.</span><p>Construisez une première version, puis affinez les pages et les fonctionnalités.</p><div class="lp-demo-input">Décrivez votre prochain changement <span aria-hidden="true">↑</span></div></div>
-          <div class="lp-workspace-preview"><span class="lp-preview-label">Votre application</span><h3>Un projet qui<br />prend forme.</h3><div class="lp-demo-grid" aria-hidden="true"><span></span><span></span><span></span></div><p>Explorez l’aperçu avant de partager.</p></div>
+          <div class="lp-workspace-chat"><span class="lp-demo-prompt"><span class="lp-demo-typed">Une application pour gérer mes rendez-vous.</span></span><p class="lp-demo-reply">Voici une première version. Dites-moi ce que vous voulez changer.</p><div class="lp-demo-input">Décrivez votre prochain changement <span aria-hidden="true">↑</span></div></div>
+          <div class="lp-workspace-preview"><span class="lp-preview-label">Votre application</span><h3 class="lp-demo-title">Un projet qui<br />prend forme.</h3><div class="lp-demo-grid" aria-hidden="true"><span></span><span></span><span></span></div><p class="lp-demo-live" aria-hidden="true"><span class="lp-demo-dot"></span>En ligne · mon-app.coden.fun</p></div>
         </div>
-        <figcaption id="workspace-caption">Illustration du parcours Coden. Le résultat dépend de votre projet.</figcaption>
+        <figcaption id="workspace-caption">Animation du parcours Coden : de l’idée à un lien publié. Le résultat dépend de votre projet.</figcaption>
       </figure>
+    </section>
+    <section class="lp-section lp-examples" id="exemples" aria-labelledby="examples-title">
+      <header class="lp-heading" data-lp-reveal><h2 id="examples-title">Des applications déjà prêtes à explorer.</h2><p>Trois modèles proposés par Coden, en captures réelles. Partez de l’un d’eux ou décrivez le vôtre.</p></header>
+      <div class="lp-gallery">
+        <figure class="lp-example" data-lp-reveal><img src="/community-templates/chez-marcel.webp" width="800" height="500" loading="lazy" alt="Site de restaurant Chez Marcel : titre, boutons de réservation et carte par onglets" /><figcaption><h3>Chez Marcel</h3><p>Site de restaurant : carte par onglets, horaires et réservation de table.</p></figcaption></figure>
+        <figure class="lp-example" data-lp-reveal><img src="/community-templates/budget-clair.webp" width="800" height="500" loading="lazy" alt="Application Budget Clair : dépenses du mois, catégories et formulaire d’ajout" /><figcaption><h3>Budget Clair</h3><p>Suivi de dépenses du mois : budget, catégories, filtres et export CSV.</p></figcaption></figure>
+        <figure class="lp-example" data-lp-reveal><img src="/community-templates/cap-sur-le-monde.webp" width="800" height="500" loading="lazy" alt="Quiz de géographie Cap sur le monde" /><figcaption><h3>Cap sur le monde</h3><p>Quiz de géographie : dix questions, chrono et meilleur score.</p></figcaption></figure>
+      </div>
+      <a class="lp-text-link" href="/auth.html?mode=signup&amp;redirect=%2Fdashboard.html">Créer mon application <span aria-hidden="true">↗</span></a>
+    </section>
+    <section class="lp-section lp-features" id="fonctionnalites" aria-labelledby="features-title">
+      <header class="lp-heading" data-lp-reveal><h2 id="features-title">Tout ce qu’il faut, au même endroit.</h2><p>Une application créée avec Coden n’est pas qu’une page : elle vient avec ses données et son adresse.</p></header>
+      <div class="lp-feature-grid">
+        <article class="lp-feature" data-lp-reveal><h3>Un agent qui vous comprend</h3><p>Auto choisit la bonne action, Plan clarifie le périmètre, Build modifie les fichiers.</p></article>
+        <article class="lp-feature" data-lp-reveal><h3>Un aperçu fidèle</h3><p>Inspectez écrans, interactions et affichage mobile, puis demandez des corrections dans la conversation.</p></article>
+        <article class="lp-feature" data-lp-reveal><h3>Cloud intégré</h3><p>Base de données, authentification et stockage, prêts sans configuration.</p></article>
+        <article class="lp-feature" data-lp-reveal><h3>Publication en un lien</h3><p>Une adresse <em>nom</em>.coden.fun dès le plan Free. Domaine personnalisé avec un plan payant.</p></article>
+        <article class="lp-feature" data-lp-reveal><h3>Versions et retour arrière</h3><p>Revenez à une version précédente quand un changement ne convient pas. <small>Plans payants</small></p></article>
+        <article class="lp-feature" data-lp-reveal><h3>Votre code vous appartient</h3><p>Exportez le code pour poursuivre votre projet en dehors de Coden. <small>Plans payants</small></p></article>
+      </div>
+      <a class="lp-text-link" href="/features.html">Voir toutes les fonctionnalités <span aria-hidden="true">↗</span></a>
+    </section>
+    <section class="lp-section lp-audience" id="pour-qui" aria-labelledby="audience-title">
+      <header class="lp-heading" data-lp-reveal><h2 id="audience-title">Pour celles et ceux qui ont une idée, pas une équipe technique.</h2></header>
+      <div class="lp-cards">
+        <article class="lp-card" data-lp-reveal><h3>Indépendants et créateurs</h3><p>Portfolio, site vitrine ou petit outil pour votre activité.</p></article>
+        <article class="lp-card" data-lp-reveal><h3>Petites entreprises</h3><p>Site de restaurant, boutique en ligne ou tableau de bord des ventes.</p></article>
+        <article class="lp-card" data-lp-reveal><h3>Équipes</h3><p>Rôles et projets internes avec le plan Business.</p></article>
+      </div>
+    </section>
+    <section class="lp-section lp-integrations" id="integrations" aria-labelledby="integrations-title">
+      <header class="lp-heading" data-lp-reveal><h2 id="integrations-title">Branchez vos outils.</h2><p>Reliez votre application aux services que vous utilisez déjà.</p></header>
       <div class="lp-stack" data-lp-reveal>
         <div class="lp-stack-heading"><p>Quelques connecteurs du catalogue</p><button type="button" class="lp-marquee-toggle" aria-controls="connector-marquee" aria-pressed="false">Mettre en pause</button></div>
         <div class="lp-marquee" id="connector-marquee" role="region" aria-label="Catalogue de connecteurs">
@@ -135,6 +164,15 @@
         </div>
         <p class="lp-stack-note">Disponibilité selon le connecteur et sa configuration.</p>
       </div>
+    </section>
+    <section class="lp-section lp-trust" id="confiance" aria-labelledby="trust-title">
+      <header class="lp-heading" data-lp-reveal><h2 id="trust-title">Vous gardez le contrôle.</h2><p>Des limites claires entre création, secrets et publication.</p></header>
+      <ul class="lp-trust-list" data-lp-reveal>
+        <li><h3>Secrets hors du navigateur</h3><p>Les clés privées et les jetons restent côté serveur, jamais dans le code client.</p></li>
+        <li><h3>Sorties vérifiées</h3><p>Les chemins dangereux et les erreurs évidentes sont contrôlés avant qu’une génération soit terminée.</p></li>
+        <li><h3>Publication explicite</h3><p>L’aperçu évolue sans modifier le site en ligne. Vous publiez la version que vous choisissez.</p></li>
+      </ul>
+      <p class="lp-trust-links" data-lp-reveal><a href="/security.html">Page sécurité <span aria-hidden="true">↗</span></a><a href="/privacy.html">Confidentialité <span aria-hidden="true">↗</span></a></p>
     </section>
     <section class="lp-section lp-pricing" id="tarifs" data-lp-pricing aria-labelledby="pricing-title">
       <div class="lp-mesh" data-lp-mesh="soft" aria-hidden="true"></div>
