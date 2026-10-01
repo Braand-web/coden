@@ -62,22 +62,22 @@ export function mountAdminCommunity(root: HTMLElement) {
     } catch (caught) { toast(caught instanceof Error ? caught.message : 'Action impossible.', 'error'); }
   };
 
-  const tile = (label: string, value: string, hint = '') => `<div class="admin-card"><span class="admin-label">${escapeHtml(label)}</span><strong class="admin-value">${escapeHtml(value)}</strong>${hint ? `<small>${escapeHtml(hint)}</small>` : ''}</div>`;
+  const tile = (label: string, value: string, hint = '') => `<article class="admin-card"><span class="metric-label">${escapeHtml(label)}</span><strong class="metric-value">${escapeHtml(value)}</strong>${hint ? `<span class="metric-note">${escapeHtml(hint)}</span>` : ''}</article>`;
 
   function render() {
-    if (error) { root.innerHTML = `<div class="admin-card"><p role="alert">${escapeHtml(error)}</p><button type="button" class="admin-button" data-act="reload">Réessayer</button></div>`; bind(); return; }
-    if (!data) { root.innerHTML = '<div class="admin-card"><p>Chargement…</p></div>'; return; }
+    if (error) { root.innerHTML = `<article class="admin-card full"><p role="alert">${escapeHtml(error)}</p><button type="button" class="admin-button" data-act="reload">Réessayer</button></article>`; bind(); return; }
+    if (!data) { root.innerHTML = '<article class="admin-card full"><p class="metric-note">Chargement…</p></article>'; return; }
     const o = data.overview;
     const sw = data.switches || {};
     root.innerHTML = `
-      <div class="admin-card" style="grid-column: 1 / -1">
-        <h3>Interrupteurs</h3>
-        <p class="admin-muted">La fonctionnalité est ${sw.enabled ? 'activée' : 'désactivée'} par l’environnement (CODEN_COMMUNITY). Ces deux interrupteurs agissent sans redéploiement.</p>
+      <article class="admin-card full">
+        <span class="panel-label">Interrupteurs</span>
+        <p class="metric-note">La fonctionnalité est ${sw.enabled ? 'activée' : 'désactivée'} par l’environnement (CODEN_COMMUNITY). Ces deux interrupteurs agissent sans redéploiement.</p>
         <div class="admin-actions">
           <button type="button" class="admin-button${sw.hidden ? ' is-danger' : ''}" data-switch="hidden" data-value="${sw.hidden ? 'false' : 'true'}">${sw.hidden ? 'Communauté masquée — rendre visible' : 'Masquer toute la Communauté'}</button>
           <button type="button" class="admin-button${sw.frozen ? ' is-danger' : ''}" data-switch="frozen" data-value="${sw.frozen ? 'false' : 'true'}">${sw.frozen ? 'Nouveaux listings gelés — rétablir' : 'Geler les nouveaux listings'}</button>
         </div>
-      </div>
+      </article>
       ${tile('Apps en ligne', String(o.totals.online), `${o.totals.listings} au total`)}
       ${tile('En contrôle', String(o.totals.pending), `${o.totals.needsFix} à corriger · ${o.totals.refused} refusées`)}
       ${tile('Délai publication → ligne', o.delay.medianMinutes === null ? '—' : `${o.delay.medianMinutes} min`, `p90 ${o.delay.p90Minutes ?? '—'} min · ${o.delay.sample} apps`)}
@@ -87,37 +87,37 @@ export function mountAdminCommunity(root: HTMLElement) {
       ${tile('Comptes payants qui ajoutent des apps', pct(o.origins.paidShareAdded), `${o.origins.freeAuto} auto (gratuit) · ${o.origins.paidOptIn} par choix`)}
       ${tile('Passages vers un plan payant', String(o.upgradeClicks), 'clics depuis « Mes publications »')}
       ${tile('Qualité moyenne', o.quality.average === null ? '—' : `${o.quality.average}/100`, `${o.quality.featured} « Choix de Coden »`)}
-      <div class="admin-card">
-        <h3>Pourquoi des apps ne sont pas listées</h3>
-        ${o.refusals.length ? `<ul class="admin-list">${o.refusals.map((item: Row) => `<li><code>${escapeHtml(item.code)}</code> — ${item.count}</li>`).join('')}</ul>` : '<p class="admin-muted">Aucun refus.</p>'}
-      </div>
-      <div class="admin-card">
-        <h3>Signalements par motif</h3>
-        ${o.reports.byReason.length ? `<ul class="admin-list">${o.reports.byReason.map((item: Row) => `<li>${escapeHtml(REASONS[item.reason] || item.reason)} — ${item.count}</li>`).join('')}</ul>` : '<p class="admin-muted">Aucun signalement.</p>'}
-      </div>
-      <div class="admin-card" style="grid-column: 1 / -1">
-        <h3>Contestations ouvertes (${(data.appeals || []).length})</h3>
-        ${(data.appeals || []).length ? `<ul class="admin-list">${data.appeals.map((appeal: Row) => `<li><div>${escapeHtml(appeal.message)}</div><small class="admin-muted">${when(appeal.created_at)} · annonce ${escapeHtml(String(appeal.listing_id).slice(0, 8))}</small>
-          <div class="admin-actions"><button type="button" class="admin-button" data-appeal="${escapeHtml(appeal.id)}" data-decision="accepted">Accepter</button><button type="button" class="admin-button" data-appeal="${escapeHtml(appeal.id)}" data-decision="declined">Refuser</button></div></li>`).join('')}</ul>` : '<p class="admin-muted">Aucune.</p>'}
-      </div>
-      <div class="admin-card" style="grid-column: 1 / -1">
-        <h3>Annonces</h3>
+      <article class="admin-card">
+        <span class="panel-label">Pourquoi des apps ne sont pas listées</span>
+        ${o.refusals.length ? `<ul class="admin-list">${o.refusals.map((item: Row) => `<li><code>${escapeHtml(item.code)}</code> — ${item.count}</li>`).join('')}</ul>` : '<p class="metric-note">Aucun refus.</p>'}
+      </article>
+      <article class="admin-card">
+        <span class="panel-label">Signalements par motif</span>
+        ${o.reports.byReason.length ? `<ul class="admin-list">${o.reports.byReason.map((item: Row) => `<li>${escapeHtml(REASONS[item.reason] || item.reason)} — ${item.count}</li>`).join('')}</ul>` : '<p class="metric-note">Aucun signalement.</p>'}
+      </article>
+      <article class="admin-card full">
+        <span class="panel-label">Contestations ouvertes (${(data.appeals || []).length})</span>
+        ${(data.appeals || []).length ? `<ul class="admin-list">${data.appeals.map((appeal: Row) => `<li><div>${escapeHtml(appeal.message)}</div><small class="metric-note">${when(appeal.created_at)} · annonce ${escapeHtml(String(appeal.listing_id).slice(0, 8))}</small>
+          <div class="admin-actions"><button type="button" class="admin-button" data-appeal="${escapeHtml(appeal.id)}" data-decision="accepted">Accepter</button><button type="button" class="admin-button" data-appeal="${escapeHtml(appeal.id)}" data-decision="declined">Refuser</button></div></li>`).join('')}</ul>` : '<p class="metric-note">Aucune.</p>'}
+      </article>
+      <article class="admin-card full">
+        <span class="panel-label">Annonces</span>
         <label>Statut <select data-filter="status"><option value="">Tous</option>${Object.entries(STATUS).map(([key, label]) => `<option value="${key}"${status === key ? ' selected' : ''}>${label}</option>`).join('')}</select></label>
         <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Titre</th><th>Statut</th><th>Origine</th><th>Qualité</th><th>Signal.</th><th>Mise à jour</th><th></th></tr></thead><tbody>
-        ${listings.map(row => `<tr><td>${escapeHtml(row.title)}</td><td>${escapeHtml(STATUS[row.status] || row.status)}${row.status_code ? `<br><small class="admin-muted"><code>${escapeHtml(row.status_code)}</code></small>` : ''}</td><td>${row.origin === 'free_auto' ? 'Gratuit (auto)' : 'Choix payant'}</td><td>${row.quality_score ?? '—'}</td><td>${row.report_count || 0}</td><td>${when(row.updated_at)}</td>
+        ${listings.map(row => `<tr><td>${escapeHtml(row.title)}</td><td>${escapeHtml(STATUS[row.status] || row.status)}${row.status_code ? `<br><small class="metric-note"><code>${escapeHtml(row.status_code)}</code></small>` : ''}</td><td>${row.origin === 'free_auto' ? 'Gratuit (auto)' : 'Choix payant'}</td><td>${row.quality_score ?? '—'}</td><td>${row.report_count || 0}</td><td>${when(row.updated_at)}</td>
           <td><div class="admin-actions">
             ${row.status === 'removed_by_moderation' || row.status === 'refused' || row.status === 'needs_fix' ? `<button type="button" class="admin-button" data-row="${row.id}" data-action="restore">Rétablir</button>` : `<button type="button" class="admin-button is-danger" data-row="${row.id}" data-action="remove">Retirer</button>`}
             ${row.status === 'online' ? `<button type="button" class="admin-button" data-row="${row.id}" data-action="${row.featured ? 'unfeature' : 'feature'}">${row.featured ? 'Ne plus mettre en avant' : 'Mettre en avant'}</button>` : ''}
             ${row.report_count ? `<button type="button" class="admin-button" data-row="${row.id}" data-action="dismiss_reports">Écarter les signalements</button>` : ''}
-          </div></td></tr>`).join('') || '<tr><td colspan="7" class="admin-muted">Aucune annonce.</td></tr>'}
+          </div></td></tr>`).join('') || '<tr><td colspan="7" class="metric-note">Aucune annonce.</td></tr>'}
         </tbody></table></div>
-      </div>
-      <div class="admin-card" style="grid-column: 1 / -1">
-        <h3>Journal des décisions (100 dernières)</h3>
+      </article>
+      <article class="admin-card full">
+        <span class="panel-label">Journal des décisions (100 dernières)</span>
         <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Quand</th><th>Qui</th><th>Quoi</th><th>Pourquoi</th></tr></thead><tbody>
-        ${(data.events || []).map((event: Row) => `<tr><td>${when(event.created_at)}</td><td>${escapeHtml(event.actor_type)}</td><td>${escapeHtml(event.event)}${event.to_status ? ` → ${escapeHtml(STATUS[event.to_status] || event.to_status)}` : ''}</td><td>${escapeHtml(event.reason || event.code || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="admin-muted">Rien pour l’instant.</td></tr>'}
+        ${(data.events || []).map((event: Row) => `<tr><td>${when(event.created_at)}</td><td>${escapeHtml(event.actor_type)}</td><td>${escapeHtml(event.event)}${event.to_status ? ` → ${escapeHtml(STATUS[event.to_status] || event.to_status)}` : ''}</td><td>${escapeHtml(event.reason || event.code || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="metric-note">Rien pour l’instant.</td></tr>'}
         </tbody></table></div>
-      </div>`;
+      </article>`;
     bind();
   }
 

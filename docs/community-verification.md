@@ -5,7 +5,7 @@ Générée par `scripts/community/verify.ts` le 2026-10-01. Pipeline réel (navi
 - Décisions conformes à l'attendu : **34/34**
 - Apps nuisibles ou invalides (13) listées à tort — faux négatifs : **0** (0 %)
 - Apps légitimes (21) bloquées à tort — faux positifs : **0** (0 %)
-- Durée d'un contrôle complet (navigateur compris) : médiane 1764 ms, maximum 2279 ms
+- Durée d'un contrôle complet (navigateur compris) : médiane 1741 ms, maximum 2287 ms
 
 | # | App | Type | Attendu | Obtenu | Code | Qualité | Pourquoi |
 |---|-----|------|---------|--------|------|---------|----------|
