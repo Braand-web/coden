@@ -7,6 +7,7 @@ import { initCodenNavigationTransitions } from './navigation-transitions';
 import { startCreateProjectFlow, formatCreateProjectFlowStatus, type CreateProjectFlowStatus } from './services/create-project-flow';
 import type { AttachmentUploader } from './lib/attachment-types';
 import { stashPendingFiles } from './lib/pending-files';
+import { mountBrandMesh, type BrandMeshVariant } from './lib/brand-mesh';
 import { createLandingDraft } from './lib/landing-draft';
 import { readPreferredEffort, readPreferredModelSelection, writePreferredEffort, writePreferredModelSelection } from './lib/composer-preferences';
 import { ANNUAL_DISCOUNT, BILLING_PLANS, planFeatures, priceFor, type BillingInterval } from './config/billing-v2';
@@ -167,6 +168,10 @@ function setupReveal() {
   document.documentElement.dataset.lpReveal = 'on';
 }
 
+function setupMesh() {
+  document.querySelectorAll<HTMLElement>('[data-lp-mesh]').forEach(host => mountBrandMesh(host, host.dataset.lpMesh as BrandMeshVariant));
+}
+
 function init() {
   mountPublicShell();
   initCodenNavigationTransitions();
@@ -174,6 +179,7 @@ function init() {
   setupPricing();
   setupMarquee();
   setupReveal();
+  setupMesh();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
 else init();
