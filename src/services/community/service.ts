@@ -327,10 +327,11 @@ export function createCommunityService(ctx: CommunityContext) {
     await ensureVisible();
     const s = store();
     const plan = await ctx.getOrganizationPlan(organizationId);
-    const [rows, notice, published] = await Promise.all([s.mine(userId), s.openNotice(userId), ctx.listPublishedProjects(userId)]);
+    const [rows, notice, published, profile] = await Promise.all([s.mine(userId), s.openNotice(userId), ctx.listPublishedProjects(userId), s.profile(userId)]);
     const listed = new Set(rows.map(row => row.project_id));
     return {
       plan, controls: ownerControls(plan), listings: rows.map(ownerView), categories: await s.categories(),
+      profile: { displayName: profile?.display_name || '', bio: profile?.bio || '', public: Boolean(profile?.public) },
       notice: notice ? { effectiveAt: notice.effective_at } : null,
       // Published apps that are not in the Community, with the choice to add them (paid plans).
       unlisted: published.filter(item => !listed.has(item.projectId)).map(item => item.projectId),

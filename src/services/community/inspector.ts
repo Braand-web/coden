@@ -91,10 +91,9 @@ function collect() {
   };
 }
 
-/* Runs inside the page: blurs what looks like an email address or a phone number. */
+/* Runs inside the page: blurs every email address and phone number in the text, however many a single text holds. */
 function blurPersonalData() {
-  const email = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
-  const phone = /(?:\+|00)?\d(?:[\s.\-()]?\d){7,14}/;
+  const pattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|(?<![\w.])(?:\+|00)?\d(?:[\s.\-()]?\d){7,14}(?!\w|\.\d)/g;
   let count = 0;
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
@@ -103,21 +102,28 @@ function blurPersonalData() {
     const value = node.nodeValue || '';
     const parent = node.parentElement;
     if (!parent || /^(?:SCRIPT|STYLE|NOSCRIPT)$/.test(parent.tagName)) continue;
-    const match = email.exec(value) || (/^(?:19|20)\d{2}\b/.test((phone.exec(value) || [''])[0]) ? null : phone.exec(value));
-    if (!match) continue;
-    const digits = match[0].replace(/\D/g, '');
-    if (!email.test(match[0]) && (digits.length < 8 || digits.length > 15)) continue;
-    const before = value.slice(0, match.index);
-    const after = value.slice(match.index + match[0].length);
-    const span = document.createElement('span');
-    span.style.filter = 'blur(7px)';
-    span.textContent = match[0];
     const fragment = document.createDocumentFragment();
-    if (before) fragment.append(before);
-    fragment.append(span);
-    if (after) fragment.append(after);
+    let last = 0;
+    let found = false;
+    for (const match of value.matchAll(pattern)) {
+      const text = match[0];
+      const digits = text.replace(/\D/g, '');
+      const isEmail = text.includes('@');
+      // A year range or a plain long number is not a phone: phones have 8 to 15 digits and start with + / 0 or are grouped.
+      if (!isEmail && (digits.length < 8 || digits.length > 15 || !(/^[+0]/.test(text) || /[\s.\-()]/.test(text)) || /^(?:19|20)\d{2}[\s.\-]/.test(text))) continue;
+      const index = match.index ?? 0;
+      if (index > last) fragment.append(value.slice(last, index));
+      const span = document.createElement('span');
+      span.style.filter = 'blur(7px)';
+      span.textContent = text;
+      fragment.append(span);
+      last = index + text.length;
+      found = true;
+      count += 1;
+    }
+    if (!found) continue;
+    if (last < value.length) fragment.append(value.slice(last));
     node.replaceWith(fragment);
-    count += 1;
   }
   for (const link of Array.from(document.querySelectorAll('a[href^="mailto:"], a[href^="tel:"]'))) { (link as HTMLElement).style.filter = 'blur(7px)'; count += 1; }
   return count;
@@ -126,10 +132,11 @@ function blurPersonalData() {
 const MAX_DELIVERED_FILES = 8;
 const MAX_DELIVERED_BYTES = 1_500_000;
 
-export type InspectOptions = { timeoutMs?: number };
+/** `testOrigin`: tests and the verification run only — one local origin the browser may reach (never set in production). */
+export type InspectOptions = { timeoutMs?: number; testOrigin?: string };
 
 export async function inspectPublicPage(address: string, options: InspectOptions = {}): Promise<Inspection> {
-  const url = inspectableUrl(address);
+  const url = options.testOrigin && address.startsWith(`${options.testOrigin}/`) ? new URL(address) : inspectableUrl(address);
   const empty: Inspection = { signals: { reachable: false, textLength: 0 }, delivered: [], thumbnail: null, blurred: 0 };
   if (!url) return empty;
   const { chromium } = await import('playwright');
@@ -145,6 +152,7 @@ export async function inspectPublicPage(address: string, options: InspectOptions
       let target: URL;
       try { target = new URL(route.request().url()); } catch { return route.abort('blockedbyclient'); }
       if (['data:', 'blob:'].includes(target.protocol)) return route.continue();
+      if (options.testOrigin && target.origin === options.testOrigin) return route.continue();
       if (!['http:', 'https:'].includes(target.protocol) || isPrivateAddress(target.hostname)) return route.abort('blockedbyclient');
       return route.continue();
     });

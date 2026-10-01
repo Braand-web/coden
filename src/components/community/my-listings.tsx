@@ -51,6 +51,8 @@ export default function MyListings({ projects, onUpgrade }: { projects: Array<{ 
         <EmptyState title="Aucune publication pour l’instant" body={free ? 'Publiez une app : elle apparaîtra ici, puis dans la Communauté après vérification.' : 'Publiez une app, puis ajoutez-la à la Communauté si vous le souhaitez.'} />
       )}
 
+      <ProfileForm profile={data.profile} />
+
       <ul className="coden-community-rows">
         {data.listings.map(listing => <Row key={listing.id} listing={listing} categories={data.categories} free={free} onChanged={refresh} />)}
         {!free && data.unlisted.map(projectId => (
@@ -189,3 +191,33 @@ function AppealForm({ id, onDone }: { id: string; onDone: () => void }) {
 }
 
 export type { MineResponse };
+
+/** The optional public creator profile: off by default; a name and a short line, never an e-mail. */
+function ProfileForm({ profile }: { profile: MineResponse['profile'] }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(profile);
+  const save = useMutation({
+    mutationFn: () => communityApi.saveProfile(draft),
+    onSuccess: () => { toast('Profil enregistré.', 'success'); setOpen(false); },
+    onError: error => toast(errorText(error, 'Enregistrement impossible.'), 'error'),
+  });
+  return (
+    <div className="coden-community-note">
+      <p>Profil public : {profile.public && profile.displayName ? `affiché sous le nom « ${profile.displayName} »` : 'masqué (vos apps s’affichent sous « Créateur anonyme » ou le nom choisi pour chaque app)'}.</p>
+      <button type="button" className="coden-community-link" onClick={() => setOpen(value => !value)} aria-expanded={open}>{open ? 'Fermer' : 'Modifier'}</button>
+      {open && (
+        <form className="coden-community-form" style={{ flexBasis: '100%' }} onSubmit={event => { event.preventDefault(); save.mutate(); }}>
+          <label className="coden-community-switch"><input type="checkbox" role="switch" checked={draft.public} onChange={event => setDraft({ ...draft, public: event.target.checked })} /><span>Afficher mon profil</span></label>
+          <label className="coden-community-field">Nom affiché
+            <input value={draft.displayName} onChange={event => setDraft({ ...draft, displayName: event.target.value })} maxLength={40} />
+          </label>
+          <label className="coden-community-field">Présentation (200 caractères)
+            <textarea value={draft.bio} onChange={event => setDraft({ ...draft, bio: event.target.value })} maxLength={200} rows={2} />
+          </label>
+          <p className="coden-community-fine">N’indiquez ni e-mail ni téléphone.</p>
+          <div className="coden-community-actions"><button type="submit" className="coden-community-button is-primary" disabled={save.isPending}>Enregistrer</button></div>
+        </form>
+      )}
+    </div>
+  );
+}

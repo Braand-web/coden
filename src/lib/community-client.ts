@@ -19,7 +19,7 @@ export type OwnerListing = {
 };
 export type MineResponse = {
   plan: string; controls: { canChoose: boolean; mode: 'automatic' | 'choice' }; listings: OwnerListing[]; categories: Category[];
-  notice: { effectiveAt: string } | null; unlisted: string[]; freeNotice: string;
+  notice: { effectiveAt: string } | null; unlisted: string[]; freeNotice: string; profile: { displayName: string; bio: string; public: boolean };
 };
 export type RemixResult = { project: { id: string; name: string }; builderUrl: string; reconnect: Array<{ key: string; label: string; hint: string }>; attribution: string };
 
@@ -60,6 +60,7 @@ export const communityApi = {
   mine: () => apiFetch<MineResponse>('/api/community/mine'),
   editListing: (projectId: string, patch: Record<string, unknown>) => apiFetch<{ listing: OwnerListing }>(`/api/community/projects/${projectId}/listing`, json('PATCH', patch)),
   refreshThumbnail: (projectId: string) => apiFetch<{ ok: boolean }>(`/api/community/projects/${projectId}/thumbnail/refresh`, json('POST')),
+  saveProfile: (profile: { displayName: string; bio: string; public: boolean }) => apiFetch<{ success: boolean }>('/api/community/profile', json('PUT', profile)),
   upgradeClick: () => apiFetch<{ success: boolean }>('/api/community/upgrade-click', json('POST', { from: 'mine' })).catch(() => null),
 };
 

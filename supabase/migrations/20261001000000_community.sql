@@ -68,8 +68,7 @@ create table if not exists public.community_listings (
   updated_at timestamptz not null default now(),
   search_vector tsvector generated always as (
     setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
-    setweight(to_tsvector('simple', coalesce(array_to_string(tags, ' '), '')), 'B') ||
-    setweight(to_tsvector('simple', coalesce(description, '')), 'C')
+    setweight(to_tsvector('simple', coalesce(description, '')), 'B')
   ) stored
 );
 create index if not exists community_listings_online_recent_idx on public.community_listings (listed_at desc, id) where status = 'online';

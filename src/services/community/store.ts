@@ -6,6 +6,7 @@
  * id, e-mail or real name, never the source. The service-role client is used, so the filtering is done in this file, in
  * one place, and covered by tests.
  */
+import { createHash } from 'node:crypto';
 import { DEFAULT_CATEGORIES, type CommunityCategory } from './categories.ts';
 import type { CheckResult, ListingState, Severity } from './checks.ts';
 import type { ListingOrigin } from './visibility.ts';
@@ -231,7 +232,8 @@ export class CommunityStore {
     for (const row of rows) {
       // The creator's own choice wins; then their public profile name; never an e-mail or an account name.
       const name = String(row.creator_alias || '').trim() || profiles.get(row.owner_id) || ANONYMOUS_CREATOR;
-      result.set(row.owner_id, { name, profile: profiles.has(row.owner_id) ? row.owner_id : null });
+      // A public handle, never the account id: it identifies the profile without revealing who is behind the account.
+      result.set(row.owner_id, { name, profile: profiles.has(row.owner_id) ? createHash('sha256').update(`community-profile|${row.owner_id}`).digest('hex').slice(0, 16) : null });
     }
     return result;
   }
