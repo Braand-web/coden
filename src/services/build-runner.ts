@@ -151,7 +151,9 @@ export async function buildStaticSource(src: StaticSource, opts: BuildOptions): 
     // Lifecycle scripts are arbitrary code from an untrusted generated app.
     // Keep them off during dependency installation and never inherit Coden's
     // provider, database, hosting or billing environment variables.
-    await run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts'], workDir, buildEnv(true));
+    // The build env sets NODE_ENV=production, which makes npm skip devDependencies: vite and its plugins would be
+    // missing and `npm run build` fails with « Cannot find package 'vite' ». The toolchain is a devDependency.
+    await run('npm', ['install', '--no-audit', '--no-fund', '--ignore-scripts', '--include=dev'], workDir, buildEnv(true));
     await run('npm', ['run', 'build'], workDir, buildEnv(false, opts.publicEnv));
     const outputDirectory = String(opts.outputDirectory || 'dist').replace(/^[/\\]+/, '');
     const outputPath = path.resolve(workDir, outputDirectory);
