@@ -591,6 +591,19 @@ export async function publishProjectToVercel(params: {
   };
 }
 
+/**
+ * A staged preview that answers 401 is behind Vercel Authentication (the default for new projects), not broken:
+ * visitors of a published site must never meet a login. Turn that protection off for this Coden-owned project.
+ */
+export async function disableVercelDeploymentProtection(project: string): Promise<void> {
+  await vercelRequest(`/v9/projects/${encodeURIComponent(project)}`, { method: 'PATCH', body: JSON.stringify({ ssoProtection: null }) });
+}
+
+/** The verification failed because the provider asked for a login, not because the site is wrong. */
+export function blockedByProviderLogin(checks: Array<{ status: number; error?: string }>): boolean {
+  return checks.length > 0 && checks.every(check => check.status === 401 || check.error === 'VERCEL_LOGIN_REDIRECT');
+}
+
 /** Promote only a verified preview, then connect the permanent Coden address. */
 export async function activateVercelPublication(result: VercelPublishResult, slug: string): Promise<VercelPublishResult> {
   await promoteVercelDeployment(result.projectId || result.projectName, result.deploymentId);
