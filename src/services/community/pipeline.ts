@@ -28,6 +28,12 @@ export type PipelineDeps = {
   accountCreatedAt: (ownerId: string) => Promise<string | null>;
   limits?: CommunityLimits;
   now?: () => Date;
+  /** A reinforced re-analysis (after reports): a doubt no model could settle counts against the app instead of for it. */
+  strict?: boolean;
+  /** The listing had been hidden by reports and the re-analysis refused it: the reports are upheld. */
+  onUpheld?: (listing: ListingRow) => Promise<void>;
+  /** The listing had been hidden by reports and the re-analysis found nothing: the reports are dismissed. */
+  onCleared?: (listing: ListingRow) => Promise<void>;
 };
 
 export type PipelineOutcome =
@@ -104,6 +110,12 @@ export async function runListingChecks(deps: PipelineDeps, listingId: string, ve
     }
   }
 
+  if (deps.strict) {
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index];
+      if (result.key === 'moderation' && result.outcome === 'warn') results[index] = { ...result, outcome: 'fail', code: 'moderation_review', reason: 'Après des signalements, un doute sur le contenu n’a pas pu être levé.', remedy: 'Vous pouvez contester cette décision depuis « Mes publications ».' };
+    }
+  }
   results.push(privacyCheck({ title: listing.title, description: listing.description }));
   const fingerprint = contentFingerprint(source, signals.visibleText || '');
   results.push(duplicateCheck(fingerprint, await store.fingerprints(listing.project_id)));
@@ -121,7 +133,7 @@ export async function runListingChecks(deps: PipelineDeps, listingId: string, ve
     const listedAt = listing.listed_at || now.toISOString();
     await store.finishVersion(versionId, { state: 'passed', severity: null, report, thumbnail_path: thumbnailPath, quality_score: quality });
     await store.transition(listing, 'online', {
-      actor: 'system', event: listing.status === 'online' ? 'republished' : 'listed', code: verdict.code, reason: verdict.reason, data: { quality, origin: visibility.origin },
+      actor: 'system', event: listing.status === 'online' ? 'republished' : listing.status === 'hidden' ? 'reanalysis_cleared' : 'listed', code: verdict.code, reason: verdict.reason, data: { quality, origin: visibility.origin },
       patch: {
         current_version_id: versionId, public_url: version.public_url || listing.public_url, thumbnail_path: thumbnailPath || listing.thumbnail_path,
         thumbnail_alt: `Aperçu de « ${listing.title.slice(0, 80)} »`, quality_score: quality, featured: choice, indexable: true, content_fingerprint: fingerprint || null,
@@ -130,6 +142,7 @@ export async function runListingChecks(deps: PipelineDeps, listingId: string, ve
       } as Partial<ListingRow>,
     });
     await store.pruneVersionFiles(listing.id, [versionId]);
+    if (listing.status === 'hidden') await deps.onCleared?.(listing).catch(() => undefined);
   } else if (action === 'keep_previous') {
     // The new version failed; visitors keep the last one that passed. The owner is told what to fix.
     await store.finishVersion(versionId, { state: 'failed', severity: verdict.severity, report });
@@ -143,6 +156,7 @@ export async function runListingChecks(deps: PipelineDeps, listingId: string, ve
       patch: { checked_at: now.toISOString(), hold_until: null, featured: false, indexable: false } as Partial<ListingRow>,
     });
     await store.pruneVersionFiles(listing.id, []);
+    if (listing.status === 'hidden' && verdict.state === 'refused') await deps.onUpheld?.(listing).catch(() => undefined);
   }
 
   if (verdict.state !== 'online') await deps.notifyOwner(listing, verdict).catch(() => undefined);

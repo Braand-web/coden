@@ -410,8 +410,8 @@ export class CommunityStore {
     return (data || []) as any;
   }
 
-  async setRanks(id: string, trending: number, discover: number) {
-    await this.client.from('community_listings').update({ trending_score: trending, discover_rank: discover }).eq('id', id);
+  async setTrending(id: string, trending: number) {
+    await this.client.from('community_listings').update({ trending_score: trending }).eq('id', id);
   }
 
   // ── Profiles ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -440,7 +440,7 @@ export class CommunityStore {
     const { data } = await this.client.from('community_templates').select('slug');
     const known = new Set((data || []).map((row: any) => row.slug));
     const fresh = rows.filter(row => !known.has(row.slug));
-    if (fresh.length) await this.client.from('community_templates').insert(fresh.map(row => ({ ...row, tested_at: new Date().toISOString() })));
+    if (fresh.length) await this.client.from('community_templates').insert(fresh);
     return fresh.length;
   }
 
