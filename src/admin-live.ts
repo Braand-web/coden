@@ -757,7 +757,7 @@ function renderFailedRuns(rows: JsonRecord[]) {
 function renderRuns() {
   const root = qs('#admin-runs');
   if (!root) return;
-  frame(root, 'runs', `<div class="admin-grid admin-metric-row" data-reliability-metrics></div><article class="admin-card full"><span class="panel-label">Fiabilité par jour · tours d’agent · 14 jours (UTC)</span><div data-reliability-days></div></article><article class="admin-card full"><span class="panel-label">Fiabilité par modèle et par type d’action</span><div data-reliability-groups></div></article><div class="admin-grid admin-metric-row" data-runs-metrics></div><article class="admin-card full"><span class="panel-label">Runs récents</span><div data-runs-table></div></article><article class="admin-card full"><span class="panel-label">Répartition des intentions</span><div data-runs-intents></div></article>`);
+  frame(root, 'runs', `<div class="admin-grid admin-metric-row" data-reliability-metrics></div><article class="admin-card full"><span class="panel-label">Fiabilité par jour · tours d’agent · 14 jours (UTC)</span><div data-reliability-days></div></article><article class="admin-card full"><span class="panel-label">De l’inscription au premier résultat · 14 jours</span><div data-reliability-funnel></div></article><article class="admin-card full"><span class="panel-label">Fiabilité par modèle et par type d’action</span><div data-reliability-groups></div></article><div class="admin-grid admin-metric-row" data-runs-metrics></div><article class="admin-card full"><span class="panel-label">Runs récents</span><div data-runs-table></div></article><article class="admin-card full"><span class="panel-label">Répartition des intentions</span><div data-runs-intents></div></article>`);
   renderReliability(root);
   const metricsHost = root.querySelector<HTMLElement>('[data-runs-metrics]');
   if (metricsHost) metricsHost.innerHTML = [
@@ -810,6 +810,16 @@ function renderReliability(root: HTMLElement) {
   if (daysHost) daysHost.innerHTML = table(['Jour', 'Tours', 'Réussis', 'Échoués', 'Annulés', 'Réussite'], [...daily].reverse().map(day => [
     escapeHtml(day.day), escapeHtml(formatNumber(day.turns)), escapeHtml(formatNumber(day.completed)), escapeHtml(formatNumber(day.failed)), escapeHtml(formatNumber(day.cancelled)), escapeHtml(percent(day.successRate)),
   ]));
+  const funnelHost = root.querySelector<HTMLElement>('[data-reliability-funnel]');
+  const funnel = state.reliability?.funnel as JsonRecord | null | undefined;
+  if (funnelHost) {
+    const steps = ((funnel?.steps || []) as JsonRecord[]);
+    funnelHost.innerHTML = steps.length
+      ? table(['Étape', 'Personnes', 'Des inscrits', 'De l’étape précédente'], steps.map(step => [
+        `${escapeHtml(step.label)}${funnel?.lostAt === step.key ? ' <strong>← plus forte perte</strong>' : ''}`, escapeHtml(formatNumber(step.people)), escapeHtml(percent(step.rateOfSignups)), escapeHtml(percent(step.rateOfPrevious)),
+      ]))
+      : '<p class="admin-empty">Entonnoir indisponible.</p>';
+  }
   if (groupsHost) groupsHost.innerHTML = `<div class="admin-grid"><div>${groups((report.byModel || []) as JsonRecord[])}</div><div>${groups((report.byAction || []) as JsonRecord[])}</div></div>`;
 }
 

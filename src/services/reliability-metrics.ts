@@ -153,3 +153,53 @@ export function evaluateReliabilityAlert(turns: ReliabilityTurn[], options: { no
 export function reliabilityAlertEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env.CODEN_RELIABILITY_ALERT !== '0';
 }
+
+/**
+ * From signing up to a first real result, step by step: where the people who arrive stop.
+ *
+ * Measured on the people who signed up inside the window. A step is reached when its fact is true for the person at any
+ * time since they signed up (not only inside the window), so a person who built their app a day after signing up still
+ * counts. `lostAt` names the step with the largest drop, which is where the next improvement belongs.
+ */
+export type FunnelUser = { id: string; created_at: string | null };
+export type FunnelProject = { owner_id: string };
+export type FunnelStep = { key: 'signup' | 'project' | 'asked' | 'result'; label: string; people: number; rateOfSignups: number | null; rateOfPrevious: number | null };
+export type ActivationFunnel = { days: number; steps: FunnelStep[]; lostAt: FunnelStep['key'] | null };
+
+const FUNNEL_LABELS: Record<FunnelStep['key'], string> = {
+  signup: 'Inscrits',
+  project: 'Ont créé un projet',
+  asked: 'Ont envoyé une demande à un agent',
+  result: 'Ont obtenu une construction réussie',
+};
+
+export function buildActivationFunnel(input: { users: FunnelUser[]; projects: FunnelProject[]; turns: ReliabilityTurn[]; days?: number; now?: number }): ActivationFunnel {
+  const days = Math.min(90, Math.max(1, Math.round(input.days || 14)));
+  const now = input.now ?? Date.now();
+  const since = now - days * 86_400_000;
+  const cohort = new Set(input.users.filter(user => { const at = Date.parse(String(user.created_at || '')); return Number.isFinite(at) && at >= since && at <= now + 60_000; }).map(user => user.id));
+  const withProject = new Set(input.projects.map(project => project.owner_id).filter(id => cohort.has(id)));
+  const asked = new Set<string>();
+  const result = new Set<string>();
+  for (const turn of input.turns) {
+    const id = String(turn.user_id || '');
+    if (!cohort.has(id)) continue;
+    asked.add(id);
+    const took = durationMs(turn);
+    if (turn.status === 'completed' && took !== null && took >= BUILD_MIN_MS) result.add(id);
+  }
+  const counts: Array<[FunnelStep['key'], number]> = [['signup', cohort.size], ['project', withProject.size], ['asked', asked.size], ['result', result.size]];
+  const steps = counts.map(([key, people], index): FunnelStep => ({
+    key, label: FUNNEL_LABELS[key], people,
+    rateOfSignups: cohort.size ? Math.round((people / cohort.size) * 1000) / 1000 : null,
+    rateOfPrevious: index === 0 ? null : counts[index - 1][1] ? Math.round((people / counts[index - 1][1]) * 1000) / 1000 : null,
+  }));
+  // The biggest loss between two steps, if there is anything to lose.
+  let lostAt: FunnelStep['key'] | null = null;
+  let worst = 0;
+  for (let index = 1; index < counts.length; index += 1) {
+    const lost = counts[index - 1][1] - counts[index][1];
+    if (lost > worst) { worst = lost; lostAt = counts[index][0]; }
+  }
+  return { days, steps, lostAt };
+}

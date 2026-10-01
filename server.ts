@@ -263,7 +263,7 @@ import { canShareProject, generateShareToken, hashShareToken, isShareActive, isW
 import { canDuplicateProject, duplicateProjectName } from './src/services/project-duplicate.ts';
 import { findCompletedTurnForRun } from './src/services/run-ledger.ts';
 import { dedupeTwinMessages, isTwinMessage, TWIN_WINDOW_MS } from './src/services/message-dedupe.ts';
-import { buildReliabilityReport, evaluateReliabilityAlert, reliabilityAlertEnabled, type ReliabilityTurn } from './src/services/reliability-metrics.ts';
+import { buildActivationFunnel, buildReliabilityReport, evaluateReliabilityAlert, reliabilityAlertEnabled, type ReliabilityTurn } from './src/services/reliability-metrics.ts';
 import { buildCapabilityCard, recordProbeResults, type ProbeName } from './src/services/model-capability-card.ts';
 import { createGatewayProbeChat, runConformanceProbes } from './src/services/model-conformance.ts';
 import { ATTACHMENT_BUCKET, AttachmentError, AttachmentService, memoryAttachmentBackend, supabaseAttachmentBackend, type ModelMediaSupport } from './src/services/attachments/attachment-service.ts';
@@ -14119,7 +14119,20 @@ app.get('/api/admin/reliability', async (req: any, res) => {
   const { turns, error } = await loadReliabilityTurns(Date.now() - days * 86_400_000);
   if (error) return res.status(503).json({ success: false, error });
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ success: true, report: buildReliabilityReport(turns, { days }), alert: evaluateReliabilityAlert(turns) });
+  // From signing up to a first result: best-effort, the dashboard is whole without it.
+  let funnel = null;
+  try {
+    const client = getSupabase();
+    if (client) {
+      const [people, projects, allTurns] = await Promise.all([
+        adminAuthUsers(client, 1000),
+        client.from('projects').select('owner_id').limit(5000),
+        client.from('agent_turns').select('user_id,status,created_at,started_at,completed_at').not('user_id', 'is', null).limit(10000),
+      ]);
+      if (people.available && !projects.error && !allTurns.error) funnel = buildActivationFunnel({ users: people.users, projects: (projects.data || []) as any[], turns: (allTurns.data || []) as any[], days });
+    }
+  } catch { funnel = null; }
+  res.json({ success: true, report: buildReliabilityReport(turns, { days }), alert: evaluateReliabilityAlert(turns), funnel });
 });
 
 /** Something is wrong now: the operator hears about it before the users have all left. */
