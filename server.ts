@@ -1588,6 +1588,14 @@ function diagnosePublishError(error: any) {
       status: 503,
     };
   }
+  if (/CLOUDFLARE_(?:ACCOUNT_ID|API_TOKEN|ZONE_ID)/i.test(message)) {
+    return {
+      message: 'La publication Cloudflare n’est pas configurée sur le serveur. Votre projet est conservé.',
+      diagnostic_code: 'CLOUDFLARE_NOT_CONFIGURED',
+      suggested_action: 'configure_cloudflare',
+      status: 503,
+    };
+  }
   if (/deployment could not be verified|promoted publication could not be verified/i.test(message)) {
     return {
       message: 'Le site a été déployé mais n’est pas encore joignable publiquement. L’application en ligne n’a pas changé ; réessayez dans un instant.',
@@ -20499,6 +20507,25 @@ function getPublishPublicUrl(project: GeneratedProject, customDomain: string | n
  * code and a request id, so the same failure is diagnosable from the logs
  * instead of being read off a screenshot.
  */
+/*
+ * A site published before its <slug>.coden.fun address answered carries its pages.dev address. Once the Coden address
+ * answers, the next read of the status switches the stored public address to it (one quick look, never an error).
+ */
+async function upgradePendingCodenAddress(project: GeneratedProject, deployment: any): Promise<any> {
+  try {
+    if (!deployment || deployment.provider !== 'cloudflare-pages' || !/\.pages\.dev(?:[/:?#]|$)/i.test(String(deployment.public_url || ''))) return deployment;
+    const upgraded = await upgradeToCodenAddress(String(project.slug || project.id));
+    if (!upgraded) return deployment;
+    const host = new URL(upgraded).hostname;
+    const { error } = await requireSupabase('Publication address upgrade')
+      .from('deployments').update({ public_url: upgraded, custom_domain: host, updated_at: new Date().toISOString() }).eq('id', deployment.id);
+    if (error) return deployment;
+    return { ...deployment, public_url: upgraded, custom_domain: host };
+  } catch {
+    return deployment;
+  }
+}
+
 app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
   const requestId = `pubstatus_${randomUUID()}`;
   try {
@@ -20506,6 +20533,7 @@ app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
     const project = await loadProject(req.params.id, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.', request_id: requestId });
     const context = await createPublishContext(project);
+    context.latestDeployment = await upgradePendingCodenAddress(project, context.latestDeployment);
     return res.json({
       success: true,
       publish: buildPublishStatus(context),
@@ -21115,6 +21143,7 @@ import {
   disableVercelDeploymentProtection,
   blockedByProviderLogin,
 } from './src/services/publish-vercel.ts';
+import { publishStaticAppToCloudflarePages, publishProviderChoice, upgradeToCodenAddress } from './src/services/publish-cloudflare-pages.ts';
 import { buildStaticSource, localBuildAllowed, materializeStaticSource } from './src/services/build-runner.ts';
 import { hasBlockingGeneratedImport, strippedOfBlockingMarkers } from './src/services/generated-blocking-markers.ts';
 import { extractDesignContract } from './src/services/design-contract.ts';
@@ -21478,6 +21507,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
   let stagedDeploymentId = '';
   let promotionAttempted = false;
   let previousDeploymentId = '';
+  const publishProvider = publishProviderChoice();
+  let cloudflareSite: Awaited<ReturnType<typeof publishStaticAppToCloudflarePages>> | null = null;
   try {
     const auth = getRequiredAuth(req);
     if (!enforceRateLimit(`publish:${auth.userId}`, 6, 60_000)) {
@@ -21498,6 +21529,9 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     // requirePublicationEntitlement); only a custom domain is paid.
     const context = await createPublishContext(project);
     previousDeploymentId = context.latestDeployment?.provider === 'vercel'
+      ? String(context.latestDeployment.provider_deployment_id || '')
+      : '';
+    const previousCloudflareDeploymentId = context.latestDeployment?.provider === 'cloudflare-pages'
       ? String(context.latestDeployment.provider_deployment_id || '')
       : '';
     const publishStatus = buildPublishStatus(context);
@@ -21543,7 +21577,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     const slug = String(project.slug || project.id).toLowerCase();
     // Resubscription restores the existing provider project before a new
     // deployment is created. The operation is idempotent for active projects.
-    await unpauseVercelProject(vercelProjectNameForSlug(slug));
+    if (publishProvider === 'vercel') await unpauseVercelProject(vercelProjectNameForSlug(slug));
     const files = extractStaticFiles(project, context.files);
     if (!Object.keys(files).length) {
       return res.status(400).json({ success: false, error: 'No generated files to publish.', request_id: requestId });
@@ -21597,7 +21631,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       });
     }
     const workDir = path.join('/tmp', 'coden-publish-builds', `${slug}-${requestId}`);
-    let result: Awaited<ReturnType<typeof publishProjectToVercel>>;
+    let result!: Awaited<ReturnType<typeof publishProjectToVercel>>;
     let verifiedPublicUrl = '';
     try {
       publishAttemptStarted = true;
@@ -21614,103 +21648,145 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       const buildOnProvider = !localBuildAllowed();
       const sourceFiles = { files: extractStaticFiles(project, contract.files) };
       markPublishPhase('prepared');
-      const distDir = buildOnProvider
-        ? (materializeStaticSource(sourceFiles, workDir), workDir)
-        : await buildStaticSource(sourceFiles, {
-            slug,
-            workDir,
-            runViteBuild: true,
-            outputDirectory: contract.manifest.outputDirectory,
-            publicEnv: publicBuildEnv,
-          });
-      markPublishPhase(buildOnProvider ? 'sources_staged' : 'built_locally');
-      await persistGeneratedRuntimeContract(project, contract.manifest);
-      result = await publishProjectToVercel({
-        slug,
-        distDir,
-        runtime: contract.manifest.runtime,
-        sourceDir: contract.manifest.runtime === 'static-assets' && !buildOnProvider ? undefined : workDir,
-        outputDirectory: contract.manifest.outputDirectory,
-        publicEnv: publicBuildEnv,
-        buildOnProvider,
-      });
-      publishProviderResult = result;
-      markPublishPhase('provider_ready');
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes
             .filter((route: any) => route?.kind === 'public')
             .map((route: any) => String(route.path || '/'))
         : ['/'];
-      let deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
-      if (!deploymentVerification.verified && blockedByProviderLogin(deploymentVerification.checks)) {
-        // Vercel Authentication answers 401 on every new project's preview: not a broken site. Lift it for this
-        // Coden-owned project (a published site is public by definition) and look again.
-        console.warn('[coden:publish_preview_protected]', { request_id: requestId, project: result.projectName });
-        await disableVercelDeploymentProtection(result.projectId || result.projectName).catch((error: any) => {
-          console.warn('[coden:publish_protection_disable_failed]', { request_id: requestId, message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
+      if (publishProvider === 'cloudflare') {
+        // Cloudflare Pages: the site is built here and uploaded; a deployment on the production branch is live at once.
+        if (buildOnProvider) throw new Error('SECURE_BUILD_RUNNER_REQUIRED: generated builds need an isolated container or VM runner.');
+        const distDir = await buildStaticSource(sourceFiles, {
+          slug,
+          workDir,
+          runViteBuild: true,
+          outputDirectory: contract.manifest.outputDirectory,
+          publicEnv: publicBuildEnv,
         });
-        for (let attempt = 0; attempt < 3 && !deploymentVerification.verified; attempt += 1) {
-          await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
-          deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+        markPublishPhase('built_locally');
+        await persistGeneratedRuntimeContract(project, contract.manifest);
+        const candidateDeploymentId = randomUUID();
+        cloudflareSite = await publishStaticAppToCloudflarePages({
+          slug,
+          distDir,
+          publicRoutes,
+          previousDeploymentId: previousCloudflareDeploymentId,
+          onPhase: markPublishPhase,
+          onDeployed: async deployment => {
+            const { error: stagingError } = await requireSupabase('Staged publication persistence')
+              .from('deployments').insert({
+                id: candidateDeploymentId,
+                organization_id: project.organization_id,
+                project_id: project.id,
+                provider: 'cloudflare-pages',
+                provider_deployment_id: deployment.id,
+                deployment_url: deployment.url,
+                status: 'staged',
+                commit_hash: artifactHash,
+                branch: req.body?.branch || 'main',
+              });
+            if (stagingError) throw new Error(`Staged publication could not be saved: ${stagingError.message}`);
+            // Only a saved row makes the failure path update it; before that, the failure is recorded as a new row.
+            stagedDeploymentId = candidateDeploymentId;
+          },
+        });
+        verifiedPublicUrl = cloudflareSite.publicUrl;
+        markPublishPhase('live_verified');
+      } else {
+        const distDir = buildOnProvider
+          ? (materializeStaticSource(sourceFiles, workDir), workDir)
+          : await buildStaticSource(sourceFiles, {
+              slug,
+              workDir,
+              runViteBuild: true,
+              outputDirectory: contract.manifest.outputDirectory,
+              publicEnv: publicBuildEnv,
+            });
+        markPublishPhase(buildOnProvider ? 'sources_staged' : 'built_locally');
+        await persistGeneratedRuntimeContract(project, contract.manifest);
+        result = await publishProjectToVercel({
+          slug,
+          distDir,
+          runtime: contract.manifest.runtime,
+          sourceDir: contract.manifest.runtime === 'static-assets' && !buildOnProvider ? undefined : workDir,
+          outputDirectory: contract.manifest.outputDirectory,
+          publicEnv: publicBuildEnv,
+          buildOnProvider,
+        });
+        publishProviderResult = result;
+        markPublishPhase('provider_ready');
+        let deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+        if (!deploymentVerification.verified && blockedByProviderLogin(deploymentVerification.checks)) {
+          // Vercel Authentication answers 401 on every new project's preview: not a broken site. Lift it for this
+          // Coden-owned project (a published site is public by definition) and look again.
+          console.warn('[coden:publish_preview_protected]', { request_id: requestId, project: result.projectName });
+          await disableVercelDeploymentProtection(result.projectId || result.projectName).catch((error: any) => {
+            console.warn('[coden:publish_protection_disable_failed]', { request_id: requestId, message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
+          });
+          for (let attempt = 0; attempt < 3 && !deploymentVerification.verified; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
+            deploymentVerification = await verifyVercelDeployment(result, publicRoutes);
+          }
         }
-      }
-      markPublishPhase('preview_verified');
-      if (!deploymentVerification.verified) {
-        const summary = deploymentVerification.checks.slice(0, 4).map(check => `${check.url}: ${check.status || check.error || 'unreachable'}${check.status && check.error ? ` ${check.error}` : ''}`).join(' | ');
-        throw new Error(`Vercel deployment could not be verified (${summary || 'no response'}).`);
-      }
-      // Persist the verified candidate before touching any production alias.
-      // Only status=ready is visible as the public version.
-      stagedDeploymentId = randomUUID();
-      const { error: stagingError } = await requireSupabase('Staged publication persistence')
-        .from('deployments').insert({
-          id: stagedDeploymentId,
-          organization_id: project.organization_id,
-          project_id: project.id,
-          provider: 'vercel',
-          provider_deployment_id: result.deploymentId,
-          deployment_url: result.deploymentUrl,
-          status: 'staged',
-          commit_hash: artifactHash,
-          branch: req.body?.branch || 'main',
-        });
-      if (stagingError) throw new Error(`Staged publication could not be saved: ${stagingError.message}`);
-      promotionAttempted = true;
-      result = await activateVercelPublication(result, slug);
-      publishProviderResult = result;
-      markPublishPhase('promoted');
-      const liveCandidate = result.codenUrl || result.defaultUrl || result.deploymentUrl;
-      // Promotion and domain aliases can take a few seconds to propagate.
-      // Verify the public address, not a private provider bypass URL.
-      let liveVerification = await verifyVercelDeployment({
-        codenUrl: liveCandidate,
-        defaultUrl: '',
-        deploymentUrl: '',
-      }, publicRoutes);
-      for (let attempt = 0; attempt < 2 && !liveVerification.verified; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
-        liveVerification = await verifyVercelDeployment({
+        markPublishPhase('preview_verified');
+        if (!deploymentVerification.verified) {
+          const summary = deploymentVerification.checks.slice(0, 4).map(check => `${check.url}: ${check.status || check.error || 'unreachable'}${check.status && check.error ? ` ${check.error}` : ''}`).join(' | ');
+          throw new Error(`Vercel deployment could not be verified (${summary || 'no response'}).`);
+        }
+        // Persist the verified candidate before touching any production alias.
+        // Only status=ready is visible as the public version.
+        stagedDeploymentId = randomUUID();
+        const { error: stagingError } = await requireSupabase('Staged publication persistence')
+          .from('deployments').insert({
+            id: stagedDeploymentId,
+            organization_id: project.organization_id,
+            project_id: project.id,
+            provider: 'vercel',
+            provider_deployment_id: result.deploymentId,
+            deployment_url: result.deploymentUrl,
+            status: 'staged',
+            commit_hash: artifactHash,
+            branch: req.body?.branch || 'main',
+          });
+        if (stagingError) throw new Error(`Staged publication could not be saved: ${stagingError.message}`);
+        promotionAttempted = true;
+        result = await activateVercelPublication(result, slug);
+        publishProviderResult = result;
+        markPublishPhase('promoted');
+        const liveCandidate = result.codenUrl || result.defaultUrl || result.deploymentUrl;
+        // Promotion and domain aliases can take a few seconds to propagate.
+        // Verify the public address, not a private provider bypass URL.
+        let liveVerification = await verifyVercelDeployment({
           codenUrl: liveCandidate,
           defaultUrl: '',
           deploymentUrl: '',
         }, publicRoutes);
+        for (let attempt = 0; attempt < 2 && !liveVerification.verified; attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 1_500 * (attempt + 1)));
+          liveVerification = await verifyVercelDeployment({
+            codenUrl: liveCandidate,
+            defaultUrl: '',
+            deploymentUrl: '',
+          }, publicRoutes);
+        }
+        if (!liveVerification.verified) throw new Error('The promoted publication could not be verified.');
+        verifiedPublicUrl = liveVerification.baseUrl;
+        markPublishPhase('live_verified');
       }
-      if (!liveVerification.verified) throw new Error('The promoted publication could not be verified.');
-      verifiedPublicUrl = liveVerification.baseUrl;
-      markPublishPhase('live_verified');
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
     const createdAt = new Date().toISOString();
+    const published: { provider: string; projectName: string; deploymentId: string; deploymentUrl: string; defaultUrl: string; customDomain: string | null } = cloudflareSite ?? result;
     const deploy = {
       id: stagedDeploymentId,
       organization_id: project.organization_id,
       project_id: project.id,
-      provider: result.provider,
-      provider_deployment_id: result.deploymentId,
-      deployment_url: result.deploymentUrl || result.defaultUrl,
+      provider: published.provider,
+      provider_deployment_id: published.deploymentId,
+      deployment_url: published.deploymentUrl || published.defaultUrl,
       public_url: verifiedPublicUrl,
-      custom_domain: publishStatus.custom_domain || result.customDomain,
+      custom_domain: publishStatus.custom_domain || published.customDomain,
       badge_required: publishStatus.badge_required,
       status: 'ready',
       commit_hash: artifactHash,
@@ -21725,8 +21801,8 @@ async function publishVercelProjectForRequest(req: any, res: any) {
       public_url: verifiedPublicUrl,
       custom_domain: deploy.custom_domain,
       // The production deployment can differ from the staged candidate when the provider refused to promote it.
-      provider_deployment_id: result.deploymentId,
-      deployment_url: result.deploymentUrl || result.defaultUrl,
+      provider_deployment_id: published.deploymentId,
+      deployment_url: published.deploymentUrl || published.defaultUrl,
       updated_at: createdAt,
     }).eq('id', stagedDeploymentId).eq('project_id', project.id).select('id');
     if (activationError || activatedRows?.length !== 1) {
@@ -21742,10 +21818,10 @@ async function publishVercelProjectForRequest(req: any, res: any) {
         {
           project_id: project.id,
           slug,
-          vercel_project: result.projectName,
+          vercel_project: published.projectName,
           default_url: verifiedPublicUrl,
           coden_subdomain: vercelCodenHostForSlug(slug),
-          last_deployment_id: result.deploymentId,
+          last_deployment_id: published.deploymentId,
           published_at: createdAt,
           status: 'ready',
         },
@@ -21753,11 +21829,13 @@ async function publishVercelProjectForRequest(req: any, res: any) {
           project_id: project.id,
           slug,
           default_url: verifiedPublicUrl,
-          last_deployment_id: result.deploymentId,
+          last_deployment_id: published.deploymentId,
           published_at: createdAt,
           status: 'ready',
         },
       ];
+      // `vercel_project` names a Vercel project: a site hosted elsewhere must not claim one.
+      if (cloudflareSite) publicationCandidates.shift();
       let publicationSaved = false;
       for (const candidate of publicationCandidates) {
         const { error } = await client.from('publications').upsert([candidate], { onConflict: 'project_id' });
