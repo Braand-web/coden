@@ -12,7 +12,7 @@ function fakeClient(initial: Record<string, any[]>) {
       order: () => chain, limit: () => chain, gte: () => chain, in: () => chain,
       maybeSingle: async () => ({ data: rows.filter(row => filters.every(test => test(row)))[0] || null, error: null }),
       then: (resolve: any) => resolve({ data: rows.filter(row => filters.every(test => test(row))), error: null }),
-      insert: (value: any) => { for (const item of [].concat(value)) rows.push({ ...item }); return Promise.resolve({ error: null }); },
+      insert: (value: any) => { for (const item of ([] as any[]).concat(value)) rows.push({ ...item }); return Promise.resolve({ error: null }); },
       update: (patch: any) => ({ eq: (key: string, value: unknown) => { for (const row of rows) if (row[key] === value) Object.assign(row, patch); return Promise.resolve({ error: null }); } }),
     };
     return chain;
