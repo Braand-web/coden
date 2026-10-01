@@ -55,9 +55,15 @@ create table if not exists public.community_listings (
   remix_count integer not null default 0,
   report_count integer not null default 0,
   trending_score double precision not null default 0,
+  -- One sortable key for « Découvrir »: quality first, then recency, featured on top. Lets every list page by a single cursor.
+  discover_rank bigint not null default 0,
+  -- The one-click offer after publishing (paid plans): asked once per project, the answer remembered.
+  offer_state text check (offer_state is null or offer_state in ('later', 'declined', 'accepted')),
   content_fingerprint text,
   listed_at timestamptz,
   checked_at timestamptz,
+  -- New accounts: the listing waits for the end of the observation period, then the worker picks it up.
+  hold_until timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   search_vector tsvector generated always as (
@@ -69,6 +75,8 @@ create table if not exists public.community_listings (
 create index if not exists community_listings_online_recent_idx on public.community_listings (listed_at desc, id) where status = 'online';
 create index if not exists community_listings_online_category_idx on public.community_listings (category, listed_at desc) where status = 'online';
 create index if not exists community_listings_online_trending_idx on public.community_listings (trending_score desc, id) where status = 'online';
+create index if not exists community_listings_online_discover_idx on public.community_listings (discover_rank desc, id) where status = 'online';
+create index if not exists community_listings_pending_idx on public.community_listings (hold_until) where status = 'pending';
 create index if not exists community_listings_owner_idx on public.community_listings (owner_id);
 create index if not exists community_listings_status_idx on public.community_listings (status, updated_at desc);
 create index if not exists community_listings_fingerprint_idx on public.community_listings (content_fingerprint) where content_fingerprint is not null;
@@ -240,3 +248,6 @@ alter table public.community_settings enable row level security;
 alter table public.community_sanctions enable row level security;
 alter table public.community_plan_notices enable row level security;
 alter table public.community_templates enable row level security;
+
+-- Thumbnails: pre-generated 16/10 WebP, served by the server with long cache headers. Private bucket: nothing is public.
+insert into storage.buckets (id, name, public) values ('community-thumbs', 'community-thumbs', false) on conflict (id) do nothing;
