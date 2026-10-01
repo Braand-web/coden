@@ -43,8 +43,13 @@ assert.doesNotMatch(builder, /window\.confirm\(`Confirmer :/, 'The publish flow 
 assert.match(builder, /idempotency-key/, 'Builder must attach an idempotency key.');
 assert.match(builder, /confirmed: true, idempotency_key: idempotencyKey/, 'Builder must send explicit confirmation.');
 assert.doesNotMatch(builder, /version sur Vercel/, 'Progress UI uses Coden language instead of provider jargon.');
-assert.doesNotMatch(publisher, /^\s*target:\s*'(?:production|staging)'/m, 'The candidate must not auto-replace the live deployment.');
-assert.doesNotMatch(publisher, /^\s*target:\s*'preview'/m, "Vercel rejects target 'preview'; a deployment without a target is the preview.");
+const candidateCreation = publisher.slice(
+  publisher.indexOf('export async function publishProjectToVercel'),
+  publisher.indexOf('export async function redeployAsProduction'),
+);
+assert.ok(candidateCreation.length > 0, 'Candidate creation must be locatable.');
+assert.doesNotMatch(candidateCreation, /^\s*target:\s*'(?:production|staging|preview)'/m, 'The candidate must not auto-replace the live deployment, and Vercel rejects target preview.');
+assert.match(publisher, /export async function redeployAsProduction/, 'A refused promotion falls back to serving the verified artifact as production.');
 assert.match(server, /result = await activateVercelPublication\(result, slug\)/, 'Only the verified candidate is promoted.');
 assert.match(server, /const activePublishOperations = new Map/, 'Concurrent publishes must be rejected.');
 assert.match(server, /PUBLISH_IN_PROGRESS/, 'Concurrent rejection must have a stable code.');
