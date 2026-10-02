@@ -134,4 +134,23 @@ const panel = live.slice(live.indexOf('function renderPublishPanel('), live.inde
   assert.doesNotMatch(stub, /payload: \{\s*success: true,\s*state:/, 'the flat shape is gone');
 }
 
+// Community controls are derived from durable publication and account state, not the last click.
+{
+  const open = live.slice(live.indexOf('async function openPublishPanel('), live.indexOf('async function shareProjectLink('));
+  const service = readFileSync(new URL('./src/services/community/service.ts', import.meta.url), 'utf8');
+  assert.match(panel, /const showCommunityAccess = hasPublishedDeployment && communityInfoState !== 'disabled';/,
+    'published apps retain Community access unless the server explicitly disables it');
+  assert.match(panel, /Gérer la fiche/, 'a free or already-listed app has a persistent management link');
+  assert.match(panel, /Ouvrir la Communauté/, 'other paid apps retain a direct Community entry point');
+  assert.doesNotMatch(panel, /justPublished && communityInfo\?\./,
+    'Community access and the eligible offer are not restricted to the just-published render');
+  assert.match(panel, /communityInfo\.canOffer/, 'paid offers still obey the server eligibility result');
+  assert.match(open, /Promise\.all\(\[\s*apiFetch<PublishApiPayload>/,
+    'publication status and Community info settle together before the panel is rendered');
+  assert.match(service, /const offerAnswered = kind !== 'free' && await offerAlreadyAnswered\(projectId\)/,
+    'paid offer visibility is derived from the persisted answer');
+  assert.match(service, /\['offer_later', 'offer_declined'\]/,
+    'later and no answers are remembered even when an app has no listing row yet');
+}
+
 console.log('publish panel says what happened tests passed');

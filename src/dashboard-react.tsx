@@ -50,6 +50,7 @@ import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
 import { maybeOpenOnboarding } from './lib/onboarding-launcher';
 import { communityApi, communitySeen, parseCommunityHash } from './lib/community-client';
+import { communityAvailability, shouldShowCommunityLink } from './lib/community-availability';
 import { fetchSuggestionsSummary, suggestionsBadge, type SuggestionsSummary } from './lib/suggestions-summary';
 import './styles/dashboard-react.css';
 import './styles/coden-horizon-system.css';
@@ -538,8 +539,12 @@ function DashboardHome() {
     refetchInterval: 5 * 60_000,
     retry: false,
   });
-  // One question, answered once: is the Community on for everyone? Off (or unreachable) means no sidebar entry at all.
+  // A temporary config failure must not erase a user's navigation entry.
   const communityConfig = useQuery({ queryKey: ['coden-community-config'], queryFn: communityApi.config, staleTime: 60_000, retry: false });
+  const communityState = communityAvailability({
+    data: communityConfig.data,
+    isLoading: communityConfig.isLoading,
+  });
   const navigate = (hash: string) => {
     // Home drops the hash altogether, so the address stays /dashboard.html.
     if (!hash) {
@@ -667,7 +672,10 @@ function DashboardHome() {
   return (
     <div className="coden-dashboard-shell">
       <Sidebar
-        communityEnabled={Boolean(communityConfig.data?.enabled)}
+        communityEnabled={shouldShowCommunityLink({
+          data: communityConfig.data,
+          isLoading: communityConfig.isLoading,
+        })}
         communityActive={view.view === 'community'}
         suggestionsActive={view.view === 'suggestions'}
         suggestions={suggestionsQuery.data}
@@ -688,20 +696,39 @@ function DashboardHome() {
           <a className="coden-dashboard-mobile-new" href={builderUrl()}><Plus size={16} aria-hidden="true" /> Nouveau projet</a>
         </header>
 
-        {view.view === 'community' && view.community && communityConfig.data?.enabled ? (
-          <div className="coden-dashboard-content">
-            <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement de la Communauté…</div>}>
-              <CommunityPage
-                tab={view.community.tab}
-                listingId={view.community.listingId}
-                navigate={navigate}
-                projects={projects.map(project => ({ id: project.id, name: project.name }))}
-                onUpgrade={() => openUpgrade(profile)}
-                onUseTemplate={prompt => { void createFromPrompt(prompt, { model: readPreferredModelSelection(), effort: readPreferredEffort() } as any); }}
-                builderUrl={builderUrl}
-              />
-            </Suspense>
-          </div>
+        {view.view === 'community' && view.community ? (
+          communityState === 'available' ? (
+            <div className="coden-dashboard-content">
+              <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement de la Communauté…</div>}>
+                <CommunityPage
+                  tab={view.community.tab}
+                  listingId={view.community.listingId}
+                  navigate={navigate}
+                  projects={projects.map(project => ({ id: project.id, name: project.name }))}
+                  onUpgrade={() => openUpgrade(profile)}
+                  onUseTemplate={prompt => { void createFromPrompt(prompt, { model: readPreferredModelSelection(), effort: readPreferredEffort() } as any); }}
+                  builderUrl={builderUrl}
+                />
+              </Suspense>
+            </div>
+          ) : (
+            <div className="coden-dashboard-content">
+              <section className="coden-dashboard-community-state" role={communityState === 'error' ? 'alert' : 'status'} aria-live="polite">
+                {communityState === 'loading' ? <strong>Chargement de la Communauté…</strong> : null}
+                {communityState === 'error' ? <>
+                  <strong>La Communauté n’a pas pu charger.</strong>
+                  <span>Votre accès reste disponible. Réessayez dans un instant.</span>
+                  <button type="button" onClick={() => { void communityConfig.refetch(); }} disabled={communityConfig.isFetching}>
+                    {communityConfig.isFetching ? 'Chargement…' : 'Réessayer'}
+                  </button>
+                </> : null}
+                {communityState === 'disabled' ? <>
+                  <strong>La Communauté est désactivée pour le moment.</strong>
+                  <button type="button" onClick={() => navigate('')}>Retour aux projets</button>
+                </> : null}
+              </section>
+            </div>
+          )
         ) : view.view === 'suggestions' ? (
           <div className="coden-dashboard-content">
             <Suspense fallback={<div className="coden-dashboard-loading-label" role="status">Chargement des suggestions…</div>}>
