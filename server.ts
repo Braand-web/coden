@@ -3,6 +3,7 @@ import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
 import { authoritativeProjectFiles } from './src/services/project-file-recovery.ts';
+import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
 import {
@@ -8519,32 +8520,10 @@ async function listProjectsForUser(userId: string): Promise<GeneratedProject[]> 
 async function enrichProjectsForDashboard(projects: GeneratedProject[]) {
   if (!projects.length) return [];
   const client = requireSupabase('Dashboard project enrichment');
-  const deploymentByProject = new Map<string, any>();
   const ids = projects.map(project => project.id).filter(Boolean);
-  if (ids.length) {
-    let { data, error } = await client
-      .from('deployments')
-      .select('project_id,status,deployment_status,deployment_url,public_url,url,live_url,published_url,created_at')
-      .in('project_id', ids)
-      .order('created_at', { ascending: false });
-    if (error && isSchemaShapeError(error)) {
-      const fallback = await client
-        .from('deployments')
-        .select('project_id,status,deployment_status,deployment_url,public_url,created_at')
-        .in('project_id', ids)
-        .order('created_at', { ascending: false });
-      data = fallback.data;
-      error = fallback.error;
-    }
-    if (!error) {
-      (data || []).forEach((deployment: any) => {
-        if (deployment?.project_id && !deploymentByProject.has(deployment.project_id)) {
-          deploymentByProject.set(deployment.project_id, deployment);
-        }
-      });
-    } else if (!isSchemaShapeError(error)) {
-      console.warn('[coden:dashboard_deployments_load_failed]', { message: error.message });
-    }
+  const { byProject: deploymentByProject, error } = await loadLatestDeploymentsByProject(client, ids);
+  if (error && !isSchemaShapeError(error)) {
+    console.warn('[coden:dashboard_deployments_load_failed]', { message: error.message });
   }
 
   return projects.map(project => {
