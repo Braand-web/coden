@@ -15440,7 +15440,7 @@ app.post('/api/share/:token/copy', async (req: any, res: any) => {
 
 /*
  * The Community (services/community/): published apps shown to everyone, and Coden's official templates. Everything is
- * behind CODEN_COMMUNITY (off by default) and two admin kill switches. The service gets the few things this file owns.
+ * enabled by default (CODEN_COMMUNITY can explicitly disable it) and protected by two admin kill switches. The service gets the few things this file owns.
  */
 async function communityPublishedSnapshot(projectId: string) {
   const client = getSupabase();
