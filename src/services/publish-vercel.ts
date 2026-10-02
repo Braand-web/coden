@@ -512,7 +512,12 @@ export async function verifyVercelDeployment(
         attemptChecks.push(check);
         if (!html) await response.body?.cancel();
       } catch (error: any) {
-        attemptChecks.push({ url, status: 0, ok: false, error: String(error?.message || error) });
+        // Undici wraps DNS/TLS/socket failures in a generic "fetch failed".
+        // Keep only its machine-readable code, never request headers or keys.
+        const causeCode = String(error?.cause?.code || '');
+        const reason = /^[A-Z][A-Z0-9_]{1,63}$/.test(causeCode)
+          ? `NETWORK_${causeCode}` : String(error?.message || error);
+        attemptChecks.push({ url, status: 0, ok: false, error: reason });
       } finally {
         clearTimeout(timeout);
       }

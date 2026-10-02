@@ -27,4 +27,11 @@ describe('verification of the exact published application', () => {
     const missing = await verifyVercelDeployment(targets, ['/'], probe(document('<script type="module" src="/assets/app.js"></script>', '<div id="root"></div>'), true));
     expect(missing.checks[0].error).toBe('MISSING_APP_ASSET');
   });
+  it('diagnoses DNS/TLS transport failures without logging the nested request data', async () => {
+    const fetcher = vi.fn(async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'CERT_HAS_EXPIRED', authorization: 'private credential', message: 'private request' } }); });
+    const result = await verifyVercelDeployment(targets, ['/'], fetcher);
+    expect(result.verified).toBe(false);
+    expect(result.checks[0].error).toBe('NETWORK_CERT_HAS_EXPIRED');
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
 });
