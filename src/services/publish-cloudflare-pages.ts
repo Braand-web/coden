@@ -71,7 +71,10 @@ export async function publishStaticAppToCloudflarePages(params: {
   const phase = (name: string) => params.onPhase?.(name);
   const cfName = projectSlugToCfName(params.slug);
   if (params.artifactHash) {
-    if (!/^[a-f0-9]{64}$/.test(params.artifactHash)) throw new Error('INVALID_PUBLICATION_ARTIFACT_HASH');
+    // The deployment gate returns "sha256:<digest>". Preserve that identity in
+    // the HTML marker and verification probes; bare digests remain compatible
+    // with older callers. Both forms are strictly safe HTML attribute values.
+    if (!/^(?:sha256:)?[a-f0-9]{64}$/.test(params.artifactHash)) throw new Error('INVALID_PUBLICATION_ARTIFACT_HASH');
     const index = path.join(params.distDir, 'index.html');
     const html = (await fs.readFile(index, 'utf8')).replace(/<meta\b[^>]*\bname\s*=\s*["']coden-build["'][^>]*>/gi, '');
     const marker = `<meta name="coden-build" content="${params.artifactHash}">`;

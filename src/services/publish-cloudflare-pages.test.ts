@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { immutableArtifactHash } from './deployment-adapters.ts';
+import { createProjectManifest } from './universal-project-manifest.ts';
 import { cloudflareConfigurationDiagnostic, cloudflarePublicationSlug, publicationHostingConfigured, malformedCloudflareSettings, missingCloudflareSettings, redactCloudflareCredentials, publishProviderChoice, publishStaticAppToCloudflarePages, upgradeToCodenAddress, type CloudflarePagesDeps } from './publish-cloudflare-pages.ts';
 
 const ok = { verified: true, baseUrl: 'x', checks: [] };
@@ -18,6 +23,44 @@ const makeDeps = (overrides: Partial<CloudflarePagesDeps> = {}): CloudflarePages
 const params = { slug: 'mon-app', distDir: '/tmp/dist', publicRoutes: ['/'] };
 
 describe('publishing a static app on Cloudflare Pages', () => {
+  it('publishes the canonical artifact identity unchanged from the deployment gate', async () => {
+    const files = [{ path: 'index.html', content: '<html><head></head><body><main>Current version</main></body></html>' }];
+    const artifactHash = immutableArtifactHash({
+      files,
+      manifest: createProjectManifest({ projectId: 'publication-contract-test', name: 'Contract test', files }),
+      previewSessionId: 'preview-test', verificationPassed: true, securityBlockers: [],
+    });
+    expect(artifactHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    const distDir = await fs.mkdtemp(path.join(os.tmpdir(), 'coden-publication-contract-'));
+    try {
+      await fs.writeFile(path.join(distDir, 'index.html'), files[0].content);
+      const deps = makeDeps();
+      await publishStaticAppToCloudflarePages({ ...params, distDir, artifactHash }, deps);
+      expect(await fs.readFile(path.join(distDir, 'index.html'), 'utf8')).toContain(`<meta name="coden-build" content="${artifactHash}">`);
+      for (const call of vi.mocked(deps.verify).mock.calls) expect(call[0].expectedPublicationId).toBe(artifactHash);
+    } finally { await fs.rm(distDir, { recursive: true, force: true }); }
+  });
+
+  it('retains compatibility with an unprefixed digest without changing its marker', async () => {
+    const distDir = await fs.mkdtemp(path.join(os.tmpdir(), 'coden-publication-legacy-'));
+    try {
+      await fs.writeFile(path.join(distDir, 'index.html'), '<html><head><meta name="coden-build" content="old"></head><body>App</body></html>');
+      const artifactHash = 'b'.repeat(64), deps = makeDeps();
+      await publishStaticAppToCloudflarePages({ ...params, distDir, artifactHash }, deps);
+      const html = await fs.readFile(path.join(distDir, 'index.html'), 'utf8');
+      expect(html).toContain(`content="${artifactHash}"`);
+      expect(html.match(/name="coden-build"/g)).toHaveLength(1);
+      expect(html).not.toContain('content="old"');
+    } finally { await fs.rm(distDir, { recursive: true, force: true }); }
+  });
+
+  it.each(['sha1:' + 'a'.repeat(64), 'sha256:' + 'a'.repeat(63), 'sha256:' + 'g'.repeat(64), 'a'.repeat(64) + '"><script>bad()</script>'])('rejects malformed or injectable artifact identities before any provider write: %s', async artifactHash => {
+    const deps = makeDeps();
+    await expect(publishStaticAppToCloudflarePages({ ...params, artifactHash }, deps)).rejects.toThrow('INVALID_PUBLICATION_ARTIFACT_HASH');
+    expect(deps.ensureProject).not.toHaveBeenCalled();
+    expect(deps.deploy).not.toHaveBeenCalled();
+  });
+
   it('gives the Coden address when it already answers', async () => {
     const deps = makeDeps();
     const phases: string[] = [];
