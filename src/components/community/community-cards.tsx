@@ -1,10 +1,25 @@
 /** Cards and small pieces shared by the Community screens. Tokens only; no violet. */
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Copy, Heart, LayoutTemplate } from 'lucide-react';
+import { ArrowRight, LayoutTemplate } from 'lucide-react';
 import type { CardListing, Category, Template } from '../../lib/community-client';
 
 /** The shared loading placeholder (canonical-shell's skeleton), at the card's reserved size so nothing jumps when data arrives. */
-export function CardSkeleton() {
+export function CardSkeleton({ project = false }: { project?: boolean }) {
+  if (project) {
+    return (
+      <article className="coden-dashboard-project-card" aria-hidden="true">
+        <span className="coden-dashboard-project-card-link">
+          <span className="coden-dashboard-project-preview coden-ui-skeleton coden-community-shimmer" />
+          <span className="coden-dashboard-project-card-meta">
+            <span className="coden-dashboard-project-card-copy coden-dashboard-skeleton-copy">
+              <span className="coden-ui-skeleton coden-community-shimmer" style={{ height: 14, width: '70%' }} />
+              <span className="coden-ui-skeleton coden-community-shimmer" style={{ height: 11, width: '45%' }} />
+            </span>
+          </span>
+        </span>
+      </article>
+    );
+  }
   return (
     <div className="coden-community-card is-skeleton" aria-hidden="true">
       <div className="coden-community-thumb coden-ui-skeleton coden-community-shimmer" />
@@ -31,21 +46,22 @@ export function Thumb({ src, alt, fallback }: { src: string | null; alt: string;
   );
 }
 
-export function ListingCard({ listing, categories, href }: { listing: CardListing; categories: Category[]; href: string }) {
+export function ListingCard({ listing, href }: { listing: CardListing; href: string }) {
   return (
-    <article className="coden-community-card">
-      <a className="coden-community-card-link" href={href} aria-label={`${listing.title}, par ${listing.creator}`}>
-        <Thumb src={listing.thumbnail} alt={listing.thumbnailAlt} fallback={<LayoutTemplate size={22} aria-hidden="true" />} />
-        <div className="coden-community-card-body">
-          <strong>{listing.title}</strong>
-          <span className="coden-community-byline">{listing.creator}</span>
-          <div className="coden-community-meta">
-            <span className="coden-community-pill">{categoryLabel(categories, listing.category)}</span>
-            {listing.featured && <span className="coden-community-pill is-choice">Choix de Coden</span>}
-            <span className="coden-community-count" title="J’aime"><Heart size={13} aria-hidden="true" />{listing.likes}</span>
-            <span className="coden-community-count" title="Remix"><Copy size={13} aria-hidden="true" />{listing.remixes}</span>
-          </div>
-        </div>
+    <article className="coden-dashboard-project-card coden-community-project-card">
+      <a className="coden-dashboard-project-card-link" href={href} aria-label={`${listing.title}, par ${listing.creator}`}>
+        <span className="coden-dashboard-project-preview coden-community-project-preview">
+          {listing.thumbnail
+            ? <img src={listing.thumbnail} alt={listing.thumbnailAlt} width={800} height={500} loading="lazy" decoding="async" draggable={false} />
+            : <span className="coden-community-thumb-empty" role="img" aria-label={listing.thumbnailAlt}><LayoutTemplate size={22} aria-hidden="true" /></span>}
+        </span>
+        <span className="coden-dashboard-project-card-meta">
+          <span className="coden-dashboard-project-card-copy">
+            <strong title={listing.title}>{listing.title}</strong>
+            <small>Par {listing.creator}</small>
+          </span>
+          <span className="coden-dashboard-project-open" aria-hidden="true"><ArrowRight size={15} /></span>
+        </span>
       </a>
     </article>
   );
