@@ -81,8 +81,11 @@ describe('in a browser', () => {
   it('a box appears with a fade, then breathes; nothing is painted before the fade starts', async (context) => {
     if (!browser) return context.skip();
     const { tab, context: ctx } = await open(page('light'));
+    // Freeze the initial animation instant explicitly. Machine load must not
+    // decide how far a 260ms animation ran before Playwright could inspect it.
+    await tab.evaluate(() => { for (const animation of document.getAnimations()) { animation.pause(); animation.currentTime = 0; } });
     const early = await beforeStyle(tab, '#s');
-    await tab.waitForTimeout(600);
+    await tab.evaluate(() => { for (const animation of document.getAnimations()) animation.currentTime = 600; });
     const later = await beforeStyle(tab, '#s');
     await ctx.close();
     expect(early.content).toBe('""');

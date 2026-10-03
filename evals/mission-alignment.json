@@ -1,0 +1,11 @@
+{
+  "description": "Anonymised regression shapes, not exports of private sessions. Model-only scope checks; not end-to-end build scores.",
+  "cases": [
+    { "id": "dental-not-calculator", "request": "Crée une landing page pour un produit dentaire.", "summary": "Créer une calculatrice avec les quatre opérations.", "expected": "unsatisfied" },
+    { "id": "coach-not-calculator", "request": "Crée un site de coaching sportif avec présentation, services et contact.", "summary": "Créer une calculatrice avec historique des opérations.", "expected": "unsatisfied" },
+    { "id": "booking-not-calculator", "request": "Crée une application de prise de rendez-vous.", "summary": "Créer une calculatrice scientifique.", "expected": "unsatisfied" },
+    { "id": "short-confirmation", "request": "oui", "context": "User: crée un monde 3D. Assistant: Je propose une ville 3D explorable au clavier, sans compte. Je lance ?", "summary": "Créer une ville 3D navigable au clavier, sans compte.", "expected": "satisfied" },
+    { "id": "calculator-is-valid-when-requested", "request": "Crée une petite calculatrice avec les quatre opérations.", "summary": "Créer une calculatrice compacte avec affichage et touches pour addition, soustraction, multiplication et division.", "expected": "satisfied" },
+    { "id": "new-request-overrides-history", "request": "Crée une page de réservation.", "context": "Historique : l'ancien projet était une calculatrice. Une génération de calculatrice s'est interrompue.", "summary": "Reprendre la calculatrice interrompue.", "expected": "unsatisfied" }
+  ]
+}
