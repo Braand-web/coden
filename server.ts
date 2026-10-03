@@ -982,6 +982,7 @@ app.get('/api/health', (_req, res) => {
     service: 'coden-saas',
     time: new Date().toISOString(),
     project_refs_match: supabaseDiagnostics.project_refs_match,
+    billing_mode: CODEN_PUBLIC_ACCESS.key,
   });
 });
 
@@ -2588,7 +2589,9 @@ async function ensurePersonalOrganization(req: any, organizationId: string) {
   };
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
-    const { error } = await client.from('organizations').upsert([row], { onConflict: 'id' });
+    // Bootstrap only: project creation/retries must never downgrade an
+    // existing paid workspace or overwrite its owner, name or status.
+    const { error } = await client.from('organizations').upsert([row], { onConflict: 'id', ignoreDuplicates: true });
     if (!error) return organizationId;
 
     const message = String(error.message || '');
@@ -10853,7 +10856,8 @@ const CREDIT_BALANCE_COLUMNS = [
   'total_credits',
 ];
 const CREDIT_BUCKET_COLUMNS = ['monthly_credits', 'daily_promo_credits', 'topup_credits', 'promo_credits'];
-const FALLBACK_WALLET_CREDITS = 30;
+// An unavailable ledger cannot mint customer credit or authorize provider spend.
+const FALLBACK_WALLET_CREDITS = 0;
 
 function getNumericCreditValue(value: any) {
   const amount = Number(value);
@@ -14882,7 +14886,7 @@ app.post('/api/projects/:id/messages', async (req: any, res: any) => {
 
     // 2. Select Model
     const routingCtx: RoutingContext = {
-      plan: CODEN_MONETIZATION_ENABLED ? (req.body.plan || 'free') : 'enterprise',
+      plan: CODEN_MONETIZATION_ENABLED ? (normalizePlanKey(await getOrganizationPlan(orgId)) || 'free') : 'enterprise',
       mode: mode || 'Auto',
       userCredits: balance,
       taskComplexity: taskComplexity,
