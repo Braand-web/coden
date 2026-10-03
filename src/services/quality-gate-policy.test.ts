@@ -81,7 +81,7 @@ describe('a small request keeps a small plan and a small run', async () => {
 
   it('the planner is told to size the plan to the request, and is asked for no scenario about history or saved data', () => {
     expect(plannerSource).toMatch(/smallest complete version of exactly what was asked/);
-    expect(plannerSource).toMatch(/isSmallRequest\(input\.prompt\)/);
+    expect(plannerSource).toMatch(/isSmallRequest\(input\.userRequest \?\? input\.prompt\)/);
     expect(typeof runPlannerAgent).toBe('function');
   });
 });

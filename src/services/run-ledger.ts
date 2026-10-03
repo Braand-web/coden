@@ -4,23 +4,20 @@
  * The boot reaper stamps every run still `running` as `RUN_INTERRUPTED`. Some of those rows belong to work that was
  * in fact finished — the turn is `completed` — and only the ledger row was left open. Calling them interruptions made
  * the old run views read far worse than the product behaves. The turn is the truth: a run that has a completed turn
- * of the same project, started within a short window of it, is settled as completed instead.
+ * explicitly linked to the run is settled as completed instead. Time proximity is not identity.
  */
-export type OpenRun = { id: string; project_id: string; created_at: string };
+export type OpenRun = { id: string; project_id: string; created_at: string; context_summary?: { harness_turn_id?: string } | null };
 export type TurnOfProject = { id: string; project_id: string; status: string; created_at: string; completed_at?: string | null };
 
-/** The run row is written just after its turn starts; allow for clock order and a slow insert. */
-export const RUN_TURN_WINDOW_MS = 90_000;
-
-export function findCompletedTurnForRun(run: OpenRun, turns: TurnOfProject[], windowMs = RUN_TURN_WINDOW_MS): TurnOfProject | null {
+export function findCompletedTurnForRun(run: OpenRun, turns: TurnOfProject[]): TurnOfProject | null {
+  const turnId = run.context_summary?.harness_turn_id;
   const runAt = Date.parse(run.created_at);
-  if (!Number.isFinite(runAt)) return null;
-  const candidates = turns
-    .filter(turn => turn.project_id === run.project_id && turn.status === 'completed')
-    .map(turn => ({ turn, gap: runAt - Date.parse(turn.created_at) }))
-    // The turn starts first (the gap is positive) and the run follows within the window; a turn that started
-    // after the run belongs to the next request.
-    .filter(({ gap }) => Number.isFinite(gap) && gap >= -5_000 && gap <= windowMs)
-    .sort((a, b) => Math.abs(a.gap) - Math.abs(b.gap));
-  return candidates[0]?.turn || null;
+  if (!turnId || !Number.isFinite(runAt)) return null;
+  const matches = turns.filter(turn => turn.id === turnId && turn.project_id === run.project_id);
+  if (matches.length !== 1) return null;
+  const turn = matches[0];
+  const start = Date.parse(turn.created_at);
+  const end = Date.parse(turn.completed_at || '');
+  return turn.status === 'completed' && Number.isFinite(start) && Number.isFinite(end)
+    && start <= end && end >= runAt ? turn : null;
 }

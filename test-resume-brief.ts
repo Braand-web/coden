@@ -50,12 +50,12 @@ const base: ResumeCheckpoint = {
 /* The brief carries what a resumed run needs and says the one thing it gets wrong alone. */
 {
   const brief = buildResumeBrief(base);
-  assert.match(brief, /RESUMING AN INTERRUPTED RUN/);
-  assert.match(brief, /do not start over/i, 'the failure mode of a resume is rebuilding what exists');
+  assert.match(brief, /PRIOR INTERRUPTED RUN/);
+  assert.match(brief, /latest user request takes precedence/i, 'a stale checkpoint must not override a new mission');
   assert.match(brief, /Crée un tableau de bord analytique/, 'the original request survives');
   assert.match(brief, /completed 8 rounds/);
   assert.match(brief, /src\/lib\/supabase\.ts/, 'existing files are named so they are not recreated');
-  assert.match(brief, /Already verified[\s\S]*build/, 'verified work is not redone');
+  assert.match(brief, /Previously verified[\s\S]*build/, 'old evidence is retained but not treated as current');
   assert.match(brief, /Still outstanding[\s\S]*browser_smoke/);
   assert.match(brief, /PROVIDER_TIMEOUT — the provider did not answer/);
 }
@@ -81,7 +81,7 @@ const base: ResumeCheckpoint = {
   assert.doesNotMatch(brief, /Already verified/);
   assert.doesNotMatch(brief, /Still outstanding/);
   assert.doesNotMatch(brief, /Why it stopped/);
-  assert.match(brief, /Finish what is outstanding/);
+  assert.match(brief, /Implement only the current user objective/);
 }
 
 console.log('resume brief tests passed');

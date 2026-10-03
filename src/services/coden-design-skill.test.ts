@@ -4,7 +4,7 @@ import { CODEN_DESIGN_DIGEST, CODEN_DESIGN_GRID, CODEN_DESIGN_MINIMAL, CODEN_DES
 import { designReviewPassScore, runDesignReview } from './design-review-agent';
 
 describe('the coden-design skill is kept as given, and handed to the agents in the right size', () => {
-  const skill = readFileSync('skills/coden-design/SKILL.md', 'utf8');
+  const skill = readFileSync('skills/coden-design/SKILL.md', 'utf8').replace(/\r\n/g, '\n');
 
   it('is in the repository with its frontmatter and its sixteen sections', () => {
     expect(skill).toMatch(/^---\nname: coden-design\n/);
@@ -71,6 +71,9 @@ describe('the review-and-polish cycle', async () => {
     const source = readFileSync('src/services/sandbox/repair-loop.ts', 'utf8');
     expect(source).toMatch(/reviews < maxReviews/);
     expect(source).toMatch(/maxReviews\?: number/);
-    expect(readFileSync('src/services/multi-agent-pipeline.ts', 'utf8')).toMatch(/maxReviews: designReviewRounds\(\)/);
+    const pipeline = readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
+    expect(pipeline).not.toMatch(/maxReviews: designReviewRounds\(\)/);
+    expect(pipeline).not.toMatch(/runDesignReview\(/);
+    expect(pipeline).toContain('No aesthetic-score polish after success');
   });
 });

@@ -2083,11 +2083,11 @@ async function reapInterruptedAgentRuns(options: { createdBefore?: string } = {}
   try {
     const open = await client
       .from('agent_runs')
-      .select('id,project_id,created_at')
+      .select('id,project_id,created_at,context_summary')
       .in('status', ['running', 'queued'])
       .lt('created_at', options.createdBefore || new Date().toISOString())
       .limit(200);
-    const openRuns = (open.data || []) as Array<{ id: string; project_id: string; created_at: string }>;
+    const openRuns = (open.data || []) as Array<import('./src/services/run-ledger.ts').OpenRun>;
     if (!open.error && openRuns.length) {
       const oldest = openRuns.reduce((min, run) => (run.created_at < min ? run.created_at : min), openRuns[0].created_at);
       const threads = await client.from('agent_threads').select('id,project_id').in('project_id', [...new Set(openRuns.map(run => run.project_id))]);
@@ -16367,9 +16367,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       try {
         const terminal = status === 499 ? 'cancelled' : status >= 400 || payload.success === false ? 'failed' : 'completed';
         await updateAgentRunStatus(pipelineRunId, terminal, {
-          verification_status: payload.verification?.status || null,
+          verification_status: payload.verification?.status || (typeof payload.verification?.ok === 'boolean' ? (payload.verification.ok ? 'passed' : 'failed') : 'unknown'),
           effective_model: payload.model || null,
-          real_cost_usd: Number(payload.real_cost_usd || 0) || null,
+          real_cost_usd: Number.isFinite(payload.real_cost_usd) ? payload.real_cost_usd : null,
           diagnostic_code: payload.diagnostic_code || null,
           ...(pipelineTokens ? { tokens_in: pipelineTokens.prompt || null, tokens_out: pipelineTokens.completion || null } : {}),
         });
@@ -16647,6 +16647,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * intents fall through completely unaffected, flag or no flag.
    */
   const pipelineRoute = resolvePipelineRoute({ intent: decision.intent, nextAction: decision.nextAction, hasFiles: existingFiles.length > 0 });
+  if (harnessContext) {
+    await harnessContext.harness.store.updateTurn(harnessContext.turn.id, { resolvedAction: decision.intent })
+      .catch(() => console.warn('[coden:resolved_action_not_persisted]', { requestId }));
+  }
   /*
    * The mission is the request with the conversation resolved.
    *
@@ -16723,7 +16727,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         try {
           pipelineRunId = (await createAgentRun(
             project, userId, requestId, decision, requestedModelSelection,
-            { pipeline: 'multi_agent', route: pipelineRoute }, undefined, undefined, req.body?.workflowId || null,
+            { pipeline: 'multi_agent', route: pipelineRoute, harness_turn_id: harnessContext?.turn.id }, undefined, undefined, req.body?.workflowId || null,
           )).id;
         } catch (error) {
           console.warn('[coden:pipeline_run_create_failed]', { requestId, message: redactSecrets(String(error), '[redacted]') });
@@ -16805,7 +16809,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           round: resumeFrom.round,
           failure: resumeFrom.failure?.code,
         });
-        eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden reprend le travail interrompu…' : 'Coden is resuming the interrupted work…' });
+        eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden consulte le contexte du projet…' : 'Coden is reading the project context…' });
       }
       /*
        * The shared library, before any code is written: skills and reusable
@@ -16821,11 +16825,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         task: resolvedMission,
         files: existingFiles,
       }).catch(() => null);
-      const pipelinePrompt = resumeFrom ? `${buildResumeBrief(resumeFrom)}
-
----
-
-${resolvedMission}` : resolvedMission;
+      const pipelinePrompt = resolvedMission;
 
       const webResearch = await researchForAgent({
         // Search only the user's latest request, never accumulated project
@@ -16864,8 +16864,9 @@ ${resolvedMission}` : resolvedMission;
         projectName: project.name,
         userId,
         prompt: pipelinePrompt,
+        userRequest: prompt,
         // Settled decisions, then what already happened in this session.
-        memoryContext: [projectMemory, sessionContext, sharedKnowledge, webResearch.context].filter(Boolean).join('\n\n') || undefined,
+        memoryContext: [projectMemory, sessionContext, sharedKnowledge, webResearch.context, resumeFrom ? buildResumeBrief(resumeFrom) : ''].filter(Boolean).join('\n\n') || undefined,
         backendEnv,
         serverSecrets,
         route: pipelineRoute,
@@ -17441,7 +17442,7 @@ ${resolvedMission}` : resolvedMission;
       mission_profile: missionPlan.profile,
       task_graph: missionPlan.graph,
     };
-    agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, contextPack, skill, skillBudget, req.body?.workflowId || null)).id;
+    agentRunId = (await createAgentRun(project, userId, requestId, decision, effectiveModelSelection, { ...contextPack, harness_turn_id: harnessContext?.turn.id }, skill, skillBudget, req.body?.workflowId || null)).id;
     activeAgentRunControllers.set(agentRunId, generationAbortController);
     activeAgentRunProjects.set(agentRunId, project.id);
     if (harnessContext) activeHarnessAgentRunIds.set(harnessContext.turn.id, agentRunId);

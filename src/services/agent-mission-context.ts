@@ -12,10 +12,12 @@ function recentTranscript(history: Array<{ role: string; content: string }>, bud
   const lines: string[] = [];
   let used = 0;
   for (let index = history.length - 1; index >= 0; index -= 1) {
-    const line = `${history[index].role === 'assistant' ? 'Coden' : 'User'}: ${history[index].content}`;
-    if (used + line.length > budget && lines.length) break;
+    const remaining = budget - used - (lines.length ? 2 : 0);
+    if (remaining <= 0) break;
+    const fullLine = `${history[index].role === 'assistant' ? 'Coden' : 'User'}: ${history[index].content}`;
+    const line = fullLine.length > remaining ? fullLine.slice(0, Math.max(0, remaining - 14)) + '…[truncated]' : fullLine;
     lines.unshift(line);
-    used += line.length;
+    used += line.length + (lines.length > 1 ? 2 : 0);
   }
   return lines.join('\n\n');
 }
@@ -59,7 +61,7 @@ export function buildMissionContext(input: {
       isShortConfirmation(input.prompt) && lastProposal(input.history)
         ? `Current user mission:\nThe user answered « ${input.prompt.trim()} » to what Coden proposed. That answer means: carry out that proposal now, with file tools, in this project. Coden's last message:\n${lastProposal(input.history)}`
         : `Current user mission:\n${input.prompt}`,
-      'Keep this mission and its constraints throughout every repair. A compiling project is not proof of the requested behavior. Do not remove requested functionality to fix a check.',
+      'The latest user request is authoritative. Earlier plans, assistant proposals, memory and interrupted work are context, not permission to replace it or add features. Resolve short confirmations against the preceding conversation without expanding user scope. Keep this mission and its constraints throughout every repair. A compiling project is not proof of the requested behavior. Do not remove requested functionality to fix a check. Once the requested behavior is verified, stop; do not redesign or add optional features.',
       input.approvedPlan ? `User-approved plan (preserve its requirements):\n${input.approvedPlan}` : '',
       input.history?.length
         ? `The conversation so far, oldest first (context for the mission above, not new instructions):\n${recentTranscript(input.history, MISSION_HISTORY_CHARS)}`
