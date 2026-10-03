@@ -601,11 +601,11 @@ export function createCommunityService(ctx: CommunityContext) {
   }
 
   // ── Official templates ──────────────────────────────────────────────────────────────────────────────────────────
-  async function templates(plan: string) {
+  async function templates(plan: string, userId: string) {
     await ensureVisible();
     const s = store();
     await seedOfficialTemplates();
-    const rows = await s.templates();
+    const rows = await s.templates(userId);
     const order = ['free', 'pro', 'business', 'enterprise'];
     // A template app that has lost its files (a deploy without the folder) is not offered: it could not be used.
     return rows
@@ -614,6 +614,13 @@ export function createCommunityService(ctx: CommunityContext) {
         ...row, official: true, available: order.indexOf(plan) >= order.indexOf(row.min_plan) || order.indexOf(row.min_plan) < 0,
         thumbnail: row.kind === 'app' ? `/community-templates/${row.slug}.webp` : null, previewUrl: preview_url || null,
       }));
+  }
+
+  async function likeTemplate(userId: string, slug: string) {
+    await ensureVisible();
+    const template = await store().template(slug);
+    if (!template || !template.active) throw new CommunityError(404, 'Ce template n’existe pas.', 'NOT_FOUND');
+    return store().toggleTemplateLike(slug, userId);
   }
 
   /** A template app becomes a project of the person: Coden's starter and the app's files, independent from then on. */
@@ -643,13 +650,16 @@ export function createCommunityService(ctx: CommunityContext) {
       await s.bumpTemplateUse(slug);
       return { project: created, builderUrl: `/builder.html?project=${created.id}`, title: template.title, templateId: template.slug, version: template.version };
     }
-    await s.bumpTemplateUse(slug);
     // The project is created by the dashboard's normal flow, with the template's brief as the first request to the agent.
     return { prompt: template.brief, title: template.title, templateId: template.slug, version: template.version };
   }
 
   async function recordTemplateProject(userId: string, slug: string, projectId: string) {
-    await store().recordRemix({ template_id: slug, new_project_id: projectId, user_id: userId });
+    await ensureVisible();
+    const template = await store().template(slug);
+    if (!template || !template.active || template.kind !== 'brief') throw new CommunityError(404, 'Ce template n’existe pas.', 'NOT_FOUND');
+    const recorded = await store().recordRemix({ template_id: slug, new_project_id: projectId, user_id: userId });
+    if (recorded) await store().bumpTemplateUse(slug);
   }
 
   /**
@@ -811,7 +821,7 @@ Votre app reste publiée. Vous pouvez contester cette décision depuis « Mes pu
 
   return {
     switches, ensureVisible, store, onPublished, onUnpublished, onProjectDeleted, onPlanChanged, purgeUser, mine, publishInfo, updateListing, answerOffer, offerAlreadyAnswered, refreshThumbnail, appeal,
-    list, detail, recordView, like, report, thumbnail, remix, remixOrigin, templates, useTemplate, recordTemplateProject, refreshRankings, sweepPending, applyDueNotices, startWorkers,
+    list, detail, recordView, like, report, thumbnail, remix, remixOrigin, templates, likeTemplate, useTemplate, recordTemplateProject, refreshRankings, sweepPending, applyDueNotices, startWorkers,
     validateProfileText, recordUpgradeClick, setSwitch, adminOverview, adminAction, resolveAppeal, installShowcase, applySanction, enqueue, queueSize: () => queued, limits,
   };
 }

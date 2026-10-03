@@ -2,7 +2,8 @@
 import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
-import { authoritativeProjectFiles } from './src/services/project-file-recovery.ts';
+import { authoritativeProjectFiles, loadGenerationFiles } from './src/services/project-file-recovery.ts';
+import { writeDurableSnapshot, isSnapshotTableMissing, requireDurableCheckpoint } from './src/services/durable-snapshot-write.ts';
 import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
@@ -1094,6 +1095,19 @@ app.use('/api/integrations', requireAuth);
 app.use('/api/attachments', requireAuth);
 app.use('/api/links', requireAuth);
 app.use('/api/feedback', requireAuth);
+
+// Observation only, after authentication. Missing attribution remains unknown;
+// body fields are never trusted for plan, price or account authority.
+app.use(['/api/assistant', '/api/projects'], (req: any, _res: any, next: any) => {
+  if (process.env.CODEN_COST_OBSERVABILITY_V1 !== '1') return next();
+  return runWithCostScope({
+    actorId: getOptionalAuthState(req).userId || undefined,
+    projectId: String(req.params?.id || req.body?.projectId || '') || undefined,
+    requestId: String(req.body?.requestId || '') || undefined,
+    mode: typeof req.body?.routingMode === 'string' ? normalizeRoutingMode(req.body.routingMode) : undefined,
+    selection: (req.body?.model || req.body?.modelId) ? ((req.body.model || req.body.modelId) === 'auto' ? 'auto' : 'explicit') : undefined,
+  }, next);
+});
 
 /*
  * The person's own instructions and private memory, for every agent call made
@@ -2294,6 +2308,56 @@ async function ensureAgentHarnessSchema() {
     console.log('[coden:harness_schema_ready]', { projectRef, statements: result.safety.statements });
   }
   return result;
+}
+
+async function ensureCommunityTemplateLikesSchema() {
+  // Community likes belong to Coden's own database, never the shared runtime
+  // used by generated apps. Keep this target tied to the canonical server URL.
+  const projectRef = getSupabaseProjectRef(process.env.SUPABASE_URL || '');
+  if (!/^[a-z0-9]{20}$/.test(projectRef)) return { applied: false, reason: 'invalid_coden_project_ref' };
+  const client = getSupabase();
+  if (!client) return { applied: false, reason: 'coden_database_unavailable' };
+
+  const base = await client.from('community_templates').select('slug').limit(0);
+  if (base.error) {
+    console.warn('[coden:community_template_likes_schema_probe_failed]', {
+      reason: redactSecrets(base.error.message || 'community_templates_unavailable', '[redacted]').slice(0, 200),
+    });
+    return { applied: false, reason: 'community_templates_unavailable' };
+  }
+
+  const [counter, likes] = await Promise.all([
+    client.from('community_templates').select('like_count').limit(0),
+    client.from('community_template_likes').select('template_slug').limit(0),
+  ]);
+  const counterMissing = Boolean(counter.error && /PGRST204|42703/.test(String(counter.error.code || ''))
+    && /community_templates|like_count/i.test(counter.error.message || ''));
+  const likesMissing = Boolean(likes.error && /PGRST205|42P01/.test(String(likes.error.code || ''))
+    && /community_template_likes/i.test(likes.error.message || ''));
+  if (!counter.error && !likes.error) {
+    console.log('[coden:community_template_likes_schema_ready]', { source: 'existing_schema' });
+    return { applied: false, ready: true, reason: 'already_available' };
+  }
+  if ((!counter.error || counterMissing) && (!likes.error || likesMissing) && (counterMissing || likesMissing)) {
+    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20261002000000_community_template_likes.sql');
+    if (!fs.existsSync(migrationPath)) return { applied: false, reason: 'migration_file_missing' };
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+    const result = await applyGeneratedMigration({ projectRef, sql, dryRun: false });
+    if (!result.applied) {
+      console.warn('[coden:community_template_likes_schema_not_applied]', {
+        reason: result.error || 'management_api_unavailable',
+        status: result.status || null,
+      });
+      return result;
+    }
+    console.log('[coden:community_template_likes_schema_ready]', { source: 'migration', statements: result.safety.statements });
+    return result;
+  }
+
+  console.warn('[coden:community_template_likes_schema_probe_failed]', {
+    reason: redactSecrets(counter.error?.message || likes.error?.message || 'unexpected_schema_probe_error', '[redacted]').slice(0, 200),
+  });
+  return { applied: false, reason: 'unexpected_schema_probe_error' };
 }
 
 type AgentIntent = 'conversation' | 'clarification_required' | 'plan' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'external_keys_required' | 'credits_required';
@@ -8318,6 +8382,8 @@ function isProjectFilesMissingError(error: any) {
 function stripSchemaColumnFromProjectFileRows(rows: Record<string, any>[], error: any) {
   const column = getSchemaColumnFromMessage(String(error?.message || ''));
   if (!column || !rows.some(row => column in row)) return null;
+  // Compatibility may omit metadata, never the content or tenant/path identity.
+  if (['project_id', 'path', 'content'].includes(column)) return null;
   return rows.map(row => {
     const next = { ...row };
     delete next[column];
@@ -8386,7 +8452,7 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
       project_id: project.id,
       reason: 'Refusing to wipe project files from an empty generated file set.',
     });
-    return;
+    return false;
   }
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -8396,13 +8462,13 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
 
     if (!upsertResult.error) {
       await cleanupStaleProjectFileRows(client, project.id, new Set(rows.map(row => String(row.path))));
-      return;
+      return true;
     }
 
     const error = upsertResult.error;
     if (isProjectFilesMissingError(error)) {
       console.warn('[coden:project_files_persistence_skipped]', { message: error.message });
-      return;
+      return false;
     }
 
     if (isSchemaShapeError(error)) {
@@ -8416,11 +8482,11 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
     const fallbackError = await persistProjectFileRowsIndividually(client, rows);
     if (!fallbackError) {
       await cleanupStaleProjectFileRows(client, project.id, new Set(rows.map(row => String(row.path))));
-      return;
+      return true;
     }
     if (isProjectFilesMissingError(fallbackError)) {
       console.warn('[coden:project_files_persistence_skipped]', { message: fallbackError.message });
-      return;
+      return false;
     }
     if (isSchemaShapeError(fallbackError)) {
       const strippedRows = stripSchemaColumnFromProjectFileRows(rows, fallbackError);
@@ -8432,6 +8498,7 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
 
     throw new Error(`Supabase project file persistence failed: ${fallbackError?.message || error.message}`);
   }
+  throw new Error('PROJECT_FILES_NOT_SAVED: schema compatibility retries exhausted');
 }
 
 async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
@@ -8443,11 +8510,9 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
 
   await upsertProjectWithSchemaFallback(client, projectRow);
 
-  if (files) {
-    await saveProjectFilesWithSchemaFallback(client, project, files);
-  }
+  const filesSaved = files ? await saveProjectFilesWithSchemaFallback(client, project, files) : true;
 
-  await persistDurableProjectSnapshot({
+  const snapshotSaved = await persistDurableProjectSnapshot({
     project,
     files,
     preview: {
@@ -8455,6 +8520,7 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
       html: project.preview_html || (files ? getProjectPreviewHtml(project, files, 'preview') : ''),
     },
   });
+  if (files?.length && !filesSaved) requireDurableCheckpoint(snapshotSaved);
 
   return project;
 }
@@ -8603,7 +8669,7 @@ async function loadProjectFiles(projectId: string): Promise<GeneratedFile[]> {
     data = retry.data;
     error = retry.error;
   }
-  if (error && /project_files|relation .* does not exist|table .* does not exist/i.test(error.message || '')) {
+  if (error && isProjectFilesMissingError(error)) {
     console.warn('[coden:project_files_load_skipped]', { project_id: projectId, message: error.message });
     return [];
   }
@@ -8615,7 +8681,7 @@ async function loadProjectFiles(projectId: string): Promise<GeneratedFile[]> {
 }
 
 function isMissingProjectSnapshotTableError(error: any) {
-  return /project_state_snapshots|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error?.message || '');
+  return isSnapshotTableMissing(error);
 }
 
 function cleanProjectForSnapshot(project: GeneratedProject) {
@@ -8648,7 +8714,8 @@ async function persistDurableProjectSnapshot(input: {
     updated_at: new Date().toISOString(),
   });
   const client = requireSupabase('Durable project snapshot persistence');
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId: input.project.id, ownerId: input.project.owner_id,
+    patch: () => row }).then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) {
     console.warn('[coden:durable_project_snapshot_unavailable]', { project_id: input.project.id, message: error.message });
     return false;
@@ -8667,33 +8734,25 @@ async function appendDurableProjectSnapshotItem(input: {
   lastAgentRunId?: string | null;
 }) {
   const client = requireSupabase('Durable project snapshot append');
-  const { data, error: readError } = await client
-    .from('project_state_snapshots')
-    .select(`project_id,${input.field}`)
-    .eq('project_id', input.projectId)
-    .maybeSingle();
-  if (readError && isMissingProjectSnapshotTableError(readError)) return false;
-  if (readError) throw new Error(`Durable project snapshot read failed: ${readError.message}`);
-  const previous = Array.isArray(data?.[input.field]) ? data[input.field] : [];
-  const itemKey = input.item?.ai_message_id ? `ai:${input.item.ai_message_id}` : input.item?.id ? `id:${input.item.id}` : '';
-  const retained = itemKey
-    ? previous.filter((existing: any) => {
-        const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
-        if (existingKey === itemKey) return false;
-        // The same answer saved twice under two ids is one answer.
-        return !(input.item?.role === 'assistant' && isTwinMessage(existing, input.item));
-      })
-    : previous;
-  const row = withoutUndefinedValues({
-    project_id: input.projectId,
-    owner_id: input.ownerId,
-    organization_id: input.organizationId || null,
-    revision: Date.now(),
-    [input.field]: redactSecretPayload([...retained, input.item].slice(-input.limit)),
-    last_agent_run_id: input.lastAgentRunId === undefined ? undefined : input.lastAgentRunId,
-    updated_at: new Date().toISOString(),
-  });
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId: input.projectId, ownerId: input.ownerId,
+    readColumns: [input.field], patch: data => {
+      const previous = Array.isArray(data?.[input.field]) ? data[input.field] : [];
+      const itemKey = input.item?.ai_message_id ? `ai:${input.item.ai_message_id}` : input.item?.id ? `id:${input.item.id}` : '';
+      const retained = itemKey
+        ? previous.filter((existing: any) => {
+            const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
+            if (existingKey === itemKey) return false;
+            // The same answer saved twice under two ids is one answer.
+            return !(input.item?.role === 'assistant' && isTwinMessage(existing, input.item));
+          })
+        : previous;
+      return withoutUndefinedValues({
+        organization_id: input.organizationId || null,
+        [input.field]: redactSecretPayload([...retained, input.item].slice(-input.limit)),
+        last_agent_run_id: input.lastAgentRunId === undefined ? undefined : input.lastAgentRunId,
+      });
+    },
+  }).then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) return false;
   if (error) throw new Error(`Durable project snapshot append failed: ${error.message}`);
   return true;
@@ -8708,7 +8767,8 @@ async function persistDurableWorkspaceSnapshot(projectId: string, ownerId: strin
     workspace_snapshot: redactSecretPayload(workspace || {}),
     updated_at: new Date().toISOString(),
   };
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId, ownerId, patch: () => row })
+    .then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) return false;
   if (error) throw new Error(`Durable workspace snapshot persistence failed: ${error.message}`);
   return true;
@@ -8729,8 +8789,8 @@ async function loadDurableProjectSnapshot(projectId: string, ownerId: string): P
 
 async function refreshDurableProjectSnapshot(project: GeneratedProject, files?: GeneratedFile[]) {
   const [messages, workspace] = await Promise.all([
-    listProjectMessages(project.id).catch(() => []),
-    getProjectWorkspaceState(project.id).catch(() => null),
+    listProjectMessages(project.id).catch(() => undefined),
+    getProjectWorkspaceState(project.id).catch(() => undefined),
   ]);
   return persistDurableProjectSnapshot({
     project,
@@ -13802,6 +13862,24 @@ app.get('/api/admin/costs', async (req: any, res) => {
   });
 });
 
+app.get('/api/admin/cost-observations', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (process.env.CODEN_COST_OBSERVABILITY_V1 !== '1') return res.status(404).json({ success: false, code: 'COST_OBSERVATION_DISABLED' });
+  const client = requireSupabase('Cost observation');
+  const days = Math.min(90, Math.max(1, Number(req.query?.days || 30) || 30));
+  const since = new Date(Date.now()-days*86_400_000).toISOString();
+  const until = new Date().toISOString();
+  const rows: any[] = [];
+  let total: number | null = null;
+  for (let offset=0; offset<20_000; offset+=1000) {
+    const page = await client.from('provider_cost_observations').select('*', { count:'exact' }).gte('occurred_at',since).lt('occurred_at',until).order('occurred_at').order('event_key').range(offset,offset+999);
+    if (page.error) return res.status(503).json({ success:false, code:'COST_OBSERVATION_UNAVAILABLE' });
+    rows.push(...(page.data||[])); total=page.count;
+    if ((page.data||[]).length<1000 || (total!==null&&rows.length>=total)) break;
+  }
+  return res.json({ success:true, enabled:true, policyVersion:'2026-10-01.observation-v1', since, until, coverage:{returned:rows.length,total,complete:total!==null&&rows.length>=total}, summary:costObservationSummary(rows), writer:costObservationHealth(), prices:{catalog:'provider_cost_catalog',syncEnabled:priceSyncEnabled()}, policy:{version:'2026-10-01.observation-v1',enforcement:false,optimizationsActivated:false}, billingLedger:'usage_events', inferenceProjection:'provider_cost_observations', warning:'Do not sum these two ledgers. Real invoice reconciliation and per-task joins remain required.' });
+});
+
 app.post('/api/admin/cost-alerts', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
   if (!adminMutationAllowed(req, res, 'cost_alerts', 60)) return;
@@ -16166,6 +16244,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const userId = authUser.id;
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  enrichCostScope({ actorId: userId, projectId: project.id, requestId });
 
   const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
   if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required.' });
@@ -16504,6 +16583,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
+  enrichCostScope({ selection: requestedModelSelection === 'auto' ? 'auto' : 'explicit' });
   /*
    * Attachments and links, read before anything decides what to do: the
    * router, the planner and the coder all work from the same request, with
@@ -16570,7 +16650,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   let conversation: Awaited<ReturnType<typeof loadConversationContext>>;
   try {
     [existingFiles, lastPlan, conversation] = await Promise.all([
-      loadProjectFiles(project.id),
+      loadGenerationFiles({
+        committed: () => loadProjectFiles(project.id),
+        checkpoint: async () => normalizeGeneratedFiles((await loadDurableProjectSnapshot(project.id, project.owner_id))?.files_snapshot || []),
+      }),
       getLastProjectPlan(project.id),
       loadConversationContext({
         project,
@@ -16794,6 +16877,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const backendEnv = await backendEnvPromise;
       const serverSecrets = await serverSecretsPromise;
       const [routingPlan, routingCredits] = await routingPromise;
+      enrichCostScope({ plan: routingPlan, mode: normalizeRoutingMode(req.body?.routingMode) });
 
       /*
        * Pick up a run that died, instead of starting it again.
@@ -16905,12 +16989,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           // Keep the in-progress tree durable without promoting it to
           // project_files. A refresh or failed run must still show the last
           // complete application, not this intermediate build round.
-          await persistDurableProjectSnapshot({
+          const checkpointSaved = await persistDurableProjectSnapshot({
             project,
             files: files as GeneratedFile[],
             preview: { status: project.preview_status || 'idle', html: project.preview_html || '' },
             lastAgentRunId: pipelineRunId || undefined,
           });
+          requireDurableCheckpoint(checkpointSaved);
         },
         onSandboxEvent: event => {
           eventStream?.workspace(event.type === 'preview_ready' ? { ...event, projectId: project.id } : event);
@@ -21199,6 +21284,9 @@ import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/pr
 import { describeServerSecrets, isReservedSecretVariable, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
 import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
 import { aggregateCosts, aggregateMargins, alertMessage, eventCostUsd, eventTokens, evaluateCostAlerts, hardCapReached, maskEmail, startOfMonthUtc, type CostAlertRule, type HardCapRule, type SettlementRow, type UsageEventRow } from './src/services/admin-costs.ts';
+import { configureCostObservationWriter, costObservationHealth, runWithCostScope, enrichCostScope } from './src/services/cost-observability.ts';
+import { costObservationSummary } from './src/services/cost-observation-summary.ts';
+import { normalizeRoutingMode } from './src/lib/routing-mode.ts';
 import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
 import { balanceLevel, fetchOpenRouterBalance, type OpenRouterBalance } from './src/services/openrouter-balance.ts';
 import { onProviderBalanceSignal } from './src/services/openrouter-service.ts';
@@ -22538,11 +22626,12 @@ const httpServer = app.listen(port, () => {
         await openRouterCatalog.ensure();
         const result = await syncModelPrices(client as any, {
           registry: MODEL_REGISTRY.map(model => ({ id: model.id, inputUsdPerMillion: model.inputUsdPerMillion, outputUsdPerMillion: model.outputUsdPerMillion })),
-          live: id => modelAvailability(id, undefined).pricing ? { id, ...modelAvailability(id, undefined).pricing! } : null,
+          live: id => modelAvailability(id, undefined).pricing ? { id, ...modelAvailability(id, undefined).pricing!, ...(process.env.CODEN_COST_OBSERVABILITY_V1==='1' ? {catalogPricing:openRouterCatalog.peek(id)?.pricing} : {}) } : null,
         });
         if (result.changed) console.info('[coden:model_prices_synced]', { listed: result.listed, changed: result.changed });
         const message = priceDriftMessage(result.drift);
         if (message) void alertProviderOnce(`prices:${new Date().toISOString().slice(0, 10)}`, 20 * 60 * 60_000, 'Prix de modèles modifiés', message);
+        if(process.env.CODEN_COST_OBSERVABILITY_V1==='1' && result.snapshotChanges>0) void alertProviderOnce(`price-details:${new Date().toISOString().slice(0,10)}`,20*60*60_000,'Catalogue de coûts actualisé',`${result.snapshotChanges} tarif(s) daté(s) avec prix de cache et conditions conservés. Aucun prix commercial ni routage modifié.`);
       } catch (error: any) {
         console.warn('[coden:model_price_sync_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
       }
@@ -22573,6 +22662,11 @@ const httpServer = app.listen(port, () => {
   }
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  });
+  void ensureCommunityTemplateLikesSchema().catch((error: any) => {
+    console.warn('[coden:community_template_likes_schema_startup_failed]', {
+      message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200),
+    });
   });
   /*
    * After the previous instance has drained (railway.json drainingSeconds +
@@ -22678,6 +22772,12 @@ const httpServer = app.listen(port, () => {
   // ✅ Initialize async job queue worker — picks up long-running jobs from Supabase
   const supabaseClient = getSupabase();
   if (supabaseClient) {
+    if (process.env.CODEN_COST_OBSERVABILITY_V1 === '1' && process.env.CODEN_SECRETS_KEY) {
+      configureCostObservationWriter(async rows => {
+        const { error } = await supabaseClient.from('provider_cost_observations').upsert(rows, { onConflict: 'event_key', ignoreDuplicates: true });
+        if (error) throw new Error('COST_OBSERVATION_PERSISTENCE_UNAVAILABLE');
+      });
+    }
     initJobQueue(supabaseClient);
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');

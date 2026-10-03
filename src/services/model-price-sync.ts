@@ -8,7 +8,9 @@
  * visible afterwards. It never edits the registry: a price change that matters is a decision for a person.
  */
 
-export type PriceRow = { id: string; inputUsdPerMillion: number; outputUsdPerMillion: number };
+import { modelPriceSnapshot } from './model-price-history.ts';
+import type { CatalogModel } from './openrouter-capabilities.ts';
+export type PriceRow = { id: string; inputUsdPerMillion: number; outputUsdPerMillion: number; catalogPricing?: CatalogModel['pricing'] };
 export type PriceDrift = { id: string; field: 'input' | 'output'; registryUsdPerMillion: number; liveUsdPerMillion: number; ratio: number };
 
 const round = (value: number, digits = 6) => Math.round(value * 10 ** digits) / 10 ** digits;
@@ -30,7 +32,7 @@ export function priceDrift(registry: readonly PriceRow[], live: (id: string) => 
   return drifts.sort((a, b) => Math.abs(b.ratio - 1) - Math.abs(a.ratio - 1));
 }
 
-export type CatalogRow = { id: string; resource: string; unit_cost_usd: number | string; effective_until: string | null };
+export type CatalogRow = { id: string; resource: string; unit_cost_usd: number | string; effective_until: string | null; metadata?: Record<string, unknown> | null };
 
 export type CatalogChange = { closeIds: string[]; inserts: Array<Record<string, unknown>> };
 
@@ -41,6 +43,7 @@ export function catalogChanges(current: readonly CatalogRow[], live: readonly Pr
   const inserts: Array<Record<string, unknown>> = [];
   const at = now.toISOString();
   for (const model of live) {
+    const snapshot=model.catalogPricing ? modelPriceSnapshot({id:model.id,context_length:0,supported_parameters:[],pricing:model.catalogPricing}) : null;
     for (const field of ['input', 'output'] as const) {
       const perMillion = field === 'input' ? model.inputUsdPerMillion : model.outputUsdPerMillion;
       if (!Number.isFinite(perMillion) || perMillion < 0) continue;
@@ -49,14 +52,15 @@ export function catalogChanges(current: readonly CatalogRow[], live: readonly Pr
       const existing = open.get(resource);
       if (existing) {
         const old = Number(existing.unit_cost_usd);
-        if (old > 0 && Math.abs(perToken / old - 1) <= minChange) continue;
+        const sameBase=old>0 && Math.abs(perToken / old - 1)<=minChange;
+        if (sameBase && (!snapshot || existing.metadata?.price_snapshot_signature===snapshot.signature)) continue;
         closeIds.push(existing.id);
       }
       inserts.push({
         provider: 'openrouter', resource, unit: 'token', unit_cost_usd: perToken, currency: 'USD',
         effective_from: at, effective_until: null,
         source_url: 'https://openrouter.ai/api/v1/models', source_revision: at.slice(0, 10),
-        metadata: { synced_by: 'model-price-sync.v1', source: 'live_catalog' },
+        metadata: { synced_by: 'model-price-sync.v1', source: 'live_catalog', ...(snapshot ? {price_snapshot_signature:snapshot.signature,pricing_details:snapshot.pricing} : {}) },
       });
     }
   }
@@ -70,9 +74,9 @@ export async function syncModelPrices(client: Client, input: { registry: readonl
   const now = input.now || new Date();
   const livePrices = input.registry.map(entry => input.live(entry.id)).filter((row): row is PriceRow => Boolean(row));
   const drift = priceDrift(input.registry, input.live);
-  if (!livePrices.length) return { listed: 0, changed: 0, drift };
+  if (!livePrices.length) return { listed: 0, changed: 0, snapshotChanges:0, drift };
 
-  const existing = await client.from('provider_cost_catalog').select('id,resource,unit_cost_usd,effective_until').eq('provider', 'openrouter').is('effective_until', null).limit(2000);
+  const existing = await client.from('provider_cost_catalog').select('id,resource,unit_cost_usd,effective_until,metadata').eq('provider', 'openrouter').is('effective_until', null).limit(2000);
   if (existing.error) throw new Error(`Price sync could not read the catalogue: ${existing.error.message}`);
   const changes = catalogChanges((existing.data || []) as CatalogRow[], livePrices, now);
   for (const id of changes.closeIds) {
@@ -83,7 +87,7 @@ export async function syncModelPrices(client: Client, input: { registry: readonl
     const inserted = await client.from('provider_cost_catalog').insert(changes.inserts);
     if (inserted.error) throw new Error(`Price sync could not save prices: ${inserted.error.message}`);
   }
-  return { listed: livePrices.length, changed: changes.inserts.length, drift };
+  return { listed: livePrices.length, changed: changes.inserts.length, snapshotChanges:changes.inserts.filter(row=>(row.metadata as any)?.price_snapshot_signature).length, drift };
 }
 
 export function priceSyncEnabled(env: Record<string, string | undefined> = process.env): boolean {

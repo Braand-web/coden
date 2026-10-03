@@ -382,11 +382,17 @@ export class CommunityStore {
   }
 
   async recordRemix(input: { listing_id?: string | null; template_id?: string | null; source_project_id?: string | null; new_project_id: string; user_id: string }) {
-    await this.client.from('community_remixes').insert({ listing_id: input.listing_id || null, template_id: input.template_id || null, source_project_id: input.source_project_id || null, new_project_id: input.new_project_id, user_id: input.user_id });
+    // Project creation can succeed even if its HTTP response is retried; retain one attribution per resulting project.
+    const existing = await this.client.from('community_remixes').select('id').eq('new_project_id', input.new_project_id).limit(1).maybeSingle();
+    if (existing.error) throw new Error(`community_remixes: ${existing.error.message}`);
+    if (existing.data) return false;
+    const { error } = await this.client.from('community_remixes').insert({ listing_id: input.listing_id || null, template_id: input.template_id || null, source_project_id: input.source_project_id || null, new_project_id: input.new_project_id, user_id: input.user_id });
+    if (error && error.code !== '23505') throw new Error(`community_remixes: ${error.message}`);
     if (input.listing_id) {
       const { count } = await this.client.from('community_remixes').select('id', { count: 'exact', head: true }).eq('listing_id', input.listing_id);
       await this.client.from('community_listings').update({ remix_count: count || 0 }).eq('id', input.listing_id);
     }
+    return !error;
   }
 
   // ── Ranking maintenance ─────────────────────────────────────────────────────────────────────────────────────────
@@ -428,13 +434,43 @@ export class CommunityStore {
   }
 
   // ── Templates ───────────────────────────────────────────────────────────────────────────────────────────────────
-  async templates() {
-    const { data } = await this.client.from('community_templates').select('slug,title,description,category,version,min_plan,design_score,use_count,position,kind,preview_url').eq('active', true).order('position', { ascending: true });
-    return (data || []) as Array<{ slug: string; title: string; description: string; category: string; version: number; min_plan: string; design_score: number | null; use_count: number; position: number; kind: 'app' | 'brief'; preview_url: string | null }>;
+  async templates(viewerId?: string) {
+    const { data, error } = await this.client.from('community_templates').select('slug,title,description,category,version,min_plan,design_score,use_count,like_count,position,kind,preview_url').eq('active', true).order('position', { ascending: true });
+    if (error) throw new Error(`community_templates: ${error.message}`);
+    const rows = (data || []) as Array<{ slug: string; title: string; description: string; category: string; version: number; min_plan: string; design_score: number | null; use_count: number; like_count: number; position: number; kind: 'app' | 'brief'; preview_url: string | null }>;
+    const liked = new Set<string>();
+    if (viewerId && rows.length) {
+      const result = await this.client.from('community_template_likes').select('template_slug').eq('user_id', viewerId).in('template_slug', rows.map(row => row.slug));
+      if (result.error) throw new Error(`community_template_likes: ${result.error.message}`);
+      for (const row of result.data || []) liked.add(row.template_slug);
+    }
+    return rows.map(row => ({ ...row, likes: Number(row.like_count || 0), liked: liked.has(row.slug) }));
+  }
+
+  /** One like per person; the database trigger keeps the shared counter exact for inserts and deletes. */
+  async toggleTemplateLike(slug: string, userId: string): Promise<{ liked: boolean; likes: number }> {
+    const existing = await this.client.from('community_template_likes').select('template_slug').eq('template_slug', slug).eq('user_id', userId).maybeSingle();
+    if (existing.error) throw new Error(`community_template_likes: ${existing.error.message}`);
+    if (existing.data) {
+      const { error } = await this.client.from('community_template_likes').delete().eq('template_slug', slug).eq('user_id', userId);
+      if (error) throw new Error(`community_template_likes: ${error.message}`);
+    } else {
+      const { error } = await this.client.from('community_template_likes').insert({ template_slug: slug, user_id: userId });
+      // A repeated click can race a request already in flight; the composite primary key still permits only one like.
+      if (error && error.code !== '23505') throw new Error(`community_template_likes: ${error.message}`);
+    }
+    const [state, template] = await Promise.all([
+      this.client.from('community_template_likes').select('template_slug').eq('template_slug', slug).eq('user_id', userId).maybeSingle(),
+      this.client.from('community_templates').select('like_count').eq('slug', slug).maybeSingle(),
+    ]);
+    if (state.error) throw new Error(`community_template_likes: ${state.error.message}`);
+    if (template.error) throw new Error(`community_templates: ${template.error.message}`);
+    return { liked: Boolean(state.data), likes: Number(template.data?.like_count || 0) };
   }
 
   async template(slug: string) {
-    const { data } = await this.client.from('community_templates').select('slug,title,description,category,brief,version,min_plan,active,kind').eq('slug', slug).maybeSingle();
+    const { data, error } = await this.client.from('community_templates').select('slug,title,description,category,brief,version,min_plan,active,kind').eq('slug', slug).maybeSingle();
+    if (error) throw new Error(`community_templates: ${error.message}`);
     return (data as null | { slug: string; title: string; description: string; category: string; brief: string; version: number; min_plan: string; active: boolean; kind: 'app' | 'brief' }) || null;
   }
 

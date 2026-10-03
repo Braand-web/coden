@@ -7,6 +7,7 @@ import { openRouterCatalog, type OpenRouterCapabilities } from './openrouter-cap
 import { buildOpenRouterRequest, DEFAULT_REASONING_LEVEL, maxReasoningBudget } from './openrouter-request.ts';
 import { decryptSecret } from '../lib/secret-box.ts';
 import { readProviderSse } from './provider-sse.ts';
+import { observeProviderCost } from './cost-observability.ts';
 
 export const OPENROUTER_API_KEY_ENV_NAMES = [
   'OPENROUTER_API_KEY',
@@ -394,11 +395,21 @@ export class OpenRouterService {
     };
     const hardTimeoutMs = Math.max(timeoutMs, Math.min(timeoutMs * 3, 600_000));
     const hardTimeout = setTimeout(() => controller.abort(), hardTimeoutMs);
+    const costObservationEnabled = process.env.CODEN_COST_OBSERVABILITY_V1 === '1';
+    let observationStarted = costObservationEnabled ? Date.now() : 0;
+    let observationUsage: Record<string, any> | undefined;
+    let observationProvider: unknown;
+    let observationModel = modelId;
+    let observationEstimate: number | undefined;
+    let observationResult: 'succeeded' | 'failed' | 'cancelled' = 'cancelled';
+    let connectionFailureObserved = false;
 
     try {
       let response: Response | undefined;
       let adjusted = 0;
       for (let attempt = 1; ; attempt += 1) {
+        if (costObservationEnabled) observationStarted = Date.now();
+        connectionFailureObserved = false;
         armIdleTimeout();
         try {
           response = await fetch(CHAT_COMPLETIONS_URL, {
@@ -414,6 +425,7 @@ export class OpenRouterService {
             // Twice at most: a reasoning refusal and a size refusal can
             // follow one another on the same request.
             if (adjusted < 2 && adjustForRefusal(payload, response.status, errMsg)) {
+              if (costObservationEnabled) observeProviderCost({ requestedModel: modelId, metadata: runtimeConfig?.metadata, result: 'failed', latencyMs: Date.now()-observationStarted });
               adjusted += 1;
               attempt -= 1;
               continue;
@@ -424,6 +436,8 @@ export class OpenRouterService {
           }
           break;
         } catch (error: any) {
+          if (costObservationEnabled) observeProviderCost({ requestedModel: modelId, metadata: runtimeConfig?.metadata, result: signal?.aborted ? 'cancelled' : 'failed', latencyMs: Date.now()-observationStarted });
+          connectionFailureObserved = true;
           const normalized = error?.name === 'AbortError'
             ? (signal?.aborted ? new ProviderCancelledError() : new ProviderTimeoutError('OpenRouter', timeoutMs))
             : error;
@@ -460,6 +474,10 @@ export class OpenRouterService {
           throw new Error(`OpenRouter API Error: ${data.error.message || JSON.stringify(data.error)}`);
         }
         model = data?.model || model;
+        if (costObservationEnabled) {
+          observationModel = model;
+          observationProvider = data?.provider ?? observationProvider;
+        }
         const choice = data?.choices?.[0];
         if (choice?.finish_reason) finishReason = String(choice.finish_reason);
         const delta = choice?.delta;
@@ -480,6 +498,12 @@ export class OpenRouterService {
           const promptTokens = usage.prompt_tokens || 0;
           const completionTokens = usage.completion_tokens || 0;
           const reported = Number(usage?.cost ?? data?.cost ?? data?.price);
+          if (costObservationEnabled) {
+            const rawCost = usage?.cost ?? data?.cost ?? data?.price;
+            const measured = (typeof rawCost === 'number' || typeof rawCost === 'string') && String(rawCost).trim() !== '' && Number.isFinite(Number(rawCost)) && Number(rawCost) >= 0;
+            observationUsage = { ...usage, cost: measured ? Number(rawCost) : undefined };
+            observationEstimate = measured || usage.prompt_tokens == null || usage.completion_tokens == null ? undefined : this.estimateUsdCost(model, promptTokens, completionTokens);
+          }
           yield {
             type: 'usage',
             model,
@@ -498,6 +522,7 @@ export class OpenRouterService {
       // `max_tokens` is already the model's own ceiling: reaching it is a real
       // truncation, reported as one rather than passed off as a full answer.
       if (finishReason === 'length') throw new Error('MODEL_OUTPUT_TRUNCATED: completion token limit reached.');
+      observationResult = 'succeeded';
       // Emit any accumulated tool calls once the stream is done.
       if (toolCalls.hasCalls()) {
         const finalized = toolCalls.finalize();
@@ -506,6 +531,7 @@ export class OpenRouterService {
         }
       }
     } catch (err: any) {
+      observationResult = signal?.aborted ? 'cancelled' : 'failed';
       // An abort is two different events wearing one name: the user pressing
       // stop, and our own timeout. Only the second is a transient failure.
       if (err?.name === 'AbortError') {
@@ -514,6 +540,7 @@ export class OpenRouterService {
       }
       throw err;
     } finally {
+      if (costObservationEnabled && !connectionFailureObserved) observeProviderCost({ requestedModel: modelId, servedModel: observationModel, provider: observationProvider, metadata: runtimeConfig?.metadata, usage: observationUsage, estimatedCostUsd: observationEstimate, result: observationResult, latencyMs: Date.now()-observationStarted });
       if (idleTimeout) clearTimeout(idleTimeout);
       clearTimeout(hardTimeout);
     }

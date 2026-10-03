@@ -50,6 +50,7 @@ import { initCodenNavigationTransitions } from './navigation-transitions';
 import { initThemeController } from './theme-controller';
 import { maybeOpenOnboarding } from './lib/onboarding-launcher';
 import { communityApi, communitySeen, parseCommunityHash } from './lib/community-client';
+import { toast } from './lib/ui-feedback';
 import { communityAvailability, shouldShowCommunityLink } from './lib/community-availability';
 import { fetchSuggestionsSummary, suggestionsBadge, type SuggestionsSummary } from './lib/suggestions-summary';
 import './styles/dashboard-react.css';
@@ -603,9 +604,9 @@ function DashboardHome() {
   // Files go up as they are chosen; the project they belong to is created on send.
   const uploader = useMemo(() => (isLocal ? createPreviewUploader() : createAttachmentUploader()), []);
 
-  const createFromPrompt = async (text: string, meta: { model: string; effort: string; attachmentIds?: string[]; linkIds?: string[]; skippedUrls?: string[] }) => {
+  const createFromPrompt = async (text: string, meta: { model: string; effort: string; attachmentIds?: string[]; linkIds?: string[]; skippedUrls?: string[] }, templateId?: string) => {
     const request = text.trim();
-    if (!request || creating) return;
+    if (!request || creating) return false;
     setCreating(true);
     setCreationStatus(formatCreateProjectFlowStatus('preparing', 'fr'));
     if (isLocal) {
@@ -613,7 +614,7 @@ function DashboardHome() {
         setCreationStatus('Le parcours est prêt. La création réelle reste désactivée dans cet aperçu local.');
         setCreating(false);
       }, 450);
-      return;
+      return false;
     }
     try {
       await startCreateProjectFlow(
@@ -630,11 +631,18 @@ function DashboardHome() {
           onStatus: (status: CreateProjectFlowStatus) => {
             setCreationStatus(formatCreateProjectFlowStatus(status, 'fr'));
           },
+          onProjectCreated: async projectId => {
+            if (!templateId) return;
+            try { await communityApi.recordTemplateProject(templateId, projectId); }
+            catch { toast('Le projet est créé, mais son attribution au template n’a pas pu être enregistrée.', 'info'); }
+          },
         },
       );
+      return true;
     } catch (error) {
       setCreationStatus(error instanceof Error ? error.message : 'Le projet n’a pas pu être créé.');
       setCreating(false);
+      return false;
     }
   };
 
@@ -706,7 +714,7 @@ function DashboardHome() {
                   navigate={navigate}
                   projects={projects.map(project => ({ id: project.id, name: project.name }))}
                   onUpgrade={() => openUpgrade(profile)}
-                  onUseTemplate={prompt => { void createFromPrompt(prompt, { model: readPreferredModelSelection(), effort: readPreferredEffort() } as any); }}
+                  onUseTemplate={(prompt, templateId) => createFromPrompt(prompt, { model: readPreferredModelSelection(), effort: readPreferredEffort() } as any, templateId)}
                   builderUrl={builderUrl}
                 />
               </Suspense>

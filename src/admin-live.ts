@@ -3,6 +3,7 @@ import { adminLoadFailureCopy, classifyAdminLoadFailure } from './admin-access-s
 import { localConnectorLogo } from './lib/connector-logos';
 import { mountAdminLibrary } from './admin-library';
 import { mountAdminPricing } from './admin-pricing';
+import { renderCostObservations } from './admin-cost-observations';
 import { mountAdminFeedback } from './admin-feedback';
 import { mountAdminCommunity } from './admin-community';
 import { mountDataTable, type DataTable, type DataTableColumn, type DataTableFilter } from './admin-table';
@@ -41,6 +42,7 @@ type AdminState = {
   integrations: JsonRecord | null;
   live: JsonRecord | null;
   costs: JsonRecord | null;
+  costObservations?: JsonRecord | null;
   backends: JsonRecord | null;
   channels: JsonRecord | null;
   balance?: JsonRecord | null;
@@ -944,7 +946,7 @@ function renderCosts() {
     <article class="admin-card full"><span class="panel-label">Par modèle</span><div data-costs-models></div></article>
     <article class="admin-card full"><span class="panel-label">Par utilisateur</span><div data-costs-users></div></article>
     <article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Marge par utilisateur</span><p class="metric-note">Revenu des crédits réglés face à tout le coût fournisseur de l’utilisateur (y compris les runs non facturés). Les marges négatives apparaissent en premier.</p></div></div><div data-costs-margins></div></article>
-    <article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Backends Coden Cloud</span><p class="metric-note" data-backends-note>Chargement…</p></div></div><div data-costs-backends></div></article>`);
+    <article class="admin-card full"><div class="admin-panel-head"><div><span class="panel-label">Backends Coden Cloud</span><p class="metric-note" data-backends-note>Chargement…</p></div></div><div data-costs-backends></div></article>${renderCostObservations(state.costObservations)}`);
   root.querySelector<HTMLSelectElement>('[data-cost-days]')!.value = String(costDays);
   const data = state.costs;
   const metricsHost = root.querySelector<HTMLElement>('[data-costs-metrics]');
@@ -1057,12 +1059,14 @@ function renderChannels() {
 }
 
 async function loadCosts() {
-  const [costs, backends, channels, balance] = await Promise.all([
+  const [costs, backends, channels, balance, observations] = await Promise.all([
     safeAdminFetch(`/api/admin/costs?days=${costDays}`, { totals: {}, by_user: [], by_model: [], by_day: [], margins: [], alerts: { rules: [], triggered: [] } }),
     safeAdminFetch('/api/admin/cloud/backends', { backends: [], totals: {}, pricing: {} }),
     safeAdminFetch('/api/admin/alerts/channels', { slack: false, email: false }),
     safeAdminFetch('/api/admin/providers/balance', { openrouter: { error: 'Solde indisponible.' } }),
+    safeAdminFetch(`/api/admin/cost-observations?days=${costDays}`, { enabled: false }),
   ]);
+  state.costObservations = observations;
   state.balance = balance;
   state.costs = costs;
   state.backends = backends;

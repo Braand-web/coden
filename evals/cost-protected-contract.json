@@ -1,0 +1,12 @@
+{
+  "productionCommit": "97a6ac7cb53ac1b643f9669e38f73bf7939ffb0b",
+  "capturedAt": "2026-10-01T01:20:05.010Z",
+  "files": {
+    "src/config/ai-models.ts": "07f429b637b2ed843c588d954f4adb10347d4bd59a7edebd46260395b630177e",
+    "src/config/billing-v2.ts": "8d2aaea960597b94900c088a8a3c6a52f1eb4d9c9cbac88c47c39e2c7bb09733",
+    "pricing.html": "39173f8f67202fef78b308d07adee8c3e7c37ffde3d337212d1f9159e4e2d26f",
+    "src/components/ui/ai-chat-input.tsx": "73885cab5c9f6080272d087de71e05398af9d44f944f17dccfe14b0fbea3e9b2",
+    "src/lib/routing-mode.ts": "bcda29c03a513a96eedd3ded57977e0d530ec13a11a9899b180570590e604c81",
+    "src/services/billing/pricing-config.ts": "dc70868feb3d86e35069e2d55a2745d156d3a1fdf6450c683390fa17002ed865"
+  }
+}

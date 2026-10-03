@@ -68,7 +68,7 @@ const instruction = buildRepairInstruction({
 });
 assert.match(instruction, /src\/App\.tsx:12/);
 assert.match(instruction, /Missing dependencies: zustand, @tanstack\/react-query/);
-assert.match(instruction, /Change only these files: src\/App\.tsx, src\/lib\/api\.ts/,
+assert.match(instruction, /Start by reading these failing files and their imports: src\/App\.tsx, src\/lib\/api\.ts/,
   'naming the files is what keeps a repair from becoming a regeneration');
 assert.equal(buildRepairInstruction({ ok: true, ran: { devServer: true, typecheck: true, build: true }, durationMs: 1, problems: [] }), '',
   'a project that works needs no instruction');

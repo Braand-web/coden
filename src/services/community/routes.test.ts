@@ -36,6 +36,12 @@ describe('who may call the Community routes', () => {
     const rules = readFileSync(new URL('./rules.ts', import.meta.url), 'utf8');
     expect(rules).toContain('enabled: communityEnabledByDefault(env.CODEN_COMMUNITY)');
   });
+
+  it('keeps template likes behind the authenticated, rate-limited community handler', () => {
+    expect(routes).toMatch(/app\.post\('\/api\/community\/templates\/:slug\/like', handler\('template-like', \[30, 60_000\]/);
+    expect(routes).toContain('service.likeTemplate(user.id, slug)');
+    expect(routes).toContain('service.templates(plan, user.id)');
+  });
 });
 
 /** A client that answers every query with the rows it was given and remembers what was selected. */

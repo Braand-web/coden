@@ -4,9 +4,9 @@
  * rendered by React, never as HTML.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { communityApi, communityHash, markCommunitySeen, TABS, type Tab } from '../../lib/community-client';
+import { communityApi, communityHash, markCommunitySeen, TABS, type Tab, type Template } from '../../lib/community-client';
 import { toast } from '../../lib/ui-feedback';
 import { CardSkeleton, EmptyState, ErrorState, ListingCard, Sentinel, TemplateCard } from './community-cards';
 import ListingDetail from './listing-detail';
@@ -21,7 +21,7 @@ export type CommunityPageProps = {
   navigate: (hash: string) => void;
   projects: Array<{ id: string; name: string }>;
   onUpgrade: () => void;
-  onUseTemplate: (prompt: string) => void;
+  onUseTemplate: (prompt: string, templateId: string) => Promise<boolean>;
   builderUrl: (projectId: string) => string;
 };
 
@@ -41,7 +41,7 @@ export default function CommunityPage({ tab, listingId, navigate, projects, onUp
         </div>
       </header>
       <TabBar tab={tab} onChange={next => navigate(communityHash({ tab: next }))} />
-      {tab === 'templates' ? <Templates categories={categories.data || []} onUse={onUseTemplate} />
+      {tab === 'templates' ? <Templates onUse={onUseTemplate} onUpgrade={onUpgrade} />
         : tab === 'mine' ? <MyListings projects={projects} onUpgrade={onUpgrade} />
         : <Browse key={tab} tab={tab} categories={categories.data || []} navigate={navigate} />}
     </section>
@@ -132,26 +132,47 @@ function Browse({ tab, categories, navigate }: { tab: 'discover' | 'trending' | 
   );
 }
 
-function Templates({ categories, onUse }: { categories: Array<{ slug: string; label: string }>; onUse: (prompt: string) => void }) {
+function Templates({ onUse, onUpgrade }: { onUse: (prompt: string, templateId: string) => Promise<boolean>; onUpgrade: () => void }) {
+  const queryClient = useQueryClient();
   const templates = useQuery({ queryKey: ['community-templates'], queryFn: communityApi.templates, retry: false, staleTime: 5 * 60_000 });
   const [busy, setBusy] = useState<string | null>(null);
+  const like = useMutation({
+    mutationFn: communityApi.likeTemplate,
+    onMutate: async slug => {
+      await queryClient.cancelQueries({ queryKey: ['community-templates'] });
+      const previous = queryClient.getQueryData<Template[]>(['community-templates']);
+      queryClient.setQueryData<Template[]>(['community-templates'], current => current?.map(template => template.slug !== slug ? template : {
+        ...template, liked: !template.liked, likes: Math.max(0, template.likes + (template.liked ? -1 : 1)),
+      }));
+      return { previous };
+    },
+    onError: (error, _slug, context) => {
+      if (context?.previous) queryClient.setQueryData(['community-templates'], context.previous);
+      toast(errorText(error, 'Le j’aime n’a pas pu être enregistré.'), 'error');
+    },
+    onSuccess: (result, slug) => queryClient.setQueryData<Template[]>(['community-templates'], current => current?.map(template => template.slug === slug ? { ...template, ...result } : template)),
+    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ['community-templates'] }); },
+  });
   const use = async (slug: string) => {
     setBusy(slug);
     try {
       const result = await communityApi.useTemplate(slug);
       // A complete app is already a project in the person's account: open it. A brief goes to the agent as a first request.
       if (result.builderUrl) window.location.href = result.builderUrl;
-      else if (result.prompt) onUse(result.prompt);
+      else if (result.prompt) {
+        const started = await onUse(result.prompt, result.templateId);
+        if (!started) setBusy(null);
+      }
     } catch (error) {
       toast(errorText(error, 'Ce template n’a pas pu être lancé.'), 'error');
       setBusy(null);
     }
   };
-  if (templates.isLoading) return <div className="coden-community-grid" aria-busy="true">{Array.from({ length: 4 }, (_, index) => <CardSkeleton key={index} />)}</div>;
+  if (templates.isLoading) return <div className="coden-community-project-grid coden-dashboard-project-list" aria-busy="true">{Array.from({ length: 6 }, (_, index) => <CardSkeleton key={index} project template />)}</div>;
   if (templates.isError) return <ErrorState message={errorText(templates.error, 'Les templates ne se chargent pas.')} onRetry={() => { void templates.refetch(); }} />;
   return (
-    <div className="coden-community-grid">
-      {(templates.data || []).map(template => <TemplateCard key={template.slug} template={template} categories={categories} busy={busy === template.slug} onUse={() => { void use(template.slug); }} />)}
+    <div className="coden-community-project-grid coden-dashboard-project-list">
+      {(templates.data || []).map(template => <TemplateCard key={template.slug} template={template} busy={busy === template.slug} onUse={() => { void use(template.slug); }} onUpgrade={onUpgrade} onToggleLike={() => like.mutate(template.slug)} likeBusy={like.isPending} />)}
     </div>
   );
 }

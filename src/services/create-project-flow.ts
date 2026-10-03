@@ -159,6 +159,7 @@ export function redirectToBuilder(projectId?: string, input: CreateProjectFlowIn
 export async function startCreateProjectFlow(input: CreateProjectFlowInput, options: {
   createProject?: boolean;
   onStatus?: (status: CreateProjectFlowStatus) => void;
+  onProjectCreated?: (projectId: string) => Promise<void>;
 } = {}) {
   const flow: CreateProjectFlowInput = {
     ...input,
@@ -197,6 +198,7 @@ export async function startCreateProjectFlow(input: CreateProjectFlowInput, opti
       if (!response?.success || !response.project?.id) {
         throw new Error('The project could not be verified after creation. Please try again.');
       }
+      await options.onProjectCreated?.(response.project.id);
       options.onStatus?.('opening_builder');
       redirectToBuilder(response.project.id, flow);
       return;
