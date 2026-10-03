@@ -11,7 +11,7 @@ export type CardListing = {
 };
 export type DetailListing = CardListing & { publicUrl: string | null; views: number; indexable: boolean };
 export type ListPage = { items: CardListing[]; nextCursor: string | null };
-export type Template = { slug: string; title: string; description: string; category: string; version: number; min_plan: string; use_count: number; official: true; available: boolean; kind: 'app' | 'brief'; thumbnail: string | null; previewUrl: string | null };
+export type Template = { slug: string; title: string; description: string; category: string; version: number; min_plan: string; use_count: number; likes: number; liked: boolean; official: true; available: boolean; kind: 'app' | 'brief'; thumbnail: string | null; previewUrl: string | null };
 export type UseTemplateResult = { title: string; templateId: string; prompt?: string; builderUrl?: string; project?: { id: string; name: string } };
 export type OwnerListing = {
   id: string; projectId: string; title: string; description: string; category: string; creatorAlias: string | null; status: string; statusLabel: string;
@@ -57,7 +57,9 @@ export const communityApi = {
   remix: (id: string) => apiFetch<RemixResult>(`/api/community/listings/${id}/remix`, json('POST')),
   appeal: (id: string, message: string) => apiFetch<{ ok: boolean }>(`/api/community/listings/${id}/appeal`, json('POST', { message })),
   templates: () => apiFetch<{ templates: Template[] }>('/api/community/templates').then(result => result.templates),
+  likeTemplate: (slug: string) => apiFetch<{ liked: boolean; likes: number }>(`/api/community/templates/${encodeURIComponent(slug)}/like`, json('POST')),
   useTemplate: (slug: string) => apiFetch<UseTemplateResult>(`/api/community/templates/${slug}/use`, json('POST')),
+  recordTemplateProject: (slug: string, projectId: string) => apiFetch<{ success: boolean }>(`/api/community/templates/${encodeURIComponent(slug)}/project`, json('POST', { projectId })),
   mine: () => apiFetch<MineResponse>('/api/community/mine'),
   editListing: (projectId: string, patch: Record<string, unknown>) => apiFetch<{ listing: OwnerListing }>(`/api/community/projects/${projectId}/listing`, json('PATCH', patch)),
   refreshThumbnail: (projectId: string) => apiFetch<{ ok: boolean }>(`/api/community/projects/${projectId}/thumbnail/refresh`, json('POST')),

@@ -1,10 +1,10 @@
 /** Cards and small pieces shared by the Community screens. Tokens only; no violet. */
 import { useEffect, useRef, type ReactNode } from 'react';
-import { ArrowRight, LayoutTemplate } from 'lucide-react';
+import { ArrowRight, Heart, LayoutTemplate } from 'lucide-react';
 import type { CardListing, Category, Template } from '../../lib/community-client';
 
 /** The shared loading placeholder (canonical-shell's skeleton), at the card's reserved size so nothing jumps when data arrives. */
-export function CardSkeleton({ project = false }: { project?: boolean }) {
+export function CardSkeleton({ project = false, template = false }: { project?: boolean; template?: boolean }) {
   if (project) {
     return (
       <article className="coden-dashboard-project-card" aria-hidden="true">
@@ -16,6 +16,7 @@ export function CardSkeleton({ project = false }: { project?: boolean }) {
               <span className="coden-ui-skeleton coden-community-shimmer" style={{ height: 11, width: '45%' }} />
             </span>
           </span>
+          {template && <span className="coden-community-template-actions" aria-hidden="true"><span className="coden-ui-skeleton coden-community-shimmer" style={{ height: 36, width: 110, borderRadius: 10 }} /><span className="coden-ui-skeleton coden-community-shimmer" style={{ height: 36, width: 76, borderRadius: 10 }} /></span>}
         </span>
       </article>
     );
@@ -67,26 +68,30 @@ export function ListingCard({ listing, href }: { listing: CardListing; href: str
   );
 }
 
-export function TemplateCard({ template, categories, onUse, busy }: { template: Template; categories: Category[]; onUse: () => void; busy: boolean }) {
+export function TemplateCard({ template, onUse, onUpgrade, busy, onToggleLike, likeBusy }: { template: Template; onUse: () => void; onUpgrade: () => void; busy: boolean; onToggleLike: () => void; likeBusy: boolean }) {
   return (
-    <article className="coden-community-card is-template">
-      <div className="coden-community-card-link">
-        <Thumb src={template.thumbnail} alt={`Aperçu du template ${template.title}`} fallback={<LayoutTemplate size={26} aria-hidden="true" />} />
-        <div className="coden-community-card-body">
-          <strong>{template.title}</strong>
-          <span className="coden-community-byline">{template.description}</span>
-          <div className="coden-community-meta">
-            <span className="coden-community-pill is-official">Officiel</span>
-            <span className="coden-community-pill">{categoryLabel(categories, template.category)}</span>
-            {template.kind === 'app' && <span className="coden-community-pill">App complète</span>}
-          </div>
-          <div className="coden-community-actions">
-            <button type="button" className="coden-community-button is-primary" onClick={onUse} disabled={busy || !template.available}>
-              {template.available ? (busy ? 'Création…' : 'Utiliser ce template') : 'Réservé à un plan supérieur'}
-            </button>
-            {template.previewUrl && <a className="coden-community-button" href={template.previewUrl} target="_blank" rel="noopener noreferrer">Aperçu en direct</a>}
-          </div>
-        </div>
+    <article className="coden-dashboard-project-card coden-community-project-card coden-community-template-card">
+      <div className="coden-dashboard-project-card-link">
+        <span className="coden-dashboard-project-preview coden-community-project-preview">
+          {template.thumbnail
+            ? <img src={template.thumbnail} alt={`Aperçu du template ${template.title}`} width={800} height={500} loading="lazy" decoding="async" draggable={false} />
+            : <span className="coden-community-thumb-empty" role="img" aria-label={`Aperçu du template ${template.title}`}><LayoutTemplate size={22} aria-hidden="true" /></span>}
+        </span>
+        <span className="coden-dashboard-project-card-meta">
+          <span className="coden-dashboard-project-card-copy">
+            <strong title={template.title}>{template.title}</strong>
+            <small title={template.description}>{template.description || 'Template officiel Coden'}</small>
+          </span>
+          <button type="button" className={`coden-community-template-like${template.liked ? ' is-on' : ''}`} onClick={onToggleLike} disabled={likeBusy} aria-label={`${template.liked ? 'Retirer votre j’aime de' : 'Aimer'} ${template.title} · ${template.likes} j’aime`} aria-pressed={template.liked}>
+            <Heart size={14} fill={template.liked ? 'currentColor' : 'none'} aria-hidden="true" /><span>{template.likes}</span>
+          </button>
+        </span>
+        <span className="coden-community-template-actions">
+          {template.available
+            ? <button type="button" className="coden-community-button is-primary" onClick={onUse} disabled={busy}>{busy ? 'Création…' : template.kind === 'app' ? 'Remixer' : 'Utiliser'}</button>
+            : <button type="button" className="coden-community-button is-primary" onClick={onUpgrade}>Voir les offres</button>}
+          {template.previewUrl && <a className="coden-community-button" href={template.previewUrl} target="_blank" rel="noopener noreferrer">Aperçu</a>}
+        </span>
       </div>
     </article>
   );

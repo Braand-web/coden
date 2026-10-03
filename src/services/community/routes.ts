@@ -156,7 +156,14 @@ ${image ? `<meta property="og:image" content="${esc(image)}"><meta name="twitter
   // ── Templates ──
   app.get('/api/community/templates', handler('templates', [60, 60_000], async (req, res, user) => {
     const plan = await deps.getOrganizationPlan(await deps.ensureOrganization(req, user.id));
-    res.json({ success: true, templates: await service.templates(plan) });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ success: true, templates: await service.templates(plan, user.id) });
+  }));
+
+  app.post('/api/community/templates/:slug/like', handler('template-like', [30, 60_000], async (req, res, user) => {
+    const slug = String(req.params.slug || '').slice(0, 80);
+    if (!/^[a-z0-9-]+$/.test(slug)) throw new CommunityError(404, 'Ce template n’existe pas.', 'NOT_FOUND');
+    res.json({ success: true, ...(await service.likeTemplate(user.id, slug)) });
   }));
 
   app.post('/api/community/templates/:slug/use', handler('template-use', [20, 60_000], async (req, res, user) => {

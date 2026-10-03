@@ -2308,6 +2308,56 @@ async function ensureAgentHarnessSchema() {
   return result;
 }
 
+async function ensureCommunityTemplateLikesSchema() {
+  // Community likes belong to Coden's own database, never the shared runtime
+  // used by generated apps. Keep this target tied to the canonical server URL.
+  const projectRef = getSupabaseProjectRef(process.env.SUPABASE_URL || '');
+  if (!/^[a-z0-9]{20}$/.test(projectRef)) return { applied: false, reason: 'invalid_coden_project_ref' };
+  const client = getSupabase();
+  if (!client) return { applied: false, reason: 'coden_database_unavailable' };
+
+  const base = await client.from('community_templates').select('slug').limit(0);
+  if (base.error) {
+    console.warn('[coden:community_template_likes_schema_probe_failed]', {
+      reason: redactSecrets(base.error.message || 'community_templates_unavailable', '[redacted]').slice(0, 200),
+    });
+    return { applied: false, reason: 'community_templates_unavailable' };
+  }
+
+  const [counter, likes] = await Promise.all([
+    client.from('community_templates').select('like_count').limit(0),
+    client.from('community_template_likes').select('template_slug').limit(0),
+  ]);
+  const counterMissing = Boolean(counter.error && /PGRST204|42703/.test(String(counter.error.code || ''))
+    && /community_templates|like_count/i.test(counter.error.message || ''));
+  const likesMissing = Boolean(likes.error && /PGRST205|42P01/.test(String(likes.error.code || ''))
+    && /community_template_likes/i.test(likes.error.message || ''));
+  if (!counter.error && !likes.error) {
+    console.log('[coden:community_template_likes_schema_ready]', { source: 'existing_schema' });
+    return { applied: false, ready: true, reason: 'already_available' };
+  }
+  if ((!counter.error || counterMissing) && (!likes.error || likesMissing) && (counterMissing || likesMissing)) {
+    const migrationPath = path.join(__dirname, 'supabase', 'migrations', '20261002000000_community_template_likes.sql');
+    if (!fs.existsSync(migrationPath)) return { applied: false, reason: 'migration_file_missing' };
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+    const result = await applyGeneratedMigration({ projectRef, sql, dryRun: false });
+    if (!result.applied) {
+      console.warn('[coden:community_template_likes_schema_not_applied]', {
+        reason: result.error || 'management_api_unavailable',
+        status: result.status || null,
+      });
+      return result;
+    }
+    console.log('[coden:community_template_likes_schema_ready]', { source: 'migration', statements: result.safety.statements });
+    return result;
+  }
+
+  console.warn('[coden:community_template_likes_schema_probe_failed]', {
+    reason: redactSecrets(counter.error?.message || likes.error?.message || 'unexpected_schema_probe_error', '[redacted]').slice(0, 200),
+  });
+  return { applied: false, reason: 'unexpected_schema_probe_error' };
+}
+
 type AgentIntent = 'conversation' | 'clarification_required' | 'plan' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'external_keys_required' | 'credits_required';
 type AgentNextAction = 'answer' | 'ask_clarification' | 'plan_only' | 'plan_then_build' | 'build' | 'edit' | 'debug_fix' | 'verify' | 'deploy_assist' | 'collect_external_keys' | 'show_upgrade';
 type AgentRequestedMode = 'auto' | 'plan' | 'build' | 'ask' | 'fix' | 'review' | 'research';
@@ -22607,6 +22657,11 @@ const httpServer = app.listen(port, () => {
   }
   void ensureAgentHarnessSchema().catch((error: any) => {
     console.warn('[coden:harness_schema_startup_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
+  });
+  void ensureCommunityTemplateLikesSchema().catch((error: any) => {
+    console.warn('[coden:community_template_likes_schema_startup_failed]', {
+      message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200),
+    });
   });
   /*
    * After the previous instance has drained (railway.json drainingSeconds +
