@@ -170,6 +170,8 @@ export async function runCoderLoop(input: {
   beforeRound?: (round: number) => Promise<string | undefined>;
   afterRound?: (round: RepairRound, report: ValidationReport) => Promise<void>;
   verifyPreview?: () => Promise<ValidationReport>;
+  /** Any restoration must happen before checks, never after a passed report. */
+  beforeValidation?: () => Promise<void>;
   ensureRuntime?: (restartRequired: boolean) => Promise<void>;
   /**
    * A design and product review of a result that already passes every check.
@@ -200,6 +202,7 @@ export async function runCoderLoop(input: {
   let previousFiles = initialFiles;
 
   let report = input.initialReport ?? await validateProject(input.sandbox, { skipBuild: true, signal: input.signal });
+  let bestErrors = mode === 'build' ? Infinity : countErrors(report);
   // A build asked for something that has not been written yet, so an empty,
   // valid scaffold reporting "ok" here is not the outcome — it is the
   // starting line. Exiting on it would report success on an unbuilt project.
@@ -218,7 +221,7 @@ export async function runCoderLoop(input: {
     input.signal?.throwIfAborted();
     if (round > 1 && Number.isFinite(input.deadline) && (input.deadline as number) - Date.now() < MIN_ROUND_MS) return finish('time_budget');
     const steering = await input.beforeRound?.(round);
-    if (steering) steeringHistory.push(steering);
+    if (steering) { steeringHistory.push(steering); bestErrors = Infinity; stalledRounds = 0; }
     const errorsBefore = countErrors(report);
     emit({ type: 'repair_round_started', round, errors: errorsBefore });
 
@@ -276,6 +279,7 @@ export async function runCoderLoop(input: {
       call: guardedCall,
       maxToolCalls,
     });
+    await input.beforeValidation?.();
     const currentFiles = initialFiles ? await fileRevisions(input.sandbox) : null;
     if (previousFiles && currentFiles) {
       for (const path of new Set([...previousFiles.keys(), ...currentFiles.keys()])) {
@@ -344,14 +348,15 @@ export async function runCoderLoop(input: {
         return finish('fixed');
       }
       steeringHistory.push(pending);
+      bestErrors = Infinity;
+      stalledRounds = 0;
       report = { ...report, ok: false, problems: [...report.problems, { source: 'runtime', severity: 'error', message: 'New user instructions arrived. Apply them before completion.' }] };
     }
     // Fewer errors is progress even without a clean result — the next round
     // gets a shorter list. Not judged on a build's first round: `errorsBefore`
     // there is the empty scaffold's error count, not an earlier attempt at
     // this task, so it is not a baseline this round can be measured against.
-    if (isBuildRound || isPolishRound) continue;
-    if (errorsAfter < errorsBefore) stalledRounds = 0;
+    if (errorsAfter < bestErrors) { bestErrors = errorsAfter; stalledRounds = 0; }
     else if ((stalledRounds += 1) >= maxStalledRounds) return finish('no_progress');
   }
 

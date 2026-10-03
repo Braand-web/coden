@@ -55,7 +55,7 @@ export function readLimits(env: Record<string, string | undefined> = process.env
 // ── Master switches ─────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CommunitySwitches = {
-  /** The whole feature: off by default, turned on in the environment (`CODEN_COMMUNITY=1`). */
+  /** The feature is on by default; the environment and admin hide switch can explicitly turn it off. */
   enabled: boolean;
   /** Admin kill switch: hide the whole Community (the sidebar entry, every list, every page). */
   hidden: boolean;
@@ -66,9 +66,14 @@ export type CommunitySwitches = {
 };
 
 const truthy = (value: string | undefined) => ['1', 'true', 'on', 'yes', 'enabled'].includes(String(value || '').trim().toLowerCase());
+const COMMUNITY_DISABLED_VALUES = new Set(['0', 'false', 'off', 'no', 'disabled']);
+
+export function communityEnabledByDefault(value: string | undefined): boolean {
+  return !COMMUNITY_DISABLED_VALUES.has(String(value || '').trim().toLowerCase());
+}
 
 export function readEnvSwitches(env: Record<string, string | undefined> = process.env): Pick<CommunitySwitches, 'enabled' | 'bonusCredits'> & { hiddenByEnv: boolean; frozenByEnv: boolean } {
-  return { enabled: truthy(env.CODEN_COMMUNITY), bonusCredits: truthy(env.CODEN_COMMUNITY_BONUS), hiddenByEnv: truthy(env.CODEN_COMMUNITY_HIDE), frozenByEnv: truthy(env.CODEN_COMMUNITY_FREEZE) };
+  return { enabled: communityEnabledByDefault(env.CODEN_COMMUNITY), bonusCredits: truthy(env.CODEN_COMMUNITY_BONUS), hiddenByEnv: truthy(env.CODEN_COMMUNITY_HIDE), frozenByEnv: truthy(env.CODEN_COMMUNITY_FREEZE) };
 }
 
 /** The feature is reachable only when it is on and not hidden by either kill switch. */

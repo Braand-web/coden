@@ -9,6 +9,7 @@ const css = readFileSync(resolve(root, 'src/styles/dashboard-react.css'), 'utf8'
 const server = readFileSync(resolve(root, 'server.ts'), 'utf8');
 const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8');
 const promptInput = readFileSync(resolve(root, 'src/components/ui/ai-chat-input.tsx'), 'utf8');
+const communityAvailability = readFileSync(resolve(root, 'src/lib/community-availability.ts'), 'utf8');
 
 describe('Coden projects dashboard surface contract', () => {
   it('mounts one React Dashboard and removes the legacy document UI', () => {
@@ -85,6 +86,14 @@ describe('Coden projects dashboard surface contract', () => {
     expect(reactDashboard).toContain("apiFetch<ProjectsResponse>('/api/projects')");
     expect(reactDashboard).toContain("queryKey: ['coden-profile']");
     expect(reactDashboard).toContain("queryKey: ['coden-projects']");
+  });
+
+  it('keeps the Community link on transient failures and gives the route a retry state', () => {
+    expect(reactDashboard).toContain('shouldShowCommunityLink({');
+    expect(reactDashboard).toContain('communityConfig.refetch()');
+    expect(reactDashboard).toContain('La Communauté n’a pas pu charger.');
+    expect(communityAvailability).toContain("if (input.data?.enabled === false) return 'disabled';");
+    expect(communityAvailability).toContain("return communityAvailability(input) !== 'disabled';");
   });
 
   it('keeps creation and opening as explicit Builder handoffs', () => {

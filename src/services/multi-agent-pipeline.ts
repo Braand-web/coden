@@ -76,13 +76,13 @@ import {
   type AgentTask,
 } from './parallel-agent-runner.ts';
 import { auditGeneratedDesign, auditGeneratedFunctionality } from './design-quality-auditor.ts';
-import { blocksTheRun, gatePlatformType, isSmallRequest } from './quality-gate-policy.ts';
-import { designReviewRounds, designSkillBlock } from './coden-design-skill.ts';
+import { blocksTheRun, gatePlatformType } from './quality-gate-policy.ts';
+import { designSkillBlock } from './coden-design-skill.ts';
+import { verifyMission } from './mission-verifier.ts';
 import { inspectVisualPreview } from './visual-preview-inspector.ts';
 import { normalizeAgentEffort, reasoningLevelForEffort, scaleRouteBudgetForEffort, type AgentEffort } from './agent-effort.ts';
 import { REASONING_LEVELS, type ReasoningLevel } from './openrouter-request.ts';
 import { resolveQualityPolicy } from './quality-tier.ts';
-import { runDesignReview } from './design-review-agent.ts';
 import type { ValidationProblem, ValidationReport } from './sandbox/validate.ts';
 import { createAgentTeam, teamBriefing, TEAM_TOOL_NAMES, type TeamDeps } from './agent-library/team.ts';
 import { subagentLimits } from './agent-library/subagents.ts';
@@ -269,6 +269,11 @@ export function settleDefinitionOfDoneFromReport(input: {
       }
     }
   }
+  // Generic journeys derived from a wrong plan cannot prove user intent.
+  const alignment = qualityChecks.find(check => check.key === 'mission_alignment');
+  if (alignment) verdicts.requested_behavior = alignment.status === 'pass' && input.ok
+    ? { status: 'passed', evidence: alignment.message }
+    : { status: 'failed', evidence: alignment.message };
   return verdicts;
 }
 
@@ -700,6 +705,8 @@ export async function runMultiAgentPipeline(input: {
   projectName?: string;
   userId: string;
   prompt: string;
+  /** Original user text, before the intent router's interpretation. */
+  userRequest?: string;
   route: PipelineRoute;
   existingFiles: Array<{ path: string; content?: string }>;
   userPlan: UserPlan | string;
@@ -1190,6 +1197,7 @@ export async function runMultiAgentPipeline(input: {
     // be the exact waste this ordering avoids.
     plan = await runPlannerAgent({
       gateway: input.gateway,
+      userRequest: input.userRequest ?? input.prompt,
       prompt: [
         buildMissionContext({ prompt: input.prompt, history: input.history, approvedPlan: input.approvedPlan, fileCount: input.existingFiles.length, complexity: input.complexity }).text,
         specialistBrief,
@@ -1215,6 +1223,9 @@ export async function runMultiAgentPipeline(input: {
     });
     planningThoughts?.end();
     spent.costUsd += plan.costUsd;
+    spent.promptTokens += plan.usage.prompt_tokens;
+    spent.completionTokens += plan.usage.completion_tokens;
+    spent.cachedTokens += plan.usage.cached_tokens;
     input.onChatEvent?.({ type:'text_delta', delta:plan.summary });
     input.onChatEvent?.({ type:'text_end' });
 
@@ -1326,38 +1337,22 @@ export async function runMultiAgentPipeline(input: {
    * keeping the files it wrote — rather than being cut off mid-call.
    */
 
-  let latestScreenshots: Array<{ width: number; dataUrl: string }> = [];
   // Browser failures remain blocking across repair rounds. The loop already
   // has a bounded round/time budget; hiding an unfixed journey as a warning
   // made a broken app look verified merely because it failed repeatedly.
-  /*
-   * One look at the finished result, by a designer's eye, while there is
-   * still a round to act on it. Only where the budget allows it.
-   */
-  const review = quality.designReview && !isSmallRequest(input.prompt) ? async (report: ValidationReport) => {
-    if (!latestScreenshots.length) return undefined;
-    activity('Coden relit le design…', 'Coden is reviewing the design…');
-    const findings = report.problems
-      .filter(problem => problem.severity === 'warning' && !/^EXTERNAL_DEPENDENCY_UNVERIFIED/.test(problem.message))
-      .map(problem => problem.message)
-      .slice(0, 6);
-    const outcome = await runDesignReview({
-      gateway: input.gateway,
-      prompt: input.prompt,
-      screenshots: latestScreenshots,
-      findings,
-      plan: input.userPlan,
-      credits: input.credits,
-      french: fr,
-      allowFallback: input.selectedModel === undefined,
-      pinnedModel: input.selectedModel,
-      signal: input.signal,
-    });
-    spent.costUsd += outcome.costUsd;
-    if (ctx && outcome.costUsd > 0) await ctx.harness.recordSpend(ctx.turnId, { costUsd: outcome.costUsd }).catch(() => undefined);
-    if (outcome.instruction) activity('Coden peaufine l’interface…', 'Coden is polishing the interface…');
-    return outcome.instruction;
-  } : undefined;
+  // No aesthetic-score polish after success: a fresh design request is a new mission.
+  const restoredDesign: string[] = [];
+  const userSteering: string[] = [];
+  const restoreBeforeValidation = async () => {
+    const files = await readAllFiles(sandbox);
+    const violations = compareDesign(designBaseline, extractDesignContract(files), { allowValueChanges: allowDesignChange });
+    if (!violations.length) return;
+    const restoration = restoreDesign(designBaselineFiles, files, violations);
+    const previous = new Map(files.map(file => [file.path, file.content]));
+    const changed = restoration.files.filter(file => previous.get(file.path) !== file.content);
+    if (changed.length) await sandbox.writeFiles(changed);
+    restoredDesign.push(...restoration.restored.map(describeDesignViolation));
+  };
 
   // The supervisor, wired to this run: what each round tells it, what it answers, and the handoff.
   const supervision = createRunSupervision({
@@ -1536,6 +1531,7 @@ export async function runMultiAgentPipeline(input: {
       supervision.onRepairEvent(event);
     },
     signal:input.signal,
+    beforeValidation: restoreBeforeValidation,
     ensureRuntime: async restartRequired => {
       if (!restartRequired && sandbox.status().state === 'running') return;
       await launchProjectPreview({ projectId: input.projectId, userId: input.userId, files: await readAllFiles(sandbox),
@@ -1545,11 +1541,9 @@ export async function runMultiAgentPipeline(input: {
       const preview = await verifyLivePreview(sandbox, input.signal, {
         scenarios: plan?.acceptance,
         explore: quality.explore,
-        capture: quality.designReview,
+        capture: false,
       });
-      // Screenshots are for the design review, in memory: never persisted in a
-      // checkpoint or returned in a payload.
-      latestScreenshots = preview.evidence?.screenshots || [];
+      // Never persist screenshots in checkpoints or return them in a payload.
       if (preview.evidence) delete preview.evidence.screenshots;
       const files = await readAllFiles(sandbox);
       /*
@@ -1642,14 +1636,36 @@ export async function runMultiAgentPipeline(input: {
           });
         }
       }
+      if (preview.ok) {
+        const alignment = await verifyMission({
+          gateway: input.gateway, modelId: current.modelId,
+          request: input.userRequest ?? input.prompt,
+          instructions: userSteering,
+          context: buildMissionContext({ prompt: input.userRequest ?? input.prompt, history: input.history, fileCount: files.length }).text,
+          stage: 'artifact', files: auditedFiles,
+          visionInputs: getAIModelCapabilityProfile(current.modelId).supports.vision ? input.visionInputs : undefined,
+          checks: { scenarios: preview.evidence?.scenarios, routes: preview.evidence?.routes, interactions: preview.evidence?.interactions },
+          signal: input.signal, allowFallback: input.selectedModel === undefined,
+        });
+        spent.costUsd += alignment.costUsd;
+        spent.promptTokens += alignment.usage.prompt_tokens || 0;
+        spent.completionTokens += alignment.usage.completion_tokens || 0;
+        spent.cachedTokens += alignment.usage.cached_tokens || 0;
+        if (ctx) await ctx.harness.recordSpend(ctx.turnId, { costUsd: alignment.costUsd });
+        const passed = alignment.verdict.status === 'satisfied';
+        preview.evidence!.qualityChecks!.push({ key: 'mission_alignment', status: passed ? 'pass' : 'fail', severity: 'high', message: alignment.verdict.reason });
+        if (!passed) {
+          preview.ok = false;
+          preview.problems.push({ source: 'runtime', severity: 'error', message: `MISSION_ALIGNMENT: ${alignment.verdict.reason}` });
+        }
+      }
       return preview;
     },
     afterRound,
-    review,
-    maxReviews: designReviewRounds(),
     beforeRound:async () => {
       if (!ctx) return;
       const instructions = await ctx.harness.consumePendingInstructions(ctx.turnId);
+      userSteering.push(...instructions.map(instruction => instruction.text));
       return instructions.map(instruction => instruction.text).join('\n');
     },
   }); } catch (error) {
@@ -1679,28 +1695,8 @@ export async function runMultiAgentPipeline(input: {
     }
   }
 
-  let files = await readAllFiles(sandbox);
-  /*
-   * The net under the write-time guard.
-   *
-   * A tool can be refused; a shell command, a formatter or a sub-agent's
-   * rewrite can still leave the design layer short. Whatever went missing is
-   * put back — additively, so the run's own styles stay — before anything is
-   * saved, so no version of the project is ever written without its design.
-   */
-  const designViolations = compareDesign(designBaseline, extractDesignContract(files), { allowValueChanges: allowDesignChange });
-  const restoredDesign: string[] = [];
-  if (designViolations.length) {
-    const restoration = restoreDesign(designBaselineFiles, files, designViolations);
-    const byPath = new Map(files.map(file => [file.path, file.content]));
-    const changed = restoration.files.filter(file => byPath.get(file.path) !== file.content);
-    if (changed.length) {
-      await sandbox.writeFiles(changed);
-      files = await readAllFiles(sandbox);
-    }
-    restoredDesign.push(...restoration.restored.map(describeDesignViolation));
-    console.warn('[coden:design_restored]', { project: input.projectId, restored: restoredDesign.slice(0, 12), unrepaired: restoration.unrepaired.length });
-  }
+  // Read-only after verification: never publish a different revision from the one tested.
+  const files = await readAllFiles(sandbox);
   const status = sandbox.status();
   const cacheRate = spent.promptTokens > 0 ? Math.max(0, Math.min(1, spent.cachedTokens / spent.promptTokens)) : null;
   trace({

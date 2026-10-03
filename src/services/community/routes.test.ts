@@ -27,14 +27,14 @@ describe('who may call the Community routes', () => {
     }
   });
 
-  it('is wired in server.ts behind the plan and publication hooks, and the flag is off by default', () => {
+  it('is wired in server.ts behind the plan and publication hooks, and enabled by default', () => {
     expect(server).toContain('registerCommunityRoutes({');
     expect(server).toContain('communityService.onPublished(');
     expect(server).toContain('communityService.onUnpublished(');
     expect(server).toContain('communityService.onProjectDeleted(');
     expect(server).toContain('setPlanChangeHook(');
     const rules = readFileSync(new URL('./rules.ts', import.meta.url), 'utf8');
-    expect(rules).toContain("enabled: truthy(env.CODEN_COMMUNITY)");
+    expect(rules).toContain('enabled: communityEnabledByDefault(env.CODEN_COMMUNITY)');
   });
 });
 

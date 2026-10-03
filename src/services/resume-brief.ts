@@ -111,9 +111,9 @@ export function buildResumeBrief(checkpoint: ResumeCheckpoint): string {
   const sections: string[] = [];
 
   sections.push(
-    'RESUMING AN INTERRUPTED RUN.',
+    'PRIOR INTERRUPTED RUN — HISTORICAL CONTEXT, NOT THE CURRENT REQUEST.',
     '',
-    'A previous run on this project stopped before it finished. Its files were saved and are already in the workspace. Continue that work — do not start over, and do not recreate files that already exist.',
+    'A previous run on this project stopped before it finished. Inspect the actual workspace: this checkpoint is historical, not proof of its current state. The latest user request takes precedence. Decide from that request and conversation whether any of this work is still relevant. Do not resume an unrelated objective or recreate correct files.',
     '',
     `Original request: ${checkpoint.prompt.trim()}`,
   );
@@ -140,7 +140,7 @@ export function buildResumeBrief(checkpoint: ResumeCheckpoint): string {
   }
 
   if (checkpoint.verified?.length) {
-    sections.push('', 'Already verified, so do not redo:', bullets(checkpoint.verified, MAX_STEPS_LISTED));
+    sections.push('', 'Previously verified (not evidence for the current revision):', bullets(checkpoint.verified, MAX_STEPS_LISTED));
   }
 
   if (checkpoint.outstanding?.length) {
@@ -154,6 +154,6 @@ export function buildResumeBrief(checkpoint: ResumeCheckpoint): string {
     sections.push('If that failure came from the environment rather than from the code, carry on; if the code caused it, fix that first.');
   }
 
-  sections.push('', 'Finish what is outstanding and verify it, then stop.');
+  sections.push('', 'Implement only the current user objective, verify the resulting revision, then stop.');
   return sections.join('\n');
 }

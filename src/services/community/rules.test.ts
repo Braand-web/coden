@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { abuseCheck, communityVisible, DEFAULT_LIMITS, isReportReason, nextSanction, readEnvSwitches, readLimits, remixAllowed, reportsAction, trendingScore } from './rules';
+import { abuseCheck, communityEnabledByDefault, communityVisible, DEFAULT_LIMITS, isReportReason, nextSanction, readEnvSwitches, readLimits, remixAllowed, reportsAction, trendingScore } from './rules';
 import { attributionNote, neutralizeConnections, reconnectList, selectRemixFiles } from './remix';
 
 const NOW = new Date('2026-10-01T12:00:00Z');
 const hoursAgo = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000);
 
 describe('switches and limits', () => {
-  it('is off unless the environment turns it on, and hidden by either kill switch', () => {
-    expect(readEnvSwitches({}).enabled).toBe(false);
+  it('is on by default, can be explicitly disabled, and remains subject to the admin kill switch', () => {
+    expect(readEnvSwitches({}).enabled).toBe(true);
     expect(readEnvSwitches({ CODEN_COMMUNITY: '1' }).enabled).toBe(true);
     expect(readEnvSwitches({ CODEN_COMMUNITY: '0' }).enabled).toBe(false);
+    expect(readEnvSwitches({ CODEN_COMMUNITY: 'false' }).enabled).toBe(false);
+    expect(communityEnabledByDefault('')).toBe(true);
     expect(communityVisible({ enabled: true, hidden: false, frozen: false, bonusCredits: false })).toBe(true);
     expect(communityVisible({ enabled: true, hidden: true, frozen: false, bonusCredits: false })).toBe(false);
     expect(communityVisible({ enabled: false, hidden: false, frozen: false, bonusCredits: false })).toBe(false);

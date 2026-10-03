@@ -4583,26 +4583,53 @@ function publishBlockerAction(key: string): { action: string; label: string } | 
  * automatically and the person is told so at publication; on a paid plan it is offered once, never imposed. All of it
  * is optional: when the Community is off, or the request fails, the panel is exactly what it was.
  */
-type CommunityPublishInfo = { enabled: boolean; kind?: 'free' | 'paid' | 'unknown'; notice?: string; canOffer?: boolean; offerState?: string | null };
+type CommunityPublishInfo = {
+  enabled: boolean;
+  kind?: 'free' | 'paid' | 'unknown';
+  notice?: string;
+  canOffer?: boolean;
+  offerState?: string | null;
+  listing?: { id?: string } | null;
+};
 let communityInfo: CommunityPublishInfo | null = null;
+let communityInfoState: 'loading' | 'available' | 'unavailable' | 'disabled' = 'unavailable';
+let communityInfoRequestVersion = 0;
 async function loadCommunityInfo(projectId: string): Promise<void> {
+  const requestVersion = ++communityInfoRequestVersion;
+  communityInfo = null;
+  communityInfoState = 'loading';
   try {
     const info = await apiFetch<CommunityPublishInfo & { success?: boolean }>(`/api/community/projects/${encodeURIComponent(projectId)}/publish-info`);
-    communityInfo = info?.enabled ? info : null;
-  } catch { communityInfo = null; }
+    if (requestVersion !== communityInfoRequestVersion || currentProjectId !== projectId) return;
+    if (info?.enabled === true) {
+      communityInfo = info;
+      communityInfoState = 'available';
+    } else {
+      communityInfo = null;
+      communityInfoState = info?.enabled === false ? 'disabled' : 'unavailable';
+    }
+  } catch {
+    if (requestVersion !== communityInfoRequestVersion || currentProjectId !== projectId) return;
+    communityInfo = null;
+    communityInfoState = 'unavailable';
+  }
 }
-async function answerCommunityOffer(answer: 'accept' | 'later' | 'declined') {
+async function answerCommunityOffer(answer: 'accept' | 'later' | 'declined', payload: PublishApiPayload | null, isPublishing: boolean, error: string) {
   if (!currentProjectId) return;
   const projectId = currentProjectId;
+  let saved = false;
   try {
     await apiFetch(`/api/community/projects/${encodeURIComponent(projectId)}/offer`, { method: 'POST', body: JSON.stringify({ answer }) });
+    saved = true;
     showTransientNotice(answer === 'accept' ? 'Ajoutée : elle apparaîtra dans la Communauté après vérification.' : answer === 'later' ? 'D’accord, vous pourrez l’ajouter plus tard depuis la Communauté.' : 'Compris, nous ne vous le reproposerons pas.', 5000);
   } catch (error) {
     showTransientNotice(error instanceof Error ? error.message : 'Action impossible pour le moment.', 5000);
   }
-  // Answered: the card is gone for good, whatever the answer was.
-  if (communityInfo) communityInfo = { ...communityInfo, canOffer: false };
-  if (document.getElementById('coden-publish-panel')) void openPublishPanel();
+  if (!saved) return;
+  await loadCommunityInfo(projectId);
+  if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
+    renderPublishPanel(payload, isPublishing, error);
+  }
 }
 
 let publishStartedAt = 0;
@@ -4672,6 +4699,8 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
   const blockers = status && !status.can_publish ? checks.filter(check => check.status === 'fail') : [];
   const mainBlocker = blockers.find(check => check.key === 'security') || blockers[0];
   const justPublished = Boolean(payload && (payload as { deployment?: unknown }).deployment && publishJustSucceeded);
+  const showCommunityAccess = hasPublishedDeployment && communityInfoState !== 'disabled';
+  const hasCommunityListing = Boolean(communityInfo?.listing);
   syncPublishTimer(isPublishing);
   const summary = loading
     ? 'Lecture de l’état de publication…'
@@ -4735,8 +4764,15 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
         ${summary && !isPublishing && !blockers.length && !justPublished ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
         ${justPublished && liveUrl ? '<p class="cdn-pub__summary" role="status">Votre application est en ligne.</p>' : ''}
-        ${justPublished && communityInfo?.kind === 'free' ? `<p class="cdn-pub__community" role="status">${escapeHtml(communityInfo.notice || '')} <a href="/dashboard.html#community/mine" target="_blank" rel="noopener">Modifier la fiche</a></p>` : ''}
-        ${justPublished && communityInfo?.kind !== 'free' && communityInfo?.canOffer && communityInfo?.offerState !== 'declined' ? `
+        ${showCommunityAccess ? `<p class="cdn-pub__community" role="status">${communityInfo?.kind === 'free'
+          ? escapeHtml(communityInfo.notice || 'Votre app est incluse dans la Communauté.')
+          : hasCommunityListing
+            ? 'Votre fiche est disponible dans la Communauté.'
+            : communityInfoState === 'unavailable'
+              ? 'La Communauté ne peut pas être vérifiée pour le moment.'
+              : 'Découvrez les apps et les créations de la Communauté.'}
+          <a class="cdn-pub__community-link" href="/dashboard.html#community${communityInfo?.kind === 'free' || hasCommunityListing ? '/mine' : ''}" target="_blank" rel="noopener">${communityInfo?.kind === 'free' || hasCommunityListing ? 'Gérer la fiche' : 'Ouvrir la Communauté'}</a></p>` : ''}
+        ${showCommunityAccess && communityInfoState === 'available' && communityInfo?.kind === 'paid' && !hasCommunityListing && communityInfo.canOffer && communityInfo.offerState !== 'declined' && communityInfo.offerState !== 'accepted' ? `
           <div class="cdn-pub__offer" role="group" aria-label="Communauté">
             <strong>Ajouter à la communauté ?</strong>
             <p>Montrez cette app aux autres créateurs de Coden. Vous pouvez la retirer à tout moment.</p>
@@ -4823,9 +4859,9 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         renderPublishPanel(payload, false, error);
       }
       if (action === 'confirm-publish') void publishCurrentProject(payload);
-      if (action === 'community-add') void answerCommunityOffer('accept');
-      if (action === 'community-later') void answerCommunityOffer('later');
-      if (action === 'community-no') void answerCommunityOffer('declined');
+      if (action === 'community-add') void answerCommunityOffer('accept', payload, isPublishing, error);
+      if (action === 'community-later') void answerCommunityOffer('later', payload, isPublishing, error);
+      if (action === 'community-no') void answerCommunityOffer('declined', payload, isPublishing, error);
       if (action === 'see-plans') window.location.href = '/pricing.html';
       if (action === 'back-to-chat') {
         closePublishPanel();
@@ -4856,9 +4892,11 @@ async function openPublishPanel() {
   if (!publishInFlight) publishJustSucceeded = false;
   const projectId = currentProjectId;
   renderPublishPanel(null, Boolean(publishInFlight), '', true);
-  void loadCommunityInfo(projectId);
   try {
-    const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`);
+    const [payload] = await Promise.all([
+      apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`),
+      loadCommunityInfo(projectId),
+    ]);
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
       renderPublishPanel(payload, Boolean(publishInFlight));
     }

@@ -48,8 +48,12 @@ function scriptedProvider(script: ScriptedResponse[]) {
   return {
     chatCalls,
     service: {
-      async chat(modelId: string) {
+      async chat(modelId: string, messages: Array<{ content: unknown }>) {
         chatCalls.push({ modelId });
+        if (String(messages[0]?.content).includes('Independently evaluate')) {
+          return { text: JSON.stringify({ status: 'satisfied', reason: 'The counter implementation matches the fixture request.', evidence: ['src/App.tsx'] }),
+            model: modelId, usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }, cost_usd: 0 };
+        }
         const { step, callIndex } = nextStep();
         return {
           text: step.text,
@@ -160,7 +164,7 @@ try {
      * budget. The scripted review answer is not JSON, so it is skipped and
      * never adds a polish round: no more calls than that.
      */
-    assert.equal(provider.chatCalls.length, 4, 'planner + two-step tool loop + one design review, no more');
+    assert.equal(provider.chatCalls.length, 5, 'planner + plan alignment + two-step tool loop + artifact alignment; no aesthetic polish');
   }
 
   // -- small_edit: no planner call, exactly the one file is touched ---------
@@ -185,7 +189,7 @@ try {
     assert.equal(outcome.started, true, JSON.stringify(outcome));
     assert.ok(outcome.started);
     assert.equal(outcome.plan, undefined, 'a small edit must not invoke the planner at all');
-    assert.equal(provider.chatCalls.length, 2, 'no planner call means the script starts directly on the coder\'s steps');
+    assert.equal(provider.chatCalls.length, 3, 'two coder steps plus independent artifact alignment, no planner or polish');
     const app = outcome.files.find(file => file.path === 'src/App.tsx');
     assert.match(app?.content || '', /Count: 1/);
   }

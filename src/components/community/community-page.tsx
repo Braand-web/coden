@@ -114,14 +114,14 @@ function Browse({ tab, categories, navigate }: { tab: 'discover' | 'trending' | 
       {query.isError && !items.length
         ? <ErrorState message={errorText(query.error, 'La Communauté ne se charge pas.')} onRetry={() => { void query.refetch(); }} />
         : query.isLoading
-          ? <div className="coden-community-grid" aria-busy="true" aria-label="Chargement">{Array.from({ length: 8 }, (_, index) => <CardSkeleton key={index} />)}</div>
+          ? <div className="coden-community-project-grid coden-dashboard-project-list" aria-busy="true" aria-label="Chargement">{Array.from({ length: 8 }, (_, index) => <CardSkeleton key={index} project />)}</div>
           : items.length === 0
             ? <EmptyState title={q || category ? 'Aucun résultat' : 'Rien à découvrir pour l’instant'} body={q || category ? 'Essayez un autre mot-clé ou une autre catégorie.' : 'Les apps publiées apparaîtront ici après vérification. Soyez la première personne à y figurer.'} />
             : (
               <>
-                <div className="coden-community-grid">
-                  {items.map(item => <ListingCard key={item.id} listing={item} categories={categories} href={communityHash({ listingId: item.id })} />)}
-                  {query.isFetchingNextPage && Array.from({ length: 4 }, (_, index) => <CardSkeleton key={`more-${index}`} />)}
+                <div className="coden-community-project-grid coden-dashboard-project-list">
+                  {items.map(item => <ListingCard key={item.id} listing={item} href={communityHash({ listingId: item.id })} />)}
+                  {query.isFetchingNextPage && Array.from({ length: 4 }, (_, index) => <CardSkeleton key={`more-${index}`} project />)}
                 </div>
                 {query.isError && <ErrorState message="La suite ne s’est pas chargée." onRetry={() => { void query.fetchNextPage(); }} />}
                 <Sentinel onVisible={loadMore} disabled={!query.hasNextPage || query.isFetchingNextPage || query.isError} />

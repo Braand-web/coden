@@ -564,6 +564,20 @@
 /* Community notice and the one-time offer, in the publish panel */
 .cdn-pub__community { margin: 6px 0 0; color: var(--text-secondary); font-size: 12.5px; line-height: 18px; }
 .cdn-pub__community a { color: var(--accent); font-weight: 600; }
+.cdn-pub__community-link {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  margin: 5px 0 0 7px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--foreground) !important;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+.cdn-pub__community-link:hover { background: var(--input); }
+.cdn-pub__community-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .cdn-pub__offer { display: grid; gap: 6px; margin-top: 10px; padding: 12px; background: var(--surface-soft); border: 1px solid var(--border-subtle); border-radius: 12px; }
 .cdn-pub__offer strong { font-size: 13.5px; }
 .cdn-pub__offer p { margin: 0; color: var(--text-secondary); font-size: 12.5px; line-height: 18px; }

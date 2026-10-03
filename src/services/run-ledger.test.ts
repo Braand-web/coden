@@ -2,16 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { findCompletedTurnForRun } from './run-ledger';
 
 const at = (seconds: number) => new Date(Date.parse('2026-09-30T18:00:00Z') + seconds * 1000).toISOString();
-const run = { id: 'run_1', project_id: 'p1', created_at: at(8) };
-const turn = (id: string, seconds: number, extra: Record<string, unknown> = {}) => ({ id, project_id: 'p1', status: 'completed', created_at: at(seconds), ...extra });
+const run = { id: 'run_1', project_id: 'p1', created_at: at(8), context_summary: { harness_turn_id: 't1' } };
+const turn = (id: string, seconds: number, extra: Record<string, unknown> = {}) => ({ id, project_id: 'p1', status: 'completed', created_at: at(seconds), completed_at: at(20), ...extra });
 
 describe('a run left open beside a turn that finished', () => {
   it('is matched to the completed turn of the same project that started just before it', () => {
     expect(findCompletedTurnForRun(run, [turn('t1', 0)])?.id).toBe('t1');
   });
 
-  it('takes the nearest turn when there are several', () => {
-    expect(findCompletedTurnForRun(run, [turn('far', -60), turn('near', 5)])?.id).toBe('near');
+  it('takes the explicitly linked turn, never a closer neighbour', () => {
+    expect(findCompletedTurnForRun(run, [turn('t1', 0), turn('near', 5)])?.id).toBe('t1');
+  });
+
+  it('does not guess when legacy rows have no link', () => {
+    expect(findCompletedTurnForRun({ ...run, context_summary: null }, [turn('t1', 0)])).toBeNull();
+  });
+
+  it('rejects a previous clarification, backwards completion dates and ambiguous links', () => {
+    expect(findCompletedTurnForRun(run, [turn('clarification', 0, { completed_at: at(7) }), turn('t1', 8, { status: 'cancelled' })])).toBeNull();
+    for (const extra of [{ completed_at: at(7) }, { completed_at: null }, { created_at: 'n/a' }, { created_at: at(21) }]) {
+      expect(findCompletedTurnForRun(run, [turn('t1', 0, extra)])).toBeNull();
+    }
+    expect(findCompletedTurnForRun(run, [turn('t1', 0), turn('t1', 0)])).toBeNull();
   });
 
   it('never matches a failed, cancelled or running turn: those are what the reaper is for', () => {

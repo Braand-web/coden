@@ -108,8 +108,8 @@ export default function ListingDetail({ id, onBack, hrefFor, builderUrl }: { id:
       {detail.data!.similar.length > 0 && (
         <section aria-label="Apps similaires" className="coden-community-similar">
           <h2>Apps similaires</h2>
-          <div className="coden-community-grid">
-            {detail.data!.similar.map(item => <ListingCard key={item.id} listing={item} categories={categories} href={hrefFor(item.id)} />)}
+          <div className="coden-community-project-grid coden-dashboard-project-list">
+            {detail.data!.similar.map(item => <ListingCard key={item.id} listing={item} href={hrefFor(item.id)} />)}
           </div>
         </section>
       )}

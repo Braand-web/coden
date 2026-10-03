@@ -17,6 +17,7 @@ import { buildCommunityOverview } from './admin-metrics.ts';
 import { assembleTemplate } from './template-apps.ts';
 import { OFFICIAL_TEMPLATES } from './templates.ts';
 import { decideListing, FREE_PUBLISH_NOTICE, graceEndsAt, ownerControls, PAID_PUBLISH_NOTICE, planKind } from './visibility.ts';
+import { communityOfferWasAnswered } from './offer-state.ts';
 
 export type PublishedSnapshot = { publicUrl: string; deploymentId: string | null; artifactHash: string | null; files: SourceFile[] };
 
@@ -347,10 +348,11 @@ export function createCommunityService(ctx: CommunityContext) {
     const plan = await ctx.getOrganizationPlan(organizationId);
     const listing = await s.byProject(projectId);
     const kind = planKind(plan);
+    const offerAnswered = kind !== 'free' && await offerAlreadyAnswered(projectId);
     return {
       enabled: true, plan, kind, notice: kind === 'free' ? FREE_PUBLISH_NOTICE : PAID_PUBLISH_NOTICE,
       listing: listing ? ownerView(listing) : null, offerState: listing?.offer_state || null,
-      canOffer: kind !== 'free' && !(listing && (listing.opted_in || listing.offer_state === 'declined')),
+      canOffer: kind !== 'free' && !offerAnswered,
     };
   }
 
@@ -448,9 +450,13 @@ export function createCommunityService(ctx: CommunityContext) {
   async function offerAlreadyAnswered(projectId: string): Promise<boolean> {
     const s = store();
     const listing = await s.byProject(projectId);
-    if (listing?.offer_state === 'declined' || listing?.offer_state === 'accepted') return true;
-    const { data } = await ctx.getSupabase().from('community_moderation_events').select('event').eq('project_id', projectId).in('event', ['offer_declined']).limit(1);
-    return Boolean(data?.length);
+    if (communityOfferWasAnswered({ offerState: listing?.offer_state, optedIn: listing?.opted_in })) return true;
+    const events = await ctx.getSupabase().from('community_moderation_events').select('event').eq('project_id', projectId).in('event', ['offer_later', 'offer_declined']).limit(1);
+    return communityOfferWasAnswered({
+      offerState: listing?.offer_state,
+      optedIn: listing?.opted_in,
+      journalEvents: (events.data || []).map((row: { event?: string }) => String(row.event || '')),
+    });
   }
 
   async function refreshThumbnail(userId: string, projectId: string, req?: any) {

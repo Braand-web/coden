@@ -1,0 +1,25 @@
+name: Agent quality
+on:
+  push:
+    branches: [main, 'fix/agent-quality-*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run lint
+      - run: npm run test:unit -- --maxWorkers=2
+      - run: node --experimental-strip-types test-agent-harness-v3.ts
+      - run: node --experimental-strip-types test-security-boundaries.ts
+      - run: node --experimental-strip-types test-multi-agent-route-wiring.ts
+      - run: npm run build

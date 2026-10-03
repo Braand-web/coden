@@ -71,6 +71,9 @@ describe('the review-and-polish cycle', async () => {
     const source = readFileSync('src/services/sandbox/repair-loop.ts', 'utf8');
     expect(source).toMatch(/reviews < maxReviews/);
     expect(source).toMatch(/maxReviews\?: number/);
-    expect(readFileSync('src/services/multi-agent-pipeline.ts', 'utf8')).toMatch(/maxReviews: designReviewRounds\(\)/);
+    const pipeline = readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
+    expect(pipeline).not.toMatch(/maxReviews: designReviewRounds\(\)/);
+    expect(pipeline).not.toMatch(/runDesignReview\(/);
+    expect(pipeline).toContain('No aesthetic-score polish after success');
   });
 });

@@ -222,10 +222,19 @@ function closeOpenCalls(out: ChatMessage[]) {
   }
 }
 
-function transcriptSize(messages: ChatMessage[]): number {
-  let total = 0;
-  for (const message of messages) total += String(message.content ?? '').length + 32;
-  return total;
+export function transcriptSize(messages: ChatMessage[]): number {
+  // Include multipart text and tool arguments, not String(object). Image
+  // bytes are not text tokens: budget a conservative image allowance instead
+  // of charging megabytes of base64 against the textual context ceiling.
+  let imageAllowance = 0;
+  const budgeted = messages.map(message => ({ ...message,
+    content: Array.isArray(message.content) ? message.content.map(part => {
+      if (part.type !== 'image_url') return part;
+      imageAllowance += part.image_url.detail === 'low' ? 512 : 16000;
+      return { type: 'image_url', image_url: { detail: part.image_url.detail, url: '[image payload]' } };
+    }) : message.content,
+  }));
+  return JSON.stringify(budgeted).length + imageAllowance;
 }
 
 function safeToolResult(value: unknown) {
