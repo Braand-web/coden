@@ -1094,6 +1094,19 @@ app.use('/api/attachments', requireAuth);
 app.use('/api/links', requireAuth);
 app.use('/api/feedback', requireAuth);
 
+// Observation only, after authentication. Missing attribution remains unknown;
+// body fields are never trusted for plan, price or account authority.
+app.use(['/api/assistant', '/api/projects'], (req: any, _res: any, next: any) => {
+  if (process.env.CODEN_COST_OBSERVABILITY_V1 !== '1') return next();
+  return runWithCostScope({
+    actorId: getOptionalAuthState(req).userId || undefined,
+    projectId: String(req.params?.id || req.body?.projectId || '') || undefined,
+    requestId: String(req.body?.requestId || '') || undefined,
+    mode: typeof req.body?.routingMode === 'string' ? normalizeRoutingMode(req.body.routingMode) : undefined,
+    selection: (req.body?.model || req.body?.modelId) ? ((req.body.model || req.body.modelId) === 'auto' ? 'auto' : 'explicit') : undefined,
+  }, next);
+});
+
 /*
  * The person's own instructions and private memory, for every agent call made
  * during this request — planner, coder, specialists, repair loop and chat
@@ -13798,6 +13811,24 @@ app.get('/api/admin/costs', async (req: any, res) => {
   });
 });
 
+app.get('/api/admin/cost-observations', async (req: any, res) => {
+  if (!requirePlatformAdmin(req, res)) return;
+  if (process.env.CODEN_COST_OBSERVABILITY_V1 !== '1') return res.status(404).json({ success: false, code: 'COST_OBSERVATION_DISABLED' });
+  const client = requireSupabase('Cost observation');
+  const days = Math.min(90, Math.max(1, Number(req.query?.days || 30) || 30));
+  const since = new Date(Date.now()-days*86_400_000).toISOString();
+  const until = new Date().toISOString();
+  const rows: any[] = [];
+  let total: number | null = null;
+  for (let offset=0; offset<20_000; offset+=1000) {
+    const page = await client.from('provider_cost_observations').select('*', { count:'exact' }).gte('occurred_at',since).lt('occurred_at',until).order('occurred_at').order('event_key').range(offset,offset+999);
+    if (page.error) return res.status(503).json({ success:false, code:'COST_OBSERVATION_UNAVAILABLE' });
+    rows.push(...(page.data||[])); total=page.count;
+    if ((page.data||[]).length<1000 || (total!==null&&rows.length>=total)) break;
+  }
+  return res.json({ success:true, enabled:true, policyVersion:'2026-10-01.observation-v1', since, until, coverage:{returned:rows.length,total,complete:total!==null&&rows.length>=total}, summary:costObservationSummary(rows), writer:costObservationHealth(), prices:{catalog:'provider_cost_catalog',syncEnabled:priceSyncEnabled()}, policy:{version:'2026-10-01.observation-v1',enforcement:false,optimizationsActivated:false}, billingLedger:'usage_events', inferenceProjection:'provider_cost_observations', warning:'Do not sum these two ledgers. Real invoice reconciliation and per-task joins remain required.' });
+});
+
 app.post('/api/admin/cost-alerts', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
   if (!adminMutationAllowed(req, res, 'cost_alerts', 60)) return;
@@ -16162,6 +16193,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const userId = authUser.id;
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  enrichCostScope({ actorId: userId, projectId: project.id, requestId });
 
   const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
   if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required.' });
@@ -16500,6 +16532,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
 
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
+  enrichCostScope({ selection: requestedModelSelection === 'auto' ? 'auto' : 'explicit' });
   /*
    * Attachments and links, read before anything decides what to do: the
    * router, the planner and the coder all work from the same request, with
@@ -16790,6 +16823,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       const backendEnv = await backendEnvPromise;
       const serverSecrets = await serverSecretsPromise;
       const [routingPlan, routingCredits] = await routingPromise;
+      enrichCostScope({ plan: routingPlan, mode: normalizeRoutingMode(req.body?.routingMode) });
 
       /*
        * Pick up a run that died, instead of starting it again.
@@ -21195,6 +21229,9 @@ import { loadProjectBackendEnv, saveProvisionedBackend } from './src/services/pr
 import { describeServerSecrets, isReservedSecretVariable, isValidSecretVariable, maskSecretValue, normalizeSecretService, projectSecretsKey, publicSecretRow, sealProjectSecret, serverSecretEnv, type StoredSecretRow } from './src/lib/project-secrets.ts';
 import { detectBackendNeedsFromFiles, hasBackendNeed, provisionReasonText, resolveCloudState } from './src/lib/cloud-state.ts';
 import { aggregateCosts, aggregateMargins, alertMessage, eventCostUsd, eventTokens, evaluateCostAlerts, hardCapReached, maskEmail, startOfMonthUtc, type CostAlertRule, type HardCapRule, type SettlementRow, type UsageEventRow } from './src/services/admin-costs.ts';
+import { configureCostObservationWriter, costObservationHealth, runWithCostScope, enrichCostScope } from './src/services/cost-observability.ts';
+import { costObservationSummary } from './src/services/cost-observation-summary.ts';
+import { normalizeRoutingMode } from './src/lib/routing-mode.ts';
 import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
 import { balanceLevel, fetchOpenRouterBalance, type OpenRouterBalance } from './src/services/openrouter-balance.ts';
 import { onProviderBalanceSignal } from './src/services/openrouter-service.ts';
@@ -22534,11 +22571,12 @@ const httpServer = app.listen(port, () => {
         await openRouterCatalog.ensure();
         const result = await syncModelPrices(client as any, {
           registry: MODEL_REGISTRY.map(model => ({ id: model.id, inputUsdPerMillion: model.inputUsdPerMillion, outputUsdPerMillion: model.outputUsdPerMillion })),
-          live: id => modelAvailability(id, undefined).pricing ? { id, ...modelAvailability(id, undefined).pricing! } : null,
+          live: id => modelAvailability(id, undefined).pricing ? { id, ...modelAvailability(id, undefined).pricing!, ...(process.env.CODEN_COST_OBSERVABILITY_V1==='1' ? {catalogPricing:openRouterCatalog.peek(id)?.pricing} : {}) } : null,
         });
         if (result.changed) console.info('[coden:model_prices_synced]', { listed: result.listed, changed: result.changed });
         const message = priceDriftMessage(result.drift);
         if (message) void alertProviderOnce(`prices:${new Date().toISOString().slice(0, 10)}`, 20 * 60 * 60_000, 'Prix de modèles modifiés', message);
+        if(process.env.CODEN_COST_OBSERVABILITY_V1==='1' && result.snapshotChanges>0) void alertProviderOnce(`price-details:${new Date().toISOString().slice(0,10)}`,20*60*60_000,'Catalogue de coûts actualisé',`${result.snapshotChanges} tarif(s) daté(s) avec prix de cache et conditions conservés. Aucun prix commercial ni routage modifié.`);
       } catch (error: any) {
         console.warn('[coden:model_price_sync_failed]', { message: redactSecrets(error?.message || String(error), '[redacted]').slice(0, 200) });
       }
@@ -22674,6 +22712,12 @@ const httpServer = app.listen(port, () => {
   // ✅ Initialize async job queue worker — picks up long-running jobs from Supabase
   const supabaseClient = getSupabase();
   if (supabaseClient) {
+    if (process.env.CODEN_COST_OBSERVABILITY_V1 === '1' && process.env.CODEN_SECRETS_KEY) {
+      configureCostObservationWriter(async rows => {
+        const { error } = await supabaseClient.from('provider_cost_observations').upsert(rows, { onConflict: 'event_key', ignoreDuplicates: true });
+        if (error) throw new Error('COST_OBSERVATION_PERSISTENCE_UNAVAILABLE');
+      });
+    }
     initJobQueue(supabaseClient);
     startJobWorker();
     console.log('[coden:job_queue] Worker initialized');

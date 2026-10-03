@@ -1,0 +1,10 @@
+import { ROUTING_MODE_LABELS } from './lib/routing-mode';
+
+const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]!));
+/** Optional observation panel. No controls, pricing changes or personal identifiers. */
+export function renderCostObservations(data: Record<string, any> | null | undefined): string {
+  if (!data?.success || !data.enabled) return '';
+  const summary = data.summary || {};
+  const rows = (Array.isArray(summary.byMode) ? summary.byMode : []).map((row: any) => `<tr><td>${escape(ROUTING_MODE_LABELS[row.mode as keyof typeof ROUTING_MODE_LABELS] || 'Non attribué')}</td><td>${escape(row.calls)}</td><td>${escape(row.unknownCosts)}</td><td>${row.cacheReadRate == null ? 'Non mesuré' : escape((100 * Number(row.cacheReadRate)).toFixed(1) + ' %')}<br><small>${escape(row.cacheMeasuredCalls ?? 0)} / ${escape(row.calls)} appels valides · ${escape(row.invalidCacheCalls ?? 0)} incohérents</small></td></tr>`).join('');
+  return `<article class="admin-card full" data-cost-observations><span class="panel-label">Observation des appels IA</span><p class="metric-note">Politique ${escape(data.policyVersion)} · observation uniquement. ${escape(summary.measuredCostCalls)} coût(s) déclaré(s), ${escape(summary.estimatedCostCalls)} estimé(s), ${escape(summary.unknownCostCalls)} inconnu(s). Ne pas additionner au registre de facturation.</p><p class="metric-note">${escape(summary.missingAttribution)} attribution(s) incomplète(s) · ${escape(data.writer?.dropped || 0)} observation(s) perdue(s) · collecte ${data.coverage?.complete ? 'complète sur cette projection' : 'incomplète'}. Coût par tâche réussie : jointure des résultats encore nécessaire.</p>${rows ? `<div class="admin-table-wrap"><table><caption>Cache mesuré uniquement sur les appels où le fournisseur le déclare</caption><thead><tr><th>Mode</th><th>Appels</th><th>Coûts inconnus</th><th>Lecture du cache</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}</article>`;
+}
