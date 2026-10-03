@@ -21,5 +21,6 @@ jobs:
       - run: npm run test:unit -- --maxWorkers=2
       - run: node --experimental-strip-types test-agent-harness-v3.ts
       - run: node --experimental-strip-types test-security-boundaries.ts
+      - run: node --experimental-strip-types test-durable-project-persistence.ts
       - run: node --experimental-strip-types test-multi-agent-route-wiring.ts
       - run: npm run build

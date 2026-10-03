@@ -2,7 +2,8 @@
 import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
-import { authoritativeProjectFiles } from './src/services/project-file-recovery.ts';
+import { authoritativeProjectFiles, loadGenerationFiles } from './src/services/project-file-recovery.ts';
+import { writeDurableSnapshot, isSnapshotTableMissing, requireDurableCheckpoint } from './src/services/durable-snapshot-write.ts';
 import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
@@ -8378,6 +8379,8 @@ function isProjectFilesMissingError(error: any) {
 function stripSchemaColumnFromProjectFileRows(rows: Record<string, any>[], error: any) {
   const column = getSchemaColumnFromMessage(String(error?.message || ''));
   if (!column || !rows.some(row => column in row)) return null;
+  // Compatibility may omit metadata, never the content or tenant/path identity.
+  if (['project_id', 'path', 'content'].includes(column)) return null;
   return rows.map(row => {
     const next = { ...row };
     delete next[column];
@@ -8446,7 +8449,7 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
       project_id: project.id,
       reason: 'Refusing to wipe project files from an empty generated file set.',
     });
-    return;
+    return false;
   }
 
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -8456,13 +8459,13 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
 
     if (!upsertResult.error) {
       await cleanupStaleProjectFileRows(client, project.id, new Set(rows.map(row => String(row.path))));
-      return;
+      return true;
     }
 
     const error = upsertResult.error;
     if (isProjectFilesMissingError(error)) {
       console.warn('[coden:project_files_persistence_skipped]', { message: error.message });
-      return;
+      return false;
     }
 
     if (isSchemaShapeError(error)) {
@@ -8476,11 +8479,11 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
     const fallbackError = await persistProjectFileRowsIndividually(client, rows);
     if (!fallbackError) {
       await cleanupStaleProjectFileRows(client, project.id, new Set(rows.map(row => String(row.path))));
-      return;
+      return true;
     }
     if (isProjectFilesMissingError(fallbackError)) {
       console.warn('[coden:project_files_persistence_skipped]', { message: fallbackError.message });
-      return;
+      return false;
     }
     if (isSchemaShapeError(fallbackError)) {
       const strippedRows = stripSchemaColumnFromProjectFileRows(rows, fallbackError);
@@ -8492,6 +8495,7 @@ async function saveProjectFilesWithSchemaFallback(client: any, project: Generate
 
     throw new Error(`Supabase project file persistence failed: ${fallbackError?.message || error.message}`);
   }
+  throw new Error('PROJECT_FILES_NOT_SAVED: schema compatibility retries exhausted');
 }
 
 async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
@@ -8503,11 +8507,9 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
 
   await upsertProjectWithSchemaFallback(client, projectRow);
 
-  if (files) {
-    await saveProjectFilesWithSchemaFallback(client, project, files);
-  }
+  const filesSaved = files ? await saveProjectFilesWithSchemaFallback(client, project, files) : true;
 
-  await persistDurableProjectSnapshot({
+  const snapshotSaved = await persistDurableProjectSnapshot({
     project,
     files,
     preview: {
@@ -8515,6 +8517,7 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
       html: project.preview_html || (files ? getProjectPreviewHtml(project, files, 'preview') : ''),
     },
   });
+  if (files?.length && !filesSaved) requireDurableCheckpoint(snapshotSaved);
 
   return project;
 }
@@ -8663,7 +8666,7 @@ async function loadProjectFiles(projectId: string): Promise<GeneratedFile[]> {
     data = retry.data;
     error = retry.error;
   }
-  if (error && /project_files|relation .* does not exist|table .* does not exist/i.test(error.message || '')) {
+  if (error && isProjectFilesMissingError(error)) {
     console.warn('[coden:project_files_load_skipped]', { project_id: projectId, message: error.message });
     return [];
   }
@@ -8675,7 +8678,7 @@ async function loadProjectFiles(projectId: string): Promise<GeneratedFile[]> {
 }
 
 function isMissingProjectSnapshotTableError(error: any) {
-  return /project_state_snapshots|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error?.message || '');
+  return isSnapshotTableMissing(error);
 }
 
 function cleanProjectForSnapshot(project: GeneratedProject) {
@@ -8708,7 +8711,8 @@ async function persistDurableProjectSnapshot(input: {
     updated_at: new Date().toISOString(),
   });
   const client = requireSupabase('Durable project snapshot persistence');
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId: input.project.id, ownerId: input.project.owner_id,
+    patch: () => row }).then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) {
     console.warn('[coden:durable_project_snapshot_unavailable]', { project_id: input.project.id, message: error.message });
     return false;
@@ -8727,33 +8731,25 @@ async function appendDurableProjectSnapshotItem(input: {
   lastAgentRunId?: string | null;
 }) {
   const client = requireSupabase('Durable project snapshot append');
-  const { data, error: readError } = await client
-    .from('project_state_snapshots')
-    .select(`project_id,${input.field}`)
-    .eq('project_id', input.projectId)
-    .maybeSingle();
-  if (readError && isMissingProjectSnapshotTableError(readError)) return false;
-  if (readError) throw new Error(`Durable project snapshot read failed: ${readError.message}`);
-  const previous = Array.isArray(data?.[input.field]) ? data[input.field] : [];
-  const itemKey = input.item?.ai_message_id ? `ai:${input.item.ai_message_id}` : input.item?.id ? `id:${input.item.id}` : '';
-  const retained = itemKey
-    ? previous.filter((existing: any) => {
-        const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
-        if (existingKey === itemKey) return false;
-        // The same answer saved twice under two ids is one answer.
-        return !(input.item?.role === 'assistant' && isTwinMessage(existing, input.item));
-      })
-    : previous;
-  const row = withoutUndefinedValues({
-    project_id: input.projectId,
-    owner_id: input.ownerId,
-    organization_id: input.organizationId || null,
-    revision: Date.now(),
-    [input.field]: redactSecretPayload([...retained, input.item].slice(-input.limit)),
-    last_agent_run_id: input.lastAgentRunId === undefined ? undefined : input.lastAgentRunId,
-    updated_at: new Date().toISOString(),
-  });
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId: input.projectId, ownerId: input.ownerId,
+    readColumns: [input.field], patch: data => {
+      const previous = Array.isArray(data?.[input.field]) ? data[input.field] : [];
+      const itemKey = input.item?.ai_message_id ? `ai:${input.item.ai_message_id}` : input.item?.id ? `id:${input.item.id}` : '';
+      const retained = itemKey
+        ? previous.filter((existing: any) => {
+            const existingKey = existing?.ai_message_id ? `ai:${existing.ai_message_id}` : existing?.id ? `id:${existing.id}` : '';
+            if (existingKey === itemKey) return false;
+            // The same answer saved twice under two ids is one answer.
+            return !(input.item?.role === 'assistant' && isTwinMessage(existing, input.item));
+          })
+        : previous;
+      return withoutUndefinedValues({
+        organization_id: input.organizationId || null,
+        [input.field]: redactSecretPayload([...retained, input.item].slice(-input.limit)),
+        last_agent_run_id: input.lastAgentRunId === undefined ? undefined : input.lastAgentRunId,
+      });
+    },
+  }).then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) return false;
   if (error) throw new Error(`Durable project snapshot append failed: ${error.message}`);
   return true;
@@ -8768,7 +8764,8 @@ async function persistDurableWorkspaceSnapshot(projectId: string, ownerId: strin
     workspace_snapshot: redactSecretPayload(workspace || {}),
     updated_at: new Date().toISOString(),
   };
-  const { error } = await client.from('project_state_snapshots').upsert([row], { onConflict: 'project_id' });
+  const error = await writeDurableSnapshot({ client, projectId, ownerId, patch: () => row })
+    .then(() => null).catch(error => error);
   if (error && isMissingProjectSnapshotTableError(error)) return false;
   if (error) throw new Error(`Durable workspace snapshot persistence failed: ${error.message}`);
   return true;
@@ -8789,8 +8786,8 @@ async function loadDurableProjectSnapshot(projectId: string, ownerId: string): P
 
 async function refreshDurableProjectSnapshot(project: GeneratedProject, files?: GeneratedFile[]) {
   const [messages, workspace] = await Promise.all([
-    listProjectMessages(project.id).catch(() => []),
-    getProjectWorkspaceState(project.id).catch(() => null),
+    listProjectMessages(project.id).catch(() => undefined),
+    getProjectWorkspaceState(project.id).catch(() => undefined),
   ]);
   return persistDurableProjectSnapshot({
     project,
@@ -16649,7 +16646,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   let conversation: Awaited<ReturnType<typeof loadConversationContext>>;
   try {
     [existingFiles, lastPlan, conversation] = await Promise.all([
-      loadProjectFiles(project.id),
+      loadGenerationFiles({
+        committed: () => loadProjectFiles(project.id),
+        checkpoint: async () => normalizeGeneratedFiles((await loadDurableProjectSnapshot(project.id, project.owner_id))?.files_snapshot || []),
+      }),
       getLastProjectPlan(project.id),
       loadConversationContext({
         project,
@@ -16985,12 +16985,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           // Keep the in-progress tree durable without promoting it to
           // project_files. A refresh or failed run must still show the last
           // complete application, not this intermediate build round.
-          await persistDurableProjectSnapshot({
+          const checkpointSaved = await persistDurableProjectSnapshot({
             project,
             files: files as GeneratedFile[],
             preview: { status: project.preview_status || 'idle', html: project.preview_html || '' },
             lastAgentRunId: pipelineRunId || undefined,
           });
+          requireDurableCheckpoint(checkpointSaved);
         },
         onSandboxEvent: event => {
           eventStream?.workspace(event.type === 'preview_ready' ? { ...event, projectId: project.id } : event);

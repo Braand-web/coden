@@ -285,11 +285,11 @@ export function buildRepairInstruction(report: ValidationReport, maxProblems = 1
   const files = [...new Set(errors.map(problem => problem.file).filter(Boolean))] as string[];
   // A failed journey is not a crash: saying "does not run" about an app that
   // runs sends the model looking for a compile error that is not there.
-  const behaviourOnly = errors.every(problem => /^(SCENARIO|FUNCTIONALITY|QUALITY_GATE|DESIGN_REVIEW)\b/.test(problem.message));
+  const behaviourOnly = errors.every(problem => /^(SCENARIO|FUNCTIONALITY|QUALITY_GATE|DESIGN_REVIEW|MISSION_ALIGNMENT)\b/.test(problem.message));
 
   const lines = [behaviourOnly
-    ? 'The application runs, but these checks of what it does, made in a real browser, failed:'
-    : 'The application does not run. These are its own toolchain’s errors:'];
+    ? 'The application renders, but these behavior or mission checks failed (the source of each finding is listed below):'
+    : 'These verification checks failed. Diagnose the listed evidence before deciding whether the cause is compilation, runtime, infrastructure or behavior:'];
   for (const problem of errors) {
     const where = problem.file ? `${problem.file}${problem.line ? `:${problem.line}` : ''}` : problem.source;
     lines.push(`- [${problem.source}] ${where} — ${problem.message}`);
@@ -298,7 +298,8 @@ export function buildRepairInstruction(report: ValidationReport, maxProblems = 1
     lines.push('', `Missing dependencies: ${packages.join(', ')}. Install them rather than rewriting the imports.`);
   }
   if (files.length) {
-    lines.push('', `Change only these files: ${files.join(', ')}. Leave everything else exactly as it is.`);
+    lines.push('', `Start by reading these failing files and their imports: ${files.join(', ')}. They are diagnostic locations, not necessarily the root cause. Change related files only when the evidence requires it.`);
   }
+  lines.push('', 'Make the smallest evidence-backed repair. Preserve working functionality, design and user constraints. Do not regenerate the whole app, remove features or weaken tests to make checks pass. If a previous edit did not help, inspect the changed code and choose a different cause-backed approach. Stop when the requested behavior and verification pass.');
   return lines.join('\n');
 }
