@@ -195,6 +195,7 @@ import {
   resolvePublicationEntitlement,
   type PublicationEntitlement,
 } from './src/services/billing-service.ts';
+import { publicCheckoutFailure, publicWebhookFailure } from './src/services/billing-failure.ts';
 import {
   ACTION_CREDIT_PRICES,
   BILLING_V2_VERSION,
@@ -11545,7 +11546,7 @@ app.post('/api/billing/checkout/subscription', async (req, res) => {
   const { planKey, billingInterval, credits, idempotencyKey } = req.body;
   const orgId = getUserOrgId(req);
   const auth = getRequiredAuth(req);
-  const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
+  const settingsUrl = `${getCodenPublicOrigin()}/dashboard.html`;
 
   try {
     const billing = new SaspayService(getSupabase());
@@ -11561,7 +11562,9 @@ app.post('/api/billing/checkout/subscription', async (req, res) => {
     );
     res.json({ success: true, url: redirectUrl });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    const failure = publicCheckoutFailure(error);
+    console.warn('[coden:checkout_unavailable]', { diagnostic_code: failure.diagnosticCode });
+    res.status(failure.status).json({ success: false, error: failure.message, diagnostic_code: failure.diagnosticCode });
   }
 });
 
@@ -11570,7 +11573,7 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
   const { productId, idempotencyKey } = req.body;
   const orgId = getUserOrgId(req);
   const auth = getRequiredAuth(req);
-  const settingsUrl = `${req.protocol}://${req.get('host')}/dashboard.html`;
+  const settingsUrl = `${getCodenPublicOrigin()}/dashboard.html`;
 
   try {
     const billing = new SaspayService(getSupabase());
@@ -11584,14 +11587,16 @@ app.post('/api/billing/checkout/topup', async (req, res) => {
     );
     res.json({ success: true, url: redirectUrl });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    const failure = publicCheckoutFailure(error);
+    console.warn('[coden:checkout_unavailable]', { diagnostic_code: failure.diagnosticCode });
+    res.status(failure.status).json({ success: false, error: failure.message, diagnostic_code: failure.diagnosticCode });
   }
 });
 
 // POST /billing/portal
 app.post('/api/billing/portal', async (req, res) => {
   getUserOrgId(req);
-  const returnUrl = `${req.protocol}://${req.get('host')}/dashboard.html?settings=billing`;
+  const returnUrl = `${getCodenPublicOrigin()}/dashboard.html?settings=billing`;
   res.json({
     success: true,
     url: returnUrl,
@@ -11612,7 +11617,9 @@ app.post('/api/saspay/webhook', async (req: any, res: any) => {
     const result = await saspayService.handleWebhook(req.body, signature, timestamp, eventHeader, webhookSecret);
     res.json({ received: true, ...result });
   } catch (err: any) {
-    res.status(400).send(`Webhook Error: ${err.message}`);
+    const failure = publicWebhookFailure(err);
+    console.warn('[coden:webhook_rejected]', { diagnostic_code: failure.diagnosticCode });
+    res.status(failure.status).json({ received: false, diagnostic_code: failure.diagnosticCode });
   }
 });
 

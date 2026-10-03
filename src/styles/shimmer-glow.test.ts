@@ -81,8 +81,18 @@ describe('in a browser', () => {
   it('a box appears with a fade, then breathes; nothing is painted before the fade starts', async (context) => {
     if (!browser) return context.skip();
     const { tab, context: ctx } = await open(page('light'));
+    // Headless Chromium may freeze animation time while a surface is not
+    // presented. Seek the real CSS animations instead of relying on wall time.
+    await tab.evaluate(() => {
+      for (const animation of document.querySelector('#s')!.getAnimations({ subtree: true })) {
+        animation.pause();
+        animation.currentTime = 0;
+      }
+    });
     const early = await beforeStyle(tab, '#s');
-    await tab.waitForTimeout(600);
+    await tab.evaluate(() => {
+      for (const animation of document.querySelector('#s')!.getAnimations({ subtree: true })) animation.currentTime = 600;
+    });
     const later = await beforeStyle(tab, '#s');
     await ctx.close();
     expect(early.content).toBe('""');

@@ -597,14 +597,25 @@ export function createStore(storageKey = conversationStorageKey()) {
     pacingFrame = 0;
     const now = Date.now();
     let stillPending = false;
+    let changed = false;
     for (const [id, pacer] of [...pacers]) {
       if (!find(id)) { pacers.delete(id); continue; }
-      applyPaced(id, pacer.drain(now));
+      const events = pacer.drain(now);
+      if (events.length) { applyPaced(id, events); changed = true; }
       if (pacer.pending) stillPending = true;
-      else { pacers.delete(id); runAfterDrain(id); }
+      else {
+        pacers.delete(id);
+        if (afterDrain.has(id)) changed = true;
+        runAfterDrain(id);
+      }
     }
-    schedulePersist();
-    listeners.forEach((listener) => listener());
+    // A frame without released text or events has not changed the store.
+    // Notifying anyway repeatedly re-rendered the whole conversation while
+    // the pacing budget was still empty (especially on fast schedulers).
+    if (changed) {
+      schedulePersist();
+      listeners.forEach((listener) => listener());
+    }
     if (stillPending) pacingFrame = window.requestAnimationFrame(tick);
   };
 

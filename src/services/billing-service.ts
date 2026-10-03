@@ -357,8 +357,17 @@ export class SaspayService {
     await this.ensureAccount(input.accountId);
     const requestedKey = String(input.checkoutReference || '').trim();
     const idempotencyKey = /^[A-Za-z0-9:_-]{8,128}$/.test(requestedKey) ? requestedKey : randomUUID();
-    const { data: existing } = await this.supabase.from('billing_checkout_intents').select('checkout_url,status').eq('idempotency_key', idempotencyKey).maybeSingle();
-    if (existing?.checkout_url && existing.status === 'pending') return String(existing.checkout_url);
+    const { data: existing, error: lookupError } = await this.supabase.from('billing_checkout_intents')
+      .select('account_id,kind,plan_key,credit_tier,billing_interval,amount,currency,price_version_id,checkout_url,status,expires_at')
+      .eq('idempotency_key', idempotencyKey).maybeSingle();
+    if (lookupError) throw new Error('Checkout idempotency lookup is temporarily unavailable.');
+    const samePurchase = existing && existing.account_id === input.accountId
+      && existing.kind === input.kind && existing.plan_key === input.plan
+      && Number(existing.credit_tier) === input.credits && existing.billing_interval === input.interval
+      && Number(existing.amount) === input.amount && existing.currency === BILLING_SETTLEMENT_CURRENCY
+      && existing.price_version_id === input.priceVersionId;
+    if (samePurchase && existing.status === 'pending' && new Date(existing.expires_at).getTime() > Date.now()
+      && /^https:\/\//i.test(String(existing.checkout_url || ''))) return String(existing.checkout_url);
     if (existing) throw new Error('This checkout request has already been used. Please try again.');
 
     const intentId = randomUUID();
@@ -461,7 +470,8 @@ export class SaspayService {
     const { data: existing, error: lookupError } = await this.supabase.from('provider_webhook_events').select('status,attempts').eq('provider', 'saspay').eq('event_id', eventId).maybeSingle();
     if (lookupError) throw new Error(`Webhook idempotency lookup failed: ${lookupError.message}`);
     if (existing?.status === 'processed') return false;
-    await this.supabase.from('provider_webhook_events').update({ status: 'processing', attempts: Number(existing?.attempts || 1) + 1, last_error: null }).eq('provider', 'saspay').eq('event_id', eventId);
+    const { error: retryError } = await this.supabase.from('provider_webhook_events').update({ status: 'processing', attempts: Number(existing?.attempts || 1) + 1, last_error: null }).eq('provider', 'saspay').eq('event_id', eventId);
+    if (retryError) throw new Error('Webhook retry persistence failed.');
     return true;
   }
 
@@ -526,7 +536,8 @@ export class SaspayService {
     }], { onConflict: 'provider_subscription_id' });
     if (error) throw new Error(`Plan persistence failed: ${error.message}`);
     const previousPlan = await this.readPlanKey(intent.account_id);
-    await this.supabase.from('organizations').update({ plan: plan.key, updated_at: now.toISOString() }).eq('id', intent.account_id);
+    const { error: organizationError } = await this.supabase.from('organizations').update({ plan: plan.key, updated_at: now.toISOString() }).eq('id', intent.account_id);
+    if (organizationError) throw new Error('Workspace plan persistence failed.');
     this.emitPlanChange(intent.account_id, previousPlan, plan.key);
     await this.grantMonthlyPlanCredits(intent.account_id, plan, intent.credit_tier, monthlyNetRevenueUsd, `saspay:${transaction.id}:initial`, monthlyExpiry.toISOString());
   }
@@ -552,12 +563,15 @@ export class SaspayService {
           } else {
             await this.grantPlan(intent, transaction);
           }
-          await this.supabase.from('billing_checkout_intents').update({ status: 'paid', provider_transaction_id: transaction.id, provider_reference: transaction.reference || null, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', intent.id);
+          const { error: paidError } = await this.supabase.from('billing_checkout_intents').update({ status: 'paid', provider_transaction_id: transaction.id, provider_reference: transaction.reference || null, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', intent.id);
+          if (paidError) throw new Error('Paid checkout persistence failed.');
         }
       } else if (eventType === 'transaction.failed' || eventType === 'transaction.cancelled') {
-        await this.supabase.from('billing_checkout_intents').update({ status: eventType.endsWith('cancelled') ? 'cancelled' : 'failed', provider_transaction_id: transaction.id, updated_at: new Date().toISOString() }).eq('id', intent.id).neq('status', 'paid');
+        const { error: outcomeError } = await this.supabase.from('billing_checkout_intents').update({ status: eventType.endsWith('cancelled') ? 'cancelled' : 'failed', provider_transaction_id: transaction.id, updated_at: new Date().toISOString() }).eq('id', intent.id).neq('status', 'paid');
+        if (outcomeError) throw new Error('Checkout outcome persistence failed.');
       }
-      await this.supabase.from('provider_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('provider', 'saspay').eq('event_id', eventId);
+      const { error: processedError } = await this.supabase.from('provider_webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('provider', 'saspay').eq('event_id', eventId);
+      if (processedError) throw new Error('Webhook completion persistence failed.');
       return { processed: true };
     } catch (error: any) {
       await this.supabase.from('provider_webhook_events').update({ status: 'failed', last_error: String(error?.message || error).slice(0, 500) }).eq('provider', 'saspay').eq('event_id', eventId);
@@ -587,7 +601,8 @@ export class SaspayService {
       const expiresAt = nextGrant < periodEnd ? nextGrant : periodEnd;
       const reference = `saspay-annual:${row.provider_subscription_id}:${grantAt.toISOString().slice(0, 10)}`;
       await this.grantMonthlyPlanCredits(String(row.account_id), plan, Number(row.credit_tier || plan.credits), Number(row.monthly_net_revenue_usd || 0), reference, expiresAt.toISOString());
-      await this.supabase.from('billing_subscriptions_v2').update({ last_credit_grant_at: now.toISOString(), next_credit_grant_at: nextGrant < periodEnd ? nextGrant.toISOString() : null, updated_at: now.toISOString() }).eq('provider_subscription_id', row.provider_subscription_id);
+      const { error: scheduleError } = await this.supabase.from('billing_subscriptions_v2').update({ last_credit_grant_at: now.toISOString(), next_credit_grant_at: nextGrant < periodEnd ? nextGrant.toISOString() : null, updated_at: now.toISOString() }).eq('provider_subscription_id', row.provider_subscription_id);
+      if (scheduleError) throw new Error('Annual credit schedule persistence failed.');
       granted += 1;
     }
     return granted;
@@ -598,8 +613,10 @@ export class SaspayService {
     const { data, error } = await this.supabase.from('billing_subscriptions_v2').select('id,account_id').eq('provider', 'saspay').eq('status', 'active').lte('current_period_end', now).limit(Math.max(1, Math.min(2_000, limit)));
     if (error) throw new Error(`Expired plan listing failed: ${error.message}`);
     for (const row of data || []) {
-      await this.supabase.from('billing_subscriptions_v2').update({ status: 'expired', updated_at: now }).eq('id', row.id);
-      const { data: active } = await this.supabase.from('billing_subscriptions_v2').select('id').eq('account_id', row.account_id).eq('status', 'active').gt('current_period_end', now).limit(1).maybeSingle();
+      const { error: expiryError } = await this.supabase.from('billing_subscriptions_v2').update({ status: 'expired', updated_at: now }).eq('id', row.id);
+      if (expiryError) throw new Error('Subscription expiry persistence failed.');
+      const { data: active, error: activeError } = await this.supabase.from('billing_subscriptions_v2').select('id').eq('account_id', row.account_id).eq('status', 'active').gt('current_period_end', now).limit(1).maybeSingle();
+      if (activeError) throw new Error('Active subscription lookup failed.');
       if (!active) await this.demoteToFreePlan(String(row.account_id));
     }
     return (data || []).length;

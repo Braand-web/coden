@@ -118,7 +118,7 @@ describe('the picker', () => {
 });
 
 describe('in the builder', () => {
-  const builder = readFileSync('src/builder-live.ts', 'utf8');
+  const builder = readFileSync('src/builder-live.ts', 'utf8').replace(/\r\n/g, '\n');
   const html = readFileSync('builder.html', 'utf8');
 
   it('sets the composer through the island, not on its DOM node, and drops the target when the message is sent', () => {

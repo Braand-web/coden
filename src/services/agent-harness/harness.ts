@@ -21,6 +21,9 @@ import { HarnessToolRegistry } from './tools.ts';
 export class CodenAgentHarness {
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly resourceOwners = new Map<string, string>();
+  // One turn has one execution owner. Serialize its local read/modify/write
+  // accounting across parallel tools; do not serialize unrelated turns.
+  private readonly turnLocks = new Map<string, Promise<void>>();
   readonly store: AgentHarnessStore;
   readonly tools: HarnessToolRegistry;
 
@@ -59,6 +62,10 @@ export class CodenAgentHarness {
   }
 
   async transitionTurn(turnId: string, status: HarnessTurnStatus, payload: Record<string, unknown> = {}) {
+    return this.withTurnLock(turnId, () => this.transitionTurnUnlocked(turnId, status, payload));
+  }
+
+  private async transitionTurnUnlocked(turnId: string, status: HarnessTurnStatus, payload: Record<string, unknown>) {
     const turn = await this.requiredTurn(turnId);
     // A cancelled run whose in-flight work then rejects reports its failure
     // after the outcome is already recorded. That is a race, not a programming
@@ -129,7 +136,11 @@ export class CodenAgentHarness {
     return next;
   }
 
-  async startTool(input: {
+  async startTool(input: Parameters<CodenAgentHarness['startToolUnlocked']>[0]) {
+    return this.withTurnLock(input.turnId, () => this.startToolUnlocked(input));
+  }
+
+  private async startToolUnlocked(input: {
     turnId: string;
     role: HarnessAgentRole;
     toolName: string;
@@ -182,7 +193,12 @@ export class CodenAgentHarness {
   }
 
   async spawnSubagent(input: { turnId: string; role: HarnessAgentRole; title: string; parentItemId?: string; context: Record<string, unknown> }) {
+    return this.withTurnLock(input.turnId, () => this.spawnSubagentUnlocked(input));
+  }
+
+  private async spawnSubagentUnlocked(input: Parameters<CodenAgentHarness['spawnSubagent']>[0]) {
     const turn = await this.requiredTurn(input.turnId);
+    if (isTerminalTurnStatus(turn.status)) throw new Error('Cannot spawn a subagent on a terminal harness turn.');
     if (turn.budgetUsed.subagents >= turn.budget.maxSubagents) throw new Error('Harness subagent budget exhausted.');
     const item = await this.createItem({ threadId: turn.threadId, turnId: turn.id, parentItemId: input.parentItemId, kind: 'subagent', role: input.role, status: 'running', title: input.title, payload: { context: input.context } });
     await this.store.updateTurn(turn.id, { budgetUsed: { ...turn.budgetUsed, subagents: turn.budgetUsed.subagents + 1 } });
@@ -204,6 +220,13 @@ export class CodenAgentHarness {
    * per coder round — accumulates instead of overwriting.
    */
   async recordSpend(turnId: string, spend: { toolCalls?: number; repairAttempts?: number; credits?: number; costUsd?: number }) {
+    for (const amount of Object.values(spend)) {
+      if (amount !== undefined && !Number.isFinite(amount)) throw new Error('Harness spend must contain finite numbers.');
+    }
+    return this.withTurnLock(turnId, () => this.recordSpendUnlocked(turnId, spend));
+  }
+
+  private async recordSpendUnlocked(turnId: string, spend: Parameters<CodenAgentHarness['recordSpend']>[1]) {
     const turn = await this.requiredTurn(turnId);
     const budgetUsed = {
       ...turn.budgetUsed,
@@ -212,6 +235,7 @@ export class CodenAgentHarness {
       credits: turn.budgetUsed.credits + Math.max(0, spend.credits || 0),
       costUsd: (turn.budgetUsed.costUsd || 0) + Math.max(0, spend.costUsd || 0),
     };
+    if (Object.values(budgetUsed).some(amount => !Number.isFinite(amount))) throw new Error('Harness budget must remain finite.');
     return this.store.updateTurn(turnId, { budgetUsed });
   }
 
@@ -231,6 +255,10 @@ export class CodenAgentHarness {
    * that did not run — never `passed`.
    */
   async settleDefinitionOfDone(turnId: string, verdicts: Record<string, { status: 'passed' | 'failed' | 'blocked'; evidence?: string }>) {
+    return this.withTurnLock(turnId, () => this.settleDefinitionOfDoneUnlocked(turnId, verdicts));
+  }
+
+  private async settleDefinitionOfDoneUnlocked(turnId: string, verdicts: Parameters<CodenAgentHarness['settleDefinitionOfDone']>[1]) {
     const turn = await this.requiredTurn(turnId);
     if (!turn.definitionOfDone.length) return turn;
     const definitionOfDone = turn.definitionOfDone.map(criterion => {
@@ -317,6 +345,21 @@ export class CodenAgentHarness {
 
   private releaseResources(itemId: string) {
     for (const [key, owner] of this.resourceOwners) if (owner === itemId) this.resourceOwners.delete(key);
+  }
+
+  private async withTurnLock<T>(turnId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.turnLocks.get(turnId) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.turnLocks.set(turnId, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.turnLocks.get(turnId) === tail) this.turnLocks.delete(turnId);
+    }
   }
 
   private async requiredTurn(turnId: string) {

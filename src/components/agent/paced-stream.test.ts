@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mountBuilderConversation } from '../../builder-conversation-island';
+import { createStore, mountBuilderConversation } from '../../builder-conversation-island';
 import type { AgentEnvelope, ChatEvent } from '../../lib/agent-chat-protocol';
 
 /**
@@ -29,12 +29,31 @@ beforeEach(() => {
 afterEach(() => {
   api.clear();
   host.remove();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 const settle = () => vi.advanceTimersByTime(5000);
 
 describe('paced streaming', () => {
+  it('does not notify React on empty pacing frames', () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { frames.push(callback); return frames.length; });
+    const store = createStore('audit-empty-pacing-frame');
+    const notify = vi.fn();
+    const unsubscribe = store.subscribe(notify);
+    const id = store.addMessage({ role: 'assistant', content: '' });
+    store.startLiveRun(id);
+    store.applyChatEvent(id, envelope(1, { type: 'text_delta', delta: 'x'.repeat(100) }));
+    while (frames.length > 1) frames.shift()!(0);
+    frames.shift()!(0);
+    expect(store.messages()[0].content.length).toBeGreaterThan(0);
+    notify.mockClear();
+    for (let index = 0; index < 50; index += 1) frames.shift()!(0);
+    expect(notify).not.toHaveBeenCalled();
+    unsubscribe();
+    store.clear();
+  });
   it('restores complete text, reasoning and file steps as a finished chat message', () => {
     const id = api.addMessage({ id: 'persisted-message-1', role: 'assistant', content: 'Le scaffold est léger et fournit une base complète.' });
     api.restoreChat(id, [

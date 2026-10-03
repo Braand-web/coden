@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CommunityStore, ANONYMOUS_CREATOR } from './store';
 
-const routes = readFileSync(new URL('./routes.ts', import.meta.url), 'utf8');
+const routes = readFileSync(new URL('./routes.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const server = readFileSync(new URL('../../../server.ts', import.meta.url), 'utf8');
 
 describe('who may call the Community routes', () => {

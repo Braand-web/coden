@@ -24,8 +24,16 @@ let host: HTMLElement;
 let api: ReturnType<typeof mountBuilderConversation>;
 let contentHeight = 300;
 const VIEW = 300;
+let renderErrors: string[];
 
 beforeEach(() => {
+  renderErrors = [];
+  const reportError = console.error.bind(console);
+  vi.spyOn(console, 'error').mockImplementation((...args) => {
+    if (/Maximum update depth exceeded/.test(String(args[0]))) {
+      if (!renderErrors.length) renderErrors.push(new Error(String(args[0])).stack || String(args[0]));
+    } else reportError(...args);
+  });
   window.sessionStorage.clear();
   contentHeight = 300;
   host = document.createElement('div');
@@ -41,6 +49,7 @@ afterEach(() => {
   api.clear();
   host.remove();
   vi.restoreAllMocks();
+  expect(renderErrors).toEqual([]);
 });
 
 const grow = (by: number) => { contentHeight += by; };

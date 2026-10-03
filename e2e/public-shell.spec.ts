@@ -16,7 +16,7 @@ test('landing keeps one clear primary heading and the Coden brand', async ({ pag
   expect(runtimeErrors).toEqual([]);
   await expect(page.locator('h1')).toHaveCount(1);
   await expect(page.locator('h1')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Coden home', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByRole('link', { name: 'Accueil Coden', exact: true })).toBeVisible();
   await expect(page.locator('#top textarea')).toBeVisible();
   await expect(page.locator('.hero-flow-rail')).toHaveCount(0);
   await expect(page.locator('.import-row')).toHaveCount(0);
@@ -25,16 +25,16 @@ test('landing keeps one clear primary heading and the Coden brand', async ({ pag
 
   const layout = await page.evaluate(() => {
     const viewportCenter = document.documentElement.clientWidth / 2;
-    return ['#top h1', '#top .input-wrapper', '#faq'].map(selector => {
+    return ['#top h1', '#top .lp-composer', '#faq'].map(selector => {
       const rect = document.querySelector(selector)?.getBoundingClientRect();
       return rect ? Math.abs(rect.left + rect.width / 2 - viewportCenter) : Number.POSITIVE_INFINITY;
     });
   });
   expect(Math.max(...layout)).toBeLessThanOrEqual(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-  const question = page.locator('#faq summary').filter({ hasText: 'Can I connect my own database or Stripe account?' });
+  const question = page.locator('#faq summary').filter({ hasText: 'Puis-je publier avec le plan Free ?' });
   await question.click();
-  await expect(page.locator('#faq details').filter({ hasText: 'Can I connect my own database' })).toHaveAttribute('open', '');
+  await expect(page.locator('#faq details').filter({ hasText: 'Puis-je publier avec le plan Free ?' })).toHaveAttribute('open', '');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(page.locator('html')).toHaveCSS('scroll-behavior', 'auto');
 });
