@@ -112,7 +112,7 @@ function fakeClient(seed: Record<string, any[]> = {}) {
   const branch = server.slice(memoryIndex);
 
   assert.match(branch, /loadProjectMemoryContext\(\{/, 'the pipeline run must load what the project decided');
-  assert.match(branch, /memoryContext: \[projectMemory, sessionContext(, sharedKnowledge)?\]/, 'and pass it in, with the session memory (and the shared knowledge)');
+  assert.match(branch, /memoryContext: \[projectMemory, sessionContext(?:, [^\]]+)?\]\.filter\(Boolean\)/, 'and pass it in, with session memory and optional research/resume context');
   assert.match(branch, /saveArchitectureDecisions\(\{/, 'and record what this run decided');
 
   // Only from a run that verified: a decision read out of a build that did not
@@ -127,7 +127,7 @@ function fakeClient(seed: Record<string, any[]> = {}) {
   assert.match(pipeline, /memoryContext: input\.memoryContext/, 'the planner must see the established decisions');
 
   const instruction = pipeline.slice(pipeline.indexOf('const initialInstruction = ['));
-  assert.match(instruction.slice(0, 900), /input\.memoryContext/, 'and so must the coder');
+  assert.match(instruction.slice(0, instruction.indexOf("].join('\\n');")), /input\.memoryContext/, 'and so must the coder');
 
   const planner = readFileSync(new URL('./src/services/planner-agent.ts', import.meta.url), 'utf8');
   assert.match(planner, /memoryContext\?: string/, 'the planner accepts it');

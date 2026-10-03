@@ -47,11 +47,13 @@ assert.match(horizon, /html\[data-theme="dark"\] body:has\(#coden-dashboard-reac
 assert.match(horizon, /\.coden-dashboard-sidebar \{\s*background: transparent !important;\s*border: 0 !important;/);
 assert.doesNotMatch(horizon, /body:has\(#coden-dashboard-react-root\)[\s\S]{0,180}background-image: none !important/);
 
-/* The exact product palette remains in the token file. Dashboard CSS uses
-   semantic tokens and image assets for the requested global atmosphere, never
-   a second palette or a CSS gradient literal. */
-assert.doesNotMatch(css, /(?:linear|radial|conic)-gradient\(/);
-assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/);
+/* Global dashboard chrome uses the product palette. Project tiles are a
+   distinct content surface: covers and lifecycle badges have their own
+   colours, and the rendered application's canvas is deliberately white. */
+const chrome = css.replace(/\.coden-dashboard-project-(?:preview|fallback|monogram|badge)[^{}]*\{[^{}]*\}/g, '');
+assert.doesNotMatch(chrome, /(?:linear|radial|conic)-gradient\(/);
+assert.doesNotMatch(chrome, /#[0-9a-fA-F]{3,8}\b/);
+assert.match(css, /\.coden-dashboard-project-preview\s*\{[^}]*isolation: isolate;/, 'project colour remains isolated to the tile');
 assert.doesNotMatch(css, /var\(--dashboard-(?:text|muted|surface|raised|border|focus)\)/);
 
 /* The layout and real project workflow stay intact. */

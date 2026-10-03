@@ -180,9 +180,10 @@ console.log('first paint is stable tests passed');
   assert.match(css, /prefers-reduced-motion: reduce\)\s*\{\s*\.cdn-pub__shimmer \{ animation: none; \}/,
     'and it stops for readers who asked for less motion');
 
-  // A bare "0" reads as "zero checks ran", which is the one thing it never
-  // means: buildPublishStatus always returns five.
-  assert.match(panel, /\$\{status && visibleCheckCount\n?\s*\? `<span class="cdn-pub__count"/, 'the count appears only when it counts something');
+  // The obsolete checks counter and "Problèmes" action were removed. The
+  // primary action and an actionable blocker still describe the current state.
+  assert.doesNotMatch(panel, /cdn-pub__count|visibleCheckCount|>Problèmes</, 'the removed checks UI must not return');
+  assert.match(panel, /const mainBlocker = blockers\.find/, 'a blocked publish still has an actionable explanation');
 
   // The loudest element on the panel was also the least informative: one
   // filled bar whether it could publish, could not act, or offered a retry.

@@ -25,17 +25,17 @@ import { readFileSync } from 'node:fs';
  */
 
 const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
-const builder = readFileSync(new URL('./builder.html', import.meta.url), 'utf8');
+const builder = readFileSync(new URL('./builder.html', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 /* Desktop Preview and Cloud fill the right frame, and that frame is the
- * Dashboard's panel: a gutter on the sidebar tone and --radius-xl corners.
+ * Dashboard-style panel: a gutter on the sidebar tone and restrained corners.
  * The application reaches the frame's edges and the frame clips its corners,
  * so no second card or dark stage can appear between them. */
 {
   const frameStart = builder.indexOf('    @media (min-width: 761px) {\n      .editor-pane {');
   const frame = builder.slice(frameStart, builder.indexOf('.code-screen-layout.is-empty .editor-main-scroll', frameStart));
   assert.match(frame, /margin: 0 12px 12px 0;/, 'the frame keeps the Dashboard gutter');
-  assert.match(frame, /border-radius: var\(--radius-xl\);/, 'with the Dashboard corners');
+  assert.match(frame, /border-radius: var\(--radius-md\);/, 'with the current compact panel corners');
   assert.match(frame, /overflow: hidden;/, 'which clip the application inside');
   assert.match(frame, /#screen-layout-database\[style\*="display: flex"\]/, 'Cloud shares the preview frame rule');
   assert.match(frame, /border-radius: inherit !important;/, 'the canvas takes the frame corners');

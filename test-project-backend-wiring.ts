@@ -158,7 +158,7 @@ const PROVISIONED = {
   // Both agents are told, for the reason each needs it — secret names, never values.
   assert.match(pipeline, /const backendBriefing = \[describeProjectBackend\(input\.backendEnv \|\| \{\}\), describeServerSecrets\(Object\.keys\(/, 'the briefing is built once');
   // The design contract rides in front of the same brief; what is pinned is that both agents get the backend briefing.
-  const briefed = pipeline.match(/\[(?:designContractBlock, )?designPolicy, backendBriefing\]\.filter\(Boolean\)/g) || [];
+  const briefed = pipeline.match(/\[[^\]]*\bdesignPolicy\b[^\]]*\bbackendBriefing\b[^\]]*\]\.filter\(Boolean\)/g) || [];
   assert.equal(briefed.length, 2, 'the planner and the coder both receive it');
 }
 

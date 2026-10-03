@@ -41,7 +41,8 @@ assert.match(notFound, /<main\b[^>]*aria-labelledby="page-title"/);
 assert.match(notFound, /href="\/"/);
 assert.match(notFound, /href="\/pricing\.html"/);
 assert.match(notFound, /prefers-reduced-motion:\s*reduce/);
-assert.doesNotMatch(notFound, /<script\b|https?:\/\//i, 'the error page has no third-party or script dependency');
+assert.doesNotMatch(notFound, /<script\b[^>]*\bsrc=|https?:\/\//i, 'the error page has no external script or third-party dependency');
+assert.match(notFound, /try \{[\s\S]*?localStorage\.getItem\(key\)[\s\S]*?catch \{ return null; \}/, 'its inline theme enhancement tolerates unavailable storage');
 assert.match(server, /res\.status\(404\)\.sendFile\(path\.join\(staticDir, '404\.html'\)/, 'unknown public routes receive an HTTP 404 and the branded page');
 
 console.log('saas performance checks passed');

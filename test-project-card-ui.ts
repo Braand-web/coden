@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const card = readFileSync(new URL('./src/dashboard-react.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta.url), 'utf8');
+const previewShim = readFileSync(new URL('./src/lib/preview-document.ts', import.meta.url), 'utf8');
 
 /*
  * A project card says each thing once.
@@ -24,32 +25,22 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
    * repetition a reader sees — it is the accessible name, and removing those
    * would trade a visual fix for an accessibility regression.
    */
-  const visibleNames = (component.match(/(^|[^$])\{project\.name\}/g) || []).length;
+  const visibleNames = (component.match(/>\{project\.name\}</g) || []).length;
   assert.equal(visibleNames, 1, 'the project name is painted once, not three times');
   assert.ok((component.match(/\$\{project\.name\}/g) || []).length >= 1,
     'while the accessible names that reference it are kept');
-  assert.match(component, /<strong>\{project\.name\}<\/strong>/, 'and the surviving one is the meta row');
+  assert.match(component, /<strong(?:\s+title=\{project\.name\})?>\{project\.name\}<\/strong>/, 'and the surviving one is the meta row');
 
   // aria-label still names the project: removing repetition from the eye must
   // not remove it from a screen reader.
   assert.match(component, /aria-label=\{`Ouvrir le projet \$\{project\.name\}`\}/, 'the link is still named');
 
-  /*
-   * The circle is allowed back, but only holding a different fact.
-   *
-   * The rule that mattered was never "no circle" — it was that the circle
-   * must not be the first letter of the name printed nine pixels away. Whose
-   * account the project sits in is a separate question, so the avatar column
-   * earns its 28px by answering that one instead.
-   */
+  // The caption no longer has an owner avatar. Decorative initials remain
+  // inside the cover, while the real name stays in the caption only.
   assert.doesNotMatch(component, /project\.name\.slice\(0, 1\)/, 'the circle is never the project name again');
   assert.doesNotMatch(component, /project\.name\.charAt/, 'by any spelling');
-  assert.match(component, /className="coden-dashboard-project-card-avatar"[\s\S]{0,160}\{owner\.initial\}/,
-    'it carries the account owner instead');
-  assert.match(component, /title=\{`Projet de \$\{owner\.name\}`\}/, 'and says so on hover');
-  assert.match(card, /accountDisplayName\(profile\)/, 'from the same name the sidebar shows');
-
-  assert.match(css, /grid-template-columns: 36px minmax\(0, 1fr\) 17px;/, 'the meta row makes room for it');
+  assert.match(component, /aria-label=\{`Dupliquer le projet \$\{project\.name\}`\}/, 'the independent copy control keeps its accessible name');
+  assert.match(css, /\.coden-dashboard-project-card-meta\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) 30px;/, 'the compact caption reserves the name and the open button');
 }
 
 /*
@@ -90,7 +81,7 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
     'it is no longer the else-branch of having a preview');
 
   assert.match(css, /\.coden-dashboard-project-fallback \{[\s\S]*?z-index: 0;/, 'and sits below');
-  assert.match(css, /\.coden-dashboard-project-preview iframe \{\r?\n  position: relative;\r?\n  z-index: 1;\r?\n\}/,
+  assert.match(css, /\.coden-dashboard-project-preview iframe \{[^}]*position: relative;[^}]*z-index: 1;/,
     'while a working preview covers it');
 }
 
@@ -109,7 +100,8 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
  * `sessionStorage`, and its tile rendered as an empty dark rectangle.
  */
 {
-  assert.match(card, /const PREVIEW_STORAGE_SHIM = /, 'the frame gets an in-memory stand-in for storage');
+  assert.match(card, /import \{ previewDocumentWithStorageShim \} from '\.\/lib\/preview-document'/, 'the frame uses the shared storage stand-in');
+  assert.match(previewShim, /const PREVIEW_STORAGE_SHIM = /, 'the shared frame helper defines the in-memory storage stand-in');
   assert.match(card, /srcDoc=\{previewDocumentWithStorageShim\(previewHtml!\)\}/, 'and it is actually applied');
 
   /*
@@ -122,9 +114,9 @@ const css = readFileSync(new URL('./src/styles/dashboard-react.css', import.meta
   assert.doesNotMatch(code, /allow-same-origin"/, 'but never with same-origin, which would defeat the sandbox');
 
   // Both storages, since an app that survives one will try the other.
-  assert.match(card, /'localStorage' : 'sessionStorage'/, 'both storages are covered');
+  assert.match(previewShim, /'localStorage' : 'sessionStorage'/, 'both storages are covered');
   // The shim must never be the thing that breaks the page it is protecting.
-  assert.match(card, /catch \(e\) \{\}/, 'and it fails silently rather than throwing on a browser that refuses');
+  assert.match(previewShim, /catch \(e\) \{\}/, 'and it fails silently rather than throwing on a browser that refuses');
 
   /*
    * Placement is the point: a stand-in installed after the app has already

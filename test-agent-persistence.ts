@@ -55,7 +55,7 @@ import { buildProviderRequestConfig } from './src/services/provider-adapters.ts'
     'the one-strike rule must not come back',
   );
   assert.match(repair, /stalledRounds \+= 1\) >= maxStalledRounds/, 'stalling must be counted, not fatal on sight');
-  assert.match(repair, /if \(errorsAfter < errorsBefore\) stalledRounds = 0;/, 'and progress must reset the count');
+  assert.match(repair, /if \(errorsAfter < bestErrors\) \{ bestErrors = errorsAfter; stalledRounds = 0; \}/, 'a new best error count must reset patience, not oscillation between two counts');
 
   // Patience is only defensible if the next round is told something new.
   assert.match(repair, /did not reduce these errors/, 'a stalled round must tell the model its last attempt did not help');
@@ -64,7 +64,8 @@ import { buildProviderRequestConfig } from './src/services/provider-adapters.ts'
 
   // A build's first round is still exempt: the scaffold's error count is not
   // a baseline an attempt can be judged against.
-  assert.match(repair, /if \(isBuildRound( \|\| isPolishRound)?\) continue;/, "a build's first round is not measured against the scaffold");
+  assert.match(repair, /let bestErrors = mode === 'build' \? Infinity : countErrors\(report\);/, "a build's first round is not measured against the scaffold");
+  assert.match(repair, /if \(steering\) \{ steeringHistory\.push\(steering\); bestErrors = Infinity; stalledRounds = 0; \}/, 'new user instructions reset the progress baseline');
 
   // And the run stays bounded: patience must be well under the round ceiling,
   // or it is the same as having no stop rule at all.
