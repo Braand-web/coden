@@ -12303,7 +12303,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     catch { return res.status(400).json({ success: false, diagnostic_code: 'ACTION_IDENTIFIER_REQUIRED', message: 'Actualisez la page avant de renvoyer votre message.' }); }
     const client = await ensureUnifiedIncludedGrants(userId);
     const claim = await client.rpc('coden_billing_claim_action', { p_id: requestId, p_account_id: userId,
-      p_fingerprint: billingActionFingerprint({ prompt, selectedModel, requestedMode, routingMode: req.body?.routingMode, effort: req.body?.effort || 'auto' }) });
+      p_fingerprint: billingActionFingerprint({ prompt, selectedModel, requestedMode, branchId, branchFromMessageId, routingMode: req.body?.routingMode, effort: req.body?.effort || 'auto' }) });
     if (claim.error) throw new BillingLedgerUnavailableError();
     if (!claim.data?.claimed) {
       if (claim.data?.state === 'delivered' && claim.data.result) return res.json(claim.data.result);
@@ -16545,7 +16545,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   if (CODEN_MONETIZATION_ENABLED) {
     const client=await ensureUnifiedIncludedGrants(project.organization_id || userId);
     const claim=await client.rpc('coden_billing_claim_action',{p_id:requestId,p_account_id:project.organization_id || userId,
-      p_fingerprint:billingActionFingerprint({prompt,requestedMode,modelId:req.body?.modelId || 'auto',effort:req.body?.effort,
+      p_fingerprint:billingActionFingerprint({prompt,requestedMode,branchId,branchFromMessageId,modelId:req.body?.modelId || 'auto',effort:req.body?.effort,
         routingMode:req.body?.routingMode,attachmentIds,visionInputs,studioContext,importContext:preparedImportContext})});
     if (claim.error) throw new BillingLedgerUnavailableError();
     if (!claim.data?.claimed) {
