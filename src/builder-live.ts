@@ -1,5 +1,6 @@
 import './styles/coden-light-theme.css';
 import { confirmDialog, toast } from './lib/ui-feedback';
+import { shouldRetainPreview } from './lib/preview-retention';
 import { resolveCloudState, type CloudStateView } from './lib/cloud-state';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
@@ -1467,7 +1468,7 @@ body {
 }
 
 function setEmptyPreviewState(mode: EmptyPreviewMode = 'idle', label = '') {
-  if (isUsablePreviewHtml(currentPreviewHtml)) return;
+  if (shouldRetainPreview({ usableHtml: isUsablePreviewHtml(currentPreviewHtml), liveUrl: livePreviewUrl, browserRuntimeUrl: webContainerUrl })) return;
   const frame = document.getElementById('preview-iframe-element') as HTMLIFrameElement | null;
   if (!frame) return;
   const resolvedLabel = label || (mode === 'working' ? 'Vérification en cours' : 'Preview non vérifiée');
@@ -4039,6 +4040,10 @@ function clearLivePreview() {
  * still in flight, which has a loader of its own.
  */
 function setPreview(html: string, status = 'unknown') {
+  // A loader or failed response is not a replacement application. In
+  // particular, cancellation must leave the live iframe and its local state intact.
+  if ((String(status).toLowerCase() === 'building' || !isUsablePreviewHtml(html))
+    && shouldRetainPreview({ usableHtml: isUsablePreviewHtml(currentPreviewHtml), liveUrl: livePreviewUrl, browserRuntimeUrl: webContainerUrl })) return;
   previewRevision++;
   livePreviewUrl = '';
   const normalizedStatus = String(status || '').trim().toLowerCase() || 'idle';

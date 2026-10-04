@@ -27,4 +27,10 @@ describe('on-demand session methods', () => {
   it('includes the existing design skill once rather than duplicating it', () => {
     expect(LOAD_SKILL_SCHEMA.parameters.properties.id.enum.filter(id => id === 'frontend-design')).toHaveLength(1);
   });
+  it('loads backend expertise without claiming unavailable automation', () => {
+    const session = createSessionSkills();
+    expect(session.load({ id: 'senior-backend' }).ok).toBe(true);
+    expect(session.context()).toContain('tenant-aware permissions');
+    expect(session.context()).toContain('scripts are not supplied');
+  });
 });
