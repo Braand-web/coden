@@ -184,6 +184,7 @@ export type CreateTurnInput = {
   requestedMode?: string;
   idempotencyKey: string;
   parentTurnId?: string;
+  messageMetadata?: Record<string, unknown>;
   definitionOfDone?: DefinitionOfDoneCriterion[];
   budget?: Partial<HarnessBudget>;
   id?: string;

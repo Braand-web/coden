@@ -108,7 +108,9 @@ import { readFileSync } from 'node:fs';
   const memoryLoader = server.slice(server.indexOf('async function loadSessionMemory('), server.indexOf('async function saveSessionMemory('));
   const memorySaver = server.slice(server.indexOf('async function saveSessionMemory('), server.indexOf('async function loadConversationContext('));
   const conversationLoader = server.slice(server.indexOf('async function loadConversationContext('), server.indexOf('function dropCurrentPrompt('));
-  const route = server.slice(server.indexOf('let existingFiles: GeneratedFile[];'), server.indexOf('const recentHistory = dropCurrentPrompt('));
+  const routeStart = server.indexOf('let existingFiles: GeneratedFile[];');
+  const routeEnd = server.indexOf('let initialDecision: IntentDecision;', routeStart);
+  const route = server.slice(routeStart, routeEnd);
 
   assert.match(memoryLoader, /if \(required\) throw new Error\('Session memory could not be loaded\.'\)/,
     'the Builder must not quietly replace a failed memory read with an empty summary');
@@ -124,6 +126,10 @@ import { readFileSync } from 'node:fs';
     'a failed message read must not become an empty conversation');
   assert.match(route, /diagnostic_code: 'PROJECT_CONTEXT_UNAVAILABLE'/,
     'the user receives a recoverable project-context error instead of a context-free build');
+  assert.match(server, /const recentHistory = branchFork \? branchFork\.prefix : dropCurrentPrompt/,
+    'an edited request sees only the server-derived conversation prefix');
+  assert.match(server, /const sessionContext = branchFork \? undefined : conversation\.sessionContext/,
+    'later original-session context cannot leak into the edited branch');
 }
 
 console.log('conversation is alive tests passed');
