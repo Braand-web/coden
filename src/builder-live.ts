@@ -7239,6 +7239,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
         method: 'POST',
         body: JSON.stringify({
           prompt: safePrompt,
+          clientMessageId:messageHandleId(status) ? `${messageHandleId(status)}_user` : undefined,
           settings: mediaSettings,
           studioContext: studioPromptContextPayload(),
         }),
@@ -8326,7 +8327,10 @@ async function loadCloudConsoleUsage() {
   const host = document.getElementById('cloud-usage-host');
   if (!host) return;
   try {
-    const payload = await apiFetch<any>('/api/users/me/ai-usage');
+    const [payload,cloudBilling] = await Promise.all([
+      apiFetch<any>('/api/users/me/ai-usage'),
+      currentProjectId ? apiFetch<any>(`/api/billing/cloud-usage?project_id=${encodeURIComponent(currentProjectId)}`).catch(()=>null) : Promise.resolve(null),
+    ]);
     const history: any[] = Array.isArray(payload.history) ? payload.history : [];
     // Grouped by id, not by name: a rename must not erase this project's usage,
     // and two projects that happen to share a name are still two projects. The
@@ -8347,6 +8351,22 @@ async function loadCloudConsoleUsage() {
     const spendable = payload.wallet?.spendable || {};
     const credits = (amount: unknown) => Number(amount || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 });
     host.innerHTML = `<div class="cloud-summary-grid"><article class="cloud-summary-card"><span>Générer et corriger</span><strong>${credits(spendable.build)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Discuter avec l’agent</span><strong>${credits(spendable.ai_gateway)}</strong><small>crédits utilisables</small></article><article class="cloud-summary-card"><span>Consommé ici</span><strong>${used.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}</strong><small>${projectHistory.length} événement${projectHistory.length === 1 ? '' : 's'}</small></article></div><section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Consommation récente</h2><p>Débits et remboursements enregistrés pour ce projet.</p></div></div>${projectHistory.length ? `<div class="cloud-log-list">${projectHistory.slice(0, 30).map(item => `<div class="cloud-log-row"><span><strong>${escapeHtml(cloudEventLabel(item.mode || 'Usage'))}</strong><small>${escapeHtml(item.model_name || item.project_name || 'Ressource Coden')}</small></span><span class="cloud-service-meta">${Number(item.credits_charged || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} crédit${Number(item.credits_charged || 0) === 1 ? '' : 's'} · ${cloudDate(item.created_at)}</span></div>`).join('')}</div>` : '<div class="db-empty">Aucune consommation mesurée pour ce projet sur la période disponible.</div>'}</section>`;
+    if (cloudBilling) {
+      const tariff=cloudBilling.tariff;
+      const accepted=cloudBilling.consent?.tariff_version===tariff.version;
+      const grace=cloudBilling.grace;
+      const graceCopy=grace.status==='active'
+        ? `Grâce active jusqu’au ${cloudDate(grace.expiresAt)} · ${credits(grace.creditsRemaining)} crédit(s) restant(s), pris en charge par Coden.`
+        : grace.status==='exhausted' ? 'Grâce terminée : les opérations Cloud payantes nécessitent une recharge. Les données et la publication statique sont conservées.' : 'Grâce de 72 heures au maximum, limitée à 1 crédit Free, 5 Pro ou 10 Business. Aucun découvert.';
+      host.insertAdjacentHTML('beforeend',`<section class="cloud-panel"><div class="cloud-panel-head"><div><h2>Ressources de l’application</h2><p>${escapeHtml(cloudBilling.message)}</p></div></div><p>${credits(cloudBilling.consumed_credits)} crédit(s) Cloud ce mois-ci${cloudBilling.coverage?.complete?'':' · détail partiel'}.</p><p>${escapeHtml(graceCopy)}</p><details><summary>Barème Cloud</summary><p>Coût technique de référence ×3 ÷ 0,25 USD par crédit. Publication statique incluse ; services payés sur vos comptes personnels et ressources non attribuables exclus.</p><ul>${(tariff.meters || []).map((meter:any)=>`<li>${escapeHtml(meter.meter)} : ${Number(meter.creditsPerUnit).toLocaleString('fr-FR',{maximumFractionDigits:10})} crédit(s) par ${escapeHtml(meter.unit)}</li>`).join('')}</ul><p>Exemple : 1 Go-mois de base de données = 1,5 crédit. Version ${escapeHtml(tariff.version)}.</p></details>${cloudBilling.enabled&&!accepted?'<label><input type="checkbox" data-cloud-consent-check> J’accepte ce barème pour les nouveaux usages de cette application.</label><button type="button" class="cloud-action-btn" data-cloud-consent disabled>Activer les usages Cloud payants</button><p data-cloud-consent-status role="status"></p>':''}</section>`);
+      const accept=host.querySelector<HTMLButtonElement>('[data-cloud-consent]');
+      host.querySelector<HTMLInputElement>('[data-cloud-consent-check]')?.addEventListener('change',event=>{if(accept)accept.disabled=!(event.target as HTMLInputElement).checked;});
+      accept?.addEventListener('click',async()=>{
+        accept.disabled=true;
+        try { await apiFetch('/api/billing/cloud-consent',{method:'POST',body:JSON.stringify({project_id:currentProjectId,tariff_version:tariff.version,accepted:true})}); await loadCloudConsoleUsage(); }
+        catch { const status=host.querySelector('[data-cloud-consent-status]'); if(status)status.textContent='L’activation n’a pas été enregistrée. Réessayez dans un instant.'; accept.disabled=false; }
+      });
+    }
   } catch (error) { host.innerHTML = `<div class="db-state db-state-error">${escapeHtml(error instanceof Error ? error.message : 'Usage indisponible.')}</div>`; }
 }
 

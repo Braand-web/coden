@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { billingMonthAt, annualInstallments } from './billing-calendar.ts';
 import {
   BILLING_PLANS,
   BILLING_SETTLEMENT_CURRENCY,
@@ -101,6 +102,7 @@ type CheckoutIntent = {
   currency: string;
   price_version_id: string;
   provider_checkout_id?: string | null;
+  provider_transaction_id?: string | null;
   customer_email?: string | null;
   status: string;
 };
@@ -279,13 +281,7 @@ export function verifySaspayWebhookSignature(rawBody: string | Buffer, signature
 }
 
 function addUtcMonths(input: Date, months: number) {
-  const value = new Date(input);
-  const day = value.getUTCDate();
-  value.setUTCDate(1);
-  value.setUTCMonth(value.getUTCMonth() + months);
-  const lastDay = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + 1, 0)).getUTCDate();
-  value.setUTCDate(Math.min(day, lastDay));
-  return value;
+  return billingMonthAt(input, months);
 }
 
 function cleanCustomerName(email: string) {
@@ -467,11 +463,16 @@ export class SaspayService {
     const { error } = await this.supabase.from('provider_webhook_events').insert([row]);
     if (!error) return true;
     if (error.code !== '23505' && !/duplicate|unique/i.test(error.message || '')) throw new Error(`Webhook idempotency persistence failed: ${error.message}`);
-    const { data: existing, error: lookupError } = await this.supabase.from('provider_webhook_events').select('status,attempts').eq('provider', 'saspay').eq('event_id', eventId).maybeSingle();
+    const { data: existing, error: lookupError } = await this.supabase.from('provider_webhook_events').select('status,attempts,processing_started_at').eq('provider', 'saspay').eq('event_id', eventId).maybeSingle();
     if (lookupError) throw new Error(`Webhook idempotency lookup failed: ${lookupError.message}`);
     if (existing?.status === 'processed') return false;
-    const { error: retryError } = await this.supabase.from('provider_webhook_events').update({ status: 'processing', attempts: Number(existing?.attempts || 1) + 1, last_error: null }).eq('provider', 'saspay').eq('event_id', eventId);
+    // Do not let two webhook workers retry the same failed delivery concurrently.
+    if (existing?.status === 'processing' && Date.parse(existing.processing_started_at) > Date.now() - 5 * 60_000) throw new Error('Webhook is already being processed; retry later.');
+    const { data: retry, error: retryError } = await this.supabase.from('provider_webhook_events')
+      .update({ status: 'processing', attempts: Number(existing?.attempts || 1) + 1, processing_started_at: new Date().toISOString(), last_error: null })
+      .eq('provider', 'saspay').eq('event_id', eventId).eq('status', existing?.status).eq('attempts', Number(existing?.attempts || 1)).select('event_id').maybeSingle();
     if (retryError) throw new Error('Webhook retry persistence failed.');
+    if (!retry) throw new Error('Webhook is already being processed; retry later.');
     return true;
   }
 
@@ -495,8 +496,12 @@ export class SaspayService {
   }
 
   private assertPaidAmount(intent: CheckoutIntent, transaction: SaspayTransaction, fallback: Record<string, any>) {
-    const paidAmount = Number(transaction.requested_amount || transaction.amount || fallback.amount || 0);
-    const currency = String(transaction.currency || fallback.currency || '').toUpperCase();
+    if (String(transaction.status || '').toUpperCase() !== 'SUCCESS') throw new Error('Payment transaction is not confirmed.');
+    const verified = transaction as SaspayTransaction & { transaction_type?: string; flow_direction?: string };
+    if (verified.transaction_type !== 'PAIEMENT' || verified.flow_direction !== 'INBOUND') throw new Error('Transaction is not a customer payment.');
+    if (String(transaction.id) !== String(fallback.id)) throw new Error('Payment transaction identity does not match.');
+    const paidAmount = Number(transaction.requested_amount ?? transaction.amount ?? 0);
+    const currency = String(transaction.currency || '').toUpperCase();
     if (!Number.isFinite(paidAmount) || Math.abs(paidAmount - Number(intent.amount)) > 0.01) throw new Error('Paid amount does not match the checkout intent.');
     if (currency !== String(intent.currency).toUpperCase()) throw new Error('Paid currency does not match the checkout intent.');
   }
@@ -509,7 +514,11 @@ export class SaspayService {
   private async grantPlan(intent: CheckoutIntent, transaction: SaspayTransaction) {
     const plan = getPlanConfig(intent.plan_key);
     if (!plan || (plan.key !== 'pro' && plan.key !== 'business')) throw new Error('Checkout plan is invalid.');
-    const now = new Date();
+    const existing = await this.supabase.from('billing_subscriptions_v2').select('account_id,current_period_start')
+      .eq('provider_subscription_id', intent.provider_checkout_id).maybeSingle();
+    if (existing.error || (existing.data && existing.data.account_id !== intent.account_id)) throw new Error('Subscription identity persistence failed.');
+    const now = existing.data?.current_period_start ? new Date(existing.data.current_period_start) : new Date();
+    if (!Number.isFinite(now.getTime())) throw new Error('Subscription calendar is invalid.');
     const annual = intent.billing_interval === 'annual';
     const periodEnd = addUtcMonths(now, annual ? 12 : 1);
     const monthlyExpiry = addUtcMonths(now, 1);
@@ -557,6 +566,8 @@ export class SaspayService {
       const { intent, transaction } = resolved;
       if (eventType === 'transaction.success') {
         this.assertPaidAmount(intent, transaction, data);
+        if (intent.status==='paid' && intent.provider_transaction_id && intent.provider_transaction_id!==transaction.id)
+          throw new Error('This checkout was already paid by a different transaction; reconciliation required.');
         if (intent.status !== 'paid') {
           if (intent.kind === 'topup') {
             await this.grant({ accountId: intent.account_id, kind: 'topup', restriction: 'general', credits: Number(intent.credit_tier), netRevenueUsd: estimateSaspayNetRevenue(Number(transaction.net_amount || intent.amount)), sourceReference: `saspay:${transaction.id}`, expiresAt: addUtcMonths(new Date(), 12).toISOString() });
@@ -582,7 +593,7 @@ export class SaspayService {
   async grantDueAnnualCredits(limit = 100) {
     const now = new Date();
     const { data, error } = await this.supabase.from('billing_subscriptions_v2')
-      .select('provider_subscription_id,account_id,plan_id,credit_tier,next_credit_grant_at,current_period_end,monthly_net_revenue_usd')
+      .select('provider_subscription_id,account_id,plan_id,credit_tier,next_credit_grant_at,current_period_start,current_period_end,monthly_net_revenue_usd')
       .eq('provider', 'saspay')
       .eq('billing_interval', 'annual')
       .eq('status', 'active')
@@ -596,14 +607,21 @@ export class SaspayService {
       if (!Number.isFinite(periodEnd.getTime()) || periodEnd <= now) continue;
       const plan = getPlanConfig(row.plan_id);
       if (!plan) continue;
-      const grantAt = new Date(String(row.next_credit_grant_at));
-      const nextGrant = addUtcMonths(grantAt, 1);
-      const expiresAt = nextGrant < periodEnd ? nextGrant : periodEnd;
-      const reference = `saspay-annual:${row.provider_subscription_id}:${grantAt.toISOString().slice(0, 10)}`;
-      await this.grantMonthlyPlanCredits(String(row.account_id), plan, Number(row.credit_tier || plan.credits), Number(row.monthly_net_revenue_usd || 0), reference, expiresAt.toISOString());
+      const anchor = new Date(String(row.current_period_start || ''));
+      const dueAt = new Date(String(row.next_credit_grant_at));
+      const due = annualInstallments(anchor,now).filter(period => period.index > 0 && period.startsAt >= dueAt);
+      let nextGrant = dueAt;
+      for (const period of due) {
+        // Never resurrect an expired monthly entitlement or shift the anniversary.
+        if (period.expiresAt > now) {
+          const reference = `saspay-annual:${row.provider_subscription_id}:${period.startsAt.toISOString().slice(0, 10)}`;
+          await this.grantMonthlyPlanCredits(String(row.account_id), plan, Number(row.credit_tier || plan.credits), Number(row.monthly_net_revenue_usd || 0), reference, period.expiresAt.toISOString());
+          granted += 1;
+        }
+        nextGrant = period.expiresAt;
+      }
       const { error: scheduleError } = await this.supabase.from('billing_subscriptions_v2').update({ last_credit_grant_at: now.toISOString(), next_credit_grant_at: nextGrant < periodEnd ? nextGrant.toISOString() : null, updated_at: now.toISOString() }).eq('provider_subscription_id', row.provider_subscription_id);
       if (scheduleError) throw new Error('Annual credit schedule persistence failed.');
-      granted += 1;
     }
     return granted;
   }
@@ -642,8 +660,8 @@ export class SaspayService {
         .from('credit_grants')
         .select('id')
         .eq('account_id', accountId)
-        .eq('source_reference', sourceReference)
-        .maybeSingle();
+        .eq('kind', 'signup_free')
+        .limit(1).maybeSingle();
       if (existingGrantError) throw new Error(`Signup grant lookup failed: ${existingGrantError.message}`);
       if (existingGrant) continue;
       await this.grant({

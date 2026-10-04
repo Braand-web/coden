@@ -15,7 +15,10 @@ describe('project preview persistence across reloads', () => {
   it('preserves a verified app when a later edit cannot be verified', () => {
     const outcome = server.slice(server.indexOf('const preserveLastVerifiedApp = !outcome.ok'), server.indexOf('const pipelineProviderCostUsd ='));
     expect(outcome).toContain("project.preview_status === 'verified'");
-    expect(outcome).toContain('if (!preserveLastVerifiedApp) await saveProject(updatedProject, pipelineFiles)');
+    expect(outcome).toContain('if (!preserveLastVerifiedApp) {');
+    expect(outcome).toContain('else await saveProject(updatedProject,pipelineFiles)');
+    expect(outcome.indexOf('await completeDeliveredAction')).toBeLessThan(outcome.indexOf('if (!preserveLastVerifiedApp) {'));
+    expect(outcome).toContain('generationDurablyDelivered=true');
     expect(server).toMatch(/project: visibleProject,\s+files: visibleFiles,/);
     expect(server).toContain("live_url: preserveLastVerifiedApp ? '' : outcome.liveUrl");
   });

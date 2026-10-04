@@ -94,7 +94,7 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
     'and the type says so');
 
   const standard = server.slice(
-    server.indexOf('const refId = `gen_${randomUUID()}`;'),
+    server.indexOf('const refId = `gen_${requestId}`;'),
     server.indexOf('// Whatever step the run died on stops spinning'),
   );
   assert.match(standard, /credits: cost\.finalCredits,/, 'the standard generator also reserves the exact public price');

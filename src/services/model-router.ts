@@ -22,6 +22,8 @@ export interface RoutingContext {
   plan: UserPlan | 'free' | 'pro' | 'business' | 'scale' | 'enterprise';
   mode: 'Auto' | 'Fast' | 'Balanced' | 'Pro' | 'Premium' | 'Max Quality' | 'Custom';
   userCredits: number;
+  /** Customer action price is reserved separately; token/model floors are not a tariff. */
+  fixedActionPricing?: boolean;
   /** The person's Économique / Équilibré / Performance choice, when Auto is routing. */
   routingMode?: RoutingMode;
   taskComplexity?: TaskComplexity;
@@ -84,7 +86,7 @@ export class ModelRouter {
       }
 
       // Credit check threshold for custom selection
-      if (context.userCredits < MODEL_ACTION_CREDIT_FLOORS[requestedModel]) {
+      if (!context.fixedActionPricing && context.userCredits < MODEL_ACTION_CREDIT_FLOORS[requestedModel]) {
         throw new Error('Action unavailable with current plan. Please use Auto or upgrade.');
       }
 
@@ -118,7 +120,7 @@ export class ModelRouter {
     }
 
     const affordableModels = capableModels
-      .filter(modelId => MODEL_ACTION_CREDIT_FLOORS[modelId] <= context.userCredits)
+      .filter(modelId => context.fixedActionPricing || MODEL_ACTION_CREDIT_FLOORS[modelId] <= context.userCredits)
       .sort((a, b) => MODEL_ACTION_CREDIT_FLOORS[a] - MODEL_ACTION_CREDIT_FLOORS[b]);
 
     if (affordableModels.length === 0) {
@@ -143,7 +145,7 @@ export class ModelRouter {
         complexity: complexityForMode(context.mode, context.taskComplexity),
         mode: context.routingMode,
         plan: context.plan,
-        credits: context.userCredits,
+        credits: context.fixedActionPricing ? undefined : context.userCredits,
         interactive: context.interactive,
         needs: {
           vision: context.requiredCapabilities?.vision,

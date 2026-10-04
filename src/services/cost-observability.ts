@@ -73,7 +73,9 @@ export class CostObservationWriter {
   private writing = false;
   private scheduled = false;
   readonly health = { persisted: 0, dropped: 0, failures: 0 };
-  constructor(private sink: Sink, private maxPending = 1000) {}
+  private sink: Sink;
+  private maxPending: number;
+  constructor(sink: Sink, maxPending = 1000) { this.sink = sink; this.maxPending = maxPending; }
   enqueue(event: ProviderCostObservation) {
     if (this.pending.length >= this.maxPending) { this.health.dropped += 1; return; }
     this.pending.push(event);

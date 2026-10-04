@@ -66,12 +66,30 @@ describe('checkout idempotency authorization', () => {
 });
 
 describe('paid webhook persistence', () => {
+  it.each([
+    {status:'pending'}, {amount:price.amount+500}, {currency:'USD'}, {id:'another-transaction'}, {transaction_type:'RETRAIT'}, {flow_direction:'OUTBOUND'},
+  ])('rejects inconsistent provider confirmation %j before any grant', async patch => {
+    vi.stubEnv('SASPAY_API_KEY', 'sk_test_fixture_only');
+    const {database}=fakeDatabase({...intent,kind:'topup'});
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({id:'tx-test',status:'success',transaction_type:'PAIEMENT',flow_direction:'INBOUND',amount:price.amount,currency:BILLING_SETTLEMENT_CURRENCY,metadata:{coden_intent_id:intent.id},...patch}),{status:200})));
+    const raw=JSON.stringify({event:'transaction.success',data:{id:'tx-test',amount:price.amount,currency:BILLING_SETTLEMENT_CURRENCY}});
+    const timestamp=String(Math.floor(Date.now()/1000));
+    const signature=createHmac('sha256','fixture-secret').update(`${timestamp}.${raw}`).digest('hex');
+    await expect(new SaspayService(database).handleWebhook(raw,signature,timestamp,'','fixture-secret')).rejects.toThrow();
+    expect(database.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects an invalid signature before contacting the provider or ledger', async () => {
+    const {database}=fakeDatabase();
+    const fetch=vi.fn(); vi.stubGlobal('fetch',fetch);
+    await expect(new SaspayService(database).handleWebhook('{}','invalid',String(Math.floor(Date.now()/1000)),'','fixture-secret')).rejects.toThrow(/signature/i);
+    expect(fetch).not.toHaveBeenCalled(); expect(database.rpc).not.toHaveBeenCalled();
+  });
   it('never acknowledges a payment if its durable intent update failed', async () => {
     vi.stubEnv('SASPAY_API_KEY', 'sk_test_fixture_only');
     const paid = { ...intent, kind: 'topup', status: 'pending' };
     const { database, writes } = fakeDatabase(paid, { 'billing_checkout_intents:update': 'database unavailable' });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      id: 'tx-test', status: 'success', amount: price.amount, currency: BILLING_SETTLEMENT_CURRENCY,
+      id: 'tx-test', status: 'success', transaction_type:'PAIEMENT', flow_direction:'INBOUND', amount: price.amount, currency: BILLING_SETTLEMENT_CURRENCY,
       metadata: { coden_intent_id: intent.id },
     }), { status: 200 })));
     const raw = JSON.stringify({ event: 'transaction.success', data: { id: 'tx-test' } });

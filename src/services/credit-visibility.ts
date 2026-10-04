@@ -27,6 +27,13 @@ export type SpendableGrant = {
   credits_remaining: number;
 };
 
+/** Legacy restrictions remain usable, but can no longer define a commercial grid. */
+export function eligibleGrantRestrictions(category: UnifiedUsageCategory): string[] {
+  if (category === 'ai_gateway') return ['ai_gateway', 'chat', 'agent', 'general'];
+  if (category === 'build') return ['build', 'agent', 'general'];
+  return [category, 'general'];
+}
+
 /**
  * Whether this grant can pay for this category.
  *
@@ -35,7 +42,7 @@ export type SpendableGrant = {
  * this module exists to prevent.
  */
 export function grantCoversCategory(grant: SpendableGrant, category: UnifiedUsageCategory): boolean {
-  return grant.usage_restriction === category || grant.usage_restriction === SHARED_USAGE_RESTRICTION;
+  return eligibleGrantRestrictions(category).includes(grant.usage_restriction);
 }
 
 /**

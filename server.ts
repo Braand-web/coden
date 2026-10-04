@@ -24,6 +24,8 @@ import { modelAvailability, openRouterCatalog, validateCatalogModels } from './s
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream, expandPersistedEnvelope } from './src/services/agent-event-stream.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
+import { BillingLedgerUnavailableError, billingActionIdentity, billingActionFingerprint, customerActionCredits, checkpointDeliveredUsage, completeDeliveredAction, paidOperationsPaused, assertPaidOperationsAvailable, queueDeliveredSettlement, retryDeliveredSettlements } from './src/services/billing-action.ts';
+import { CLOUD_TARIFF_VERSION, cloudBillingEnabled, cloudGraceState, cloudReferenceTariff } from './src/services/cloud-billing.ts';
 import { captureSince, captureTurnCosts, costCaptureEnabled } from './src/services/turn-cost-capture.ts';
 import { costReconcileEnabled, reconcileOpenRouterUsage, reconciliationAlertMessage } from './src/services/cost-reconciliation.ts';
 import { priceDriftMessage, priceSyncEnabled, syncModelPrices } from './src/services/model-price-sync.ts';
@@ -36,6 +38,7 @@ import {
 import type { DecisionQuestion } from './src/lib/agent-chat-protocol.ts';
 import {
   UNIFIED_USAGE_CATEGORIES,
+  eligibleGrantRestrictions,
   spendableByCategory,
   sharedCredits,
 } from './src/services/credit-visibility.ts';
@@ -181,7 +184,7 @@ import {
   type ModelDefinition,
   type ModelProvider,
 } from './src/config/ai-models.ts';
-import { CostEstimatorService, CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
+import { CreditWalletService, CreditLedgerService, CreditReservationService } from './src/services/credit-system.ts';
 import { DomainService, createCloudflarePagesDomainProvider, createVercelDomainProvider, domainStateLabel, resolveDomainState, sanitizeDomainInput } from './src/services/domain-service.ts';
 import {
   SaspayService,
@@ -1053,7 +1056,7 @@ app.options('/api/analytics/collect', (_req, res) => {
 // idempotent GET open, while every wallet, checkout, portal and top-up route
 // remains behind the normal authenticated billing boundary.
 function requireBillingAuth(req: any, res: any, next: any) {
-  if (req.method === 'GET' && (req.path === '/plans' || req.path === '/pricing')) return next();
+  if (req.method === 'GET' && req.path === '/plans') return next();
   return requireAuth(req, res, next);
 }
 
@@ -1385,7 +1388,6 @@ setAgentWebProvider(createAgentWebProvider({
 }));
 
 const modelRouter = new ModelRouter();
-const costEstimator = new CostEstimatorService();
 
 function requireSupabase(feature: string) {
   const client = getSupabase();
@@ -5516,24 +5518,15 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
       }),
     },
   ];
-  const runtimeConfig = buildProviderRequestConfig(routerRuntime);
-  const runtimeConfigForModel = (modelId: AllowedModelId) => buildProviderRequestConfig(buildAIModelRuntimeConfig({
-    modelId,
-    task: 'intent',
-    stream: false,
-    timeoutMs: 18_000,
-    // Routing is classification: fast beats deep here.
-    reasoningLevel: 'low',
-  }));
+  // Approved exception: at most two Coden-funded calls, each <= $0.05
+  // including purchase fees. No customer debit and no unbounded retries.
+  const runtimeConfig = { ...buildProviderRequestConfig(routerRuntime), internalRoutingBudgetUsd: 0.05 };
   const result = await providerGateway.chat(routerModel, routerMessages, {
-    maxAttempts: 2,
+    maxAttempts: 1,
     timeoutMs: routerRuntime.timeoutMs,
     runtimeConfig,
-    runtimeConfigForModel,
-    // Intent routing is internal and has not produced any user-visible output.
-    // A short compatible fallback keeps Auto responsive when the economy
-    // router is degraded without changing a user-pinned generation model.
-    allowFallback: true,
+    // Retrying on another model could escape the approved internal envelope.
+    allowFallback: false,
   });
   let routerFailureCause = '';
   const rawDecision = await parseOrRepairStructuredObject(
@@ -5553,7 +5546,6 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
         maxAttempts: 1,
         timeoutMs: routerRuntime.timeoutMs,
         runtimeConfig,
-        runtimeConfigForModel,
         allowFallback: false,
       });
       return repaired.text;
@@ -6007,6 +5999,7 @@ async function resolveAgentProviderModel(input: {
         plan: accessPlan,
         mode: 'Custom',
         userCredits: accessBudget,
+        fixedActionPricing: true,
         task,
         taskComplexity: complexity,
         interactive: true,
@@ -6036,6 +6029,7 @@ async function resolveAgentProviderModel(input: {
         mode: routingModeForPolicy(input.decision.selectedModelPolicy),
         routingMode: currentRoutingMode(),
         userCredits: accessBudget,
+        fixedActionPricing: true,
         task,
         taskComplexity: complexity,
         interactive: true,
@@ -6062,6 +6056,7 @@ async function resolveAgentProviderModel(input: {
     mode,
     routingMode: currentRoutingMode(),
     userCredits: accessBudget,
+    fixedActionPricing: true,
     task,
     taskComplexity: complexity,
     // Every Builder and dashboard turn has a person waiting on it. Never
@@ -6475,19 +6470,20 @@ function isExplicitProviderModelSelection(value: unknown) {
 /** The public action table is the customer price; model and effort never silently rewrite it. */
 function estimateActionCost(prompt: string, intent: IntentDecision, _modelId?: unknown, _plan?: unknown) {
   if (!CODEN_MONETIZATION_ENABLED) return { finalCredits: 0, minimum_action_credits: 0, action: null };
-  if (intent.intent === 'clarification_required' || !intent.requiresCredits) return { finalCredits: 0, minimum_action_credits: 0, action: null };
+  if (intent.intent === 'clarification_required' || (!intent.requiresCredits && intent.intent !== 'conversation')) return { finalCredits: 0, minimum_action_credits: 0, action: null };
   const action = classifyBillableAction(prompt, intent);
-  const finalCredits = action === 'conversation' ? 0.5 : ACTION_CREDIT_PRICES[action];
+  const finalCredits = customerActionCredits(action);
   return { finalCredits, minimum_action_credits: finalCredits, action };
 }
 
 async function chargeCompletedAgentAction(
-  helpers: ReturnType<typeof getDbHelpers> | null,
+  _helpers: ReturnType<typeof getDbHelpers> | null,
   userId: string,
   amount: number,
   description: string,
   referenceId: string,
   options: {
+    reservation: UnifiedUsageReservation;
     projectId?: string | null;
     runId?: string | null;
     category?: UnifiedUsageReservation['category'];
@@ -6498,7 +6494,7 @@ async function chargeCompletedAgentAction(
     completeCostUsd?: number;
     /** Private reasoning billed at the output rate, for per-step attribution. */
     reasoningTokens?: number;
-  } = {},
+  },
 ) {
   if (!CODEN_MONETIZATION_ENABLED) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
@@ -6516,13 +6512,7 @@ async function chargeCompletedAgentAction(
     const grossedUpProviderCost = withProviderPurchaseFee(providerCostUsd);
     const platformAllowance = Math.max(0, Number(options.completeCostUsd ?? 0) - providerCostUsd);
     const completeCostUsd = Math.max(0.000001, grossedUpProviderCost + platformAllowance);
-    const reservation = await reserveUnifiedUsage({
-      accountId: userId,
-      category: options.category || 'ai_gateway',
-      credits: amount,
-      estimatedCogsUsd: Math.max(completeCostUsd * 1.5, 0.000001),
-      idempotencyKey: `${referenceId}:reserve`,
-    });
+    const reservation = options.reservation;
     const eventId = await recordUnifiedUsageEvent({
       accountId: userId,
       projectId: options.projectId,
@@ -6535,30 +6525,11 @@ async function chargeCompletedAgentAction(
       allocatedPlatformCostUsd: platformAllowance,
       completeCostUsd,
       idempotencyKey: `${referenceId}:usage`,
-      /*
-       * What the measured cost says this action should have cost, beside what
-       * it was actually charged.
-       *
-       * Recorded, not enforced. Flipping the charge onto the measurement in
-       * the same change would have been a billing change made blind: nobody
-       * has ever seen a measured build cost in this ledger, the free plan
-       * grants five build credits a day, and a measured build is worth more
-       * than that — every free user would have been cut off by an estimate
-       * nobody had checked. So the two numbers are written side by side, and
-       * the switch is a one-line change once a week of real runs has said
-       * what it costs.
-       */
+      settlement: { reservation, credits: amount },
+      // Provider COGS is audit metadata, never an alternative customer price.
       providerPayload: {
         description,
         charged_credits: amount,
-        measured_credits: costEstimator.calculateRequiredCredits({
-          openrouter_cost_usd: grossedUpProviderCost,
-          infra_cost_usd: platformAllowance,
-          storage_cost_usd: 0,
-          build_cost_usd: 0,
-          domain_operation_cost_usd: 0,
-          minimum_action_credits: 1,
-        }).finalCredits,
         provider_fee_rate: OPENROUTER_PURCHASE_FEE_RATE,
         reasoning_tokens: options.reasoningTokens ?? null,
       },
@@ -6566,17 +6537,6 @@ async function chargeCompletedAgentAction(
     await settleUnifiedUsage({ reservation, usageEventId: eventId, creditsCharged: amount, completeCostUsd });
     return;
   }
-  if (!helpers) {
-    console.warn('[coden:credit_charge_skipped]', {
-      reason: 'persistence_unavailable',
-      user_id: userId,
-      amount,
-      reference_id: referenceId,
-    });
-    return;
-  }
-  const finalBalance = await helpers.updateWallet(userId, -amount);
-  await helpers.addLedger(userId, 'usage', -amount, finalBalance, description, referenceId);
 }
 
 function providerModelToDisplayName(modelId: string) {
@@ -8515,6 +8475,7 @@ async function saveProject(project: GeneratedProject, files?: GeneratedFile[]) {
   const snapshotSaved = await persistDurableProjectSnapshot({
     project,
     files,
+    billingDeliveryActionId: files && filesSaved ? null : undefined,
     preview: {
       status: project.preview_status || 'idle',
       html: project.preview_html || (files ? getProjectPreviewHtml(project, files, 'preview') : ''),
@@ -8663,6 +8624,17 @@ async function deleteProjectCascade(project: GeneratedProject) {
 
 async function loadProjectFiles(projectId: string): Promise<GeneratedFile[]> {
   const client = requireSupabase('Project file loading');
+  // An interrupted mirror must never replace the complete, billed revision
+  // with a half-written set of files. Clear this marker only after a full save.
+  if (CODEN_MONETIZATION_ENABLED) {
+    const checkpoint=await client.from('project_state_snapshots').select('files_snapshot,billing_delivery_action_id').eq('project_id',projectId).maybeSingle();
+    if (checkpoint.error) throw new BillingLedgerUnavailableError();
+    if (checkpoint.data?.billing_delivery_action_id) {
+      const delivered=await client.from('billing_action_requests').select('state').eq('id',checkpoint.data.billing_delivery_action_id).maybeSingle();
+      if (delivered.error || delivered.data?.state!=='delivered') throw new BillingLedgerUnavailableError();
+      return normalizeGeneratedFiles(checkpoint.data.files_snapshot || [],{ensureIndex:false});
+    }
+  }
   let { data, error } = await client.from('project_files').select('path, content, language, updated_at').eq('project_id', projectId).order('path');
   if (error && /language|updated_at|schema cache|column .*does not exist|could not find .* in the schema cache/i.test(error.message || '')) {
     const retry = await client.from('project_files').select('path, content').eq('project_id', projectId).order('path');
@@ -8698,12 +8670,19 @@ async function persistDurableProjectSnapshot(input: {
   workspace?: Record<string, any> | null;
   preview?: { status?: string; html?: string } | null;
   lastAgentRunId?: string | null;
+  billingDeliveryActionId?: string | null;
 }) {
+  if (CODEN_MONETIZATION_ENABLED && input.files!==undefined && input.billingDeliveryActionId===undefined) {
+    const client=requireSupabase('Financial delivery snapshot guard');
+    const prior=await client.from('project_state_snapshots').select('billing_delivery_action_id').eq('project_id',input.project.id).maybeSingle();
+    if (prior.error || prior.data?.billing_delivery_action_id) return false;
+  }
   const row = withoutUndefinedValues({
     project_id: input.project.id,
     owner_id: input.project.owner_id,
     organization_id: input.project.organization_id || null,
     revision: Date.now(),
+    billing_delivery_action_id: input.billingDeliveryActionId,
     project_snapshot: cleanProjectForSnapshot(input.project),
     files_snapshot: input.files === undefined ? undefined : redactSecretPayload(input.files),
     messages_snapshot: input.messages === undefined ? undefined : redactSecretPayload(input.messages.slice(-250)),
@@ -11116,8 +11095,9 @@ async function getWalletWithFallback(
   fallback = FALLBACK_WALLET_CREDITS,
 ) {
   if (!CODEN_MONETIZATION_ENABLED) return CODEN_UNMETERED_USAGE_BUDGET;
-  if (!helpers) return fallback;
-  return helpers.getWallet(orgId).catch(() => fallback);
+  if (hasUnlimitedTestCredits(orgId)) return Number.POSITIVE_INFINITY;
+  try { return (await loadUnifiedWalletSnapshot(orgId)).balance; }
+  catch { throw new BillingLedgerUnavailableError(); }
 }
 
 async function loadCloudWalletSnapshot(organizationId: string, plan: ReturnType<typeof getPlanConfig>) {
@@ -11317,7 +11297,7 @@ async function unifiedCategoryCredits(
       .from('credit_grants')
       .select('credits_remaining')
       .eq('account_id', accountId)
-      .in('usage_restriction', [category, 'general'])
+      .in('usage_restriction', eligibleGrantRestrictions(category))
       .is('frozen_at', null)
       .gt('expires_at', new Date().toISOString())
       .gt('credits_remaining', 0);
@@ -11331,7 +11311,7 @@ async function unifiedCategoryCredits(
       category,
       message: redactSecrets(error?.message || String(error), '[redacted]'),
     });
-    return 0;
+    throw new BillingLedgerUnavailableError();
   }
 }
 
@@ -11342,6 +11322,7 @@ async function reserveUnifiedUsage(input: {
   estimatedCogsUsd: number;
   idempotencyKey: string;
 }): Promise<UnifiedUsageReservation> {
+  assertPaidOperationsAvailable();
   const credits = Math.max(0, Number(input.credits || 0));
   const estimatedCogsUsd = Math.max(0, Number(input.estimatedCogsUsd || 0));
   if (!credits) return { ...input, credits, estimatedCogsUsd, id: '', virtual: true };
@@ -11357,12 +11338,12 @@ async function reserveUnifiedUsage(input: {
   });
   if (error || !data) {
     const detail = String(error?.message || 'no reservation returned');
-    if (/insufficient eligible credits or cogs capacity/i.test(detail)) {
+    if (/insufficient eligible credits/i.test(detail)) {
       const refusal = new Error('Insufficient eligible credits to reserve this action.') as Error & { diagnosticCode: string };
       refusal.diagnosticCode = 'CREDITS_REQUIRED';
       throw refusal;
     }
-    throw new Error(`Unified usage reservation failed: ${detail}`);
+    throw new BillingLedgerUnavailableError();
   }
   return { ...input, credits, estimatedCogsUsd, id: String(data) };
 }
@@ -11372,7 +11353,7 @@ function isCreditReservationRequired(error: unknown): boolean {
     && (error as { diagnosticCode?: unknown }).diagnosticCode === 'CREDITS_REQUIRED');
 }
 
-async function recordUnifiedUsageEvent(input: {
+function unifiedUsageRow(input: {
   accountId: string;
   projectId?: string | null;
   runId?: string | null;
@@ -11388,8 +11369,7 @@ async function recordUnifiedUsageEvent(input: {
   idempotencyKey: string;
   providerPayload?: Record<string, unknown>;
 }) {
-  const client = requireSupabase('Measured usage event');
-  const row = {
+  return {
     account_id: input.accountId,
     workspace_id: input.accountId,
     project_id: input.projectId || null,
@@ -11406,42 +11386,24 @@ async function recordUnifiedUsageEvent(input: {
     price_version_id: `${BILLING_V2_VERSION}:runtime`,
     idempotency_key: input.idempotencyKey,
     provider_payload: redactSecretPayload(input.providerPayload || {}),
+    prompt_tokens: Math.max(0, Math.min(2_000_000_000, Math.round(Number(input.providerPayload?.prompt_tokens) || 0))),
+    completion_tokens: Math.max(0, Math.min(2_000_000_000, Math.round(Number(input.providerPayload?.completion_tokens) || 0))),
     occurred_at: new Date().toISOString(),
   };
+}
+async function recordUnifiedUsageEvent(input: Parameters<typeof unifiedUsageRow>[0] & {
+  settlement?: { reservation: UnifiedUsageReservation; credits: number };
+}) {
+  const client = requireSupabase('Measured usage event');
+  const row = unifiedUsageRow(input);
+  if (input.settlement?.reservation.id && !input.settlement.reservation.virtual) {
+    await checkpointDeliveredUsage(client, { reservationId: input.settlement.reservation.id,
+      usage: row, credits: input.settlement.credits, completeCostUsd: row.complete_cost_usd });
+  }
   const usageEventId = await insertUnifiedUsageEvent(client, row);
-  void observeV3Credits(usageEventId, input.category, row.provider_cost_usd, input.providerPayload);
   return usageEventId;
 }
 
-/*
- * Billing v3, observation mode: next to what the current grid charges, the
- * credits the v3 grid would have charged for the same provider cost. Written
- * after the event, best effort — it never delays or fails the real charge.
- */
-async function observeV3Credits(usageEventId: string, category: string, providerCostUsd: number, payload: Record<string, unknown> = {}) {
-  const v3Category = meteredCategory(category);
-  if (!v3Category || !usageEventId) return;
-  try {
-    const pricing = await activePricing();
-    const tokens = (value: unknown) => {
-      const number = Math.round(Number(value) || 0);
-      return number > 0 && number < 2_000_000_000 ? number : null;
-    };
-    const client = getSupabase();
-    if (!client) return;
-    const { error } = await client.from('usage_events').update({
-      v3_credits: creditsForCost(providerCostUsd, v3Category, pricing.config),
-      v3_pricing_version: pricing.version,
-      prompt_tokens: tokens((payload as any).prompt_tokens),
-      completion_tokens: tokens((payload as any).completion_tokens),
-    }).eq('id', usageEventId);
-    if (error && !/column .* does not exist|schema cache/i.test(String(error.message || ''))) {
-      console.warn('[coden:v3_observe_failed]', { message: String(error.message || '').slice(0, 160) });
-    }
-  } catch (error: any) {
-    console.warn('[coden:v3_observe_failed]', { message: String(error?.message || error).slice(0, 160) });
-  }
-}
 
 async function settleUnifiedUsage(input: {
   reservation: UnifiedUsageReservation;
@@ -11452,13 +11414,17 @@ async function settleUnifiedUsage(input: {
   if (input.reservation.virtual || !input.reservation.id) return;
   const client = requireSupabase('Unified usage settlement');
   const credits = Math.max(0, Number(input.creditsCharged || 0));
-  const completeCostUsd = Math.max(0, Number(input.completeCostUsd || 0));
+  const completeCostUsd = Number(Math.max(0, Number(input.completeCostUsd || 0)).toFixed(10));
+  await queueDeliveredSettlement(client, {
+    reservationId: input.reservation.id, usageEventId: input.usageEventId,
+    credits, completeCostUsd,
+  });
   const { error } = await client.rpc('coden_billing_settle', {
     p_reservation_id: input.reservation.id,
     p_usage_event_id: input.usageEventId,
     p_credits_charged: credits,
     p_complete_cost_usd: completeCostUsd,
-    p_realized_revenue_usd: Number((credits * 0.02).toFixed(8)),
+    p_realized_revenue_usd: 0, // SQL derives revenue from the grants actually consumed.
   });
   if (error) throw new Error(`Unified usage settlement failed: ${error.message}`);
 }
@@ -11476,6 +11442,54 @@ async function releaseUnifiedUsage(reservation: UnifiedUsageReservation | null) 
 // ──────────────────────────────────────────────────────────────────────
 // 1. BILLING ENDPOINTS
 // ──────────────────────────────────────────────────────────────────────
+
+// Owner-only Cloud billing view. There is deliberately no browser usage-ingestion endpoint.
+app.get('/api/billing/cloud-usage', async (req: any,res: any) => {
+  const userId=getUserOrgId(req);
+  const projectId=String(req.query.project_id || '');
+  if (!isUuid(projectId)) return res.status(400).json({success:false,message:'Un projet est nécessaire.'});
+  const project=await loadProject(projectId,userId);
+  if (!project || project.owner_id!==userId) return res.status(404).json({success:false,message:'Projet introuvable.'});
+  const accountId=project.organization_id || userId;
+  const client=await ensureUnifiedIncludedGrants(accountId);
+  const since=new Date(); since.setUTCDate(1); since.setUTCHours(0,0,0,0);
+  const [wallet,consent,grace,collectors,usage]=await Promise.all([
+    loadUnifiedWalletSnapshot(accountId),
+    client.from('cloud_billing_consents').select('tariff_version,accepted_at').eq('project_id',projectId).eq('account_id',accountId).maybeSingle(),
+    client.from('cloud_billing_grace').select('started_at,budget_credits,used_credits,paid_replenishment_id').eq('account_id',accountId).maybeSingle(),
+    client.from('cloud_meter_collectors').select('collector_id').eq('enabled',true).eq('attribution_verified',true),
+    client.from('usage_events').select('id,resource,quantity,unit,complete_cost_usd,occurred_at,usage_settlements(credits_charged)')
+      .eq('account_id',accountId).eq('project_id',projectId).eq('category','cloud').gte('occurred_at',since.toISOString())
+      .order('occurred_at',{ascending:false}).limit(501),
+  ]);
+  if ([consent,grace,collectors,usage].some(result=>result.error)) throw new BillingLedgerUnavailableError();
+  const enabled=cloudBillingEnabled() && Boolean(collectors.data?.length);
+  const history=(usage.data || []).slice(0,500).map((row:any)=>({id:row.id,resource:row.resource,quantity:Number(row.quantity),unit:row.unit,
+    occurred_at:row.occurred_at,credits:(row.usage_settlements || []).reduce((sum:number,s:any)=>sum+Number(s.credits_charged || 0),0)}));
+  res.json({success:true,project_id:projectId,balance:wallet.spendable.cloud,tariff:cloudReferenceTariff(),
+    enabled,status:enabled?'ready':'measurement_unavailable',consent:consent.data,grace:cloudGraceState(grace.data as any),
+    history,coverage:{since:since.toISOString(),complete:(usage.data?.length || 0)<=500},
+    consumed_credits:history.reduce((sum:number,row:any)=>sum+row.credits,0),
+    message:enabled?'Seuls les usages attribués et acceptés sont facturables.':'Aucun nouveau débit Cloud : la mesure par application reste à valider.',
+  });
+});
+app.post('/api/billing/cloud-consent',async(req:any,res:any)=>{
+  const userId=getUserOrgId(req);
+  const projectId=String(req.body?.project_id || '');
+  if (!isUuid(projectId) || req.body?.tariff_version!==CLOUD_TARIFF_VERSION || req.body?.accepted!==true)
+    return res.status(400).json({success:false,message:'L’acceptation du barème actuel est nécessaire.'});
+  const project=await loadProject(projectId,userId);
+  if (!project || project.owner_id!==userId) return res.status(404).json({success:false,message:'Projet introuvable.'});
+  const accountId=project.organization_id || userId;
+  const client=await ensureUnifiedIncludedGrants(accountId);
+  const prior=await client.from('cloud_billing_consents').select('tariff_version,accepted_at').eq('project_id',projectId).eq('account_id',accountId).maybeSingle();
+  if (prior.error) throw new BillingLedgerUnavailableError();
+  if (prior.data?.tariff_version===CLOUD_TARIFF_VERSION) return res.json({success:true,consent:prior.data});
+  const saved=await client.from('cloud_billing_consents').upsert({project_id:projectId,account_id:accountId,accepted_by:userId,
+    tariff_version:CLOUD_TARIFF_VERSION,accepted_at:new Date().toISOString()},{onConflict:'project_id'}).select('tariff_version,accepted_at').single();
+  if (saved.error) throw new BillingLedgerUnavailableError();
+  res.json({success:true,consent:saved.data});
+});
 
 // GET /billing/plans
 app.get('/api/billing/plans', async (req, res) => {
@@ -12050,8 +12064,17 @@ app.post('/api/assistant/decision', async (req: any, res: any) => {
 // POST /assistant/chat
 // Lightweight conversational response: no SSE, no project creation, no preview
 // mutation. The selected model is still honored through the provider gateway.
+// Financial rollback pauses new paid work; it never reactivates V3 or unlimited usage.
+app.use((req,res,next)=>{
+  if(req.method==='POST' && paidOperationsPaused() && (req.path==='/api/assistant/chat'
+    || /^\/api\/projects\/[^/]+\/(generate|messages|media\/generate)$/.test(req.path))) {
+    return res.status(503).json({success:false,recoverable:true,diagnostic_code:'PAID_OPERATIONS_PAUSED',
+      message:'Les nouvelles opérations sont temporairement en pause. Vos projets et vos crédits sont conservés.'});
+  }
+  next();
+});
 app.post('/api/assistant/chat', async (req: any, res: any) => {
-  const requestId = `chat_${randomUUID()}`;
+  let requestId = `chat_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
   const userId = String(authUser.id);
@@ -12135,8 +12158,21 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   }
 
   const helpers = getOptionalDbHelpers('assistant_chat');
-  const wallet = await getWalletWithFallback(helpers, userId);
+  const wallet = await unifiedCategoryCredits(userId, 'ai_gateway');
   const estimate = estimateActionCost(prompt, decision, selectedModel);
+  if (CODEN_MONETIZATION_ENABLED) {
+    const nonce = req.headers['idempotency-key'] || req.body?.clientMessageId;
+    try { requestId = billingActionIdentity(userId, canPersistConversation ? project.id : 'assistant', 'chat', nonce); }
+    catch { return res.status(400).json({ success: false, diagnostic_code: 'ACTION_IDENTIFIER_REQUIRED', message: 'Actualisez la page avant de renvoyer votre message.' }); }
+    const client = await ensureUnifiedIncludedGrants(userId);
+    const claim = await client.rpc('coden_billing_claim_action', { p_id: requestId, p_account_id: userId,
+      p_fingerprint: billingActionFingerprint({ prompt, selectedModel, requestedMode, routingMode: req.body?.routingMode, effort: req.body?.effort || 'auto' }) });
+    if (claim.error) throw new BillingLedgerUnavailableError();
+    if (!claim.data?.claimed) {
+      if (claim.data?.state === 'delivered' && claim.data.result) return res.json(claim.data.result);
+      return res.status(409).json({ success: false, diagnostic_code: 'ACTION_ALREADY_STARTED', message: 'Ce message a déjà été pris en compte. Son résultat reste dans votre conversation.' });
+    }
+  }
   /*
    * Both books, before the model is called rather than after.
    *
@@ -12148,9 +12184,13 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
    * answer, CREDITS_REQUIRED, the one the customer actually sees.
    */
   const spendingCap = await spendingCapGate(userId);
-  if (spendingCap) return res.status(402).json(spendingCap);
-  const aiCredits = await unifiedCategoryCredits(userId, 'ai_gateway');
+  if (spendingCap) {
+    if (CODEN_MONETIZATION_ENABLED) await requireSupabase('Action refusal').from('billing_action_requests').update({ state: 'failed' }).eq('id', requestId).eq('account_id', userId);
+    return res.status(402).json(spendingCap);
+  }
+  const aiCredits = wallet;
   if (wallet < estimate.finalCredits || aiCredits < estimate.finalCredits) {
+    if (CODEN_MONETIZATION_ENABLED) await requireSupabase('Action refusal').from('billing_action_requests').update({ state: 'failed' }).eq('id', requestId).eq('account_id', userId);
     return res.status(402).json({
       /*
        * Auto is never the answer here. This endpoint serves conversation and
@@ -12160,10 +12200,22 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
        */
       ...publicCreditGateResponse(
         isLikelyFrenchPrompt(prompt),
-        selectedModel !== 'auto' && decision.intent !== 'conversation',
+        false,
       ),
       request_id: requestId,
     });
+  }
+
+  let chatReservation: UnifiedUsageReservation | null = null;
+  if (CODEN_MONETIZATION_ENABLED && estimate.finalCredits > 0) {
+    try {
+      chatReservation = await reserveUnifiedUsage({ accountId: userId, category: 'ai_gateway',
+        credits: estimate.finalCredits, estimatedCogsUsd: 0.000001, idempotencyKey: `chat:${requestId}:reserve` });
+    } catch (error) {
+      await requireSupabase('Action refusal').from('billing_action_requests').update({ state: 'failed' }).eq('id', requestId).eq('account_id', userId);
+      if (isCreditReservationRequired(error)) return res.status(402).json(publicCreditGateResponse(isLikelyFrenchPrompt(prompt), false));
+      throw error;
+    }
   }
 
   /*
@@ -12185,7 +12237,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     : null;
   // A reader who left stops the model too: nobody is waiting for the rest.
   const chatAbort = new AbortController();
-  if (eventStream) res.once('close', () => { if (!res.writableEnded) chatAbort.abort(); });
+  res.once('close', () => { if (!res.writableEnded) chatAbort.abort(); });
+  let chatDelivered = false;
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) });
   eventStream?.chat({ type: 'activity', label: french ? 'Coden réfléchit…' : 'Coden is thinking…' });
   const streamedText = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'text_delta', delta })) : null;
@@ -12216,7 +12269,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       modelId: selectedModel,
       userCredits: wallet,
       allowLocalFallback: selectedModel === 'auto',
-      signal: eventStream ? chatAbort.signal : undefined,
+      signal: chatAbort.signal,
       onToken: streamedText ? delta => { streamedReasoning?.end(); streamedText.push(delta); } : undefined,
       onReasoning: streamedReasoning ? delta => streamedReasoning.push(delta) : undefined,
       onResearchStage: eventStream ? stage => eventStream.chat({ type: 'activity', label: stage === 'searching' ? (french ? 'Coden recherche sur le web…' : 'Coden is searching the web…') : (french ? 'Coden consulte une source…' : 'Coden is reading a source…') }) : undefined,
@@ -12230,12 +12283,33 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     streamedReasoning?.end();
     streamedText?.end();
 
+    if (chatAbort.signal.aborted) throw new Error('Action cancelled before durable delivery.');
     const content = redactSecrets(agentText.text || '').trim();
     if (!content) throw new Error('The selected AI model returned an empty response.');
     await eventStream?.drain().catch(streamError => {
       console.warn('[coden:assistant_chat_stream_drain_failed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') });
     });
-    if (canPersistConversation) {
+    const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
+    const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
+    const answer = { success: true, request_id: requestId, text: content };
+    if (CODEN_MONETIZATION_ENABLED) {
+      const providerCost = withProviderPurchaseFee(Number(agentText.cost_usd || estimateRealCostUsd || 0));
+      const completeCost = Math.max(0.000001, providerCost + 0.00005);
+      await completeDeliveredAction(requireSupabase('Durable chat result'), {
+        actionId: requestId, accountId: userId, result: answer,
+        reservationId: chargedCredits > 0 && chatReservation && !chatReservation.virtual ? chatReservation.id : null,
+        credits: chargedCredits, completeCostUsd: completeCost,
+        usage: unifiedUsageRow({accountId:userId,projectId:canPersistConversation ? project.id : null,
+          category:'ai_gateway',resource:'conversation',provider:'openrouter',model:agentText.model,
+          providerCostUsd:providerCost,allocatedPlatformCostUsd:0.00005,completeCostUsd:completeCost,
+          idempotencyKey:`chat:${requestId}:usage`}),
+        ...(canPersistConversation && (project.owner_id===userId || project.organization_id===userId) ? {delivery:{project_id:project.id,actor_id:userId,
+          message:{content,intent:decision.intent,requested_mode:requestedMode,ai_message_id:String(req.body?.assistantMessageId || requestId).slice(0,160),
+            metadata:eventStream ? {coden_stream:{version:1,status:'done',final_text:content,run_id:requestId,events:eventStream.persistedChatEvents}} : {}}}} : {}),
+      });
+    }
+    chatDelivered = true;
+    if (canPersistConversation && (!CODEN_MONETIZATION_ENABLED || (project.owner_id!==userId && project.organization_id!==userId))) {
       await saveProjectMessage({
         organization_id: project.organization_id,
         project_id: project.id,
@@ -12252,10 +12326,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
           run_id: requestId,
           events: eventStream.persistedChatEvents,
         } } : {},
-      });
+      }).catch(() => console.error('[coden:chat_copy_pending]', {request_id:requestId}));
     }
-    const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
-    const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
     /*
      * The bill is settled after the work, so it can no longer destroy it.
      *
@@ -12273,7 +12345,8 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
      * something the customer can see was produced.
      */
     try {
-      await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `agent_${randomUUID()}`, {
+      if (chargedCredits > 0 && chatReservation) await chargeCompletedAgentAction(helpers, userId, chargedCredits, `AI conversation with ${agentText.model}`, `chat:${requestId}`, {
+        reservation: chatReservation,
         projectId: canPersistConversation ? project.id : null,
         category: 'ai_gateway',
         resource: 'conversation',
@@ -12282,6 +12355,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         providerCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0),
         completeCostUsd: Number(agentText.cost_usd || estimateRealCostUsd || 0) + 0.00005,
       });
+      if (chargedCredits === 0) await releaseUnifiedUsage(chatReservation);
     } catch (chargeError: any) {
       console.error('[coden:chat_charge_failed]', {
         request_id: requestId,
@@ -12291,7 +12365,6 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         message: redactSecrets(chargeError?.message || String(chargeError), '[redacted]'),
       });
     }
-    const answer = { success: true, request_id: requestId, text: content };
     // `assistant_streamed` stops `finish` from sending the answer a second
     // time; the client settles on `text`, which went through the sanitizer.
     if (eventStream) {
@@ -12311,6 +12384,10 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
      * generic sentence, which is what production showed at 19:56 on a 502:
      * "The request could not be completed", with no code and no request id.
      */
+    if (!chatDelivered) {
+      await releaseUnifiedUsage(chatReservation).catch(() => console.warn('[coden:chat_release_pending]', { request_id: requestId }));
+      if (CODEN_MONETIZATION_ENABLED) await requireSupabase('Action failure').from('billing_action_requests').update({ state: 'failed' }).eq('id', requestId).eq('account_id', userId);
+    }
     const diagnostic = diagnoseProviderError(error);
     console.error('[coden:assistant_chat_failed]', {
       request_id: requestId,
@@ -13282,129 +13359,32 @@ function invalidateSpendingCaps() {
   monthSpendCache.clear();
 }
 
-/*
- * Tariffs, read from the active pricing version (billing_pricing_versions).
- *
- * Cached 30 seconds: an activation reaches every request within that delay
- * without a redeploy. When the table cannot be read, the built-in defaults
- * (section 3 bis) answer, marked as version 0, so pricing never disappears.
- */
-type ActivePricing = { id: string | null; version: number; config: PricingConfig; activated_at: string | null };
-let activePricingCache: { at: number; value: ActivePricing } | null = null;
-async function activePricing(): Promise<ActivePricing> {
-  if (activePricingCache && Date.now() - activePricingCache.at < 30_000) return activePricingCache.value;
-  let value: ActivePricing = { id: null, version: 0, config: DEFAULT_PRICING_CONFIG, activated_at: null };
-  const client = getSupabase();
-  if (client) {
-    const { data, error } = await client.from('billing_pricing_versions').select('id,version,config,activated_at').eq('status', 'active').maybeSingle();
-    if (!error && data) {
-      const checked = validatePricingConfig(data.config);
-      if (checked.ok) value = { id: data.id, version: data.version, config: checked.config, activated_at: data.activated_at };
-      else console.error('[coden:pricing_active_invalid]', { version: data.version, errors: checked.errors.slice(0, 3) });
-    } else if (error && !isMissingRelationError(error)) {
-      console.warn('[coden:pricing_load_failed]', { message: String(error.message || '').slice(0, 160) });
-    }
-  }
-  activePricingCache = { at: Date.now(), value };
-  return value;
-}
-
-/* Public: plans, prices ($ with FCFA), grants and top-ups — never costs or margins. */
-app.get('/api/billing/pricing', async (_req: any, res: any) => {
-  const pricing = await activePricing();
-  res.setHeader('Cache-Control', 'public, max-age=60');
-  res.json({ success: true, pricing: publicPricing(pricing.config, pricing.version) });
-});
-
-app.get('/api/admin/billing/pricing', async (req: any, res) => {
+// Only the code-reviewed canonical catalogue can define commercial prices.
+app.get('/api/admin/billing/catalog', async (req: any, res) => {
   if (!requirePlatformAdmin(req, res)) return;
-  const client = requireSupabase('Admin pricing');
-  const { data, error } = await client.from('billing_pricing_versions').select('id,version,status,config,note,created_by,created_at,activated_by,activated_at').order('version', { ascending: false }).limit(50);
-  if (error) {
-    if (isMissingRelationError(error)) return res.json({ success: true, available: false, versions: [], active: null, defaults: DEFAULT_PRICING_CONFIG });
-    return res.status(500).json({ success: false, error: error.message });
-  }
-  const versions = (data || []).map((row: any) => {
-    const checked = validatePricingConfig(row.config);
-    return { ...row, valid: checked.ok, errors: checked.ok ? [] : checked.errors, profitability: checked.ok ? profitabilityReport(checked.config) : null };
+  const client = requireSupabase('Admin canonical billing');
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const before = typeof req.query.before === 'string' ? req.query.before : null;
+  if (before && !Number.isFinite(Date.parse(before))) return res.status(400).json({ success: false, error: 'Invalid cursor.' });
+  let ledgerQuery = client.from('credit_ledger_entries')
+    .select('id,account_id,entry_type,amount_credits,balance_after,created_at')
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit);
+  if (before) ledgerQuery = ledgerQuery.lt('created_at', before);
+  const [grants, ledger] = await Promise.all([
+    client.from('credit_grants').select('credits_remaining,usage_restriction,expires_at,frozen_at')
+      .is('frozen_at', null).gt('expires_at', new Date().toISOString()).gt('credits_remaining', 0).limit(10001),
+    ledgerQuery,
+  ]);
+  if (grants.error || ledger.error) return res.status(503).json({ success: false, diagnostic_code: 'BILLING_LEDGER_UNAVAILABLE', error: 'Le registre est temporairement indisponible.' });
+  if ((grants.data || []).length > 10000) return res.status(503).json({ success: false, error: 'Utilisez un export paginé pour ce volume de comptes.' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    success: true, version: BILLING_V2_VERSION, catalog: publicBillingCatalog(),
+    actions: { conversation: 0.5, ...ACTION_CREDIT_PRICES }, readonly: true,
+    balance: (grants.data || []).reduce((sum: number, row: any) => sum + Number(row.credits_remaining || 0), 0),
+    transactions: ledger.data || [],
+    next_before: ledger.data?.length === limit ? ledger.data[ledger.data.length - 1].created_at : null,
   });
-  const active = versions.find((row: any) => row.status === 'active') || null;
-  res.json({ success: true, available: true, active, versions, defaults: DEFAULT_PRICING_CONFIG });
-});
-
-/* A draft: validated in full before it is stored; never active until an admin activates it. */
-app.post('/api/admin/billing/pricing/drafts', async (req: any, res) => {
-  if (!requirePlatformAdmin(req, res)) return;
-  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
-  const checked = validatePricingConfig(req.body?.config);
-  if (!checked.ok) return res.status(400).json({ success: false, error: 'Configuration invalide.', errors: checked.errors });
-  const note = String(req.body?.note || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 300);
-  if (note.length < 3) return res.status(400).json({ success: false, error: 'Décrivez la modification (3 caractères au moins) : elle est conservée dans l’historique.' });
-  const client = requireSupabase('Admin pricing draft');
-  const latest = await client.from('billing_pricing_versions').select('version').order('version', { ascending: false }).limit(1).maybeSingle();
-  if (latest.error) return res.status(500).json({ success: false, error: latest.error.message });
-  const { data, error } = await client.from('billing_pricing_versions').insert([{
-    version: Number(latest.data?.version || 0) + 1,
-    status: 'draft',
-    config: checked.config,
-    note,
-    created_by: getOptionalAuthState(req).email || getOptionalAuthState(req).userId || null,
-  }]).select('id,version').single();
-  if (error) return res.status(500).json({ success: false, error: error.message });
-  await recordAdminAudit(req, 'pricing.draft_created', { type: 'pricing_version', id: data.id }, { version: data.version, note });
-  res.json({ success: true, draft: data, profitability: profitabilityReport(checked.config) });
-});
-
-app.post('/api/admin/billing/pricing/:id/activate', async (req: any, res) => {
-  if (!requirePlatformAdmin(req, res)) return;
-  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
-  const id = String(req.params.id || '');
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ success: false, error: 'Version invalide.' });
-  const client = requireSupabase('Admin pricing activation');
-  const draft = await client.from('billing_pricing_versions').select('config,version,status').eq('id', id).maybeSingle();
-  if (draft.error || !draft.data) return res.status(404).json({ success: false, error: 'Version introuvable.' });
-  if (draft.data.status !== 'draft') return res.status(400).json({ success: false, error: 'Seul un brouillon peut être activé.' });
-  const checked = validatePricingConfig(draft.data.config);
-  if (!checked.ok) return res.status(400).json({ success: false, error: 'Ce brouillon n’est plus valide.', errors: checked.errors });
-  const actor = String(getOptionalAuthState(req).email || getOptionalAuthState(req).userId || 'admin');
-  const { data: version, error } = await client.rpc('coden_activate_pricing_version', { p_id: id, p_actor: actor });
-  if (error) return res.status(400).json({ success: false, error: 'Activation impossible.' });
-  activePricingCache = null;
-  await recordAdminAudit(req, 'pricing.activated', { type: 'pricing_version', id }, { version });
-  res.json({ success: true, version });
-});
-
-/* Observation: the v3 grid measured beside the current one, per category. */
-app.get('/api/admin/billing/pricing/observation', async (req: any, res) => {
-  if (!requirePlatformAdmin(req, res)) return;
-  const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
-  const client = requireSupabase('Admin pricing observation');
-  const since = new Date(Date.now() - days * 86_400_000).toISOString();
-  const events = await client.from('usage_events').select('id,category,provider_cost_usd,v3_credits').not('v3_credits', 'is', null).gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
-  if (events.error) {
-    if (/v3_credits|does not exist|schema cache/i.test(String(events.error.message || ''))) return res.json({ success: true, available: false, days, rows: [] });
-    return res.status(500).json({ success: false, error: events.error.message });
-  }
-  const ids = (events.data || []).map((row: any) => row.id);
-  const charged = new Map<string, number>();
-  for (let index = 0; index < ids.length; index += 500) {
-    const settlements = await client.from('usage_settlements').select('usage_event_id,credits_charged').in('usage_event_id', ids.slice(index, index + 500));
-    if (settlements.error) return res.status(500).json({ success: false, error: settlements.error.message });
-    for (const row of settlements.data || []) charged.set(String(row.usage_event_id), Number(row.credits_charged) || 0);
-  }
-  const pricing = await activePricing();
-  const report = shadowComparison((events.data || []).map((row: any) => ({ ...row, cost_credits: charged.get(String(row.id)) || 0 })), pricing.config);
-  res.json({ success: true, available: true, days, truncated: (events.data || []).length >= 5000, ...report });
-});
-
-app.delete('/api/admin/billing/pricing/:id', async (req: any, res) => {
-  if (!requirePlatformAdmin(req, res)) return;
-  if (!adminMutationAllowed(req, res, 'pricing', 30)) return;
-  const client = requireSupabase('Admin pricing draft deletion');
-  const { data, error } = await client.from('billing_pricing_versions').delete().eq('id', String(req.params.id || '')).eq('status', 'draft').select('id,version').maybeSingle();
-  if (error || !data) return res.status(400).json({ success: false, error: 'Seul un brouillon peut être supprimé.' });
-  await recordAdminAudit(req, 'pricing.draft_deleted', { type: 'pricing_version', id: data.id }, { version: data.version });
-  res.json({ success: true });
 });
 
 /*
@@ -14949,134 +14929,82 @@ app.get('/api/projects/:id/events', async (req: any, res) => {
   res.json({ success: true, events });
 });
 
-// POST /projects/:id/messages (THE AI ENGINE AND CREDIT BALANCER)
+// Compatibility chat uses the same fixed customer price and authoritative ledger.
 app.post('/api/projects/:id/messages', async (req: any, res: any) => {
-  const projectId = req.params.id;
-  const { messages, mode, customModelId, userId, taskComplexity = 'medium' } = req.body;
   const orgId = getUserOrgId(req);
-  const clientHelpers = getDbHelpers();
-
+  const projectId = String(req.params.id);
+  const project = await loadProject(projectId, orgId);
+  if (!project || !hasProjectCapability(req, 'view', project)) return res.status(404).json({ success: false, message: 'Projet introuvable.' });
+  const { messages, mode, customModelId, taskComplexity = 'medium' } = req.body;
+  if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ success: false, message: 'Un message est nécessaire.' });
+  let refId: string;
+  try { refId = billingActionIdentity(orgId, projectId, 'messages', req.headers['idempotency-key'] || req.body.clientMessageId); }
+  catch { return res.status(400).json({ success: false, diagnostic_code: 'ACTION_IDENTIFIER_REQUIRED', message: 'Actualisez la page avant de renvoyer votre message.' }); }
+  const client = await ensureUnifiedIncludedGrants(orgId);
+  const claimed = await client.rpc('coden_billing_claim_action', { p_id: refId, p_account_id: orgId,
+    p_fingerprint: billingActionFingerprint({ messages, mode, customModelId, taskComplexity, effort: req.body.effort }) });
+  if (claimed.error) throw new BillingLedgerUnavailableError();
+  if (!claimed.data?.claimed) {
+    if (claimed.data?.state === 'delivered' && claimed.data.result) return res.json(claimed.data.result);
+    return res.status(409).json({ success: false, diagnostic_code: 'ACTION_ALREADY_STARTED', message: 'Ce message a déjà été pris en compte.' });
+  }
+  let reservation: UnifiedUsageReservation | null = null;
+  let delivered = false;
   try {
-    // 1. Check Wallet Balance
-    const balance = CODEN_MONETIZATION_ENABLED
-      ? await clientHelpers.getWallet(orgId)
-      : CODEN_UNMETERED_USAGE_BUDGET;
-
-    // 2. Select Model
+    const balance = await unifiedCategoryCredits(orgId, 'ai_gateway');
     const routingCtx: RoutingContext = {
-      plan: CODEN_MONETIZATION_ENABLED ? (normalizePlanKey(await getOrganizationPlan(orgId)) || 'free') : 'enterprise',
-      mode: mode || 'Auto',
-      userCredits: balance,
-      taskComplexity: taskComplexity,
+      plan: normalizePlanKey(await getOrganizationPlan(orgId)) || 'free',
+      mode: customModelId && customModelId !== 'auto' ? 'Custom' : mode || 'Auto', userCredits: balance, taskComplexity,
+      fixedActionPricing: true,
     };
-
     const targetModel = await modelRouter.selectModel(routingCtx, customModelId);
-
-    // Dynamic initial estimation component
-    const actionCostComp = {
-      openrouter_cost_usd: 0.00001, // default baseline
-      infra_cost_usd: 0.0001,
-      storage_cost_usd: 0.00002,
-      build_cost_usd: 0.001,
-      domain_operation_cost_usd: 0,
-      minimum_action_credits: Math.max(1, modelCreditFloor(targetModel)),
-      complexity_surcharge: taskComplexity === 'complex' ? 1.5 : 0
-    };
-
-    const initialEstimate = costEstimator.calculateRequiredCredits(actionCostComp);
-    const gatewayCap = await spendingCapGate(orgId);
-    if (gatewayCap) return res.status(402).json(gatewayCap);
-    if (balance < initialEstimate.finalCredits) {
-      return res.status(402).json(publicCreditGateResponse(true, normalizeModelSelectionId(customModelId || 'auto') !== 'auto'));
+    const price = customerActionCredits('conversation');
+    const cap = await spendingCapGate(orgId);
+    if (cap) {
+      await client.from('billing_action_requests').update({state:'failed'}).eq('id',refId).eq('account_id',orgId);
+      return res.status(402).json(cap);
     }
-
-    // 3. Reserve credits safely. V2 is the only authoritative ledger when it
-    // is enabled; disabled monetization remains genuinely unmetered.
-    const refId = `req_${Math.random().toString(36).substring(2, 13)}`;
-    let unifiedReservation: UnifiedUsageReservation | null = null;
-    if (CODEN_MONETIZATION_ENABLED) {
+    if (CODEN_MONETIZATION_ENABLED) reservation = await reserveUnifiedUsage({ accountId: orgId, category: 'ai_gateway',
+      credits: price, estimatedCogsUsd: 0.000001, idempotencyKey: `messages:${refId}:reserve` });
+    const abort = new AbortController();
+    res.once('close', () => { if (!res.writableEnded) abort.abort(); });
+    const compatibilityRuntime = buildProviderRequestConfig(buildAIModelRuntimeConfig({ modelId:targetModel,
+      task:'conversation',stream:false,allowTools:false,reasoningLevel:reasoningLevelForEffort(req.body.effort) }));
+    const completion = await providerGateway.chat(targetModel, messages, { allowFallback: false, signal: abort.signal, runtimeConfig:compatibilityRuntime });
+    if (abort.signal.aborted) throw new Error('Action cancelled before delivery.');
+    const text = redactSecrets(completion.text || '').trim();
+    if (!text) throw new Error('Empty model result.');
+    const answer = { success: true, request_id: refId, model: completion.model, text, routing_mode: mode || 'Auto' };
+    const cost = withProviderPurchaseFee(Math.max(0, Number(completion.cost_usd || 0)));
+    await completeDeliveredAction(client,{actionId:refId,accountId:orgId,result:answer,
+      reservationId:reservation && !reservation.virtual ? reservation.id : null,credits:price,completeCostUsd:cost,
+      usage:unifiedUsageRow({accountId:orgId,projectId,category:'ai_gateway',resource:'conversation',provider:'openrouter',
+        model:completion.model,providerCostUsd:cost,allocatedPlatformCostUsd:0,completeCostUsd:cost,idempotencyKey:`messages:${refId}:usage`}),
+      ...(project.owner_id===orgId || project.organization_id===orgId ? {delivery:{project_id:projectId,actor_id:orgId,
+        message:{content:text,intent:'conversation',requested_mode:'chat'}}} : {})});
+    delivered = true;
+    if (project.owner_id!==orgId && project.organization_id!==orgId) await saveProjectMessage({ organization_id: project.organization_id, project_id: project.id, user_id: orgId,
+      ai_message_id: refId, role: 'assistant', content: text, intent: 'conversation', requested_mode: 'chat' })
+      .catch(()=>console.error('[coden:compatibility_chat_copy_pending]',{request_id:refId}));
+    if (reservation) {
       try {
-        unifiedReservation = await reserveUnifiedUsage({
-          accountId: orgId,
-          category: 'ai_gateway',
-          credits: initialEstimate.finalCredits,
-          estimatedCogsUsd: Math.max(Number(actionCostComp.openrouter_cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0), 0.000001),
-          idempotencyKey: `${refId}:reserve`,
-        });
-      } catch (error: any) {
-        if (isCreditReservationRequired(error)) return res.status(402).json(publicCreditGateResponse(true, false));
-        console.error('[coden:compatibility_reservation_unavailable]', { message: redactSecrets(error?.message || String(error), '[redacted]') });
-        return res.status(503).json({ success: false, diagnostic_code: 'BILLING_RESERVATION_UNAVAILABLE', error: 'Le service de crédits est temporairement indisponible. Réessayez dans un instant.' });
-      }
+        const usageEventId = await recordUnifiedUsageEvent({ accountId: orgId, projectId, category: 'ai_gateway',
+          resource: 'conversation', provider: 'openrouter', model: completion.model,
+          providerCostUsd: cost, allocatedPlatformCostUsd: 0, completeCostUsd: cost,
+          idempotencyKey: `messages:${refId}:usage`, settlement: { reservation, credits: price }, providerPayload: { compatibility_route: true } });
+        await settleUnifiedUsage({ reservation, usageEventId, creditsCharged: price, completeCostUsd: cost });
+      } catch { console.error('[coden:compatibility_settlement_pending]', { request_id: refId }); }
     }
-
-    // 4. Call OpenRouter
-    try {
-      const completionResult = await providerGateway.chat(targetModel, messages, { allowFallback: false });
-
-      // Re-estimate final cost from real OpenRouter token outputs
-      const finalCostComp = {
-        openrouter_cost_usd: completionResult.cost_usd,
-        infra_cost_usd: 0.0001,
-        storage_cost_usd: 0.00002,
-        build_cost_usd: 0.001,
-        domain_operation_cost_usd: 0,
-        minimum_action_credits: Math.max(1, modelCreditFloor(completionResult.model)),
-        complexity_surcharge: taskComplexity === 'complex' ? 1.5 : 0
-      };
-
-      const finalEstimate = costEstimator.calculateRequiredCredits(finalCostComp);
-
-      if (CODEN_MONETIZATION_ENABLED && unifiedReservation) {
-        const usageEventId = await recordUnifiedUsageEvent({
-          accountId: orgId,
-          category: 'ai_gateway',
-          resource: 'messages_compatibility',
-          provider: 'openrouter',
-          model: completionResult.model,
-          providerCostUsd: Math.max(0, Number(completionResult.cost_usd || 0)),
-          allocatedPlatformCostUsd: Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0),
-          completeCostUsd: Math.max(0.000001, Number(completionResult.cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0)),
-          idempotencyKey: `${refId}:usage`,
-          providerPayload: { compatibility_route: true },
-        });
-        await settleUnifiedUsage({
-          reservation: unifiedReservation,
-          usageEventId,
-          creditsCharged: finalEstimate.finalCredits,
-          completeCostUsd: Math.max(0.000001, Number(completionResult.cost_usd || 0) + Number(actionCostComp.infra_cost_usd || 0) + Number(actionCostComp.storage_cost_usd || 0)),
-        });
-        unifiedReservation = null;
-      }
-
-      res.json({
-        success: true,
-        model: completionResult.model,
-        text: completionResult.text,
-        routing_mode: mode || 'Auto'
-      });
-
-    } catch (apiError: any) {
-      // Platform / API service error => Refund fully!
-      if (CODEN_MONETIZATION_ENABLED) {
-        await releaseUnifiedUsage(unifiedReservation);
-        unifiedReservation = null;
-      }
-
-      throw new Error(`Platform Engine Auto-Refund Triggered: ${apiError.message}`);
+    return res.json(answer);
+  } catch (error: any) {
+    if (!delivered) {
+      await releaseUnifiedUsage(reservation).catch(() => console.error('[coden:compatibility_release_pending]', { request_id: refId }));
+      await client.from('billing_action_requests').update({ state: 'failed' }).eq('id', refId).eq('account_id', orgId);
     }
-
-  } catch (err: any) {
-    if (err instanceof ForbiddenModelError) {
-      await clientHelpers.addAudit({
-        user_id: userId || 'anonymous',
-        requested_model: customModelId || 'unknown',
-        reason: 'Attempted use of non-whitelist model',
-        source: 'chat'
-      });
-      return res.status(403).json({ success: false, error: 'ForbiddenModelError', message: err.message });
-    }
-    res.status(500).json({ success: false, message: err.message });
+    if (isCreditReservationRequired(error)) return res.status(402).json(publicCreditGateResponse(true, false));
+    if (error instanceof ForbiddenModelError) return res.status(403).json({ success: false, diagnostic_code: 'MODEL_NOT_ALLOWED', message: 'Ce modèle n’est pas inclus dans votre plan.' });
+    return res.status(503).json({ success: false, diagnostic_code: error instanceof BillingLedgerUnavailableError ? error.diagnosticCode : 'MODEL_TEMPORARILY_UNAVAILABLE',
+      message: 'Le service est momentanément indisponible. Votre conversation reste conservée.' });
   }
 });
 
@@ -16058,13 +15986,19 @@ async function saveMediaAssetRecords(input: {
 }
 
 app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
-  const requestId = `media_${randomUUID()}`;
+  let requestId = `media_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
   const userId = authUser.id;
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
-  if (!requireProjectCapability(req, res, 'view', project)) return;
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  const accountId=project.organization_id || userId;
+  try { requestId=billingActionIdentity(userId,project.id,'media',req.headers['idempotency-key'] || req.body?.clientMessageId); }
+  catch { return res.status(400).json({success:false,diagnostic_code:'ACTION_IDENTIFIER_REQUIRED',message:'Actualisez la page avant de renvoyer votre demande.'}); }
+  let mediaReservation:UnifiedUsageReservation|null=null;
+  let mediaDelivered=false;
+  try {
 
   const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
   if (!prompt) return res.status(400).json({ success: false, error: 'Prompt is required.' });
@@ -16075,20 +16009,43 @@ app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
     return res.status(429).json({ success: false, error: 'Too many media requests. Please wait a moment.' });
   }
 
-  const helpers = getDbHelpers();
   const plan = await getOrganizationPlan(project.organization_id).catch(() => 'free');
   const settings = normalizeMediaSettings(req.body?.settings || req.body?.mediaSettings || req.body?.studioContext?.settings || {});
   const model = selectMediaModel(settings, plan);
   const estimatedCredits = estimateMediaCredits(settings, model);
-  const wallet = await helpers.getWallet(userId).catch(() => FALLBACK_WALLET_CREDITS);
+  const wallet = await unifiedCategoryCredits(accountId,'build');
   const modelAvailable = isMediaModelAvailable(model, plan);
   const output = mediaOutputForKind(settings.kind);
   const isMarketingKit = isMarketingMediaKind(settings.kind);
+  const client=await ensureUnifiedIncludedGrants(accountId);
+  const claim=await client.rpc('coden_billing_claim_action',{p_id:requestId,p_account_id:accountId,
+    p_fingerprint:billingActionFingerprint({prompt,settings,model:model.id})});
+  if(claim.error) throw new BillingLedgerUnavailableError();
+  if(!claim.data?.claimed) {
+    if(claim.data?.state==='delivered' && claim.data.result) return res.json(claim.data.result);
+    return res.status(409).json({success:false,diagnostic_code:'ACTION_ALREADY_STARTED',message:'Cette demande a déjà été prise en compte.'});
+  }
+  const mediaCap=await spendingCapGate(accountId,isLikelyFrenchPrompt(prompt));
+  if(mediaCap) {
+    await client.from('billing_action_requests').update({state:'failed'}).eq('id',requestId).eq('account_id',accountId);
+    return res.status(402).json(mediaCap);
+  }
+  if (modelAvailable && (isMarketingKit || falMediaGateway.isConfigured())) {
+    if (wallet<estimatedCredits) {
+      await client.from('billing_action_requests').update({state:'failed'}).eq('id',requestId).eq('account_id',accountId);
+      return res.status(402).json(publicCreditGateResponse(isLikelyFrenchPrompt(prompt),false));
+    }
+    mediaReservation=await reserveUnifiedUsage({accountId,category:'build',credits:estimatedCredits,
+      estimatedCogsUsd:0,idempotencyKey:`media:${requestId}:reserve`});
+  }
+  const mediaAbort=new AbortController();
+  res.once('close',()=>{if(!res.writableEnded) mediaAbort.abort();});
 
   await saveProjectMessage({
     organization_id: project.organization_id,
     project_id: project.id,
     user_id: userId,
+    ai_message_id:String(req.body?.clientMessageId || '').slice(0,160),
     role: 'user',
     content: prompt,
     intent: 'conversation',
@@ -16105,17 +16062,13 @@ app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
     errorMessage = 'Not enough credits for this media render.';
   } else if (isMarketingKit) {
     providerStatus = 'completed';
-    const finalBalance = await helpers.updateWallet(userId, -estimatedCredits);
-    await helpers.addLedger(userId, 'usage', -estimatedCredits, finalBalance, `Generated ${mediaKindLabel(settings.kind)} with Coden Media`, requestId);
   } else {
     try {
       const mediaPrompt = buildMediaPrompt({ prompt, settings, project });
-      const result = await falMediaGateway.generate({ model, settings, prompt: mediaPrompt });
+      const result = await falMediaGateway.generate({ model, settings, prompt: mediaPrompt, signal:mediaAbort.signal });
       providerStatus = result.status;
       assets = result.assets;
       if (assets.length) {
-        const finalBalance = await helpers.updateWallet(userId, -estimatedCredits);
-        await helpers.addLedger(userId, 'usage', -estimatedCredits, finalBalance, `Generated ${output} media with ${model.label}`, requestId);
         await saveMediaAssetRecords({ project, userId, prompt, settings, modelId: model.id, assets, estimatedCredits });
       }
     } catch (error: any) {
@@ -16167,17 +16120,8 @@ app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
             : 'You can download, make a variation, or use it in the project.',
     ].join('\n');
 
-  await saveProjectMessage({
-    organization_id: project.organization_id,
-    project_id: project.id,
-    user_id: userId,
-    role: 'assistant',
-    content: assistantText,
-    intent: 'conversation',
-    requested_mode: 'auto',
-  });
-
-  res.json({
+  if(mediaAbort.signal.aborted) throw new Error('Media action cancelled before durable delivery.');
+  const answer={
     success: true,
     request_id: requestId,
     status: providerStatus,
@@ -16198,7 +16142,33 @@ app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
       status: 'media',
       html: previewHtml,
     },
-  });
+  };
+  const billable=providerStatus==='completed' && (isMarketingKit || assets.length>0);
+  const usage={account_id:accountId,category:'build',model:model.id,project_id:project.id,resource:'media',
+    provider:isMarketingKit?'coden':'fal.ai',quantity:1,unit:'action',provider_cost_usd:0,allocated_platform_cost_usd:0,
+    complete_cost_usd:0,price_version_id:`${BILLING_V2_VERSION}:runtime`,idempotency_key:`media:${requestId}:usage`,
+    provider_payload:{cost_source:isMarketingKit?'not_applicable':'unavailable',customer_credits_charged:estimatedCredits},occurred_at:new Date().toISOString()};
+  await completeDeliveredAction(client,{actionId:requestId,accountId,result:answer,
+    reservationId:billable && !mediaReservation?.virtual ? mediaReservation?.id : null,
+    usage,credits:estimatedCredits,completeCostUsd:0,
+    delivery:{project_id:project.id,actor_id:userId,message:{content:assistantText,intent:'conversation',requested_mode:'auto'}}});
+  mediaDelivered=true;
+  if(billable && mediaReservation && !mediaReservation.virtual) {
+    try {
+      const eventId=await insertUnifiedUsageEvent(client,usage);
+      await settleUnifiedUsage({reservation:mediaReservation,usageEventId:eventId,creditsCharged:estimatedCredits,completeCostUsd:0});
+    } catch {console.error('[coden:media_settlement_pending]',{request_id:requestId});}
+  } else await releaseUnifiedUsage(mediaReservation).catch(()=>console.warn('[coden:media_release_pending]',{request_id:requestId}));
+  return res.json(answer);
+  } catch(error) {
+    if(!mediaDelivered) {
+      await releaseUnifiedUsage(mediaReservation).catch(()=>console.error('[coden:media_release_pending]',{request_id:requestId}));
+      await requireSupabase('Media action failure').from('billing_action_requests').update({state:'failed'}).eq('id',requestId).eq('account_id',accountId);
+    }
+    if(isCreditReservationRequired(error)) return res.status(402).json(publicCreditGateResponse(true,false));
+    return res.status(503).json({success:false,recoverable:true,diagnostic_code:error instanceof BillingLedgerUnavailableError?error.diagnosticCode:'MEDIA_TEMPORARILY_UNAVAILABLE',
+      message:'Le service est momentanément indisponible. Votre projet est conservé.'});
+  }
 });
 
 app.post('/api/import/prepare', async (req: any, res: any) => {
@@ -16238,12 +16208,16 @@ app.post('/api/import/prepare', async (req: any, res: any) => {
 });
 
 app.post('/api/projects/:id/generate', async (req: any, res: any) => {
-  const requestId = `req_${randomUUID()}`;
+  let requestId = `req_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
   if (!authUser) return;
   const userId = authUser.id;
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  if (CODEN_MONETIZATION_ENABLED) {
+    try { requestId = billingActionIdentity(userId, project.id, 'generate', req.headers['idempotency-key'] || req.body?.clientMessageId); }
+    catch { return res.status(400).json({ success: false, diagnostic_code: 'ACTION_IDENTIFIER_REQUIRED', message: 'Actualisez la page avant de renvoyer votre demande.' }); }
+  }
   enrichCostScope({ actorId: userId, projectId: project.id, requestId });
 
   const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
@@ -16281,6 +16255,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   }
 
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode);
+  if (CODEN_MONETIZATION_ENABLED) {
+    const client=await ensureUnifiedIncludedGrants(project.organization_id || userId);
+    const claim=await client.rpc('coden_billing_claim_action',{p_id:requestId,p_account_id:project.organization_id || userId,
+      p_fingerprint:billingActionFingerprint({prompt,requestedMode,modelId:req.body?.modelId || 'auto',effort:req.body?.effort,
+        routingMode:req.body?.routingMode,attachmentIds,visionInputs,studioContext,importContext:preparedImportContext})});
+    if (claim.error) throw new BillingLedgerUnavailableError();
+    if (!claim.data?.claimed) {
+      if (claim.data?.result) return res.status(claim.data.result.http_status || 200).json(claim.data.result.payload);
+      return res.status(409).json({success:false,diagnostic_code:'ACTION_ALREADY_STARTED',message:'Cette demande est déjà en cours ou a été prise en compte. Reprenez la session existante.'});
+    }
+  }
   let harnessContext: ActiveAgentHarnessContext | null = null;
   try {
     harnessContext = await prepareAgentHarnessContext({
@@ -16379,6 +16364,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   // Set by the multi-agent branch; settled by respondJson on the way out.
   let pipelineRunId = '';
   let pipelineTokens: { prompt: number; completion: number } | null = null;
+  let generationDurablyDelivered = false;
+  let durableGenerationPayload: any = null;
   const respondJson = async (status: number, payload: any) => {
     // The real application must be visible before the model writes its recap.
     // This URL comes from the verified sandbox, not from model-authored prose.
@@ -16431,8 +16418,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         }
       } catch (error) {
         console.error('[coden:harness_finalize_failed]', {requestId,message:redactSecrets(String(error))});
-        status=503;
-        payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
+        if (!generationDurablyDelivered) {
+          status=503;
+          payload={...payload,success:false,diagnostic_code:'HARNESS_PERSISTENCE_FAILED',recoverable:true,error:'The execution result could not be fully persisted. The existing project files are retained.'};
+        } else payload={...payload,persistence_pending:true};
       }
     }
     /*
@@ -16513,10 +16502,18 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
       } catch (error) {
         console.error('[coden:assistant_persistence_failed]', {requestId,message:redactSecrets(String(error))});
-        status = 503;
-        payload = {...payload, success:false, diagnostic_code:'CHAT_PERSISTENCE_FAILED', recoverable:true,
-          error:'La réponse n’a pas pu être sauvegardée. Les fichiers existants sont conservés.'};
+        if (!generationDurablyDelivered) {
+          status = 503;
+          payload = {...payload, success:false, diagnostic_code:'CHAT_PERSISTENCE_FAILED', recoverable:true,
+            error:'La réponse n’a pas pu être sauvegardée. Les fichiers existants sont conservés.'};
+        }
       }
+    }
+    if (CODEN_MONETIZATION_ENABLED) {
+      const persisted=await requireSupabase('Action result checkpoint').from('billing_action_requests')
+        .update({state:status<400&&payload.success!==false?'delivered':'failed',result:{http_status:status,payload},updated_at:new Date().toISOString()})
+        .eq('id',requestId).eq('account_id',project.organization_id || userId).eq('state','processing');
+      if (persisted.error) console.error('[coden:action_result_checkpoint_pending]',{request_id:requestId});
     }
     if (eventStream) {
       try { await eventStream.finish(payload, status); }
@@ -16584,16 +16581,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const helpers = getDbHelpers();
   const requestedModelSelection = normalizeModelSelectionId(req.body?.modelId || project.model_id || 'auto');
   enrichCostScope({ selection: requestedModelSelection === 'auto' ? 'auto' : 'explicit' });
-  /*
-   * Attachments and links, read before anything decides what to do: the
-   * router, the planner and the coder all work from the same request, with
-   * the files' content, the analysed pages and their images.
-   */
+  // Extraction, vision and web tools are not part of the routing exception.
+  // Prepare them once, only after the exact customer reservation is held.
   let attachmentBlock = '';
   // What this message carried, kept with it as structured data: the original name, type and size, never the text of a name.
   let attachedForMessage: Array<{ id: string; name: string; mimeType: string; size: number; kind: string; sourceUrl?: string }> = [];
   // The standing references as text, for the sub-agents (see TurnContext.brief).
   let attachmentBrief = '';
+  let attachmentsPrepared = false;
+  const prepareGenerationAttachments = async () => {
+  if (attachmentsPrepared) return;
+  attachmentsPrepared = true;
   try {
     const turnAttachments = await attachmentService().buildTurnContext({
       userId,
@@ -16638,6 +16636,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   } catch (error: any) {
     console.warn('[coden:turn_attachments_failed]', { request_id: requestId, message: error?.message || String(error) });
   }
+  resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
+    ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")${attachmentBlock}`
+    : agentPrompt;
+  };
   /*
    * The effort the composer asked for. It widens or narrows the route budget
    * in the pipeline and scales the credit estimate here, so a level that
@@ -16753,7 +16755,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
    * router restated it, the build runs on the restatement, and the user's
    * own words are kept beside it so nothing they said is lost.
    */
-  const resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
+  let resolvedMission = decision.resolvedPrompt && normalizePromptIntentText(decision.resolvedPrompt) !== normalizePromptIntentText(prompt)
     ? `${applyRequestContextToPrompt(decision.resolvedPrompt, studioContext, preparedImportContext)}\n\n(The user's latest message, in their words: "${prompt.slice(0, 2_000)}")${attachmentBlock}`
     : agentPrompt;
   /*
@@ -16779,7 +16781,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     if (CODEN_MONETIZATION_ENABLED && pipelineCost.finalCredits > 0) {
       const spendable = await unifiedCategoryCredits(billingAccountId, 'build');
       if (spendable < pipelineCost.finalCredits) {
-        const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+        const creditGate = publicCreditGateResponse(frenchActivity, false);
         await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
         return respondJson(402, creditGate);
       }
@@ -16798,7 +16800,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           message: redactSecrets(error?.message || String(error), '[redacted]'),
         });
         if (isCreditReservationRequired(error)) {
-          const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+          const creditGate = publicCreditGateResponse(frenchActivity, false);
           await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
           return respondJson(402, creditGate);
         }
@@ -16811,6 +16813,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       }
     }
     try {
+      await prepareGenerationAttachments();
       await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode,...(attachedForMessage.length ? { metadata: { attachments: attachedForMessage } } : {})});
       /*
        * Open the run before the work, so a run that never comes back is still
@@ -17052,7 +17055,31 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           && project.preview_status === 'verified'
           && Boolean(project.preview_html?.trim())
           && existingFiles.length > 0;
-        if (!preserveLastVerifiedApp) await saveProject(updatedProject, pipelineFiles);
+        if (outcome.ok && CODEN_MONETIZATION_ENABLED) {
+          const providerCost=withProviderPurchaseFee(Number(outcome.costUsd || 0));
+          const deliveredSummary=summarizePipelineOutcome({plan:outcome.plan,ok:true,route:pipelineRoute,
+            diff:diffFiles(existingFiles,pipelineFiles),stoppedBecause:outcome.repairOutcome.stoppedBecause,prompt,
+            evidence:outcome.repairOutcome.finalReport.evidence});
+          await completeDeliveredAction(requireSupabase('Atomic pipeline delivery'),{
+            actionId:requestId,accountId:billingAccountId,
+            result:{http_status:200,payload:{success:true,project:updatedProject,files:pipelineFiles,summary:deliveredSummary,
+              model:outcome.modelId,pipeline:'multi_agent',preview:{status:updatedProject.preview_status,html:updatedProject.preview_html,live_url:outcome.liveUrl}}},
+            reservationId:pipelineReservation && !pipelineReservation.virtual ? pipelineReservation.id : null,
+            credits:pipelineCost.finalCredits,completeCostUsd:providerCost+0.0001,
+            usage:unifiedUsageRow({accountId:billingAccountId,projectId:project.id,runId:pipelineRunId || null,category:'build',
+              resource:pipelineCost.action || pipelineRoute,provider:'openrouter',model:outcome.modelId,
+              providerCostUsd:providerCost,allocatedPlatformCostUsd:0.0001,completeCostUsd:providerCost+0.0001,idempotencyKey:`pipeline:${requestId}:usage`}),
+            delivery:{project_id:project.id,actor_id:userId,project:cleanProjectForSnapshot(updatedProject),files:redactSecretPayload(pipelineFiles),
+              message:{content:deliveredSummary,intent:decision.intent,requested_mode:requestedMode,ai_message_id:streamMessageId}},
+          });
+          generationDurablyDelivered=true;
+          durableGenerationPayload={success:true,project:updatedProject,files:pipelineFiles,summary:deliveredSummary,
+            model:outcome.modelId,pipeline:'multi_agent',preview:{status:updatedProject.preview_status,html:updatedProject.preview_html,live_url:outcome.liveUrl}};
+        }
+        if (!preserveLastVerifiedApp) {
+          if(generationDurablyDelivered) await saveProject(updatedProject,pipelineFiles).catch(()=>console.error('[coden:pipeline_mirror_pending]',{request_id:requestId}));
+          else await saveProject(updatedProject,pipelineFiles);
+        }
         const visibleProject = preserveLastVerifiedApp ? project : updatedProject;
         const visibleFiles = preserveLastVerifiedApp ? existingFiles : pipelineFiles;
 
@@ -17089,6 +17116,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
               allocatedPlatformCostUsd: 0.0001,
               completeCostUsd: pipelineCompleteCostUsd,
               idempotencyKey: `pipeline:${requestId}:usage`,
+              settlement: { reservation: pipelineReservation, credits: pipelineCost.finalCredits },
               providerPayload: {
                 route: pipelineRoute,
                 action: pipelineCost.action,
@@ -17286,6 +17314,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         recoverable: true,
       });
     } catch (error: any) {
+      if (generationDurablyDelivered && durableGenerationPayload) {
+        console.error('[coden:delivered_pipeline_bookkeeping_pending]',{request_id:requestId});
+        return respondJson(200,{...durableGenerationPayload,persistence_pending:true});
+      }
       // A run that failed still counts against what it reused; nothing it created is promoted.
       void settleRunLibrary(runLibrary, {
         ok: false,
@@ -17447,7 +17479,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     })
     : null;
   const walletForRouting = CODEN_MONETIZATION_ENABLED
-    ? await helpers.getWallet(userId).catch(() => FALLBACK_WALLET_CREDITS)
+    ? await getWalletWithFallback(helpers,project.organization_id || userId)
     : CODEN_UNMETERED_USAGE_BUDGET;
   let modelRouting;
   try {
@@ -17576,7 +17608,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     const wallet = cost.finalCredits > 0 ? walletForRouting : Number.POSITIVE_INFINITY;
     if (wallet < cost.finalCredits) {
       // A conversation's price does not read the model, so Auto cannot lower it.
-      const autoCanHelp = requestedModelSelection !== 'auto' && decision.intent !== 'conversation';
+      const autoCanHelp = false;
       await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
       const creditGate = publicCreditGateResponse(frenchActivity, autoCanHelp);
       await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent, { userAlreadyPersisted: true });
@@ -17624,6 +17656,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     // Whether the answer already reached the reader token by token.
     let streamedAny = false;
     try {
+      if (cost.finalCredits > 0) await prepareGenerationAttachments();
       /*
        * Say what is happening, and stream the answer as it is written.
        *
@@ -17692,8 +17725,24 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         recoverable: true,
       });
     }
+    const costRealCostUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
+    const chargedCredits = agentText.model === 'router' || (agentText.model === 'auto' && agentText.cost_usd === 0) ? 0 : cost.finalCredits;
+    const textProviderCostUsd = withProviderPurchaseFee(Number(agentText.cost_usd || costRealCostUsd || 0));
+    const textCompleteCostUsd = textProviderCostUsd + 0.0001;
     try {
-      await saveProjectMessage({
+      if (CODEN_MONETIZATION_ENABLED) {
+        await completeDeliveredAction(requireSupabase('Atomic text delivery'),{actionId:requestId,accountId:billingAccountId,
+          result:{http_status:200,payload:{success:true,text:content,model:agentText.model,intent:decision}},
+          reservationId:chargedCredits>0 && textReservation && !textReservation.virtual ? textReservation.id : null,
+          credits:chargedCredits,completeCostUsd:textCompleteCostUsd,
+          usage:unifiedUsageRow({accountId:billingAccountId,projectId:project.id,runId:agentRunId || null,category:'ai_gateway',
+            resource:cost.action || decision.intent,provider:'openrouter',model:agentText.model,providerCostUsd:textProviderCostUsd,
+            allocatedPlatformCostUsd:0.0001,completeCostUsd:textCompleteCostUsd,idempotencyKey:`text:${requestId}:usage`}),
+          delivery:{project_id:project.id,actor_id:userId,message:{content,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId}},
+        });
+        generationDurablyDelivered=true;
+        durableGenerationPayload={success:true,text:content,model:agentText.model,intent:decision};
+      } else await saveProjectMessage({
         organization_id: project.organization_id,
         project_id: project.id,
         user_id: userId,
@@ -17707,10 +17756,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       textReservation = null;
       throw error;
     }
-    const costRealCostUsd = 'realCostUsd' in cost ? Number(cost.realCostUsd || 0) : 0;
-    const chargedCredits = agentText.model === 'router' || (agentText.model === 'auto' && agentText.cost_usd === 0) ? 0 : cost.finalCredits;
-    const textProviderCostUsd = withProviderPurchaseFee(Number(agentText.cost_usd || costRealCostUsd || 0));
-    const textCompleteCostUsd = textProviderCostUsd + 0.0001;
     /*
      * The answer is on screen and saved; what is left is bookkeeping. It ran
      * as five database round trips in a row — settle, improvement signal, run
@@ -17733,6 +17778,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             allocatedPlatformCostUsd: 0.0001,
             completeCostUsd: textCompleteCostUsd,
             idempotencyKey: `text:${requestId}:usage`,
+            settlement: { reservation: textReservation, credits: chargedCredits },
             providerPayload: { action: cost.action, charged_credits: chargedCredits, prompt_tokens: Number((agentText as any).usage?.prompt_tokens || 0), completion_tokens: Number((agentText as any).usage?.completion_tokens || 0) },
           });
           await settleUnifiedUsage({ reservation: textReservation, usageEventId, creditsCharged: chargedCredits, completeCostUsd: textCompleteCostUsd });
@@ -17750,7 +17796,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         });
       }
     };
-    await Promise.all([
+    await Promise.allSettled([
       settleTextUsage(),
       recordAgentImprovementSignal(project, userId, {
         prompt,
@@ -17818,12 +17864,12 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     // `requestedModelSelection`, not `effectiveModelSelection`: the latter is the
     // model the router resolved to and is never the string 'auto', so testing it
     // would have silently switched the advice off on the one path it belongs on.
-    const autoCanHelp = requestedModelSelection !== 'auto';
+    const autoCanHelp = false;
     await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
     return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
   }
 
-  const refId = `gen_${randomUUID()}`;
+  const refId = `gen_${requestId}`;
   let unifiedGenerationReservation: UnifiedUsageReservation | null = null;
   let measuredProviderCostUsd = 0;
   let generationUsageFinalized = false;
@@ -17840,7 +17886,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       });
     } catch (error: any) {
       if (isCreditReservationRequired(error)) {
-        const autoCanHelp = requestedModelSelection !== 'auto';
+        const autoCanHelp = false;
         await updateAgentRunStatus(agentRunId, 'failed', { diagnostic_code: 'CREDITS_REQUIRED', suggested_action: autoCanHelp ? 'use_auto' : 'top_up' });
         return respondJson(402, publicCreditGateResponse(frenchActivity, autoCanHelp));
       }
@@ -17894,6 +17940,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   };
 
   try {
+    await prepareGenerationAttachments();
     let executionPlan = '';
     if (decision.autoPlanRequired) {
       try {
@@ -18582,7 +18629,25 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       throw new Error(`The model response contradicted verified facts: ${finalContradictions.join(', ')}`);
     }
 
-    await saveProject(updatedProject, finalFiles);
+    if (CODEN_MONETIZATION_ENABLED) {
+      const providerCost=withProviderPurchaseFee(measuredProviderCostUsd);
+      await completeDeliveredAction(requireSupabase('Atomic generation delivery'),{actionId:requestId,accountId:billingAccountId,
+        result:{http_status:200,payload:{success:true,project:updatedProject,files:finalFiles,summary:finalSummary,model:generation.model,
+          preview:{status:updatedProject.preview_status,html:updatedProject.preview_html},verification:verificationSummary}},
+        reservationId:unifiedGenerationReservation && !unifiedGenerationReservation.virtual ? unifiedGenerationReservation.id : null,
+        credits:cost.finalCredits,completeCostUsd:providerCost+0.0016,
+        usage:unifiedUsageRow({accountId:billingAccountId,projectId:project.id,runId:agentRunId || null,category:'build',resource:cost.action || decision.intent || 'build',
+          provider:'openrouter',model:generation.model,providerCostUsd:providerCost,allocatedPlatformCostUsd:0.0016,completeCostUsd:providerCost+0.0016,idempotencyKey:`${refId}:usage`}),
+        delivery:{project_id:project.id,actor_id:userId,project:cleanProjectForSnapshot(updatedProject),files:redactSecretPayload(finalFiles),
+          message:{content:finalSummary,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId}},
+      });
+      generationDurablyDelivered=true;
+      durableGenerationPayload={success:true,project:updatedProject,files:finalFiles,summary:finalSummary,model:generation.model,
+        preview:{status:updatedProject.preview_status,html:updatedProject.preview_html},verification:verificationSummary};
+      generationUsageFinalized=true;
+    }
+    if(generationDurablyDelivered) await saveProject(updatedProject,finalFiles).catch(()=>console.error('[coden:generation_mirror_pending]',{request_id:requestId}));
+    else await saveProject(updatedProject, finalFiles);
 
     /*
      * Bring the application up.
@@ -18646,6 +18711,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           allocatedPlatformCostUsd,
           completeCostUsd,
           idempotencyKey: `${refId}:usage`,
+          settlement: { reservation: unifiedGenerationReservation, credits: cost.finalCredits },
           providerPayload: {
             files_changed: Number(diff.created?.length || 0) + Number(diff.modified?.length || 0) + Number(diff.deleted?.length || 0),
             verification: verificationSummary,
@@ -18739,6 +18805,10 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     // needs fixes is not "ready", and saying so is the point of the machine.
     return respondJson(200, finalPayload);
   } catch (error: any) {
+    if (generationDurablyDelivered && durableGenerationPayload) {
+      console.error('[coden:delivered_generation_bookkeeping_pending]',{request_id:requestId});
+      return respondJson(200,{...durableGenerationPayload,persistence_pending:true});
+    }
     // Whatever step the run died on stops spinning and reports its failure,
     // instead of the stream simply going quiet.
     if (CODEN_MONETIZATION_ENABLED) await releaseFailedGenerationUsage(`${decision.intent || 'build'}_failed`);
@@ -21046,7 +21116,9 @@ app.use((error: any, req: any, res: any, next: any) => {
   const rawMessage = redactSecrets(error?.message || String(error || 'Unexpected server error'));
   const status = Number(error?.status || error?.statusCode || 500);
   const persistenceMissing = /SUPABASE_SERVICE_ROLE_KEY|persistence requires/i.test(rawMessage);
-  const diagnosticCode = persistenceMissing
+  const diagnosticCode = error instanceof BillingLedgerUnavailableError
+    ? error.diagnosticCode
+    : persistenceMissing
     ? 'SERVER_PERSISTENCE_UNAVAILABLE'
     : /Cannot read properties of undefined.*auth/i.test(rawMessage)
       ? 'SUPABASE_AUTH_CLIENT_UNDEFINED'
@@ -21290,7 +21362,6 @@ import { normalizeRoutingMode } from './src/lib/routing-mode.ts';
 import { notifierChannels, readNotifierConfig, sendCostAlert } from './src/services/admin-alert-notifier.ts';
 import { balanceLevel, fetchOpenRouterBalance, type OpenRouterBalance } from './src/services/openrouter-balance.ts';
 import { onProviderBalanceSignal } from './src/services/openrouter-service.ts';
-import { DEFAULT_PRICING_CONFIG, creditsForCost, meteredCategory, profitabilityReport, publicPricing, shadowComparison, validatePricingConfig, type PricingConfig } from './src/services/billing/pricing-config.ts';
 import { provisioningConfigured as provisioningConfiguredSync, checkProvisioningAccess } from './src/services/supabase-auto-provision.ts';
 import { isFrenchText } from './src/services/language-detection.ts';
 import { validateProject, buildRepairInstruction } from './src/services/sandbox/validate.ts';
@@ -22797,6 +22868,13 @@ const httpServer = app.listen(port, () => {
     }
     if (CODEN_MONETIZATION_ENABLED) {
       const saspayBilling = new SaspayService(supabaseClient);
+      const retryFinancialSettlements = async () => {
+        try { await retryDeliveredSettlements(supabaseClient); }
+        catch { console.warn('[coden:billing_settlement_retry_unavailable]'); }
+      };
+      void retryFinancialSettlements();
+      const settlementRetryTimer = setInterval(retryFinancialSettlements, 60_000);
+      settlementRetryTimer.unref?.();
       const issueIncludedGrants = async () => {
         try {
           const issued = await saspayBilling.issueDueIncludedGrants();

@@ -52,6 +52,8 @@ export type OpenRouterRequestOptions = {
    * provider searches, and the results reach the model with their sources.
    */
   webSearch?: { maxResults?: number };
+  /** Hard per-call envelope for the explicitly approved internal router. */
+  internalRoutingBudgetUsd?: number;
 };
 
 /**
@@ -125,14 +127,39 @@ export function buildOpenRouterRequest(
   const contextLength = Number(model.top_provider?.context_length || model.context_length) || model.context_length;
   const maxCompletion = Number(model.top_provider?.max_completion_tokens) || contextLength;
   const room = contextLength - estimatePromptTokens(messages) - promptSafetyMargin(contextLength);
-  const maxTokens = Math.max(256, Math.min(maxCompletion, room));
+  let maxTokens = Math.max(256, Math.min(maxCompletion, room));
+  let internalProviderPolicy: Record<string, unknown> | undefined;
+  if (options.internalRoutingBudgetUsd !== undefined) {
+    const budget = options.internalRoutingBudgetUsd;
+    const promptPrice = Number(model.pricing?.prompt);
+    const completionPrice = Math.max(Number(model.pricing?.completion), Number(model.pricing?.internal_reasoning || 0));
+    if (!Number.isFinite(budget) || budget <= 0 || budget > 0.05
+      || !Number.isFinite(promptPrice) || promptPrice < 0 || !Number.isFinite(completionPrice) || completionPrice < 0
+      || options.tools?.length || options.webSearch || options.fallbackModels?.length
+      || messages.some(message => typeof message.content !== 'string')) {
+      throw new Error('INTERNAL_ROUTING_BUDGET_UNAVAILABLE');
+    }
+    // One token per UTF-8 byte is deliberately pessimistic. Include schema and
+    // framing overhead, and purchase fees. Unknown prices fail before the call.
+    const inputUpperBound = new TextEncoder().encode(JSON.stringify({ messages, response_format: options.responseFormat })).length + 4096;
+    const tokenBudget = budget / 1.055 - inputUpperBound * promptPrice;
+    if (tokenBudget < 0) throw new Error('INTERNAL_ROUTING_BUDGET_EXCEEDED');
+    maxTokens = Math.min(maxTokens, 4096, completionPrice > 0 ? Math.floor(tokenBudget / completionPrice) : 4096);
+    if (maxTokens < 1024) throw new Error('INTERNAL_ROUTING_BUDGET_EXCEEDED');
+    internalProviderPolicy = { allow_fallbacks: false,
+      max_price: { prompt: promptPrice * 1_000_000, completion: completionPrice * 1_000_000, request: 0 } };
+  }
 
   const body: Record<string, unknown> = {
     model: model.id,
-    messages: applyPromptCaching(messages as unknown as CacheableMessage[], options.adapter || 'openrouter', model.id),
+    // The internal exception has a hard dollar cap. Explicit cache writes can
+    // carry a surcharge not covered by catalog prompt prices, so do not request
+    // them here. Normal customer requests keep their existing cache policy.
+    messages: options.internalRoutingBudgetUsd !== undefined ? messages
+      : applyPromptCaching(messages as unknown as CacheableMessage[], options.adapter || 'openrouter', model.id),
     max_tokens: maxTokens,
     // Every parameter sent must be honoured by the provider that serves it.
-    provider: { require_parameters: true },
+    provider: { require_parameters: true, ...internalProviderPolicy },
     // The real cost of the call, returned with the usage block.
     usage: { include: true },
   };
