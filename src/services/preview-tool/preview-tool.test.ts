@@ -266,7 +266,7 @@ describe('preview tool wiring', () => {
     const { readFileSync } = await import('node:fs');
     const pipeline = readFileSync('src/services/multi-agent-pipeline.ts', 'utf8');
     const team = readFileSync('src/services/agent-library/team.ts', 'utf8');
-    expect(pipeline).toMatch(/input\.previewTool \? \[\.\.\.base, input\.previewTool\.schema/);
+    expect(pipeline).toMatch(/input\.previewTool \? \[\.\.\.skillTools, input\.previewTool\.schema/);
     expect(pipeline).toMatch(/role: 'subagent'/);
     expect(pipeline).toMatch(/previewTools\.map\(tool => tool\.dispose\(\)\)/);
     expect(pipeline).toMatch(/noteFileWritten\(\)/);

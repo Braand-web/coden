@@ -23,6 +23,16 @@ const first = await harness.createTurn({
   idempotencyKey,
 });
 assert.equal(first.created, true);
+const firstTurnEvents = await store.listEvents(thread.id);
+const firstUserEvent = firstTurnEvents.find(event => event.type === 'turn.created' && event.turnId === first.turn.id);
+assert.ok(firstUserEvent?.itemId, 'each durable turn must include its saved user message');
+const firstUserItem = await store.getItem(firstUserEvent!.itemId!);
+assert.equal(firstUserItem?.content, first.turn.prompt);
+assert.deepEqual(firstUserItem?.payload.coden_harness, {
+  thread_id: thread.id,
+  turn_id: first.turn.id,
+  parent_turn_id: null,
+});
 const duplicate = await harness.createTurn({
   threadId: thread.id,
   userId: 'user_1',
@@ -71,6 +81,24 @@ await harness.saveCheckpoint(first.turn.id, { phase: 'testing', artifactHash: 's
 await harness.transitionTurn(first.turn.id, 'verifying');
 await harness.transitionTurn(first.turn.id, 'completed', { verified: true });
 assert.equal((await store.getThread(thread.id))?.activeTurnId, undefined);
+const branchTurn = await harness.createTurn({
+  threadId: thread.id,
+  userId: 'user_1',
+  prompt: 'Edited branch prompt',
+  parentTurnId: first.turn.id,
+  messageMetadata: { coden_branch: { id: 'branch-a', parent_branch_id: null, parent_message_id: 'source-user-message' } },
+  idempotencyKey: 'branch_a_turn',
+});
+const branchEvents = await store.listEvents(thread.id);
+const branchUserEvent = branchEvents.find(event => event.type === 'turn.created' && event.turnId === branchTurn.turn.id);
+assert.ok(branchUserEvent?.itemId);
+const branchUserItem = await store.getItem(branchUserEvent!.itemId!);
+const branchMetadata = branchUserItem?.payload.coden_branch as Record<string, unknown> | undefined;
+const branchHarness = branchUserItem?.payload.coden_harness as Record<string, unknown> | undefined;
+assert.equal(branchMetadata?.id, 'branch-a');
+assert.equal(branchHarness?.parent_turn_id, first.turn.id);
+await store.updateItem(branchUserItem!.id, { content: 'Edited branch final response' });
+assert.equal((await store.getItem(branchUserItem!.id))?.content, 'Edited branch final response');
 await assert.rejects(harness.transitionTurn(first.turn.id, 'running'), /Invalid harness turn transition/);
 
 // `buildDefinitionOfDone` is the one export of orchestrator.ts that is

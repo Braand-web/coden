@@ -3,8 +3,10 @@ import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
 import { authoritativeProjectFiles, loadGenerationFiles } from './src/services/project-file-recovery.ts';
+import { loadPublicationFiles, publicationSourceReady } from './src/services/publication-source.ts';
 import { writeDurableSnapshot, isSnapshotTableMissing, requireDurableCheckpoint } from './src/services/durable-snapshot-write.ts';
 import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
+import { branchMetadataForMessage, conversationMessageKey, resolveConversationBranch } from './src/services/conversation-branches.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
 import {
@@ -1969,11 +1971,26 @@ async function prepareAgentHarnessContext(input: {
   requestedMode: string;
   requestId: string;
   clientMessageId?: string;
+  threadId?: string;
+  parentTurnId?: string;
+  messageMetadata?: Record<string, unknown>;
 }) {
   if (!isUuid(input.project.id) || !isUuid(input.userId)) return null;
 
   const createWithHarness = async (harness: CodenAgentHarness): Promise<ActiveAgentHarnessContext> => {
-    let thread = await harness.store.findActiveThread(input.project.id, input.userId);
+    let thread = input.threadId ? await harness.store.getThread(input.threadId) : null;
+    if (input.threadId && (!thread || thread.projectId !== input.project.id || thread.userId !== input.userId)) {
+      throw new Error('HARNESS_THREAD_INVALID');
+    }
+    if (!thread && input.parentTurnId) {
+      const parent = await harness.store.getTurn(input.parentTurnId);
+      if (!parent || parent.userId !== input.userId) throw new Error('HARNESS_PARENT_TURN_INVALID');
+      thread = await harness.store.getThread(parent.threadId);
+      if (!thread || thread.projectId !== input.project.id || thread.userId !== input.userId) {
+        throw new Error('HARNESS_PARENT_TURN_INVALID');
+      }
+    }
+    if (!thread) thread = await harness.store.findActiveThread(input.project.id, input.userId);
     if (thread?.activeTurnId) {
       const activeTurn = await harness.store.getTurn(thread.activeTurnId);
       const expectedKey = createHarnessTurnIdempotencyKey({
@@ -1999,6 +2016,12 @@ async function prepareAgentHarnessContext(input: {
         metadata: { source: 'builder', runtime: 'coden-harness/v3' },
       });
     }
+    if (input.parentTurnId) {
+      const parent = await harness.store.getTurn(input.parentTurnId);
+      if (!parent || parent.threadId !== thread.id || parent.userId !== input.userId) {
+        throw new Error('HARNESS_PARENT_TURN_INVALID');
+      }
+    }
     const turnResult = await harness.createTurn({
       threadId: thread.id,
       userId: input.userId,
@@ -2010,6 +2033,8 @@ async function prepareAgentHarnessContext(input: {
         requestId: input.requestId,
         clientMessageId: input.clientMessageId,
       }),
+      ...(input.parentTurnId ? { parentTurnId: input.parentTurnId } : {}),
+      messageMetadata: input.messageMetadata,
       definitionOfDone: buildDefinitionOfDone({
         prompt: input.prompt,
         mode: input.requestedMode,
@@ -3894,7 +3919,9 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
   const previewVerified = project.preview_status === 'verified';
   // Said before the click, not discovered after it.
   const hostingConfigured = publicationHostingConfigured();
-  const previewReady = previewVerified || project.preview_status === 'needs_fix';
+  // The final agent verdict is not a publication prerequisite. Capture the
+  // available source and let the isolated production build verify it.
+  const previewReady = publicationSourceReady(files);
   const hasFiles = files.length > 0;
   const securityScan = scanGeneratedSecurity(files);
   const securityBlocking = securityScan.findings.filter(item => item.status === 'fail');
@@ -3957,7 +3984,7 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
           ? 'L’aperçu vérifié est prêt.'
           : previewReady
             ? 'Certaines vérifications ne sont pas encore passées. La publication compile l’application pour la production et vérifie le site en ligne avant de confirmer.'
-            : 'Générez l’application et attendez la fin de la génération avant de publier.',
+            : 'La première version du site est en préparation.',
       },
       {
         key: 'security',
@@ -10254,6 +10281,29 @@ async function listProjectMessages(projectId: string) {
   return dedupeTwinMessages((data || []).map(sanitizeProjectMessageForUser));
 }
 
+async function listProjectConversationMessages(projectId: string, ownerId: string) {
+  const messages = await listProjectMessages(projectId);
+  const snapshot = await loadDurableProjectSnapshot(projectId, ownerId);
+  const savedMessages = dedupeTwinMessages((Array.isArray(snapshot?.messages_snapshot) ? snapshot!.messages_snapshot! : [])
+    .map(sanitizeProjectMessageForUser));
+  if (!messages.length) return savedMessages;
+  const snapshotById = new Map(savedMessages.map(message => [String(message.id || message.ai_message_id || ''), message]));
+  const merged = messages.map(message => {
+    const key = String(message.id || message.ai_message_id || '');
+    const saved = snapshotById.get(key);
+    if (!saved) return message;
+    snapshotById.delete(key);
+    return {
+      ...saved,
+      ...message,
+      metadata: { ...(saved.metadata || {}), ...(message.metadata || {}) },
+      parts: Array.isArray(message.parts) && message.parts.length ? message.parts : saved.parts,
+    };
+  });
+  merged.push(...snapshotById.values());
+  return dedupeTwinMessages(merged);
+}
+
 async function listProjectMessagesPage(projectId: string, limitValue: any, beforeValue: any, required = false) {
   const limit = Math.min(100, Math.max(1, Number(limitValue || 100)));
   const client = requireSupabase('Project message page listing');
@@ -10263,6 +10313,68 @@ async function listProjectMessagesPage(projectId: string, limitValue: any, befor
   if (error && /project_messages|schema cache|relation .* does not exist|table .* does not exist|could not find .* in the schema cache/i.test(error.message || '') && !required) return [];
   if (error) throw new Error(`Supabase project message page failed: ${error.message}`);
   return dedupeTwinMessages((data || []).reverse().map(sanitizeProjectMessageForUser));
+}
+
+function messageBranchMetadata(message: any) {
+  const value = message?.metadata?.coden_branch;
+  return value && typeof value === 'object' ? value as Record<string, any> : null;
+}
+
+function findProjectConversationMessage(messages: any[], messageId: string) {
+  return messages.find(message =>
+    String(message?.id || '') === messageId
+    || String(message?.ai_message_id || '') === messageId,
+  ) || null;
+}
+
+function conversationForkContext(messages: any[], sourceMessageId: string, actorId: string) {
+  const source = findProjectConversationMessage(messages, sourceMessageId);
+  if (!source || source.role !== 'user' || String(source.user_id || '') !== actorId) return null;
+  const branch = messageBranchMetadata(source);
+  const path = resolveConversationBranch(messages, branch?.id || null, conversationMessageKey(source));
+  const sourceKey = conversationMessageKey(source);
+  const sourceIndex = path.findIndex(message => conversationMessageKey(message) === sourceKey);
+  if (sourceIndex < 0) return null;
+  const prefix = path.slice(0, sourceIndex)
+    .filter(message => (message.role === 'user' || message.role === 'assistant') && String(message.content || '').trim())
+    .map(message => ({ role: message.role === 'assistant' ? 'assistant' as const : 'user' as const, content: redactSecrets(String(message.content || '')).slice(0, 8_000) }));
+  const harness = source.metadata?.coden_harness && typeof source.metadata.coden_harness === 'object'
+    ? source.metadata.coden_harness as Record<string, any>
+    : {};
+  return {
+    source,
+    prefix,
+    parentBranchId: branch?.id || null,
+    harnessThreadId: typeof harness.thread_id === 'string' ? harness.thread_id : null,
+    // The edited user message belongs to this turn. A new Harness turn must
+    // fork from it, not from the turn that preceded the original request.
+    parentTurnId: typeof harness.turn_id === 'string' ? harness.turn_id : null,
+  };
+}
+
+function validConversationBranchId(value: unknown) {
+  const branchId = String(value || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(branchId) ? branchId : '';
+}
+
+function conversationPersistenceMetadata(input: {
+  branchId?: string;
+  fork?: { parentBranchId?: string | null; parentMessageId?: string | null } | null;
+  harness?: { threadId?: string; turnId?: string; parentTurnId?: string } | null;
+  additional?: Record<string, unknown>;
+}) {
+  const metadata = { ...(input.additional || {}) } as Record<string, any>;
+  if (input.branchId) {
+    metadata.coden_branch = branchMetadataForMessage({}, input.branchId, input.fork || undefined).coden_branch;
+  }
+  if (input.harness?.threadId && input.harness.turnId) {
+    metadata.coden_harness = {
+      thread_id: input.harness.threadId,
+      turn_id: input.harness.turnId,
+      parent_turn_id: input.harness.parentTurnId || null,
+    };
+  }
+  return metadata;
 }
 
 async function getRecentDecisionHistory(projectId: string, limitValue = 6): Promise<RecentHistoryMessage[]> {
@@ -12106,6 +12218,10 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
   const selectedModel = normalizeModelSelectionId(req.body?.modelId || 'auto');
   const requestedMode = normalizeRequestedMode(req.body?.requestedMode || req.body?.mode);
   const requestedProjectId = String(req.body?.projectId || '').trim();
+  const requestedBranchIdRaw = String(req.body?.branchId || '').trim();
+  const branchId = requestedBranchIdRaw ? validConversationBranchId(requestedBranchIdRaw) : '';
+  if (requestedBranchIdRaw && !branchId) return res.status(400).json({ success: false, error: 'Conversation branch is invalid.' });
+  const branchFromMessageId = sanitizeWorkspaceText(req.body?.branchFromMessageId || '').slice(0, 180);
   const now = new Date().toISOString();
   let project: GeneratedProject = {
     id: 'assistant',
@@ -12130,9 +12246,30 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       canPersistConversation = true;
     }
   }
+  if (branchFromMessageId && !canPersistConversation) return res.status(404).json({ success: false, error: 'Message not found.' });
+  let branchFork: ReturnType<typeof conversationForkContext> = null;
+  if (branchFromMessageId) {
+    const projectMessages = await listProjectConversationMessages(project.id, userId);
+    branchFork = conversationForkContext(projectMessages, branchFromMessageId, userId);
+    if (!branchFork) return res.status(404).json({ success: false, error: 'Message not found.' });
+    if (!branchId) return res.status(400).json({ success: false, error: 'A branch identifier is required.' });
+    const branchMessages = projectMessages.filter(message => messageBranchMetadata(message)?.id === branchId);
+    if (branchMessages.length) {
+      const origin = messageBranchMetadata(branchMessages[0]);
+      if (origin?.parent_message_id !== conversationMessageKey(branchFork.source)
+        || (origin?.parent_branch_id || null) !== (branchFork.parentBranchId || null)) {
+        return res.status(409).json({ success: false, error: 'Conversation branch already exists.', diagnostic_code: 'CONVERSATION_BRANCH_CONFLICT' });
+      }
+    }
+  } else if (branchId) {
+    const projectMessages = await listProjectConversationMessages(project.id, userId).catch(() => []);
+    if (!projectMessages.some(message => messageBranchMetadata(message)?.id === branchId)) {
+      return res.status(404).json({ success: false, error: 'Conversation branch not found.' });
+    }
+  }
 
   // The same turns, as turns: what the model is actually given.
-  const historyTurns: RecentHistoryMessage[] = Array.isArray(req.body?.messages)
+  const historyTurns: RecentHistoryMessage[] = branchFork ? branchFork.prefix : Array.isArray(req.body?.messages)
     ? req.body.messages
       .filter((message: any) => (message?.role === 'user' || message?.role === 'assistant') && String(message?.content || '').trim())
       .slice(-30)
@@ -12145,7 +12282,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       requestedMode,
       hasFiles: files.length > 0,
       lastPlan: undefined,
-      recentHistory: Array.isArray(req.body?.messages)
+      recentHistory: branchFork ? branchFork.prefix.slice(-10) : Array.isArray(req.body?.messages)
         ? req.body.messages.filter((message: any) => message?.role === 'user' || message?.role === 'assistant').slice(-10)
         : [],
       localOnly: true,
@@ -12227,26 +12364,69 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
    * streamed word by word. The same composer, two different products.
    *
    * Only a conversation streams. A plan and a clarification come back as a
-   * structured object the Builder renders as a card; streamed, the user would
-   * watch raw JSON being typed. Every refusal above has already answered with
-   * its own status and JSON, which `apiFetch` still reads as before.
-   */
+  * structured object the Builder renders as a card; streamed, the user would
+  * watch raw JSON being typed. Every refusal above has already answered with
+  * its own status and JSON, which `apiFetch` still reads as before.
+  */
+  let harnessContext: ActiveAgentHarnessContext | null = null;
+  if (canPersistConversation) {
+    try {
+      harnessContext = await prepareAgentHarnessContext({
+        project,
+        userId,
+        prompt,
+        requestedMode: 'ask',
+        requestId,
+        clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
+        threadId: branchFork?.harnessThreadId || sanitizeWorkspaceText(req.body?.harnessThreadId || '').slice(0, 180) || undefined,
+        parentTurnId: branchFork?.parentTurnId || sanitizeWorkspaceText(req.body?.parentTurnId || '').slice(0, 180) || undefined,
+        messageMetadata: conversationPersistenceMetadata({
+          branchId,
+          fork: branchFork ? { parentBranchId: branchFork.parentBranchId, parentMessageId: conversationMessageKey(branchFork.source) } : null,
+        }),
+      });
+    } catch (error: any) {
+      console.warn('[coden:assistant_harness_start_failed]', { request_id: requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
+      return res.status(503).json({ success: false, error: 'La conversation est temporairement indisponible. Réessayez dans un instant.', diagnostic_code: 'HARNESS_START_FAILED', request_id: requestId, recoverable: true });
+    }
+  }
   const french = isLikelyFrenchPrompt(basePrompt);
+  const streamRunId = harnessContext?.turn.id || requestId;
+  const streamMessageId = String(req.body?.assistantMessageId || harnessContext?.assistantItemId || requestId).slice(0, 160);
+  if (harnessContext && req.headers.accept?.includes('text/event-stream')) {
+    res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
+    res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
+  }
   const eventStream = decision.intent === 'conversation' && String(req.headers.accept || '').includes('text/event-stream')
-    ? createAgentEventStream(res, requestId, { messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) })
+    ? createAgentEventStream(res, streamRunId, {
+        messageId: streamMessageId,
+        persist: harnessContext ? async envelope => {
+          await harnessContext!.harness.store.appendEvent({
+            threadId: harnessContext!.thread.id,
+            turnId: harnessContext!.turn.id,
+            itemId: harnessContext!.assistantItemId,
+            type: 'public.stream',
+            visibility: envelope.channel === 'chat' ? 'public' : 'technical',
+            payload: envelope as unknown as Record<string, unknown>,
+          });
+        } : undefined,
+        onTransportLost: () => recordStream('interrupted', { run: streamRunId }),
+      })
     : null;
   // A reader who left stops the model too: nobody is waiting for the rest.
   const chatAbort = new AbortController();
   res.once('close', () => { if (!res.writableEnded) chatAbort.abort(); });
   let chatDelivered = false;
-  eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId).slice(0, 160) });
+  eventStream?.chat({ type: 'run_started', messageId: streamMessageId });
   eventStream?.chat({ type: 'activity', label: french ? 'Coden réfléchit…' : 'Coden is thinking…' });
   const streamedText = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'text_delta', delta })) : null;
   const streamedReasoning = eventStream ? createStreamingRedactor(delta => eventStream.chat({ type: 'reasoning_delta', delta })) : null;
+  let userMessageId = '';
+  let assistantMessageId = '';
 
   try {
     if (canPersistConversation) {
-      await saveProjectMessage({
+      const savedUser = await saveProjectMessage({
         organization_id: project.organization_id,
         project_id: project.id,
         user_id: userId,
@@ -12255,6 +12435,21 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
         content: prompt,
         intent: decision.intent,
         requested_mode: requestedMode,
+        metadata: conversationPersistenceMetadata({
+          branchId,
+          fork: branchFork ? { parentBranchId: branchFork.parentBranchId, parentMessageId: conversationMessageKey(branchFork.source) } : null,
+          harness: harnessContext ? { threadId: harnessContext.thread.id, turnId: harnessContext.turn.id, parentTurnId: harnessContext.turn.parentTurnId } : null,
+        }),
+      });
+      userMessageId = String(savedUser.ai_message_id || savedUser.id || '');
+      if (harnessContext) eventStream?.workspace({
+        type: 'run_acknowledged',
+        threadId: harnessContext.thread.id,
+        turnId: harnessContext.turn.id,
+        runId: harnessContext.turn.id,
+        branchId: branchId || null,
+        userMessageId,
+        parentTurnId: harnessContext.turn.parentTurnId || null,
       });
     }
 
@@ -12263,7 +12458,7 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       prompt,
       history: historyTurns,
       // A chat about a project knows what was built in it.
-      sessionContext: canPersistConversation ? renderSessionContext(await loadSessionMemory(project.id)) : undefined,
+      sessionContext: canPersistConversation && !branchFork ? renderSessionContext(await loadSessionMemory(project.id)) : undefined,
       files,
       decision,
       modelId: selectedModel,
@@ -12291,7 +12486,12 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
     });
     const estimateRealCostUsd = 'realCostUsd' in estimate ? Number(estimate.realCostUsd || 0) : 0;
     const chargedCredits = agentText.model === 'auto' && agentText.cost_usd === 0 ? 0 : estimate.finalCredits;
-    const answer = { success: true, request_id: requestId, text: content };
+    assistantMessageId = streamMessageId;
+    const answer = { success: true, request_id: requestId, text: content, conversation: {
+      branchId: branchId || null,userMessageId,assistantMessageId,
+      threadId: harnessContext?.thread.id || null,turnId: harnessContext?.turn.id || null,
+      parentTurnId: harnessContext?.turn.parentTurnId || null,
+    } };
     if (CODEN_MONETIZATION_ENABLED) {
       const providerCost = withProviderPurchaseFee(Number(agentText.cost_usd || estimateRealCostUsd || 0));
       const completeCost = Math.max(0.000001, providerCost + 0.00005);
@@ -12304,29 +12504,47 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
           providerCostUsd:providerCost,allocatedPlatformCostUsd:0.00005,completeCostUsd:completeCost,
           idempotencyKey:`chat:${requestId}:usage`}),
         ...(canPersistConversation && (project.owner_id===userId || project.organization_id===userId) ? {delivery:{project_id:project.id,actor_id:userId,
-          message:{content,intent:decision.intent,requested_mode:requestedMode,ai_message_id:String(req.body?.assistantMessageId || requestId).slice(0,160),
-            metadata:eventStream ? {coden_stream:{version:1,status:'done',final_text:content,run_id:requestId,events:eventStream.persistedChatEvents}} : {}}}} : {}),
+          message:{content,intent:decision.intent,requested_mode:requestedMode,ai_message_id:streamMessageId,
+            metadata:conversationPersistenceMetadata({branchId,
+              fork:branchFork ? {parentBranchId:branchFork.parentBranchId,parentMessageId:conversationMessageKey(branchFork.source)} : null,
+              harness:harnessContext ? {threadId:harnessContext.thread.id,turnId:harnessContext.turn.id,parentTurnId:harnessContext.turn.parentTurnId} : null,
+              additional:eventStream ? {coden_stream:{version:1,status:'done',final_text:content,run_id:streamRunId,events:eventStream.persistedChatEvents}} : {}})}}} : {}),
       });
     }
     chatDelivered = true;
     if (canPersistConversation && (!CODEN_MONETIZATION_ENABLED || (project.owner_id!==userId && project.organization_id!==userId))) {
-      await saveProjectMessage({
+      const savedAssistant = await saveProjectMessage({
         organization_id: project.organization_id,
         project_id: project.id,
         user_id: userId,
-        ai_message_id: String(req.body?.assistantMessageId || requestId).slice(0, 160),
+        ai_message_id: streamMessageId,
         role: 'assistant',
         content,
         intent: decision.intent,
         requested_mode: requestedMode,
-        metadata: eventStream ? { coden_stream: {
+        metadata: conversationPersistenceMetadata({
+          branchId,
+          harness: harnessContext ? { threadId: harnessContext.thread.id, turnId: harnessContext.turn.id, parentTurnId: harnessContext.turn.parentTurnId } : null,
+          additional: eventStream ? { coden_stream: {
           version: 1,
           status: 'done',
           final_text: content,
           run_id: requestId,
           events: eventStream.persistedChatEvents,
-        } } : {},
-      }).catch(() => console.error('[coden:chat_copy_pending]', {request_id:requestId}));
+          } } : {},
+        }),
+      }).catch(() => {console.error('[coden:chat_copy_pending]',{request_id:requestId});return null;});
+      if(savedAssistant) assistantMessageId = String(savedAssistant.ai_message_id || savedAssistant.id || '');
+    }
+    if (harnessContext) {
+      try {
+      await harnessContext.harness.store.updateItem(harnessContext.assistantItemId, { content: redactSecrets(content) });
+      await harnessContext.harness.settleDefinitionOfDone(harnessContext.turn.id, {
+        answer_complete: { status: 'passed', evidence: 'A conversational response was generated, streamed when requested, and saved to project history.' },
+      });
+      await harnessContext.harness.transitionItem(harnessContext.assistantItemId, 'completed', { source: 'model' });
+      await harnessContext.harness.transitionTurn(harnessContext.turn.id, 'completed');
+      } catch { console.error('[coden:delivered_chat_harness_pending]',{request_id:requestId}); }
     }
     /*
      * The bill is settled after the work, so it can no longer destroy it.
@@ -12410,27 +12628,38 @@ app.post('/api/assistant/chat', async (req: any, res: any) => {
       await eventStream.drain().catch(streamError => {
         console.warn('[coden:assistant_chat_stream_drain_failed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') });
       });
-      if (canPersistConversation) {
-        const partial = eventStream.transcript;
-        const content = [partial, publicMessage].filter(Boolean).join('\n\n');
-        await saveProjectMessage({
-          organization_id: project.organization_id,
-          project_id: project.id,
-          user_id: userId,
-          ai_message_id: String(req.body?.assistantMessageId || requestId).slice(0, 160),
-          role: 'assistant',
-          content,
-          intent: decision.intent,
-          requested_mode: requestedMode,
-          metadata: { coden_stream: {
+    }
+    const streamFailureContent = [eventStream?.transcript || '', publicMessage].filter(Boolean).join('\n\n');
+    if (canPersistConversation) {
+      await saveProjectMessage({
+        organization_id: project.organization_id,
+        project_id: project.id,
+        user_id: userId,
+        ai_message_id: streamMessageId,
+        role: 'assistant',
+        content: streamFailureContent,
+        intent: decision.intent,
+        requested_mode: requestedMode,
+        metadata: conversationPersistenceMetadata({
+          branchId,
+          harness: harnessContext ? { threadId: harnessContext.thread.id, turnId: harnessContext.turn.id, parentTurnId: harnessContext.turn.parentTurnId } : null,
+          additional: eventStream ? { coden_stream: {
             version: 1,
             status: chatAbort.signal.aborted ? 'cancelled' : 'failed',
             error: publicMessage,
             run_id: requestId,
             events: eventStream.persistedChatEvents,
-          } },
-        }).catch(persistError => console.warn('[coden:assistant_chat_failure_persist_failed]', { request_id: requestId, message: redactSecrets(String(persistError), '[redacted]') }));
-      }
+          } } : {},
+        }),
+      }).catch(persistError => console.warn('[coden:assistant_chat_failure_persist_failed]', { request_id: requestId, message: redactSecrets(String(persistError), '[redacted]') }));
+    }
+    if (harnessContext) {
+      const terminal = chatAbort.signal.aborted ? 'cancelled' : 'failed';
+      await harnessContext.harness.store.updateItem(harnessContext.assistantItemId, { content: publicMessage }).catch(() => undefined);
+      await harnessContext.harness.transitionItem(harnessContext.assistantItemId, terminal, { diagnostic_code: diagnostic.diagnostic_code }).catch(() => undefined);
+      await harnessContext.harness.transitionTurn(harnessContext.turn.id, terminal, { diagnostic_code: diagnostic.diagnostic_code }).catch(() => undefined);
+    }
+    if (eventStream) {
       return eventStream.finish(failure, chatAbort.signal.aborted ? 499 : diagnostic.status >= 400 ? diagnostic.status : 502)
         .catch(streamError => console.warn('[coden:assistant_chat_stream_closed]', { request_id: requestId, message: redactSecrets(String(streamError), '[redacted]') }));
     }
@@ -14907,6 +15136,31 @@ app.get('/api/projects/:id/messages', async (req: any, res) => {
   const userId = getUserOrgId(req);
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
+  const requestedBranchId = String(req.query?.branch_id || '').trim();
+  const requestedMessageId = sanitizeWorkspaceText(req.query?.message_id || '').slice(0, 180);
+  if (requestedBranchId && !validConversationBranchId(requestedBranchId)) {
+    return res.status(400).json({ success: false, error: 'Conversation branch is invalid.' });
+  }
+  if (requestedBranchId || requestedMessageId) {
+    const allMessages = await listProjectConversationMessages(project.id, userId);
+    const target = requestedMessageId ? findProjectConversationMessage(allMessages, requestedMessageId) : null;
+    if (requestedMessageId && !target) return res.status(404).json({ success: false, error: 'Message not found.' });
+    const targetBranchId = messageBranchMetadata(target)?.id || '';
+    const branchId = requestedBranchId || targetBranchId;
+    if (branchId && !allMessages.some(message => messageBranchMetadata(message)?.id === branchId)) {
+      return res.status(404).json({ success: false, error: 'Message not found.' });
+    }
+    const resolved = resolveConversationBranch(allMessages, branchId || null);
+    let messages = resolved;
+    if (target) {
+      const targetKey = conversationMessageKey(target);
+      const targetIndex = resolved.findIndex(message => conversationMessageKey(message) === targetKey);
+      if (targetIndex < 0) return res.status(404).json({ success: false, error: 'Message not found.' });
+      messages = resolved.slice(0, targetIndex + 1);
+    }
+    const limit = Math.min(100, Math.max(1, Number(req.query?.limit || 100)));
+    return res.json({ success: true, branch_id: branchId || null, messages: messages.slice(-limit) });
+  }
   let messages = await listProjectMessagesPage(project.id, req.query?.limit, req.query?.before);
   if (!messages.length) {
     const snapshot = await loadDurableProjectSnapshot(project.id, userId);
@@ -15246,6 +15500,10 @@ app.get('/api/projects/:id', async (req: any, res: any) => {
     loadDurableProjectSnapshot(project.id, userId),
   ]);
   const recovered = recoverProjectPayloadFromSnapshot({ project, files, messages, events, workspace: workspaceState, snapshot });
+  // Opening a project from the dashboard shows its original transcript, not a
+  // chronological mixture of alternate edits. A branch or private message URL
+  // is resolved by the dedicated authenticated messages endpoint in the UI.
+  recovered.messages = resolveConversationBranch(recovered.messages || [], null);
   // Remembered in the background: the reply does not wait on a bookkeeping write.
   void upsertUserWorkspaceState(userId, { last_project_id: project.id, last_route: `/builder.html?project=${project.id}` }).catch(() => undefined);
   res.json({
@@ -16218,6 +16476,35 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     try { requestId = billingActionIdentity(userId, project.id, 'generate', req.headers['idempotency-key'] || req.body?.clientMessageId); }
     catch { return res.status(400).json({ success: false, diagnostic_code: 'ACTION_IDENTIFIER_REQUIRED', message: 'Actualisez la page avant de renvoyer votre demande.' }); }
   }
+  const requestedBranchIdRaw = String(req.body?.branchId || '').trim();
+  const branchId = requestedBranchIdRaw ? validConversationBranchId(requestedBranchIdRaw) : '';
+  if (requestedBranchIdRaw && !branchId) return res.status(400).json({ success: false, error: 'Conversation branch is invalid.' });
+  const branchFromMessageId = sanitizeWorkspaceText(req.body?.branchFromMessageId || '').slice(0, 180);
+  let branchFork: ReturnType<typeof conversationForkContext> = null;
+  if (branchFromMessageId) {
+    let projectMessages: any[];
+    try { projectMessages = await listProjectConversationMessages(project.id, userId); }
+    catch (error) {
+      console.warn('[coden:conversation_fork_load_failed]', { request_id: requestId, message: redactSecrets(String(error), '[redacted]') });
+      return res.status(503).json({ success: false, error: 'Historique temporairement indisponible. Réessayez dans un instant.', diagnostic_code: 'CONVERSATION_HISTORY_UNAVAILABLE' });
+    }
+    branchFork = conversationForkContext(projectMessages, branchFromMessageId, userId);
+    if (!branchFork) return res.status(404).json({ success: false, error: 'Message not found.' });
+    if (!branchId) return res.status(400).json({ success: false, error: 'A branch identifier is required.' });
+    const existingBranchMessages = projectMessages.filter(message => messageBranchMetadata(message)?.id === branchId);
+    if (existingBranchMessages.length) {
+      const origin = messageBranchMetadata(existingBranchMessages[0]);
+      if (origin?.parent_message_id !== conversationMessageKey(branchFork.source)
+        || (origin?.parent_branch_id || null) !== (branchFork.parentBranchId || null)) {
+        return res.status(409).json({ success: false, error: 'Conversation branch already exists.', diagnostic_code: 'CONVERSATION_BRANCH_CONFLICT' });
+      }
+    }
+  } else if (branchId) {
+    const projectMessages = await listProjectConversationMessages(project.id, userId).catch(() => []);
+    if (!projectMessages.some(message => messageBranchMetadata(message)?.id === branchId)) {
+      return res.status(404).json({ success: false, error: 'Conversation branch not found.' });
+    }
+  }
   enrichCostScope({ actorId: userId, projectId: project.id, requestId });
 
   const prompt = sanitizeWorkspaceText(req.body?.prompt || '').trim();
@@ -16267,6 +16554,17 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
   }
   let harnessContext: ActiveAgentHarnessContext | null = null;
+  let userDurableMessageId = '';
+  let assistantDurableMessageId = String(req.body?.assistantMessageId || '').slice(0, 160);
+  const parentTurnId = branchFork
+    ? branchFork.parentTurnId || undefined
+    : sanitizeWorkspaceText(req.body?.parentTurnId || '').slice(0, 180) || undefined;
+  const parentThreadId = branchFork
+    ? branchFork.harnessThreadId || undefined
+    : sanitizeWorkspaceText(req.body?.harnessThreadId || '').slice(0, 180) || undefined;
+  const branchForkMetadata = branchFork
+    ? { parentBranchId: branchFork.parentBranchId, parentMessageId: conversationMessageKey(branchFork.source) }
+    : null;
   try {
     harnessContext = await prepareAgentHarnessContext({
       project,
@@ -16275,6 +16573,9 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       requestedMode,
       requestId,
       clientMessageId: sanitizeWorkspaceText(req.body?.clientMessageId || '').slice(0, 140),
+      threadId: parentThreadId,
+      parentTurnId,
+      messageMetadata: conversationPersistenceMetadata({ branchId, fork: branchForkMetadata }),
     });
   } catch (error: any) {
     console.error('[coden:harness_start_failed]', { requestId, message: redactSecrets(error?.message || String(error), '[redacted]') });
@@ -16282,6 +16583,21 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     // person who asked for an application.
     const french = isLikelyFrenchPrompt(prompt);
     const active = error instanceof HarnessRunActiveError;
+    try {
+      const savedUser = await saveProjectMessage({
+        organization_id: project.organization_id,
+        project_id: project.id,
+        user_id: userId,
+        ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined,
+        role: 'user',
+        content: prompt,
+        requested_mode: requestedMode,
+        metadata: conversationPersistenceMetadata({ branchId, fork: branchForkMetadata }),
+      });
+      userDurableMessageId = String(savedUser.ai_message_id || savedUser.id || '');
+    } catch (persistError) {
+      console.warn('[coden:harness_start_user_message_save_failed]', { requestId, message: redactSecrets(String(persistError), '[redacted]') });
+    }
     return res.status(409).json({
       success: false,
       error: active
@@ -16293,6 +16609,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       suggested_action: active ? error.suggestedAction : 'retry',
       recoverable: true,
       request_id: requestId,
+      conversation: { branchId: branchId || null, userMessageId: userDurableMessageId, assistantMessageId: assistantDurableMessageId },
     });
   }
 
@@ -16340,6 +16657,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   const frenchActivity = isLikelyFrenchPrompt(prompt);
   const streamRunId = harnessContext?.turn.id || requestId;
   const streamMessageId = String(req.body?.assistantMessageId || harnessContext?.assistantItemId || requestId).slice(0, 160);
+  assistantDurableMessageId = streamMessageId;
   if (harnessContext && req.headers.accept?.includes('text/event-stream')) {
     res.setHeader('X-Coden-Thread-Id', harnessContext.thread.id);
     res.setHeader('X-Coden-Turn-Id', harnessContext.turn.id);
@@ -16412,6 +16730,13 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           payload = { ...payload, success:false, needs_fix:true, diagnostic_code:'VERIFICATION_INCOMPLETE', recoverable:true,
             message, summary:message, verification:{ ...payload.verification, status:'incomplete', pendingCriteria:pendingChecks.map(check=>({id:check.id,label:check.label,status:check.status})) } };
         }
+        const persistedFinalText = creditPaused ? '' : [payload.summary, payload.text, payload.message, payload.error]
+          .find(value => typeof value === 'string' && value.trim())?.trim() || '';
+        if (persistedFinalText) {
+          await harnessContext.harness.store.updateItem(harnessContext.assistantItemId, {
+            content: redactSecrets(persistedFinalText),
+          });
+        }
         if (current && !['completed','failed','cancelled','blocked'].includes(current.status)) {
           await harnessContext.harness.transitionItem(harnessContext.assistantItemId, terminal, { source:payload.assistant_source || 'system', diagnostic_code:payload.diagnostic_code || null });
           await harnessContext.harness.transitionTurn(harnessContext.turn.id, terminal, { diagnostic_code:payload.diagnostic_code || null });
@@ -16424,6 +16749,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         } else payload={...payload,persistence_pending:true};
       }
     }
+    payload.conversation = {
+      branchId: branchId || null,
+      userMessageId: userDurableMessageId || String(req.body?.clientMessageId || ''),
+      assistantMessageId: assistantDurableMessageId || streamMessageId,
+      threadId: harnessContext?.thread.id || parentThreadId || null,
+      turnId: harnessContext?.turn.id || null,
+      parentTurnId: harnessContext?.turn.parentTurnId || parentTurnId || null,
+    };
     /*
      * The run that did the work records that it happened.
      *
@@ -16479,7 +16812,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             : `${streamedText.trimEnd()}\n\n${finalText}`
           : finalText;
         const streamStatus = status === 499 ? 'cancelled' : creditPaused ? 'done' : status >= 400 || payload.success === false ? 'failed' : 'done';
-        await saveProjectMessage({
+        const savedAssistant = await saveProjectMessage({
           organization_id: project.organization_id,
           project_id: project.id,
           user_id: userId,
@@ -16489,6 +16822,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           intent: payload.intent?.intent,
           requested_mode: requestedMode,
           metadata: {
+            ...conversationPersistenceMetadata({ branchId, fork: branchForkMetadata, harness: {
+              threadId: harnessContext?.thread.id,
+              turnId: harnessContext?.turn.id,
+              parentTurnId: harnessContext?.turn.parentTurnId || undefined,
+            } }),
             ...(payload.diagnostic_code ? { outcome: creditPaused || streamStatus === 'failed' ? 'blocked' : streamStatus, diagnostic_code: payload.diagnostic_code } : {}),
             ...(eventStream ? { coden_stream: {
               version: 1,
@@ -16500,6 +16838,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
             } } : {}),
           },
         });
+        assistantDurableMessageId = String(savedAssistant.ai_message_id || savedAssistant.id || streamMessageId);
       } catch (error) {
         console.error('[coden:assistant_persistence_failed]', {requestId,message:redactSecrets(String(error))});
         if (!generationDurablyDelivered) {
@@ -16548,15 +16887,32 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     };
     try {
       if (!options.userAlreadyPersisted) {
-        await saveProjectMessage({ ...shared, ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined, role: 'user', content: prompt });
+        const savedUser = await saveProjectMessage({
+          ...shared,
+          ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined,
+          role: 'user',
+          content: prompt,
+          metadata: conversationPersistenceMetadata({
+            branchId,
+            fork: branchForkMetadata,
+            harness: { threadId: harnessContext?.thread.id, turnId: harnessContext?.turn.id, parentTurnId: harnessContext?.turn.parentTurnId || undefined },
+          }),
+        });
+        userDurableMessageId = String(savedUser.ai_message_id || savedUser.id || '');
       }
-      await saveProjectMessage({
+      const savedAssistant = await saveProjectMessage({
         ...shared,
         ai_message_id: streamMessageId,
         role: 'assistant',
         content: safeMessage,
-        metadata: { outcome: 'blocked', diagnostic_code: diagnosticCode },
+        metadata: conversationPersistenceMetadata({
+          branchId,
+          fork: branchForkMetadata,
+          harness: { threadId: harnessContext?.thread.id, turnId: harnessContext?.turn.id, parentTurnId: harnessContext?.turn.parentTurnId || undefined },
+          additional: { outcome: 'blocked', diagnostic_code: diagnosticCode },
+        }),
       });
+      assistantDurableMessageId = String(savedAssistant.ai_message_id || savedAssistant.id || streamMessageId);
     } catch (error: any) {
       // The response itself remains useful even if the history store is
       // temporarily unavailable. The failure is observable without exposing
@@ -16569,7 +16925,6 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
   };
   eventStream?.chat({ type: 'run_started', messageId: String(req.body?.assistantMessageId || requestId) });
-  if (harnessContext) eventStream?.workspace({type:'run_acknowledged',threadId:harnessContext.thread.id,turnId:harnessContext.turn.id,runId:harnessContext.turn.id});
   // Deciding what the message asks for is a model call of its own; the
   // status line says so from the first moment instead of sitting blank.
   eventStream?.chat({ type: 'activity', label: frenchActivity ? 'Coden lit ta demande…' : 'Coden is reading your request…' });
@@ -16656,7 +17011,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         committed: () => loadProjectFiles(project.id),
         checkpoint: async () => normalizeGeneratedFiles((await loadDurableProjectSnapshot(project.id, project.owner_id))?.files_snapshot || []),
       }),
-      getLastProjectPlan(project.id),
+      branchFork ? Promise.resolve('') : getLastProjectPlan(project.id),
       loadConversationContext({
         project,
         userId,
@@ -16674,8 +17029,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     return respondJson(503, { success: false, needs_fix: true, recoverable: true, error: message, message,
       diagnostic_code: 'PROJECT_CONTEXT_UNAVAILABLE', request_id: requestId, suggested_action: 'retry_later' });
   }
-  const recentHistory = dropCurrentPrompt(conversation.turns, prompt);
-  const sessionContext = conversation.sessionContext;
+  const recentHistory = branchFork ? branchFork.prefix : dropCurrentPrompt(conversation.turns, prompt);
+  const sessionContext = branchFork ? undefined : conversation.sessionContext;
   let initialDecision: IntentDecision;
   try {
     /*
@@ -16814,7 +17169,23 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     }
     try {
       await prepareGenerationAttachments();
-      await saveProjectMessage({organization_id:project.organization_id,project_id:project.id,user_id:userId,role:'user',content:prompt,intent:decision.intent,requested_mode:requestedMode,...(attachedForMessage.length ? { metadata: { attachments: attachedForMessage } } : {})});
+      const savedUser = await saveProjectMessage({
+        organization_id: project.organization_id,
+        project_id: project.id,
+        user_id: userId,
+        ai_message_id: String(req.body?.clientMessageId || '').slice(0, 160) || undefined,
+        role: 'user',
+        content: prompt,
+        intent: decision.intent,
+        requested_mode: requestedMode,
+        metadata: conversationPersistenceMetadata({
+          branchId,
+          fork: branchForkMetadata,
+          harness: { threadId: harnessContext?.thread.id, turnId: harnessContext?.turn.id, parentTurnId: harnessContext?.turn.parentTurnId || undefined },
+          additional: attachedForMessage.length ? { attachments: attachedForMessage } : {},
+        }),
+      });
+      userDurableMessageId = String(savedUser.ai_message_id || savedUser.id || '');
       /*
        * Open the run before the work, so a run that never comes back is still
        * visible as one that started. A row written only on success records
@@ -16861,7 +17232,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
       // What worked for others on this kind of task (anonymised, see
       // agent-learning.ts), read alongside the project's own decisions.
       const sharedKnowledgePromise = retrieveKnowledgeContext(getSupabase(), agentPrompt, { taskType: learningTaskType });
-      const projectMemory = await loadProjectMemoryContext({
+      const projectMemory = branchFork ? '' : await loadProjectMemoryContext({
         client: getSupabase(),
         projectId: project.id,
         prompt: agentPrompt,
@@ -17070,7 +17441,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
               resource:pipelineCost.action || pipelineRoute,provider:'openrouter',model:outcome.modelId,
               providerCostUsd:providerCost,allocatedPlatformCostUsd:0.0001,completeCostUsd:providerCost+0.0001,idempotencyKey:`pipeline:${requestId}:usage`}),
             delivery:{project_id:project.id,actor_id:userId,project:cleanProjectForSnapshot(updatedProject),files:redactSecretPayload(pipelineFiles),
-              message:{content:deliveredSummary,intent:decision.intent,requested_mode:requestedMode,ai_message_id:streamMessageId}},
+              message:{content:deliveredSummary,intent:decision.intent,requested_mode:requestedMode,ai_message_id:streamMessageId,
+                metadata:conversationPersistenceMetadata({branchId,fork:branchForkMetadata,harness:{threadId:harnessContext?.thread.id,turnId:harnessContext?.turn.id,parentTurnId:harnessContext?.turn.parentTurnId || undefined}})}},
           });
           generationDurablyDelivered=true;
           durableGenerationPayload={success:true,project:updatedProject,files:pipelineFiles,summary:deliveredSummary,
@@ -17545,10 +17917,14 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
   if (AGENT_V2_ENABLED) {
     // Four independent reads for the context pack, fetched together.
     const [contextMessages, contextEvents, contextVersions, contextMemory] = await Promise.all([
-      listProjectMessagesPage(project.id, 12, null).catch(() => []),
-      listAgentEventsPage(project.id, 16, null).catch(() => []),
-      listProjectVersions(project.id).catch(() => []),
-      listAgentMemory(project.id).catch(() => []),
+      branchFork
+        ? listProjectConversationMessages(project.id, userId)
+          .then(messages => resolveConversationBranch(messages, branchId).slice(-12))
+          .catch(() => [])
+        : listProjectMessagesPage(project.id, 12, null).catch(() => []),
+      branchFork ? Promise.resolve([]) : listAgentEventsPage(project.id, 16, null).catch(() => []),
+      branchFork ? Promise.resolve([]) : listProjectVersions(project.id).catch(() => []),
+      branchFork ? Promise.resolve([]) : listAgentMemory(project.id).catch(() => []),
     ]);
     const contextPack = {
       ...buildAgentContextPack({
@@ -17586,7 +17962,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     res.once('finish', releaseActiveRun);
     res.once('close', releaseActiveRun);
   }
-  await saveProjectMessage({
+  const savedUser = await saveProjectMessage({
     organization_id: project.organization_id,
     project_id: project.id,
     user_id: userId,
@@ -17595,6 +17971,21 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     content: prompt,
     intent: decision.intent,
     requested_mode: decision.requestedMode,
+    metadata: conversationPersistenceMetadata({
+      branchId,
+      fork: branchForkMetadata,
+      harness: { threadId: harnessContext?.thread.id, turnId: harnessContext?.turn.id, parentTurnId: harnessContext?.turn.parentTurnId || undefined },
+    }),
+  });
+  userDurableMessageId = String(savedUser.ai_message_id || savedUser.id || '');
+  if (harnessContext) eventStream?.workspace({
+    type: 'run_acknowledged',
+    threadId: harnessContext.thread.id,
+    turnId: harnessContext.turn.id,
+    runId: harnessContext.turn.id,
+    branchId: branchId || null,
+    userMessageId: userDurableMessageId,
+    parentTurnId: harnessContext.turn.parentTurnId || null,
   });
   await upsertProjectWorkspaceState(userId, project.id, {
     draft_prompt: '',
@@ -17738,7 +18129,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
           usage:unifiedUsageRow({accountId:billingAccountId,projectId:project.id,runId:agentRunId || null,category:'ai_gateway',
             resource:cost.action || decision.intent,provider:'openrouter',model:agentText.model,providerCostUsd:textProviderCostUsd,
             allocatedPlatformCostUsd:0.0001,completeCostUsd:textCompleteCostUsd,idempotencyKey:`text:${requestId}:usage`}),
-          delivery:{project_id:project.id,actor_id:userId,message:{content,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId}},
+          delivery:{project_id:project.id,actor_id:userId,message:{content,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId,
+            metadata:conversationPersistenceMetadata({branchId,fork:branchForkMetadata,harness:{threadId:harnessContext?.thread.id,turnId:harnessContext?.turn.id,parentTurnId:harnessContext?.turn.parentTurnId || undefined}})}},
         });
         generationDurablyDelivered=true;
         durableGenerationPayload={success:true,text:content,model:agentText.model,intent:decision};
@@ -18639,7 +19031,8 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         usage:unifiedUsageRow({accountId:billingAccountId,projectId:project.id,runId:agentRunId || null,category:'build',resource:cost.action || decision.intent || 'build',
           provider:'openrouter',model:generation.model,providerCostUsd:providerCost,allocatedPlatformCostUsd:0.0016,completeCostUsd:providerCost+0.0016,idempotencyKey:`${refId}:usage`}),
         delivery:{project_id:project.id,actor_id:userId,project:cleanProjectForSnapshot(updatedProject),files:redactSecretPayload(finalFiles),
-          message:{content:finalSummary,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId}},
+          message:{content:finalSummary,intent:decision.intent,requested_mode:decision.requestedMode,ai_message_id:streamMessageId,
+            metadata:conversationPersistenceMetadata({branchId,fork:branchForkMetadata,harness:{threadId:harnessContext?.thread.id,turnId:harnessContext?.turn.id,parentTurnId:harnessContext?.turn.parentTurnId || undefined}})}},
       });
       generationDurablyDelivered=true;
       durableGenerationPayload={success:true,project:updatedProject,files:finalFiles,summary:finalSummary,model:generation.model,
@@ -20666,7 +21059,16 @@ app.patch('/api/projects/:id/domains/:domainId/primary', async (req: any, res) =
 
 async function createPublishContext(project: GeneratedProject): Promise<PublishContext> {
   const [files, latestDeployment, plan, entitlement, customDomain, currentVisitors] = await Promise.all([
-    loadProjectFiles(project.id),
+    loadPublicationFiles({
+      committed: () => loadProjectFiles(project.id),
+      checkpoint: async () => {
+        const snapshot = await loadDurableProjectSnapshot(project.id, project.owner_id);
+        return normalizeGeneratedFiles(snapshot?.files_snapshot || []).map(file => ({
+          ...file,
+          updated_at: file.updated_at || snapshot?.updated_at || project.updated_at,
+        }));
+      },
+    }),
     getLatestPublishedDeployment(project.id),
     getOrganizationPlan(project.organization_id),
     resolvePublicationEntitlement(requireSupabase('Publication status entitlement'), project.organization_id),

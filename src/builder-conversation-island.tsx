@@ -9,7 +9,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import "highlight.js/styles/github-dark.css";
 import MarkdownIt from "markdown-it";
-import { ChevronDown, FileText } from "lucide-react";
+import { Check, ChevronDown, Copy, FileText, Link2, Pencil } from "lucide-react";
 import { nanoid } from "nanoid";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -118,6 +118,11 @@ export type CodenConversationMessage = {
   id: string;
   role: CodenConversationRole;
   content: string;
+  durableId?: string;
+  branchId?: string;
+  harnessThreadId?: string;
+  harnessTurnId?: string;
+  parentTurnId?: string;
   working?: boolean;
   actions?: CodenConversationAction[];
   block?: CodenConversationBlock;
@@ -128,8 +133,10 @@ export type CodenConversationMessage = {
 };
 
 export type CodenConversationApi = {
-  addMessage: (message: { id?: string; role: CodenConversationRole; content: string; working?: boolean; attachments?: MessageAttachment[] }) => string;
+  addMessage: (message: { id?: string; role: CodenConversationRole; content: string; working?: boolean; attachments?: MessageAttachment[]; durableId?: string; branchId?: string; harnessThreadId?: string; harnessTurnId?: string; parentTurnId?: string; createdAt?: string }) => string;
   updateMessage: (id: string, content: string) => void;
+  setMessageMetadata: (id: string, metadata: Partial<Pick<CodenConversationMessage, 'durableId' | 'branchId' | 'harnessThreadId' | 'harnessTurnId' | 'parentTurnId'>>) => void;
+  forkFromMessage: (id: string) => boolean;
   setParts: (id: string, parts: unknown[], content?: string) => void;
   setWorking: (id: string, label: string) => void;
   clearWorking: (id: string) => void;
@@ -157,6 +164,8 @@ type ConversationCallbacks = {
   onDecisionAnswers?: DecisionAnswersHandler;
   onArtifactOpen?: (artifactId: string) => void;
   onApprovalDecision?: (itemId: string, approved: boolean) => void | Promise<void>;
+  onCopyLink?: (message: CodenConversationMessage) => Promise<boolean> | boolean;
+  onEditMessage?: (message: CodenConversationMessage, content: string) => void | Promise<void>;
 };
 
 const markdown = new MarkdownIt({
@@ -701,13 +710,31 @@ export function createStore(storageKey = conversationStorageKey()) {
           id,
           role: message.role,
           content: message.content,
+          durableId: message.durableId,
+          branchId: message.branchId,
+          harnessThreadId: message.harnessThreadId,
+          harnessTurnId: message.harnessTurnId,
+          parentTurnId: message.parentTurnId,
           working: Boolean(message.working),
           actions: [],
-          createdAt: new Date().toISOString(),
+          createdAt: message.createdAt || new Date().toISOString(),
           ...(message.attachments?.length ? { attachments: message.attachments } : {}),
         });
       });
       return id;
+    },
+    setMessageMetadata(id, metadata) {
+      mutate(() => {
+        const message = find(id);
+        if (!message) return;
+        Object.assign(message, metadata);
+      });
+    },
+    forkFromMessage(id) {
+      const index = messages.findIndex(message => message.id === id);
+      if (index < 0) return false;
+      mutate(() => { messages = messages.slice(0, index); });
+      return true;
     },
     updateMessage(id, content) {
       mutate(() => {
@@ -1056,6 +1083,127 @@ function ensureConversationStyles() {
     .coden-chat-message.user { justify-content: flex-end; }
     .coden-chat-message.assistant,
     .coden-chat-message.system { justify-content: flex-start; }
+
+    .coden-chat-message-stack {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .coden-message-content {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .coden-message-content[data-collapsed="true"] {
+      max-height: 6.5em;
+      overflow: hidden;
+    }
+
+    .coden-message-expand {
+      display: block;
+      margin-top: 6px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted, var(--text-secondary));
+      font: inherit;
+      font-size: 11px;
+      line-height: 1.4;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .coden-message-expand:hover { color: var(--foreground); }
+    .coden-message-expand:focus-visible,
+    .coden-message-toolbar button:focus-visible,
+    .coden-message-edit button:focus-visible,
+    .coden-message-edit textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .coden-message-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      min-height: 22px;
+      padding: 0 3px;
+      color: var(--text-muted, var(--text-secondary));
+      font-size: 10px;
+      line-height: 1;
+    }
+
+    .coden-message-toolbar {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .coden-message-toolbar button {
+      display: inline-grid;
+      width: 24px;
+      height: 22px;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      transition: color 160ms cubic-bezier(.32,.72,0,1), background-color 160ms cubic-bezier(.32,.72,0,1), transform 160ms cubic-bezier(.32,.72,0,1);
+    }
+
+    .coden-message-toolbar button:hover { color: var(--foreground); background: color-mix(in srgb, var(--foreground) 7%, transparent); }
+    .coden-message-toolbar button:active { transform: translateY(1px) scale(.98); }
+    .coden-message-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .coden-chat-message[data-private-link-target="true"] .coden-chat-bubble {
+      outline: 1px solid color-mix(in srgb, var(--accent) 72%, transparent);
+      outline-offset: 3px;
+    }
+
+    .coden-message-edit {
+      display: grid;
+      gap: 8px;
+      width: min(100%, 520px);
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .coden-message-edit textarea {
+      width: 100%;
+      min-height: 96px;
+      resize: vertical;
+      border: 0;
+      background: transparent;
+      color: var(--foreground);
+      font: inherit;
+      line-height: 1.55;
+    }
+
+    .coden-message-edit-actions { display: flex; justify-content: flex-end; gap: 7px; }
+    .coden-message-edit-actions button {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--foreground);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .coden-message-edit-actions button[type="submit"] { border-color: var(--accent); background: var(--accent); color: var(--text-on-accent); }
+    .coden-message-edit-actions button:disabled { cursor: not-allowed; opacity: .55; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .coden-message-toolbar button { transition: none; }
+      .coden-chat-message { animation: none; }
+    }
 
     .coden-chat-bubble {
       min-width: 0;
@@ -1901,74 +2049,152 @@ function ConversationPlan({ block, actions = [] }: { block: CodenPlanBlock; acti
   );
 }
 
+function formatConversationTimestamp(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (!Number.isFinite(date.getTime())) return '';
+  const now = new Date();
+  const day = (item: Date) => new Date(item.getFullYear(), item.getMonth(), item.getDate()).getTime();
+  const difference = Math.round((day(now) - day(date)) / 86_400_000);
+  const french = typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('fr');
+  const time = new Intl.DateTimeFormat(french ? 'fr-FR' : undefined, { hour: '2-digit', minute: '2-digit' }).format(date);
+  if (difference === 0) return french ? `Aujourd’hui à ${time}` : `Today at ${time}`;
+  if (difference === 1) return french ? `Hier à ${time}` : `Yesterday at ${time}`;
+  const formatted = new Intl.DateTimeFormat(french ? 'fr-FR' : undefined, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+  return french ? `${formatted} à ${time}` : `${formatted} at ${time}`;
+}
+
+async function copyConversationText(value: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch { /* use the accessible browser fallback below */ }
+  const field = document.createElement('textarea');
+  field.value = value;
+  field.setAttribute('readonly', '');
+  field.style.position = 'fixed';
+  field.style.opacity = '0';
+  document.body.append(field);
+  field.select();
+  const copied = document.execCommand('copy');
+  field.remove();
+  return copied;
+}
+
 function MessageView({ message, callbacks }: { message: CodenConversationMessage; callbacks: ConversationCallbacks }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editValue, setEditValue] = useState(message.content);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  useEffect(() => {
+    if (message.working || !contentRef.current) { setCanExpand(false); return; }
+    const element = contentRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      setCanExpand(element.scrollHeight > element.clientHeight + 2);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [message.content, message.working, message.liveRun?.chat?.parts.length, message.block]);
+
+  const contentText = message.content || message.liveRun?.chat?.parts
+    .filter(part => part.type === 'text')
+    .map(part => part.text)
+    .join('\n\n') || '';
+  const footer = message.role !== 'system' && !message.working ? (
+    <div className="coden-message-footer">
+      <div className="coden-message-toolbar" aria-label="Actions du message">
+        <button type="button" aria-label={copied ? 'Message copié' : 'Copier le message'} title={copied ? 'Copié' : 'Copier'} onClick={async () => {
+          const ok = await copyConversationText(contentText);
+          setCopied(ok);
+          window.setTimeout(() => setCopied(false), 1400);
+        }}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
+        {message.durableId && callbacks.onCopyLink ? <button type="button" aria-label={linkCopied ? 'Lien privé copié' : 'Copier le lien privé'} title={linkCopied ? 'Lien copié' : 'Copier le lien'} onClick={async () => {
+          const ok = await callbacks.onCopyLink?.(message);
+          setLinkCopied(Boolean(ok));
+          window.setTimeout(() => setLinkCopied(false), 1400);
+        }}>{linkCopied ? <Check size={14} aria-hidden="true" /> : <Link2 size={14} aria-hidden="true" />}</button> : null}
+        {isUser && message.durableId && callbacks.onEditMessage ? <button type="button" aria-label="Modifier et relancer ce message" title="Modifier" onClick={() => { setEditValue(message.content); setEditError(''); setEditOpen(true); }}><Pencil size={14} aria-hidden="true" /></button> : null}
+      </div>
+      <time className="coden-message-time" dateTime={message.createdAt || undefined}>{formatConversationTimestamp(message.createdAt)}</time>
+    </div>
+  ) : null;
+
+  const editForm = editOpen && isUser ? (
+    <form className="coden-message-edit" onSubmit={async event => {
+      event.preventDefault();
+      const content = editValue.trim();
+      if (!content || editBusy || !callbacks.onEditMessage) return;
+      setEditBusy(true);
+      try { await callbacks.onEditMessage(message, content); setEditOpen(false); }
+      catch { setEditError('Impossible de relancer cette demande. Réessayez.'); }
+      finally { setEditBusy(false); }
+    }}>
+      <textarea aria-label="Modifier votre demande" value={editValue} onChange={event => setEditValue(event.target.value)} autoFocus />
+      {editError ? <div role="alert">{editError}</div> : null}
+      <div className="coden-message-edit-actions">
+        <button type="button" onClick={() => setEditOpen(false)} disabled={editBusy}>Annuler</button>
+        <button type="submit" disabled={editBusy || !editValue.trim()}>{editBusy ? 'Relance…' : 'Relancer'}</button>
+      </div>
+    </form>
+  ) : null;
 
   if (isUser) {
-    // Older messages carried « 📎 a · b » inside the text: show it as attachments, not as words.
     const legacy = message.attachments?.length ? null : splitLegacyAttachmentText(message.content);
-    const attachments: MessageAttachment[] = message.attachments?.length
-      ? message.attachments
-      : (legacy?.names || []).map((name) => ({ name }));
+    const attachments: MessageAttachment[] = message.attachments?.length ? message.attachments : (legacy?.names || []).map(name => ({ name }));
     const text = legacy?.names.length ? legacy.text : message.content;
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-        <div className="coden-chat-userstack">
+        <div className="coden-chat-userstack coden-chat-message-stack">
           {attachments.length ? <MessageAttachments items={attachments} /> : null}
           {text || message.actions?.length ? (
             <div className="coden-chat-bubble">
-              {text}
-              {message.actions?.length ? (
-                <div className="coden-chat-actions">
-                  {message.actions.map((action) => (
-                    <button key={action.id} type="button" onClick={action.onClick}>
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+              <div ref={contentRef} className="coden-message-content" data-collapsed={!expanded ? 'true' : 'false'}>{text}</div>
+              {canExpand ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}
+              {message.actions?.length ? <div className="coden-chat-actions">{message.actions.map(action => <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>)}</div> : null}
             </div>
           ) : null}
+          {editForm}
+          {footer}
         </div>
       </div>
     );
   }
 
   if (isAssistant) {
+    const isStructured = Boolean(message.block);
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-        <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
-          {message.block
-            ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
-            : message.liveRun?.chat
-              ? <AgentMessage state={message.liveRun.chat} onCopy={() => { void navigator.clipboard.writeText(message.liveRun!.chat!.parts.filter(p => p.type === 'text').map(p => p.text).join('\n\n')); }} onDecisionSelect={callbacks.onDecisionSelect} onDecisionAnswers={callbacks.onDecisionAnswers} onArtifactOpen={callbacks.onArtifactOpen} />
-              : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
-          {!message.block && message.actions?.length ? (
-            <div className="coden-chat-actions">
-              {message.actions.map((action) => (
-                <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>
-              ))}
-            </div>
-          ) : null}
-        </section>
+        <div className="coden-chat-message-stack">
+          <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
+            {message.block
+              ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
+              : <div ref={contentRef} className="coden-message-content" data-collapsed={!expanded && !message.working ? 'true' : 'false'}>
+                  {message.liveRun?.chat
+                    ? <AgentMessage state={message.liveRun.chat} onDecisionSelect={callbacks.onDecisionSelect} onDecisionAnswers={callbacks.onDecisionAnswers} onArtifactOpen={callbacks.onArtifactOpen} />
+                    : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
+                </div>}
+            {canExpand && !isStructured ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}
+            {!message.block && message.actions?.length ? <div className="coden-chat-actions">{message.actions.map(action => <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>)}</div> : null}
+          </section>
+          {footer}
+        </div>
       </div>
     );
   }
 
   return (
     <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-      <div className="coden-chat-bubble">
-        {message.content}
-        {message.actions?.length ? (
-          <div className="coden-chat-actions">
-            {message.actions.map((action) => (
-              <button key={action.id} type="button" onClick={action.onClick}>
-                {action.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+      <div className="coden-chat-message-stack">
+        <div className="coden-chat-bubble"><div ref={contentRef} className="coden-message-content" data-collapsed={!expanded ? 'true' : 'false'}>{message.content}</div>{canExpand ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}</div>
+        {footer}
       </div>
     </div>
   );

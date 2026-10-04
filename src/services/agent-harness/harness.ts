@@ -49,7 +49,15 @@ export class CodenAgentHarness {
       status: 'completed',
       content: result.turn.prompt,
       resourceKeys: [],
-      payload: { requestedMode: result.turn.requestedMode },
+      payload: {
+        requestedMode: result.turn.requestedMode,
+        ...(input.messageMetadata || {}),
+        coden_harness: {
+          thread_id: result.turn.threadId,
+          turn_id: result.turn.id,
+          parent_turn_id: result.turn.parentTurnId || null,
+        },
+      },
     });
     await this.store.appendEvent({ threadId: result.turn.threadId, turnId: result.turn.id, itemId: userItem.id, type: 'turn.created', visibility: 'public', payload: { requestedMode: result.turn.requestedMode } });
     this.abortControllers.set(result.turn.id, new AbortController());

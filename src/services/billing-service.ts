@@ -628,7 +628,7 @@ export class SaspayService {
 
   async expireEndedPlans(limit = 500) {
     const now = new Date().toISOString();
-    const { data, error } = await this.supabase.from('billing_subscriptions_v2').select('id,account_id').eq('provider', 'saspay').eq('status', 'active').lte('current_period_end', now).limit(Math.max(1, Math.min(2_000, limit)));
+    const { data, error } = await this.supabase.from('billing_subscriptions_v2').select('id,account_id').in('provider', ['saspay', 'admin']).eq('status', 'active').lte('current_period_end', now).limit(Math.max(1, Math.min(2_000, limit)));
     if (error) throw new Error(`Expired plan listing failed: ${error.message}`);
     for (const row of data || []) {
       const { error: expiryError } = await this.supabase.from('billing_subscriptions_v2').update({ status: 'expired', updated_at: now }).eq('id', row.id);

@@ -81,7 +81,7 @@ export type WorkspaceEvent =
   | { type: 'workspace_error'; message: string; diagnosticCode: string; recoverable: boolean }
   | { type: 'result'; result: unknown }
   | { type: 'preview_ready'; projectId?: string; url: string; status?: string; port?: number }
-  | { type: 'run_acknowledged'; threadId: string; turnId: string; runId: string }
+  | { type: 'run_acknowledged'; threadId: string; turnId: string; runId: string; branchId?: string | null; userMessageId?: string | null; parentTurnId?: string | null }
   | { type: 'narration_failed'; code: string }
   | { type: 'sandbox_writing'; files: number }
   | { type: 'sandbox_installing' }

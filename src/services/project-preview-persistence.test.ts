@@ -5,6 +5,14 @@ const server = readFileSync(new URL('../../server.ts', import.meta.url), 'utf8')
 const builder = readFileSync(new URL('../builder-live.ts', import.meta.url), 'utf8');
 
 describe('project preview persistence across reloads', () => {
+  it('does not replace live or saved applications with cancellation/loading placeholders', () => {
+    const empty = builder.slice(builder.indexOf('function setEmptyPreviewState('), builder.indexOf('function mediaPreviewShellHtml('));
+    expect(empty).toContain('shouldRetainPreview(');
+    expect(empty.indexOf('shouldRetainPreview(')).toBeLessThan(empty.indexOf('setPreviewSourceDocument('));
+    expect(empty).toContain('liveUrl: livePreviewUrl');
+    const preview = builder.slice(builder.indexOf('function setPreview(html:'), builder.indexOf('function refreshPreviewFrame('));
+    expect(preview.indexOf('shouldRetainPreview(')).toBeLessThan(preview.indexOf("livePreviewUrl = ''"));
+  });
   it('keeps intermediate build rounds out of committed project files', () => {
     const snapshot = server.slice(server.indexOf('onSnapshot: async files => {'), server.indexOf('onSandboxEvent: event => {'));
     expect(snapshot).toContain('persistDurableProjectSnapshot({');
