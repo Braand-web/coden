@@ -48,6 +48,7 @@ import type { DesignGuard } from './sandbox/sandbox-tools.ts';
 import { compareDesign, extractDesignContract, renderDesignContract, restoreDesign, wantsDesignChange, type DesignViolation } from './design-contract.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
+import { createSessionSkills, LOAD_SKILL_SCHEMA } from './session-skills.ts';
 import type { ChatContentPart, ChatMessage } from './openrouter-service.ts';
 import { launchProjectPreview, type LaunchEvent } from './sandbox/launch.ts';
 import { selectStarter, applyStarter, describeStarter, isStarterEntryUntouched, themeStarter, STARTERS } from './sandbox/starters.ts';
@@ -495,6 +496,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
    */
   const rounds: ChatMessage[][] = [];
   const CARRIED_ROUNDS = 3;
+  const sessionSkills = createSessionSkills();
   const team = input.team ? createAgentTeam({ ...input.team, gateway: input.gateway, runtimeFor, deadline: input.deadline, signal: input.signal, redact: input.redact }) : null;
 
   return async ({ instruction, tools, call, maxToolCalls }) => {
@@ -526,12 +528,16 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     const touched = new Map<import('../lib/agent-chat-protocol.ts').FileAction, Set<string>>();
     // The team's tools sit beside the sandbox's; sub-agents get the sandbox's only (depth 1).
     const base = team ? [...tools, ...team.schemas.filter(schema => !tools.some(tool => tool.name === schema.name))] : tools;
-    const allTools = input.previewTool ? [...base, input.previewTool.schema as unknown as (typeof base)[number]] : base;
+    const skillTools = [...base, LOAD_SKILL_SCHEMA as unknown as (typeof base)[number]];
+    const allTools = input.previewTool ? [...skillTools, input.previewTool.schema as unknown as (typeof base)[number]] : skillTools;
     const handlers = Object.fromEntries(allTools.map(tool => [
       tool.name,
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
+        if (tool.name === LOAD_SKILL_SCHEMA.name) {
+          return recordToolCall(input.harness || null, input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null, { name: tool.name, args }, async () => sessionSkills.load(args));
+        }
         if (input.previewTool && tool.name === input.previewTool.schema.name) {
           // A click the agent marks as confirmed is still the agent's word: the guard asks whether the person wanted it.
           if (input.actionGuard && args.action === 'click' && args.confirm === true) {
@@ -588,6 +594,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     ]));
     const runRound = (modelId: AllowedModelId, carried: ChatMessage[]) => runLlmToolLoop({
       gateway: input.gateway,
+      dynamicSystemContext: () => sessionSkills.context(),
       redact: input.redact,
       modelId,
       messages: [

@@ -12,6 +12,19 @@ const done = { text: 'fini', tool_calls: [], usage: {}, cost_usd: 0 };
 const scripted = (...steps: any[]) => ({ chat: vi.fn(async () => steps.shift() ?? done) });
 const hangs = () => new Promise<never>(() => undefined);
 
+it('refreshes trusted methods after a tool without accumulating system instructions', async () => {
+  let context = 'catalogue';
+  const seen: string[] = [];
+  const gateway = { chat: vi.fn(async (_model: string, messages: any[]) => {
+    seen.push(String(messages.find((m: any) => m.role === 'system').content));
+    return seen.length === 1 ? oneCall('load_skill') : done;
+  }) };
+  await runLlmToolLoop({ gateway: gateway as any, modelId: 'm', messages: [{ role: 'system', content: 'base' }],
+    dynamicSystemContext: () => context, handlers: { load_skill: () => { context = 'loaded'; return { ok: true }; } } });
+  expect(seen).toEqual(['base\n\ncatalogue', 'base\n\nloaded']);
+  expect(gateway.chat).toHaveBeenCalledTimes(2);
+});
+
 describe('cancelling while a tool call hangs', () => {
   it('ends the run at once instead of waiting for a call that never answers', async () => {
     const controller = new AbortController();

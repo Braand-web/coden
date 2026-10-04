@@ -291,6 +291,7 @@ export async function runLlmToolLoop(input: {
   modelId: string;
   messages: ChatMessage[];
   handlers: Record<string, LlmToolHandler>;
+  dynamicSystemContext?: () => string;
   runtimeConfig?: ProviderRequestConfig;
   runtimeConfigForModel?: (modelId: any) => ProviderRequestConfig | undefined;
   approvalResolver?: (request: ToolApprovalRequest) => Promise<boolean> | boolean;
@@ -341,6 +342,7 @@ export async function runLlmToolLoop(input: {
   onToolsCompleted?: () => void;
 }): Promise<LlmToolLoopResult> {
   let messages = [...input.messages];
+  const baseSystem = input.messages.find(m => m.role === 'system');
   const toolExecutions: Array<{ name: string; ok: boolean; approvalRequired?: boolean; approved?: boolean }> = [];
   const budget: AgentLoopBudget = { ...DEFAULT_AGENT_LOOP_BUDGET, ...input.budget };
   // The older per-call arguments still win where a caller sets them, so no
@@ -400,6 +402,10 @@ export async function runLlmToolLoop(input: {
 
     // Compacted before the call, not after: the request about to be sent is
     // what has to fit.
+    if (input.dynamicSystemContext && baseSystem && typeof baseSystem.content === 'string') {
+      const index = messages.findIndex(m => m.role === 'system');
+      if (index >= 0) messages[index] = { ...baseSystem, content: `${baseSystem.content}\n\n${input.dynamicSystemContext().slice(0, 12000)}` };
+    }
     const size = transcriptSize(messages);
     if (size > budget.compactAboveChars) {
       const compacted = compactTranscript(messages);
