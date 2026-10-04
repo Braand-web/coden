@@ -116,7 +116,9 @@ assert.doesNotMatch(
 {
   assert.match(server, /const persistRejectedAgentTurn = async/, 'early agent refusals need one durable chat path');
   assert.match(server, /role: 'user', content: prompt/, 'the rejected request itself must be retained');
-  assert.match(server, /role: 'assistant',[\s\S]*?metadata: \{ outcome: 'blocked', diagnostic_code: diagnosticCode \}/, 'the public refusal must be retained with a safe diagnostic');
+  const refusal=server.slice(server.indexOf('const persistRejectedAgentTurn = async'),server.indexOf('let initialDecision: IntentDecision'));
+  assert.match(refusal, /role: 'assistant',[\s\S]*?metadata: conversationPersistenceMetadata\(/, 'the public refusal must retain its conversation branch');
+  assert.match(refusal, /outcome: 'blocked', diagnostic_code: diagnosticCode/, 'the public refusal must retain its safe diagnostic');
   const routing = server.slice(server.indexOf('modelRouting = await resolveAgentProviderModel('));
   const handler = routing.slice(0, routing.indexOf('const effectiveModelSelection'));
   assert.match(handler, /await persistRejectedAgentTurn\(creditGate\.message, creditGate\.diagnostic_code, decision\.intent\)/, 'a credit gate before model execution must persist the turn');

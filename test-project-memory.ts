@@ -107,7 +107,7 @@ function fakeClient(seed: Record<string, any[]> = {}) {
 {
   const server = readFileSync(new URL('./server.ts', import.meta.url), 'utf8');
   const outcomeIndex = server.indexOf('const outcome = await runMultiAgentPipeline({');
-  const memoryIndex = server.lastIndexOf('const projectMemory = await loadProjectMemoryContext({', outcomeIndex);
+  const memoryIndex = server.lastIndexOf("const projectMemory = branchFork ? '' : await loadProjectMemoryContext({", outcomeIndex);
   assert.ok(outcomeIndex > 0 && memoryIndex > 0, 'the live pipeline branch and its memory load must exist');
   const branch = server.slice(memoryIndex);
 

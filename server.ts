@@ -17887,7 +17887,7 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
     // The run row does not exist yet at this point; the harness turn is
     // finalized from this payload's own diagnostic_code by `respondJson`.
     if (insufficientCredits) {
-      const creditGate = publicCreditGateResponse(frenchActivity, requestedModelSelection !== 'auto');
+      const creditGate = publicCreditGateResponse(frenchActivity, false);
       await persistRejectedAgentTurn(creditGate.message, creditGate.diagnostic_code, decision.intent);
       return respondJson(402, creditGate);
     }
