@@ -48,6 +48,12 @@ assert.equal(replay.text,first.text);assert.equal(balance(await wallet()),balanc
 const ledger=await api('/api/billing/ledger');
 const usage=(ledger.ledger || []).filter(row=>row.entry_type==='usage');
 assert.equal(usage.length,1);assert.equal(Number(usage[0].amount_credits),-0.5);
+const rpc=(name,body)=>request(`${base}/rest/v1/rpc/${name}`,{method:'POST',headers:authHeaders,body:JSON.stringify(body)},name);
+const held=await rpc('coden_billing_reserve',{p_account_id:state.userId,p_category:'build',p_credits:0.9,p_estimated_cogs_usd:0,p_idempotency_key:`smoke-cancel:${randomUUID()}`,p_expires_at:new Date(Date.now()+3600000).toISOString()});
+assert.equal(balance(await wallet()),balance(after)-0.9);
+await rpc('coden_billing_release',{p_reservation_id:held,p_reason:'Controlled pre-delivery cancellation validation'});
+await rpc('coden_billing_release',{p_reservation_id:held,p_reason:'Controlled pre-delivery cancellation validation'});
+assert.equal(balance(await wallet()),balance(after),'Cancellation release must restore the same eligible balance once');
 const reopened=await api(`/api/projects/${state.projectId}`);
 assert.equal(reopened.project?.id || reopened.id,state.projectId);
 const messages=(reopened.messages || reopened.chat || []);
@@ -56,6 +62,6 @@ const cloud=await api(`/api/billing/cloud-usage?projectId=${state.projectId}`);
 assert.equal(cloud.enabled,false,'Unvalidated Cloud collectors must remain disabled');
 const v3=await fetch('https://coden.fun/api/billing/pricing',{headers});assert.equal(v3.status,404);
 const report={checkedAt:new Date().toISOString(),syntheticOnly:true,projectId:state.projectId,userId:state.userId,
- beforeCredits:state.beforeBalance,afterCredits:balance(after),chargedCredits:0.5,usageEntries:1,replayNoDoubleDebit:true,responsePersists:true,cloudCollectorsDisabled:true,v3Removed:true,livePaymentPerformed:false};
+ beforeCredits:state.beforeBalance,afterCredits:balance(after),chargedCredits:0.5,usageEntries:1,replayNoDoubleDebit:true,cancellationRefundVerified:true,responsePersists:true,cloudCollectorsDisabled:true,v3Removed:true,livePaymentPerformed:false};
 await writeFile(resolve(privateDir,`production-smoke-${Date.now()}.json`),JSON.stringify(report),{flag:'wx',mode:0o600});
 console.log(JSON.stringify(report));

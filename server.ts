@@ -11262,7 +11262,8 @@ type UnifiedGrantSnapshot = {
 };
 
 async function loadUnifiedWalletSnapshot(organizationId: string) {
-  const client = requireSupabase('Unified credit wallet listing');
+  // The first wallet read shows the same one-time entitlement as reservation.
+  const client = await ensureUnifiedIncludedGrants(organizationId);
   const { data, error } = await client
     .from('credit_grants')
     .select('id,kind,usage_restriction,credits_issued,credits_remaining,issued_at,expires_at,frozen_at')
@@ -11354,7 +11355,9 @@ async function ensureUnifiedBillingAccount(accountId: string) {
 
 async function ensureUnifiedIncludedGrants(accountId: string) {
   const client = await ensureUnifiedBillingAccount(accountId);
-  const planKey = normalizePlanKey(await getOrganizationPlan(accountId).catch(() => 'free')) || 'free';
+  const lookup=await client.from('organizations').select('plan').eq('id',accountId).maybeSingle();
+  if(lookup.error || !lookup.data) throw new BillingLedgerUnavailableError();
+  const planKey = normalizePlanKey(lookup.data.plan) || 'free';
   const plan = publicBillingCatalog().plans.find(candidate => candidate.key === planKey) || publicBillingCatalog().plans[0];
   // Free has one customer grant for the lifetime of the account. The stable
   // source/idempotency key makes logins, retries and project creation safe to
