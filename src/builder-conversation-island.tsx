@@ -1129,38 +1129,11 @@ function ensureConversationStyles() {
       align-items: center;
       justify-content: flex-end;
       gap: 7px;
-      min-height: 0;
-      max-height: 0;
+      min-height: 22px;
       padding: 0 3px;
-      margin-top: -4px;
-      overflow: hidden;
       color: var(--text-muted, var(--text-secondary));
       font-size: 10px;
       line-height: 1;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 140ms ease-out, max-height 140ms ease-out, margin-top 140ms ease-out;
-    }
-
-    .coden-chat-message:hover .coden-message-footer,
-    .coden-chat-message:focus-within .coden-message-footer {
-      min-height: 22px;
-      max-height: 26px;
-      margin-top: 0;
-      overflow: visible;
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    @media (hover: none), (pointer: coarse) {
-      .coden-message-footer {
-        min-height: 22px;
-        max-height: 26px;
-        margin-top: 0;
-        overflow: visible;
-        opacity: 1;
-        pointer-events: auto;
-      }
     }
 
     .coden-message-toolbar {
@@ -1229,7 +1202,6 @@ function ensureConversationStyles() {
 
     @media (prefers-reduced-motion: reduce) {
       .coden-message-toolbar button { transition: none; }
-      .coden-message-footer { transition: none; }
       .coden-chat-message { animation: none; }
     }
 
@@ -1249,7 +1221,6 @@ function ensureConversationStyles() {
     }
 
     .coden-chat-message.user .coden-chat-bubble {
-      width: fit-content;
       max-width: min(86%, 520px);
       background: var(--foreground);
       color: var(--background);
