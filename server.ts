@@ -3,6 +3,7 @@ import express from 'express';
 import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
 import { authoritativeProjectFiles, loadGenerationFiles } from './src/services/project-file-recovery.ts';
+import { loadPublicationFiles, publicationSourceReady } from './src/services/publication-source.ts';
 import { writeDurableSnapshot, isSnapshotTableMissing, requireDurableCheckpoint } from './src/services/durable-snapshot-write.ts';
 import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
@@ -3892,7 +3893,9 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
   const previewVerified = project.preview_status === 'verified';
   // Said before the click, not discovered after it.
   const hostingConfigured = publicationHostingConfigured();
-  const previewReady = previewVerified || project.preview_status === 'needs_fix';
+  // The final agent verdict is not a publication prerequisite. Capture the
+  // available source and let the isolated production build verify it.
+  const previewReady = publicationSourceReady(files);
   const hasFiles = files.length > 0;
   const securityScan = scanGeneratedSecurity(files);
   const securityBlocking = securityScan.findings.filter(item => item.status === 'fail');
@@ -3955,7 +3958,7 @@ function buildPublishStatus(context: PublishContext): PublishStatus {
           ? 'L’aperçu vérifié est prêt.'
           : previewReady
             ? 'Certaines vérifications ne sont pas encore passées. La publication compile l’application pour la production et vérifie le site en ligne avant de confirmer.'
-            : 'Générez l’application et attendez la fin de la génération avant de publier.',
+            : 'La première version du site est en préparation.',
       },
       {
         key: 'security',
@@ -20596,7 +20599,16 @@ app.patch('/api/projects/:id/domains/:domainId/primary', async (req: any, res) =
 
 async function createPublishContext(project: GeneratedProject): Promise<PublishContext> {
   const [files, latestDeployment, plan, entitlement, customDomain, currentVisitors] = await Promise.all([
-    loadProjectFiles(project.id),
+    loadPublicationFiles({
+      committed: () => loadProjectFiles(project.id),
+      checkpoint: async () => {
+        const snapshot = await loadDurableProjectSnapshot(project.id, project.owner_id);
+        return normalizeGeneratedFiles(snapshot?.files_snapshot || []).map(file => ({
+          ...file,
+          updated_at: file.updated_at || snapshot?.updated_at || project.updated_at,
+        }));
+      },
+    }),
     getLatestPublishedDeployment(project.id),
     getOrganizationPlan(project.organization_id),
     resolvePublicationEntitlement(requireSupabase('Publication status entitlement'), project.organization_id),
