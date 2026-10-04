@@ -4319,8 +4319,7 @@ function ensureToolbar() {
 }
 
 function publishPrimaryLabel(status: PublishStatusPayload | null) {
-  // A disabled button that says "Vérifier d'abord" invites a click that does
-  // nothing; the reason is shown right above it instead.
+  if (status?.state === 'not_ready') return 'Publier';
   if (!status?.can_publish) return 'Publication bloquée';
   if (status.state === 'published' || status.state === 'changes_unpublished') return 'Mettre à jour';
   return 'Publier';
@@ -4343,7 +4342,7 @@ function publishPanelTitle(status: PublishStatusPayload | null) {
   if (status.state === 'published') return 'Publié';
   if (status.state === 'changes_unpublished') return 'Mise à jour disponible';
   if (status.state === 'ready_to_publish') return 'Prêt à publier';
-  return 'Publication indisponible';
+  return 'Publication';
 }
 
 function formatPublishUrl(url: string) {
@@ -4574,7 +4573,6 @@ function renderDomainSection(canAddDomain = true) {
 function publishBlockerAction(key: string): { action: string; label: string } | null {
   if (key === 'billing') return { action: 'see-plans', label: 'Voir les offres' };
   if (key === 'security') return { action: 'fix-security', label: 'Faire corriger par Coden' };
-  if (key === 'preview' || key === 'files') return { action: 'back-to-chat', label: 'Retour au chat' };
   return null;
 }
 
@@ -4695,9 +4693,11 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? 'Réessayer'
         : publishPrimaryLabel(status);
   const effectiveTitle = isPublishing ? 'Publication en cours' : error ? 'Publication interrompue' : title;
-  const canPublish = Boolean(status?.can_publish && status.state !== 'published' && !isPublishing);
+  const canPublish = Boolean(status?.can_publish && !isPublishing);
   const blockers = status && !status.can_publish ? checks.filter(check => check.status === 'fail') : [];
-  const mainBlocker = blockers.find(check => check.key === 'security') || blockers[0];
+  // A generation still running is not a blocker. Only actionable safety or
+  // hosting issues belong in this compact panel.
+  const mainBlocker = blockers.find(check => check.key === 'security') || blockers.find(check => check.key === 'hosting');
   const justPublished = Boolean(payload && (payload as { deployment?: unknown }).deployment && publishJustSucceeded);
   const showCommunityAccess = hasPublishedDeployment && communityInfoState !== 'disabled';
   const hasCommunityListing = Boolean(communityInfo?.listing);
@@ -4716,7 +4716,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
         ? 'Vos changements ne sont pas encore en ligne.'
         : status.state === 'ready_to_publish'
           ? 'Prête à être mise en ligne.'
-          : 'Préparez votre application avant de publier.';
+          : 'Votre première version est en préparation.';
 
   const detailPanel = publishPanelMode === 'domain'
       ? renderDomainSection(status?.can_add_domain !== false)
@@ -4762,7 +4762,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           </div>
         `}
         ${detailPanel ? `<div class="cdn-pub__detail">${detailPanel}</div>` : `
-        ${summary && !isPublishing && !blockers.length && !justPublished ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
+        ${summary && !isPublishing && !mainBlocker && !justPublished ? `<p class="cdn-pub__summary" ${statusMissing ? 'data-tone="warn"' : ''}>${escapeHtml(summary)}</p>` : ''}
         ${justPublished && liveUrl ? '<p class="cdn-pub__summary" role="status">Votre application est en ligne.</p>' : ''}
         ${showCommunityAccess ? `<p class="cdn-pub__community" role="status">${communityInfo?.kind === 'free'
           ? escapeHtml(communityInfo.notice || 'Votre app est incluse dans la Communauté.')
@@ -4784,10 +4784,10 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
           </div>` : ''}
         ${mainBlocker && !isPublishing ? `
           <div class="cdn-pub__blockers" role="status">
-            <strong>Avant de publier</strong>
+            <strong>${mainBlocker.key === 'security' ? 'Vérification de sécurité' : 'Hébergement indisponible'}</strong>
             ${[mainBlocker].map(check => `
               <div class="cdn-pub__blocker">
-                <span>${escapeHtml(check.key === 'hosting' ? 'La publication est temporairement indisponible.' : check.key === 'security' ? 'Une vérification de sécurité doit être corrigée.' : 'Terminez la génération de votre application.')}</span>
+                <span>${escapeHtml(check.key === 'hosting' ? 'La publication est temporairement indisponible.' : 'Une vérification de sécurité doit être corrigée.')}</span>
                 ${publishBlockerAction(check.key) ? `<button type="button" class="cdn-pub__small" data-publish-action="${publishBlockerAction(check.key)!.action}">${escapeHtml(publishBlockerAction(check.key)!.label)}</button>` : ''}
               </div>`).join('')}
           </div>` : ''}
@@ -4863,10 +4863,6 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       if (action === 'community-later') void answerCommunityOffer('later', payload, isPublishing, error);
       if (action === 'community-no') void answerCommunityOffer('declined', payload, isPublishing, error);
       if (action === 'see-plans') window.location.href = '/pricing.html';
-      if (action === 'back-to-chat') {
-        closePublishPanel();
-        chatComposer()?.focus();
-      }
       if (action === 'fix-security') {
         closePublishPanel();
         const composer = chatComposer();
