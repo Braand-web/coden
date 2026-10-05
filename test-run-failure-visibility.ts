@@ -116,7 +116,9 @@ assert.doesNotMatch(
 {
   assert.match(server, /const persistRejectedAgentTurn = async/, 'early agent refusals need one durable chat path');
   assert.match(server, /role: 'user', content: prompt/, 'the rejected request itself must be retained');
-  assert.match(server, /role: 'assistant',[\s\S]*?metadata: \{ outcome: 'blocked', diagnostic_code: diagnosticCode \}/, 'the public refusal must be retained with a safe diagnostic');
+  const refusal=server.slice(server.indexOf('const persistRejectedAgentTurn = async'),server.indexOf('let initialDecision: IntentDecision'));
+  assert.match(refusal, /role: 'assistant',[\s\S]*?metadata: conversationPersistenceMetadata\(/, 'the public refusal must retain its conversation branch');
+  assert.match(refusal, /outcome: 'blocked', diagnostic_code: diagnosticCode/, 'the public refusal must retain its safe diagnostic');
   const routing = server.slice(server.indexOf('modelRouting = await resolveAgentProviderModel('));
   const handler = routing.slice(0, routing.indexOf('const effectiveModelSelection'));
   assert.match(handler, /await persistRejectedAgentTurn\(creditGate\.message, creditGate\.diagnostic_code, decision\.intent\)/, 'a credit gate before model execution must persist the turn');
@@ -146,7 +148,8 @@ assert.doesNotMatch(
   assert.match(builder, /function showCreditsModal\([^)]*\)[\s\S]*?Voir les offres[\s\S]*?Plus tard/, 'the pause offers billing or safe dismissal');
   assert.doesNotMatch(builder, /lastWalletBalance === 0 && !attach/, 'a stale browser balance cannot override the server ledger');
   const reservation = server.slice(server.indexOf('async function reserveUnifiedUsage('), server.indexOf('async function recordUnifiedUsageEvent('));
-  assert.match(reservation, /insufficient eligible credits or cogs capacity/i, 'only the ledger’s insufficient-credit refusal is classified as a credit pause');
+  assert.match(reservation, /insufficient eligible credits/i, 'only the ledger’s insufficient-credit refusal is classified as a credit pause');
+  assert.doesNotMatch(reservation, /insufficient eligible credits or cogs capacity/i, 'a provider COGS limit must never invite the customer to buy more credits');
   assert.match(reservation, /diagnosticCode = 'CREDITS_REQUIRED'/, 'the atomic reservation race returns the same public diagnostic');
   assert.match(server, /isCreditReservationRequired\(error\)[\s\S]*?respondJson\(402, publicCreditGateResponse\(frenchActivity, autoCanHelp\)\)[\s\S]*?BILLING_RESERVATION_UNAVAILABLE/, 'ledger outages remain technical errors rather than false upgrade prompts');
 }

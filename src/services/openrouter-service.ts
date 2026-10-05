@@ -361,6 +361,7 @@ export class OpenRouterService {
       fallbackModels: runtimeConfig?.fallbackModels,
       adapter: runtimeConfig?.adapter,
       webSearch: runtimeConfig?.webSearch,
+      internalRoutingBudgetUsd: runtimeConfig?.internalRoutingBudgetUsd,
       stream: true,
     });
   }

@@ -33,6 +33,7 @@ export class FalMediaGateway {
     settings: CodenMediaSettings;
     prompt: string;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }): Promise<FalMediaResult> {
     if (!this.isConfigured()) {
       return {
@@ -52,7 +53,7 @@ export class FalMediaGateway {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(buildFalPayload(input.prompt, input.settings, input.model)),
-        signal: controller.signal,
+        signal: input.signal ? AbortSignal.any([controller.signal,input.signal]) : controller.signal,
       });
       const text = await response.text();
       let data: any = {};

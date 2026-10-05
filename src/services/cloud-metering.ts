@@ -1,12 +1,9 @@
 /**
  * What an application costs to host, and what that is worth in credits.
  *
- * Coden declares seven cloud usage categories, grants every plan twenty cloud
- * credits a month, and shows customers a storage and bandwidth allowance — and
- * none of it was ever measured. `usage_events` holds exactly one kind of row,
- * `ai_gateway/conversation`; `cloud_wallets` holds none at all; and
- * `compatibilityCloud()` returns zero for every limit it advertises. The shape
- * of the model was right and completely hollow.
+ * Seven categories share the canonical credit wallet. These conversions are
+ * reference prices, not proof of attributable usage. An unvalidated collector
+ * must never use this table to debit customers.
  *
  * This module is the missing middle: it converts a measured quantity of real
  * infrastructure into credits, and nothing else. It performs no I/O, reads no
@@ -80,13 +77,13 @@ const METERS: Readonly<Record<CloudMeter, MeterSpec>> = {
     category: 'compute',
     unit: 'request',
     rawCostUsd: 0.30 / 1_000_000,
-    source: 'Cloudflare Workers for Platforms: $0.30 per million requests beyond the included 20M.',
+    source: 'https://developers.cloudflare.com/workers/platform/pricing/ — Workers Standard: $0.30 per million dynamic requests.',
   },
   worker_cpu_ms: {
     category: 'compute',
     unit: 'cpu_ms',
     rawCostUsd: 0.02 / 1_000_000,
-    source: 'Cloudflare Workers: $0.02 per million CPU milliseconds beyond the included 60M.',
+    source: 'https://developers.cloudflare.com/workers/platform/pricing/ — Workers Standard: $0.02 per million CPU milliseconds.',
   },
   database_storage_gb_month: {
     category: 'database_storage',
@@ -146,10 +143,8 @@ export const CLOUD_MARKUP = 3;
 /**
  * What one credit is worth, in USD.
  *
- * Derived from the Pro plan rather than chosen: 100 credits for $25/month.
- * Business sells credits at twice that, which is why the same infrastructure
- * deducts fewer Business credits — the credit is a unit of money, not of
- * compute, and this is the one place that conversion happens.
+ * The owner's validated Cloud conversion, identical for every plan.
+ * This is not an exchange rate or a change to any subscription price.
  */
 export const USD_PER_CLOUD_CREDIT = 25 / 100;
 
@@ -173,9 +168,8 @@ export function rawCloudCostUsd(meter: CloudMeter, quantity: number): number {
 export function creditsForCloudUsage(meter: CloudMeter, quantity: number): number {
   const usd = rawCloudCostUsd(meter, quantity) * CLOUD_MARKUP;
   if (usd <= 0) return 0;
-  // Six decimals: enough that a single request is not rounded to nothing, and
-  // few enough that the stored number is exact in float and readable in a log.
-  return Number((usd / USD_PER_CLOUD_CREDIT).toFixed(6));
+  // Match the ledger precision. In particular 1 CPU ms must not round to zero.
+  return Number((usd / USD_PER_CLOUD_CREDIT).toFixed(10));
 }
 
 /** Which usage category a meter settles under, for the ledger row. */

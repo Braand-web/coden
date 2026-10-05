@@ -30,6 +30,8 @@ export type ProviderRequestConfig = {
   fallbackModels?: string[];
   /** OpenRouter web search for this request (see `buildOpenRouterRequest`). */
   webSearch?: { maxResults?: number };
+  /** Coden-funded intent classification only; never a customer model limit. */
+  internalRoutingBudgetUsd?: number;
   metadata?: Record<string, unknown>;
 };
 

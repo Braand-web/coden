@@ -14,23 +14,38 @@ const intent = {
 
 function fakeDatabase(existing: Record<string, unknown> = intent, failures: Record<string, string> = {}) {
   const writes: Array<{ table: string; patch: Record<string, unknown> }> = [];
+  let webhook:Record<string,unknown>|null=null;
   const database = {
     from(table: string) {
       let operation = 'select';
       let patch: Record<string, unknown> = {};
       const response = () => ({
-        data: operation === 'select' && table === 'billing_checkout_intents' ? existing : null,
+        data: operation === 'select' && table === 'billing_checkout_intents' ? existing : operation === 'select' && table === 'provider_webhook_events' ? webhook : null,
         error: failures[`${table}:${operation}`] ? { message: failures[`${table}:${operation}`], code: 'XX000' } : null,
       });
       const query: any = {
         select: () => query, eq: () => query, neq: () => query,
         maybeSingle: async () => response(),
         upsert: () => { operation = 'upsert'; return query; },
-        insert: () => { operation = 'insert'; return query; },
+        insert: (value:any) => {
+          operation = 'insert';
+          if(table==='provider_webhook_events') {
+            if(webhook) return {error:{code:'23505',message:'duplicate'}};
+            webhook={...value[0],attempts:1,processing_started_at:new Date().toISOString()};
+          }
+          return query;
+        },
         update: (value: Record<string, unknown>) => {
           operation = 'update'; patch = value; writes.push({ table, patch }); return query;
         },
-        then: (resolve: any, reject: any) => Promise.resolve(response()).then(resolve, reject),
+        then: (resolve: any, reject: any) => {
+          const result=response();
+          if(operation==='update' && !result.error) {
+            if(table==='billing_checkout_intents') Object.assign(existing,patch);
+            if(table==='provider_webhook_events' && webhook) Object.assign(webhook,patch);
+          }
+          return Promise.resolve(result).then(resolve,reject);
+        },
       };
       return query;
     },
@@ -66,12 +81,43 @@ describe('checkout idempotency authorization', () => {
 });
 
 describe('paid webhook persistence', () => {
+  it('grants a verified test payment once and acknowledges its repeated webhook without another provider call',async()=>{
+    vi.stubEnv('SASPAY_API_KEY','sk_test_fixture_only');
+    const {database}=fakeDatabase({...intent,kind:'topup'});
+    const fetch=vi.fn(async()=>new Response(JSON.stringify({id:'tx-test',status:'success',transaction_type:'PAIEMENT',flow_direction:'INBOUND',amount:price.amount,currency:BILLING_SETTLEMENT_CURRENCY,metadata:{coden_intent_id:intent.id}}),{status:200}));
+    vi.stubGlobal('fetch',fetch);
+    const raw=JSON.stringify({event:'transaction.success',data:{id:'tx-test'}}),timestamp=String(Math.floor(Date.now()/1000));
+    const signature=createHmac('sha256','fixture-secret').update(`${timestamp}.${raw}`).digest('hex');
+    const service=new SaspayService(database);
+    expect(await service.handleWebhook(raw,signature,timestamp,'','fixture-secret')).toEqual({processed:true});
+    const replay=await service.handleWebhook(raw,signature,timestamp,'','fixture-secret');
+    expect(replay).toEqual({processed:true,reason:'Webhook already processed.'});
+    expect(database.rpc).toHaveBeenCalledTimes(1);expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    {status:'pending'}, {amount:price.amount+500}, {currency:'USD'}, {id:'another-transaction'}, {transaction_type:'RETRAIT'}, {flow_direction:'OUTBOUND'},
+  ])('rejects inconsistent provider confirmation %j before any grant', async patch => {
+    vi.stubEnv('SASPAY_API_KEY', 'sk_test_fixture_only');
+    const {database}=fakeDatabase({...intent,kind:'topup'});
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({id:'tx-test',status:'success',transaction_type:'PAIEMENT',flow_direction:'INBOUND',amount:price.amount,currency:BILLING_SETTLEMENT_CURRENCY,metadata:{coden_intent_id:intent.id},...patch}),{status:200})));
+    const raw=JSON.stringify({event:'transaction.success',data:{id:'tx-test',amount:price.amount,currency:BILLING_SETTLEMENT_CURRENCY}});
+    const timestamp=String(Math.floor(Date.now()/1000));
+    const signature=createHmac('sha256','fixture-secret').update(`${timestamp}.${raw}`).digest('hex');
+    await expect(new SaspayService(database).handleWebhook(raw,signature,timestamp,'','fixture-secret')).rejects.toThrow();
+    expect(database.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects an invalid signature before contacting the provider or ledger', async () => {
+    const {database}=fakeDatabase();
+    const fetch=vi.fn(); vi.stubGlobal('fetch',fetch);
+    await expect(new SaspayService(database).handleWebhook('{}','invalid',String(Math.floor(Date.now()/1000)),'','fixture-secret')).rejects.toThrow(/signature/i);
+    expect(fetch).not.toHaveBeenCalled(); expect(database.rpc).not.toHaveBeenCalled();
+  });
   it('never acknowledges a payment if its durable intent update failed', async () => {
     vi.stubEnv('SASPAY_API_KEY', 'sk_test_fixture_only');
     const paid = { ...intent, kind: 'topup', status: 'pending' };
     const { database, writes } = fakeDatabase(paid, { 'billing_checkout_intents:update': 'database unavailable' });
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      id: 'tx-test', status: 'success', amount: price.amount, currency: BILLING_SETTLEMENT_CURRENCY,
+      id: 'tx-test', status: 'success', transaction_type:'PAIEMENT', flow_direction:'INBOUND', amount: price.amount, currency: BILLING_SETTLEMENT_CURRENCY,
       metadata: { coden_intent_id: intent.id },
     }), { status: 200 })));
     const raw = JSON.stringify({ event: 'transaction.success', data: { id: 'tx-test' } });
