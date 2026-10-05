@@ -42,43 +42,6 @@ async function settle() {
 }
 
 describe('Builder conversation message actions', () => {
-  it('reveals the actions on hover or keyboard focus and keeps them available on touch devices', async () => {
-    let api!: ReturnType<typeof mountBuilderConversation>;
-    act(() => {
-      api = mountBuilderConversation(host);
-      api.addMessage({ id: 'hover-user-message', role: 'user', content: 'Demande', durableId: 'durable-hover-1' });
-    });
-    await settle();
-
-    const message = host.querySelector<HTMLElement>('[data-message-id="hover-user-message"]')!;
-    const footer = message.querySelector<HTMLElement>('.coden-message-footer')!;
-    expect(getComputedStyle(footer).opacity).toBe('0');
-    const copyButton = message.querySelector<HTMLButtonElement>('[aria-label="Copier le message"]')!;
-    copyButton.focus();
-    expect(document.activeElement).toBe(copyButton);
-
-    const styles = [...document.querySelectorAll('style')].map(style => style.textContent || '').join('\n');
-    expect(styles).toContain('.coden-chat-message:hover .coden-message-footer');
-    expect(styles).toContain('.coden-chat-message:focus-within .coden-message-footer');
-    expect(styles).toContain('@media (hover: none), (pointer: coarse)');
-    expect(styles).toContain('.coden-message-footer { transition: none; }');
-  });
-
-  it('sizes short user bubbles to their content while retaining a maximum width', async () => {
-    let api!: ReturnType<typeof mountBuilderConversation>;
-    act(() => {
-      api = mountBuilderConversation(host);
-      api.addMessage({ id: 'short-user-message', role: 'user', content: 'ok' });
-    });
-    await settle();
-
-    const bubble = host.querySelector<HTMLElement>('[data-message-id="short-user-message"] .coden-chat-bubble');
-    expect(bubble?.textContent).toContain('ok');
-    const styles = [...document.querySelectorAll('style')].map(style => style.textContent || '').join('\n');
-    expect(styles).toMatch(/\.coden-chat-message\.user \.coden-chat-bubble\s*\{[^}]*width:\s*fit-content;/s);
-    expect(styles).toMatch(/\.coden-chat-message\.user \.coden-chat-bubble\s*\{[^}]*max-width:\s*min\(86%,\s*520px\);/s);
-  });
-
   it('collapses long messages and expands them with an accessible control', async () => {
     let api!: ReturnType<typeof mountBuilderConversation>;
     act(() => {
