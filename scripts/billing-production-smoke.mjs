@@ -20,7 +20,11 @@ async function httpResponse(url,options={}){
   ...Object.entries(options.headers || {}).map(([name,value])=>`header = ${JSON.stringify(`${name}: ${value}`)}`),
   ...(options.body?[`data = ${JSON.stringify(options.body)}`]:[])].join('\n');
  const output=await new Promise((resolve,reject)=>{
-  const child=spawn(resolveCurl(),['--config','-','--silent','--connect-timeout','15','--max-time','90','--write-out','\n%{http_code}'],{windowsHide:true,stdio:['pipe','pipe','pipe']});
+  const safeRetry=!options.method || options.method==='GET' || url.endsWith('/api/assistant/chat')
+   || url.includes('/auth/v1/token?') || /\/rest\/v1\/rpc\/coden_billing_(reserve|release)$/.test(url);
+  const child=spawn(resolveCurl(),['--config','-','--silent','--connect-timeout','15','--max-time','90',
+   ...(safeRetry?['--retry','2','--retry-all-errors','--retry-delay','1','--retry-max-time','90']:[]),
+   '--write-out','\n%{http_code}'],{windowsHide:true,stdio:['pipe','pipe','pipe']});
   let body='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{body+=chunk;});child.stderr.resume();
   child.on('error',()=>reject(Error('Test HTTP client could not start')));
   child.on('close',code=>code===0?resolve(body):reject(Error(`Test HTTP transport failed (${code})`)));
@@ -31,7 +35,7 @@ async function httpResponse(url,options={}){
 }
 function resolveCurl(){return resolve(process.env.SystemRoot || 'C:/Windows','System32/curl.exe');}
 async function request(url,options={},label='request'){
- const response=await httpResponse(url,options);
+ const response=await httpResponse(url,options).catch(error=>{throw Error(`${label}: ${error.message}`);});
  const data=await response.json().catch(()=>null);
  if(!response.ok)throw Error(`${label}: HTTP ${response.status}, ${String(data?.diagnostic_code || 'no diagnostic')}`);
  return data;
@@ -116,7 +120,7 @@ const reopened=await api(`/api/projects/${state.projectId}`);
 assert.equal(reopened.project?.id || reopened.id,state.projectId);
 const messages=(reopened.messages || reopened.chat || []);
 assert.ok(messages.some(row=>row.role==='assistant' && row.content?.includes(first.text)),'Durable response must survive a project reload');
-const cloud=await api(`/api/billing/cloud-usage?projectId=${state.projectId}`);
+const cloud=await api(`/api/billing/cloud-usage?project_id=${state.projectId}`);
 assert.equal(cloud.enabled,false,'Unvalidated Cloud collectors must remain disabled');
 const v3=await httpResponse('https://coden.fun/api/billing/pricing',{headers});assert.equal(v3.status,404);
 const report={checkedAt:new Date().toISOString(),syntheticOnly:true,projectId:state.projectId,userId:state.userId,
