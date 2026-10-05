@@ -10,7 +10,11 @@ const apply=process.argv.includes('--apply');
 const backupPath=process.argv.find(arg=>arg.startsWith('--backup='))?.slice(9);
 async function sql(query,read_only=true){
   const response=await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`,{method:'POST',headers:{Authorization:`Bearer ${env.CODEN_SUPABASE_MGMT_TOKEN}`,'Content-Type':'application/json'},body:JSON.stringify({query,read_only}),signal:AbortSignal.timeout(60000)});
-  if(!response.ok)throw Error(`Database release check failed: HTTP ${response.status}`);
+  if(!response.ok){
+    const detail=await response.json().catch(()=>({}));
+    // Release SQL contains schema definitions only, never customer rows or credentials.
+    throw Error(`Database release check failed: HTTP ${response.status}; ${String(detail.code || '')} ${String(detail.message || detail.error || '').slice(0,1200)}`);
+  }
   return response.json();
 }
 const readiness=await sql(`select

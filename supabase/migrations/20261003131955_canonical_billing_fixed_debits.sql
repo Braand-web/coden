@@ -338,7 +338,7 @@ begin
 end;
 $$;
 
-create or replace function public.coden_billing_release(p_reservation_id uuid,p_reason text) returns void
+create or replace function public.coden_billing_release(p_reservation_id uuid,p_reason text default 'reservation released') returns void
 language plpgsql security definer set search_path='' as $$
 declare r public.usage_reservations%rowtype; l record; account_id uuid; balance numeric;
 begin

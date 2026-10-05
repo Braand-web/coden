@@ -12,6 +12,7 @@ const check=(actual,expected)=>{assert.equal(actual,expected); checks++;};
 const rejects=q=>{assert.throws(()=>sql(q)); checks++;};
 const account='11111111-1111-4111-8111-111111111111';
 const other='22222222-2222-4222-8222-222222222222';
+check(sql("select pronargdefaults from pg_proc where oid='public.coden_billing_release(uuid,text)'::regprocedure"),'1');
 sql(`insert into auth.users(id) values('${account}'),('${other}'); insert into organizations(id) values('${account}'),('${other}');
 insert into billing_accounts(id,organization_id,owner_user_id) values('${account}','${account}','${account}'),('${other}','${other}','${other}');`);
 sql(`select coden_billing_grant('${account}','topup','general',20,5,0.01,now()+interval '1 year','fixture:grant','fixture:grant','{}');`);

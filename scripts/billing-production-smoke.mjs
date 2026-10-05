@@ -40,6 +40,15 @@ const before=await wallet();
 assert.ok(Number.isFinite(balance(before)) && balance(before)!==Number.MAX_SAFE_INTEGER,'Synthetic account must not have test-credit exemption');
 if(state.beforeBalance===undefined){state.beforeBalance=balance(before);assert.equal(state.beforeBalance,5);await writeFile(statePath,JSON.stringify(state),{mode:0o600});}
 const input={prompt:'Bonjour, réponds brièvement en français.',projectId:state.projectId,modelId:'auto',requestedMode:'auto',effort:'auto',clientMessageId:state.clientMessageId,assistantMessageId:state.assistantMessageId};
+if(process.argv.includes('--expect-paused')){
+ const response=await fetch('https://coden.fun/api/assistant/chat',{method:'POST',headers,body:JSON.stringify(input),signal:AbortSignal.timeout(30000)});
+ const body=await response.json();
+ assert.equal(response.status,503,'Authenticated paid work must be paused during cutover');
+ assert.equal(body.diagnostic_code,'PAID_OPERATIONS_PAUSED');
+ assert.equal(balance(await wallet()),balance(before),'Maintenance must not reserve or debit credits');
+ console.log(JSON.stringify({checkedAt:new Date().toISOString(),syntheticOnly:true,paidWorkPaused:true,balanceUnchanged:true}));
+ process.exit(0);
+}
 const first=await api('/api/assistant/chat',input);
 assert.equal(first.success,true);assert.ok(first.text?.trim(),'An actual model response must be delivered');
 const after=await wallet();assert.equal(balance(after),state.beforeBalance-0.5,'Actual action must debit exactly 0.5');
