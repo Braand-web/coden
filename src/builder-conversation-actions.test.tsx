@@ -42,24 +42,70 @@ async function settle() {
 }
 
 describe('Builder conversation message actions', () => {
-  it('collapses long messages and expands them with an accessible control', async () => {
+  it.each(['user', 'assistant', 'system'] as const)('keeps long %s messages complete without a truncation component', async role => {
+    const text = Array.from({ length: 30 }, (_, index) => `Ligne ${index + 1}`).join('\n');
     let api!: ReturnType<typeof mountBuilderConversation>;
     act(() => {
       api = mountBuilderConversation(host);
-      api.addMessage({ id: 'long-user-message', role: 'user', content: 'Ligne 1\nLigne 2\nLigne 3\nLigne 4\nLigne 5', durableId: 'durable-user-1' });
+      api.addMessage({ id: `long-${role}-message`, role, content: text });
     });
     await settle();
 
     const content = host.querySelector<HTMLElement>('.coden-message-content')!;
-    const expand = host.querySelector<HTMLButtonElement>('.coden-message-expand')!;
-    expect(content.dataset.collapsed).toBe('true');
-    expect(expand.textContent).toBe('Afficher plus');
-    act(() => expand.click());
-    expect(content.dataset.collapsed).toBe('false');
-    expect(expand.getAttribute('aria-expanded')).toBe('true');
-    expect(expand.textContent).toBe('Afficher moins');
-    act(() => expand.click());
-    expect(expand.textContent).toBe('Afficher plus');
+    expect(content.textContent).toContain('Ligne 1');
+    expect(content.textContent).toContain('Ligne 30');
+    expect(content.hasAttribute('data-collapsed')).toBe(false);
+    expect(host.querySelector('.coden-message-expand')).toBeNull();
+    expect(getComputedStyle(content).maxHeight).not.toBe('6.5em');
+    expect(api.messages().find(message => message.id === `long-${role}-message`)?.content).toBe(text);
+  });
+
+  it('adds one independent toolbar without making short user bubbles a grid item', async () => {
+    act(() => {
+      const api = mountBuilderConversation(host, { onCopyLink: async () => true, onEditMessage: async () => undefined });
+      api.addMessage({ id: 'short-user', role: 'user', content: 'salut', durableId: 'durable-short' });
+      api.addMessage({ id: 'short-assistant', role: 'assistant', content: 'Bonjour' });
+    });
+    await settle();
+
+    const user = host.querySelector<HTMLElement>('[data-message-id="short-user"]')!;
+    const bubble = user.querySelector<HTMLElement>('.coden-chat-bubble')!;
+    const footer = user.querySelector<HTMLElement>('.coden-message-footer')!;
+    expect(bubble.textContent).toBe('salut');
+    expect(bubble.contains(footer)).toBe(false);
+    expect(user.querySelector('.coden-chat-userstack')?.classList.contains('coden-chat-message-stack')).toBe(false);
+    expect(user.querySelectorAll('.coden-message-footer')).toHaveLength(1);
+    expect(getComputedStyle(bubble).width).toBe('fit-content');
+    expect(getComputedStyle(footer).alignSelf).toBe('flex-end');
+    expect(getComputedStyle(footer).opacity).not.toBe('0');
+    const assistantFooter = host.querySelector<HTMLElement>('[data-message-id="short-assistant"] .coden-message-footer')!;
+    expect(getComputedStyle(assistantFooter).alignSelf).toBe('flex-start');
+    expect(getComputedStyle(assistantFooter).justifyContent).toBe('flex-start');
+  });
+
+  it('keeps restored streaming text fully visible and copies every text part', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const first = 'Analyse complète.\n'.repeat(20);
+    const last = 'Synthèse enregistrée';
+    act(() => {
+      const api = mountBuilderConversation(host);
+      api.addMessage({ id: 'restored-stream', role: 'assistant', content: last });
+      api.restoreChat('restored-stream', [
+        { type: 'text_delta', delta: first },
+        { type: 'text_end' },
+        { type: 'text_delta', delta: last },
+      ], 'done', last);
+    });
+    await settle();
+
+    const message = host.querySelector<HTMLElement>('[data-message-id="restored-stream"]')!;
+    expect(message.textContent).toContain('Analyse complète.');
+    expect(message.textContent).toContain(last);
+    expect(message.querySelector('[data-collapsed]')).toBeNull();
+    expect(message.querySelectorAll('.coden-message-footer')).toHaveLength(1);
+    await act(async () => { message.querySelector<HTMLButtonElement>('[aria-label="Copier le message"]')!.click(); });
+    expect(writeText).toHaveBeenCalledWith(`${first}\n\n${last}`);
   });
 
   it('copies message text and private links, dates messages, and only edits user prompts', async () => {

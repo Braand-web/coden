@@ -1085,9 +1085,11 @@ function ensureConversationStyles() {
     .coden-chat-message.system { justify-content: flex-start; }
 
     .coden-chat-message-stack {
-      display: grid;
+      display: flex;
+      flex-direction: column;
       gap: 4px;
       min-width: 0;
+      width: 100%;
       max-width: 100%;
     }
 
@@ -1096,27 +1098,6 @@ function ensureConversationStyles() {
       overflow-wrap: anywhere;
     }
 
-    .coden-message-content[data-collapsed="true"] {
-      max-height: 6.5em;
-      overflow: hidden;
-    }
-
-    .coden-message-expand {
-      display: block;
-      margin-top: 6px;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      color: var(--text-muted, var(--text-secondary));
-      font: inherit;
-      font-size: 11px;
-      line-height: 1.4;
-      text-align: left;
-      cursor: pointer;
-    }
-
-    .coden-message-expand:hover { color: var(--foreground); }
-    .coden-message-expand:focus-visible,
     .coden-message-toolbar button:focus-visible,
     .coden-message-edit button:focus-visible,
     .coden-message-edit textarea:focus-visible {
@@ -1126,14 +1107,22 @@ function ensureConversationStyles() {
 
     .coden-message-footer {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      justify-content: flex-end;
-      gap: 7px;
-      min-height: 22px;
-      padding: 0 3px;
+      justify-content: flex-start;
+      align-self: flex-start;
+      gap: 8px;
+      min-height: 24px;
+      max-width: 100%;
+      padding: 0;
       color: var(--text-muted, var(--text-secondary));
-      font-size: 10px;
-      line-height: 1;
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    .coden-chat-message.user .coden-message-footer {
+      align-self: flex-end;
+      justify-content: flex-end;
     }
 
     .coden-message-toolbar {
@@ -1145,7 +1134,7 @@ function ensureConversationStyles() {
     .coden-message-toolbar button {
       display: inline-grid;
       width: 24px;
-      height: 22px;
+      height: 24px;
       place-items: center;
       padding: 0;
       border: 0;
@@ -1221,6 +1210,7 @@ function ensureConversationStyles() {
     }
 
     .coden-chat-message.user .coden-chat-bubble {
+      width: fit-content;
       max-width: min(86%, 520px);
       background: var(--foreground);
       color: var(--background);
@@ -2085,9 +2075,6 @@ async function copyConversationText(value: string) {
 function MessageView({ message, callbacks }: { message: CodenConversationMessage; callbacks: ConversationCallbacks }) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [canExpand, setCanExpand] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
   const [editBusy, setEditBusy] = useState(false);
@@ -2095,19 +2082,10 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
-  useEffect(() => {
-    if (message.working || !contentRef.current) { setCanExpand(false); return; }
-    const element = contentRef.current;
-    const frame = window.requestAnimationFrame(() => {
-      setCanExpand(element.scrollHeight > element.clientHeight + 2);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [message.content, message.working, message.liveRun?.chat?.parts.length, message.block]);
-
-  const contentText = message.content || message.liveRun?.chat?.parts
+  const contentText = message.liveRun?.chat?.parts
     .filter(part => part.type === 'text')
     .map(part => part.text)
-    .join('\n\n') || '';
+    .join('\n\n') || message.content || '';
   const footer = message.role !== 'system' && !message.working ? (
     <div className="coden-message-footer">
       <div className="coden-message-toolbar" aria-label="Actions du message">
@@ -2152,12 +2130,11 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
     const text = legacy?.names.length ? legacy.text : message.content;
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
-        <div className="coden-chat-userstack coden-chat-message-stack">
+        <div className="coden-chat-userstack">
           {attachments.length ? <MessageAttachments items={attachments} /> : null}
           {text || message.actions?.length ? (
             <div className="coden-chat-bubble">
-              <div ref={contentRef} className="coden-message-content" data-collapsed={!expanded ? 'true' : 'false'}>{text}</div>
-              {canExpand ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}
+              <div className="coden-message-content">{text}</div>
               {message.actions?.length ? <div className="coden-chat-actions">{message.actions.map(action => <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>)}</div> : null}
             </div>
           ) : null}
@@ -2169,19 +2146,17 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
   }
 
   if (isAssistant) {
-    const isStructured = Boolean(message.block);
     return (
       <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
         <div className="coden-chat-message-stack">
           <section className="coden-agent-conversation-run" aria-busy={Boolean(message.working)}>
             {message.block
               ? <ConversationDecision block={message.block} actions={message.actions} callbacks={callbacks} />
-              : <div ref={contentRef} className="coden-message-content" data-collapsed={!expanded && !message.working ? 'true' : 'false'}>
+              : <div className="coden-message-content">
                   {message.liveRun?.chat
                     ? <AgentMessage state={message.liveRun.chat} onDecisionSelect={callbacks.onDecisionSelect} onDecisionAnswers={callbacks.onDecisionAnswers} onArtifactOpen={callbacks.onArtifactOpen} />
                     : message.content ? <Response isStreaming={Boolean(message.working)}>{message.content}</Response> : null}
                 </div>}
-            {canExpand && !isStructured ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}
             {!message.block && message.actions?.length ? <div className="coden-chat-actions">{message.actions.map(action => <button key={action.id} type="button" onClick={action.onClick}>{action.label}</button>)}</div> : null}
           </section>
           {footer}
@@ -2193,7 +2168,7 @@ function MessageView({ message, callbacks }: { message: CodenConversationMessage
   return (
     <div className={`coden-chat-message ${message.role}${message.working ? " is-working" : ""}`} data-message-id={message.id}>
       <div className="coden-chat-message-stack">
-        <div className="coden-chat-bubble"><div ref={contentRef} className="coden-message-content" data-collapsed={!expanded ? 'true' : 'false'}>{message.content}</div>{canExpand ? <button className="coden-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? 'Afficher moins' : 'Afficher plus'}</button> : null}</div>
+        <div className="coden-chat-bubble"><div className="coden-message-content">{message.content}</div></div>
         {footer}
       </div>
     </div>
