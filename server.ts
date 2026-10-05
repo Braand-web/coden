@@ -22476,19 +22476,37 @@ app.get('/api/projects/:id/workflows/:workflowId/runs', requireAuth, async (req:
 
 app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: any) => {
   if (!requireLiveSandbox(res)) return;
+  let releaseRun: (() => void) | undefined;
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProject(req.params.id, auth.userId, req);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
     if (!requireProjectCapability(req, res, 'view', project)) return;
 
-    const files = await loadProjectFiles(project.id);
+    // A reload attaches to the existing workspace without writing an older
+    // committed tree over a generation that is still running.
+    const running = sandboxRegistry.peek(project.id)?.status();
+    if (running?.state === 'running' && running.basePath) {
+      return res.json({ success: true, state: running.state, preview_url: running.basePath, port: running.port });
+    }
+    releaseRun = sandboxRegistry.reserveRun(project.id);
+    const files = await loadGenerationFiles<GeneratedFile>({
+      committed: () => loadProjectFiles(project.id),
+      checkpoint: async () => normalizeGeneratedFiles((await loadDurableProjectSnapshot(project.id, project.owner_id))?.files_snapshot || []),
+    });
     if (!files.length) return res.status(422).json({ success: false, error: 'This project has no files to run yet.' });
 
     const sandbox = sandboxRegistry.get(project.id);
     // Before starting, not after: going over the host's limit and then
     // trimming makes the moment of peak load the moment it is most loaded.
     const evicted = await sandboxRegistry.makeRoomFor(project.id);
+    // Cold runtimes must receive the same per-project environment as the
+    // original generation. Values stay in the server, never in the response.
+    const [backendEnv, serverSecrets] = await Promise.all([
+      loadProjectBackendEnv({ client: getSupabase(), projectId: project.id }),
+      loadProjectServerSecrets(project.id),
+    ]);
+    sandbox.setEnv({ ...serverSecrets, ...backendEnv });
     await sandbox.replaceProjectFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
 
     // Installing is the slow step, so it is skipped when the tree is already
@@ -22531,7 +22549,13 @@ app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: a
       logs: sandbox.getLogs(30),
     });
   } catch (error: any) {
+    if (error?.diagnosticCode === 'PROJECT_RUN_ACTIVE') {
+      // No second writer while a generation or another reload owns the tree.
+      return res.status(202).json({ success: true, state: 'starting', preview_url: null });
+    }
     return res.status(500).json({ success: false, error: 'sandbox_start_failed', message: error?.message || 'The sandbox could not start.' });
+  } finally {
+    releaseRun?.();
   }
 });
 

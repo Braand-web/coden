@@ -37,8 +37,9 @@ assert.match(start, /setLivePreview\(url\)/, 'and the result points the panel at
  * runs `npm install` and boots Vite, and awaiting it inside `loadProject` put
  * the whole install in front of the builder's first layout.
  */
-assert.match(builder, /setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\);[\s\S]{0,1400}?void ensureLivePreview\(\)/,
+assert.match(builder, /startLive: \(\) => \{ void ensureLivePreview\(true\); \}/,
   'a missing runtime must restart automatically, and the panel says it is starting');
+assert.match(builder, /showLoading: \(\) => setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\)/);
 
 // A preview that went away (a deploy, an expired VM) asks the builder to
 // restart it, instead of promising a restart that nothing performed.
@@ -62,7 +63,7 @@ assert.doesNotMatch(builder, /function syncLivePreviewStartControl/, 'the remove
 // Reopening a project with nothing running is the case this exists for.
 const resume = builder.slice(builder.indexOf('async function resumeLivePreview'), builder.indexOf('/** Forget the live preview'));
 assert.match(resume, /if \(!url \|\| status\?\.state !== 'running'\) return false;/, 'a missing sandbox must fall through to automatic restart');
-assert.match(builder, /const resumedLive = await resumeLivePreview\(\)/, 'resolve the live server before choosing a fallback runtime');
+assert.match(builder, /resumeLive: \(\) => resumeLivePreview\(\)/, 'resolve the live server before choosing a fallback runtime');
 assert.match(builder, /event\.payload\.type === 'preview_ready'/, 'a verified live preview must arrive before the closing model recap');
 assert.match(builder, /url\.pathname\.startsWith\('\/preview\/'\)/, 'only the authenticated same-origin preview proxy may control the iframe');
 assert.match(builder, /if \(livePreviewUrl && frame\.src === target/, 'the terminal result must not reload the preview that preview_ready already displayed');

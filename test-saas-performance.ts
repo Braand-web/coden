@@ -27,7 +27,7 @@ assert.doesNotMatch(island, /^import katex from "katex";/m, 'KaTeX is not in the
 assert.match(island, /import\("katex"\)/, 'it is loaded on demand');
 
 // The conversation renders before the preview runtime is resolved.
-assert.ok(builder.indexOf('restoreMessages(payload);') < builder.indexOf('const resumedLive = await resumeLivePreview();'), 'messages first');
+assert.ok(builder.indexOf('restoreMessages(payload);') < builder.indexOf('await restoreProjectPreview({'), 'messages first');
 
 // Navigation animations never hold a link click while the document changes.
 assert.match(navigation, /@view-transition\s*\{\s*navigation:\s*auto;/, 'supported browsers use native page transitions');

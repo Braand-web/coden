@@ -1,6 +1,7 @@
 import './styles/coden-light-theme.css';
 import { confirmDialog, toast } from './lib/ui-feedback';
 import { shouldRetainPreview } from './lib/preview-retention';
+import { restoreProjectPreview } from './lib/preview-restore';
 import { resolveCloudState, type CloudStateView } from './lib/cloud-state';
 import './styles/coden-shell.css';
 import './styles/modern-shell.css';
@@ -3821,6 +3822,8 @@ let webContainerBootInFlight = false;
 /** The dev server URL for this project, while its sandbox is up. */
 let livePreviewUrl = '';
 let liveStartInFlight = false;
+let liveStartRetryCount = 0;
+let liveStartRetryTimer: number | null = null;
 let previewRevision = 0;
 
 function requiresLiveRuntimePreview(files: GeneratedFile[]) {
@@ -3887,6 +3890,7 @@ function setLivePreview(url: string) {
   if (webContainerTeardown) { webContainerTeardown(); webContainerTeardown = null; }
   webContainerUrl = '';
   livePreviewUrl = target;
+  liveStartRetryCount = 0;
   currentPreviewStatus = 'live';
   emptyPreviewMode = 'ready';
   emptyPreviewLabel = '';
@@ -3997,11 +4001,23 @@ function bindPreviewUserActivity() {
 async function ensureLivePreview(silent = false) {
   if (!currentProjectId || liveStartInFlight) return;
   const projectId = currentProjectId;
+  if (liveStartRetryTimer !== null) { window.clearTimeout(liveStartRetryTimer); liveStartRetryTimer = null; }
   liveStartInFlight = true;
   try {
     const response = await apiFetch(`/api/projects/${encodeURIComponent(projectId)}/sandbox/start`, { method: 'POST' }) as
       { preview_url?: string; state?: string; message?: string } | null;
     const url = String(response?.preview_url || '').trim();
+    // Another reload or the active generation owns the workspace. Wait
+    // briefly instead of writing an older file tree over that running app.
+    if (!url && (response?.state === 'starting' || response?.state === 'installing')) {
+      if (liveStartRetryCount++ < 10) {
+        liveStartRetryTimer = window.setTimeout(() => {
+          liveStartRetryTimer = null;
+          if (currentProjectId === projectId) void ensureLivePreview(true);
+        }, 3000);
+      }
+      return;
+    }
     if (!url) throw new Error(response?.message || 'Le serveur de développement n’a pas démarré.');
     if (currentProjectId !== projectId) return;
     activateBuilderView('preview');
@@ -4039,7 +4055,7 @@ function clearLivePreview() {
  * placeholder copy — which `isUsablePreviewHtml` already recognises, and a run
  * still in flight, which has a loader of its own.
  */
-function setPreview(html: string, status = 'unknown') {
+function setPreview(html: string, status = 'unknown', bootRuntime = true) {
   // A loader or failed response is not a replacement application. In
   // particular, cancellation must leave the live iframe and its local state intact.
   if ((String(status).toLowerCase() === 'building' || !isUsablePreviewHtml(html))
@@ -4075,7 +4091,11 @@ function setPreview(html: string, status = 'unknown') {
     // iframe shows the live Vite dev server (preview == production). On any
     // failure or when the flag is off, we fall back to the Babel preview html.
     const revision = previewRevision;
-    void tryBootWebContainerPreview(frame, currentFiles).then(booted => {
+    if (!bootRuntime) {
+      // Reload restoration paints immediately. Only the server runtime
+      // selected by loadProject may replace it; no competing browser boot.
+      setPreviewSourceDocument(frame, html);
+    } else void tryBootWebContainerPreview(frame, currentFiles).then(booted => {
       if (revision !== previewRevision) return;
       if (booted) return;
       if (requiresLiveRuntimePreview(currentFiles)) {
@@ -6268,41 +6288,19 @@ async function loadProject() {
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
     // Decorates messages already on screen; nothing below waits for it.
     if (!restoredStreamParts) void restoreLatestStreamPartsFromRunHistory(payload).catch(() => undefined);
-    // Resolve the server runtime before starting a competing browser runtime.
-    const resumedLive = await resumeLivePreview();
-    if (resumedLive) {
-      // Keep the running application; no background WebContainer may replace it.
-    } else if (payload.preview?.html && payload.preview.status !== 'idle' && isUsablePreviewHtml(payload.preview.html)) {
-      setPreview(payload.preview.html, payload.preview.status);
-      // Saved HTML is only a lightweight rendering; it cannot reproduce every
-      // CSS import, build transform or dependency. Keep it visible immediately,
-      // then restart the real app from committed files in the background.
-      if (currentFiles.length) void ensureLivePreview(true);
-    } else {
-      currentPreviewHtml = '';
-      // Said, not left blank: a cold preview takes about half a minute to
-      // install and boot, and an idle placeholder read as "nothing will come".
-      setEmptyPreviewState('working', 'Démarrage de l’aperçu…');
-      /*
-       * Started, not awaited.
-       *
-       * `ensureLivePreview` posts to `/sandbox/start`, which runs `npm
-       * install` and boots Vite — 6.7s for the tiny tree in this repo's own
-       * sandbox test, far more for a real one on a cold container. Awaiting it
-       * here put that entire install in front of `applyInitialBuilderLayout`,
-       * so opening any project without a running sandbox blocked the whole
-       * builder — the chat, the file tree, the toolbar — behind a dependency
-       * install nobody was waiting to watch.
-       *
-       * Nothing below this line reads the live preview, and the function
-       * already owns its own progress: it guards re-entry with
-       * `liveStartInFlight`, points the iframe at the server when it is up,
-       * and reports its own failure. The placeholder above is what the reader
-       * sees meanwhile, which is the honest state — the preview genuinely is
-       * not running yet.
-       */
-      void ensureLivePreview();
-    }
+    const restoringProjectId = currentProjectId;
+    liveStartRetryCount = 0;
+    await restoreProjectPreview({
+      html: payload.preview?.html,
+      status: payload.preview?.status,
+      hasFiles: currentFiles.length > 0,
+      isUsable: isUsablePreviewHtml,
+      renderSaved: (html, status) => setPreview(html, status, false),
+      resumeLive: () => resumeLivePreview(),
+      startLive: () => { void ensureLivePreview(true); },
+      showLoading: () => setEmptyPreviewState('working', 'Démarrage de l’aperçu…'),
+      isCurrent: () => currentProjectId === restoringProjectId,
+    });
     // The selected runtime above is the only owner of this preview.
     syncProjectReadinessClass();
     // A run still going on the server is picked up once the preview state is

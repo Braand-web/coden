@@ -134,13 +134,13 @@ const live = readFileSync(new URL('./src/builder-live.ts', import.meta.url), 'ut
  * toolbar behind a dependency install nobody was waiting to watch.
  */
 {
-  const load = live.slice(live.indexOf('const resumedLive = await resumeLivePreview();'));
+  const load = live.slice(live.indexOf('await restoreProjectPreview({'));
   const body = load.slice(0, load.indexOf('syncProjectReadinessClass();'));
-  assert.match(body, /void ensureLivePreview\(\);/, 'the sandbox start is launched, not awaited');
-  assert.doesNotMatch(body, /await ensureLivePreview\(\);/, 'the builder no longer blocks on it');
+  assert.match(body, /void ensureLivePreview\(true\);/, 'the sandbox start is launched, not awaited');
+  assert.doesNotMatch(body, /await ensureLivePreview\(/, 'the builder no longer blocks on it');
   // The reader still gets the honest state meanwhile.
   // Meanwhile the reader is told it is starting, not shown an idle panel.
-  assert.match(body, /setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\);/, 'and is told the preview is starting');
+  assert.match(body, /showLoading: \(\) => setEmptyPreviewState\('working', 'Démarrage de l’aperçu…'\)/, 'and is told the preview is starting when no saved app exists');
 }
 
 console.log('credits and auto mode tests passed');

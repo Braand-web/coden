@@ -29,10 +29,25 @@ describe('project preview persistence across reloads', () => {
   });
 
   it('restarts the real app after immediately showing a saved preview', () => {
-    const restore = builder.slice(builder.indexOf('const resumedLive = await resumeLivePreview()'), builder.indexOf('// The selected runtime above'));
-    expect(restore).toContain('setPreview(payload.preview.html, payload.preview.status)');
-    expect(restore).toContain('if (currentFiles.length) void ensureLivePreview(true)');
+    const restore = builder.slice(builder.indexOf('await restoreProjectPreview({'), builder.indexOf('// The selected runtime above'));
+    expect(restore).toContain('renderSaved: (html, status) => setPreview(html, status, false)');
+    expect(restore).toContain('startLive: () => { void ensureLivePreview(true); }');
+    expect(restore).toContain('hasFiles: currentFiles.length > 0');
+    expect(restore).not.toContain("payload.preview.status !== 'idle'");
     expect(builder).toContain('async function ensureLivePreview(silent = false)');
+  });
+
+  it('restarts interrupted first builds from their durable checkpoint with the original backend', () => {
+    const start = server.slice(server.indexOf("app.post('/api/projects/:id/sandbox/start'"), server.indexOf("app.get('/api/projects/:id/sandbox/status'"));
+    expect(start).toContain('loadGenerationFiles<GeneratedFile>({');
+    expect(start).toContain('loadDurableProjectSnapshot(project.id, project.owner_id)');
+    expect(start).toContain('sandbox.setEnv({ ...serverSecrets, ...backendEnv })');
+    expect(start).toContain('releaseRun = sandboxRegistry.reserveRun(project.id)');
+    expect(start).toContain('releaseRun?.()');
+    expect(start.indexOf("running?.state === 'running'")).toBeLessThan(start.indexOf('sandbox.replaceProjectFiles('));
+    expect(start).toContain("error?.diagnosticCode === 'PROJECT_RUN_ACTIVE'");
+    expect(start).toContain('res.status(202)');
+    expect(start).not.toMatch(/res\.json\([^;]*(?:serverSecrets|backendEnv)/);
   });
 
   it('does not erase an explicit project URL after a transient load error', () => {
