@@ -28,7 +28,13 @@ assert.match(server, /function persistenceSequenceNumber\(timestamp = Date\.now\
 assert.match(server, /Math\.floor\(value \/ 1_000\)/);
 assert.doesNotMatch(server, /sequence_number:\s*Date\.now\(\)/);
 
-assert.match(builder, /payload\.preview\.status !== 'idle'/);
+// A lifecycle status can be stale after a cancelled run. Saved app content,
+// not an `idle` label, decides whether the preview can be restored.
+const restore = builder.slice(builder.indexOf('await restoreProjectPreview({'), builder.indexOf('// The selected runtime above'));
+assert.match(restore, /html: payload\.preview\?\.html/);
+assert.match(restore, /isUsable: isUsablePreviewHtml/);
+assert.match(restore, /renderSaved: \(html, status\) => setPreview\(html, status, false\)/);
+assert.doesNotMatch(restore, /preview\.status !== 'idle'/);
 assert.match(builder, /restoreStreamPartsFromPayloadEvents\(payload\)/);
 assert.match(builder, /restoreLatestStreamPartsFromRunHistory\(payload\)/);
 assert.match(builder, /payload\?\.success === false && !payload\?\.needs_fix/);
