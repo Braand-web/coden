@@ -60,6 +60,18 @@ if(process.argv.includes('--inspect')){
   usage:(ledger.ledger || []).filter(r=>r.entry_type==='usage').map(r=>Number(r.amount_credits)),cancellationRecoveryRequested:process.argv.includes('--recover-cancellation')}));
  process.exit(0);
 }
+// A interrupted test may have reserved its cancellation credit before losing
+// the HTTP response. Reconcile only that persisted test nonce before replays.
+if(state.cancellationKey && !state.cancellationRefundVerified){
+ const rows=await request(`${base}/rest/v1/usage_reservations?select=id,status,credits_reserved&account_id=eq.${state.userId}&idempotency_key=eq.${state.cancellationKey}`,{headers:authHeaders},'Interrupted controlled cancellation');
+ if(rows[0]){
+  assert.equal(Number(rows[0].credits_reserved),0.9);
+  assert.ok(['reserved','released'].includes(rows[0].status),'A delivered action is never recovered as a cancellation');
+  await rpc('coden_billing_release',{p_reservation_id:rows[0].id,p_reason:'Resume controlled test cancellation after transport interruption'});
+  await rpc('coden_billing_release',{p_reservation_id:rows[0].id,p_reason:'Resume controlled test cancellation after transport interruption'});
+  state.cancellationRefundVerified=true;await writeFile(statePath,JSON.stringify(state),{mode:0o600});
+ }
+}
 if(!state.projectId){
  const created=await api('/api/projects',{name:'Billing validation',prompt:'',modelId:'auto'});
  state.projectId=created.project?.id || created.id;
