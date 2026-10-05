@@ -17,6 +17,6 @@ describe('retry on a restored conversation', () => {
   it('asks the same thing again with the same attachments, without a second user bubble', () => {
     expect(restore).toMatch(/attachmentExtra\(asked\.attachmentIds, \[\]\)/);
     expect(restore).toMatch(/__codenRetry: true/);
-    expect(source).toMatch(/if \(!isRecoveryRetry && !attach\) appendMessage\('user'/);
+    expect(source).toMatch(/if \(!isRecoveryRetry && !attach\) \{\s*userMessageCard = appendMessage\('user'/);
   });
 });

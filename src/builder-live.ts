@@ -133,14 +133,16 @@ type ProjectPayload = {
     preview_status?: string;
   };
   files: GeneratedFile[];
+  branch_id?: string | null;
   messages?: Array<{
     id?: string;
     ai_message_id?: string;
     role: string;
     content: string;
+    created_at?: string;
     parts?: unknown[];
     intent?: string;
-    metadata?: { coden_stream?: { events?: unknown[]; status?: 'done' | 'failed' | 'cancelled'; final_text?: string; error?: string; run_id?: string }; attachments?: Array<{ id?: string; name?: string; mimeType?: string; size?: number; kind?: string; sourceUrl?: string | null }> };
+    metadata?: { coden_branch?: { id?: string; parent_branch_id?: string | null; parent_message_id?: string | null }; coden_harness?: { thread_id?: string; turn_id?: string; parent_turn_id?: string | null }; coden_stream?: { events?: unknown[]; status?: 'done' | 'failed' | 'cancelled'; final_text?: string; error?: string; run_id?: string }; attachments?: Array<{ id?: string; name?: string; mimeType?: string; size?: number; kind?: string; sourceUrl?: string | null }> };
   }>;
   events?: Array<{ event_type: string; message: string; sequence_number: number; payload?: any; public_payload?: any; status?: string; agent_run_id?: string; created_at?: string }>;
   workspace_state?: WorkspaceState | null;
@@ -411,6 +413,10 @@ let lastBuildSessionId = '';
 let lastAgentRunId = '';
 let activeHarnessThreadId = '';
 let activeHarnessTurnId = '';
+let activeConversationBranchId = '';
+let activeConversationTipTurnId = '';
+let pendingConversationBranchFromMessageId = '';
+let pendingConversationUserUiId = '';
 let harnessApprovalPollTimer: ReturnType<typeof setInterval> | null = null;
 const harnessApprovalMessageIds = new Map<string, string>();
 let activeGenerationTouchesPreview = false;
@@ -1684,13 +1690,64 @@ function rememberedLastBuilderProjectId() {
 }
 
 function setCurrentBuilderProjectId(projectId: string, updateUrl = true) {
-  if (currentProjectId !== String(projectId).trim()) cloudConsoleDatabase = null;
+  if (currentProjectId !== String(projectId).trim()) {
+    cloudConsoleDatabase = null;
+    activeConversationBranchId = '';
+    activeConversationTipTurnId = '';
+    activeHarnessThreadId = '';
+    activeHarnessTurnId = '';
+    pendingConversationBranchFromMessageId = '';
+    pendingConversationUserUiId = '';
+  }
   currentProjectId = isRealProjectId(projectId) ? String(projectId).trim() : '';
   if (!currentProjectId) return;
   rememberLastBuilderProjectId(currentProjectId);
   if (updateUrl && getProjectIdFromUrl() !== currentProjectId) {
     window.history.replaceState({}, '', `/builder.html?project=${encodeURIComponent(currentProjectId)}`);
   }
+}
+
+function updateBuilderConversationUrl(branchId: string, messageId: string) {
+  if (!currentProjectId || !messageId) return;
+  const url = new URL('/builder.html', window.location.origin);
+  url.searchParams.set('project', currentProjectId);
+  if (branchId) url.searchParams.set('branch', branchId);
+  url.searchParams.set('message', messageId);
+  window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+}
+
+function applyConversationReceipt(receipt: any, userUiId = '', assistantUiId = '') {
+  if (!receipt || typeof receipt !== 'object') return;
+  const branchId = String(receipt.branchId || activeConversationBranchId || '');
+  const threadId = String(receipt.threadId || '');
+  const turnId = String(receipt.turnId || '');
+  const parentTurnId = String(receipt.parentTurnId || activeConversationTipTurnId || '');
+  const userMessageId = String(receipt.userMessageId || '');
+  const assistantMessageId = String(receipt.assistantMessageId || '');
+  activeConversationBranchId = branchId;
+  if (threadId) activeHarnessThreadId = threadId;
+  if (turnId) {
+    activeHarnessTurnId = turnId;
+    activeConversationTipTurnId = turnId;
+  }
+  if (userUiId && userMessageId) conversationApi?.setMessageMetadata(userUiId, {
+    durableId: userMessageId,
+    branchId: branchId || undefined,
+    harnessThreadId: threadId || undefined,
+    harnessTurnId: turnId || undefined,
+    parentTurnId: parentTurnId || undefined,
+  });
+  if (assistantUiId && assistantMessageId) conversationApi?.setMessageMetadata(assistantUiId, {
+    durableId: assistantMessageId,
+    branchId: branchId || undefined,
+    harnessThreadId: threadId || undefined,
+    harnessTurnId: turnId || undefined,
+    parentTurnId: parentTurnId || undefined,
+  });
+  if (userMessageId && pendingConversationBranchFromMessageId) pendingConversationBranchFromMessageId = '';
+  if (userMessageId) pendingConversationUserUiId = '';
+  const targetId = assistantMessageId || userMessageId;
+  if (targetId) updateBuilderConversationUrl(branchId, targetId);
 }
 
 function getInitialBuilderHandoff() {
@@ -2104,6 +2161,50 @@ function ensureConversationApi() {
   scroll.innerHTML = '';
   scroll.dataset.liveInitialized = 'true';
   conversationApi = mountBuilderConversation(scroll, {
+    onCopyLink: async message => {
+      if (!currentProjectId || !message.durableId) return false;
+      const link = new URL('/builder.html', window.location.origin);
+      link.searchParams.set('project', currentProjectId);
+      if (message.branchId) link.searchParams.set('branch', message.branchId);
+      link.searchParams.set('message', message.durableId);
+      try {
+        await navigator.clipboard.writeText(link.href);
+        return true;
+      } catch {
+        const field = document.createElement('textarea');
+        field.value = link.href;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.append(field);
+        field.select();
+        const copied = document.execCommand('copy');
+        field.remove();
+        return copied;
+      }
+    },
+    onEditMessage: async (message, content) => {
+      if (!currentProjectId || !message.durableId || message.role !== 'user') return;
+      const branchId = crypto.randomUUID();
+      if (!conversationApi?.forkFromMessage(message.id)) throw new Error('Cette demande n’est plus présente dans le fil.');
+      activeConversationBranchId = branchId;
+      activeConversationTipTurnId = message.harnessTurnId || message.parentTurnId || '';
+      activeHarnessThreadId = message.harnessThreadId || activeHarnessThreadId;
+      pendingConversationBranchFromMessageId = message.durableId;
+      pendingConversationUserUiId = '';
+      void generateFromPrompt(
+        content,
+        'auto',
+        false,
+        {
+          __codenEdit: true,
+          studioContext: studioPromptContextPayload(),
+          ...attachmentExtra((message.attachments || []).map(item => item.id).filter((id): id is string => Boolean(id)), []),
+        },
+        content,
+        message.attachments || [],
+      );
+    },
     onDecisionSelect: (_decisionId, option) => {
       void sendActiveHarnessInstruction(option.label);
     },
@@ -2294,11 +2395,11 @@ function repairTextEncoding(value: unknown): string {
   return text;
 }
 
-function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean; id?: string; attachments?: MessageAttachment[] } = {}) {
+function appendMessage(kind: 'user' | 'assistant' | 'system', body: string, options: { working?: boolean; id?: string; attachments?: MessageAttachment[]; durableId?: string; branchId?: string; harnessThreadId?: string; harnessTurnId?: string; parentTurnId?: string; createdAt?: string } = {}) {
   const safeBody = repairTextEncoding(redactSecrets(body));
   const api = ensureConversationApi();
   if (api) {
-    const id = api.addMessage({ id: options.id, role: kind, content: safeBody, working: Boolean(options.working), attachments: options.attachments });
+    const id = api.addMessage({ ...options, role: kind, content: safeBody, working: Boolean(options.working) });
     return createMessageHandle(id);
   }
 
@@ -3154,8 +3255,12 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
       routingMode: readRoutingMode(),
       projectId: currentProjectId || undefined,
       messages: recentConversationForAssistant(prompt),
-      clientMessageId: messageId ? `${messageId}_user` : undefined,
+      clientMessageId: pendingConversationUserUiId || (messageId ? `${messageId}_user` : undefined),
       assistantMessageId: messageId || undefined,
+      branchId: activeConversationBranchId || undefined,
+      branchFromMessageId: pendingConversationBranchFromMessageId || undefined,
+      parentTurnId: activeConversationTipTurnId || undefined,
+      harnessThreadId: activeHarnessThreadId || undefined,
     }),
     signal: activeAbort?.signal,
   }, response => {
@@ -3163,12 +3268,22 @@ async function requestSimpleConversation(card: HTMLElement | null, prompt: strin
     streamed = true;
     return consumeAgentStream(response, event => {
       if (messageId && event.channel === 'chat') conversationApi?.applyChatEvent(messageId, event);
+      if (event.channel === 'workspace' && event.payload.type === 'run_acknowledged' && event.payload.userMessageId) {
+        applyConversationReceipt({
+          branchId: event.payload.branchId,
+          userMessageId: event.payload.userMessageId,
+          threadId: event.payload.threadId,
+          turnId: event.payload.turnId,
+          parentTurnId: event.payload.parentTurnId,
+        }, pendingConversationUserUiId);
+      }
     });
   });
 
   if (payload?.runId) lastAgentRunId = String(payload.runId);
   if (payload?.threadId) activeHarnessThreadId = String(payload.threadId);
   if (payload?.turnId) activeHarnessTurnId = String(payload.turnId);
+  applyConversationReceipt(payload?.conversation, pendingConversationUserUiId, messageId);
   if (payload?.success === false) {
     // The stream has already closed the run with its own `run_failed`; the
     // recovery panel below is what offers the way forward.
@@ -3237,6 +3352,13 @@ async function requestProjectGeneration(
       activeHarnessThreadId = String(event.payload.threadId || '');
       activeHarnessTurnId = String(event.payload.turnId || '');
       lastAgentRunId = String(event.payload.runId || '');
+      if (event.payload.userMessageId) applyConversationReceipt({
+        branchId: event.payload.branchId,
+        userMessageId: event.payload.userMessageId,
+        threadId: event.payload.threadId,
+        turnId: event.payload.turnId,
+        parentTurnId: event.payload.parentTurnId,
+      }, pendingConversationUserUiId);
     }
     if (event.channel === 'workspace' && event.payload.type === 'preview_ready'
       && projectId === currentProjectId && event.payload.projectId === projectId && !signal?.aborted) {
@@ -6251,6 +6373,20 @@ async function loadProject() {
     if (isRealProjectId(payload.project?.id || currentProjectId)) {
       setCurrentBuilderProjectId(String(payload.project?.id || currentProjectId));
     }
+    const requestedUrl = new URL(window.location.href);
+    const requestedBranchId = requestedUrl.searchParams.get('branch') || '';
+    const requestedMessageId = requestedUrl.searchParams.get('message') || '';
+    if (currentProjectId && (requestedBranchId || requestedMessageId)) {
+      const query = new URLSearchParams();
+      if (requestedBranchId) query.set('branch_id', requestedBranchId);
+      if (requestedMessageId) query.set('message_id', requestedMessageId);
+      const history = await apiFetch<{ success: boolean; branch_id?: string | null; messages?: NonNullable<ProjectPayload['messages']> }>(
+        `/api/projects/${encodeURIComponent(currentProjectId)}/messages?${query.toString()}`,
+      );
+      payload.messages = history.messages || [];
+      payload.branch_id = history.branch_id || requestedBranchId || null;
+    }
+    activeConversationBranchId = String(payload.branch_id || requestedBranchId || '');
     if (!currentProjectId) {
       const userState = await apiFetch<{ success: boolean; state: UserWorkspaceState | null }>('/api/users/me/workspace-state').catch(() => null);
       userWorkspaceState = userState?.state || null;
@@ -6284,6 +6420,7 @@ async function loadProject() {
     ensureConversationApi()?.clear();
     if (scroll) delete scroll.dataset.restored;
     restoreMessages(payload);
+    if (requestedMessageId) focusPrivateConversationMessage(requestedMessageId);
     const approvalsRestored = restoreHarnessApprovalState();
     const restoredStreamParts = restoreStreamPartsFromPayloadEvents(payload);
     // Decorates messages already on screen; nothing below waits for it.
@@ -6324,6 +6461,19 @@ async function loadProject() {
   }
 }
 
+function focusPrivateConversationMessage(messageId: string) {
+  const selector = `[data-message-id="${CSS.escape(messageId)}"]`;
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    const target = chatScroll()?.querySelector<HTMLElement>(selector);
+    if (!target) return;
+    target.tabIndex = -1;
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+    target.dataset.privateLinkTarget = 'true';
+    window.setTimeout(() => { delete target.dataset.privateLinkTarget; }, 1800);
+  }));
+}
+
 function restoreMessages(payload: ProjectPayload) {
   if (!payload.messages?.length) return;
   const scroll = chatScroll();
@@ -6359,7 +6509,23 @@ function restoreMessages(payload: ProjectPayload) {
       const storedAttachments: MessageAttachment[] = role === 'user' && Array.isArray(message.metadata?.attachments)
         ? message.metadata!.attachments!.filter(item => item && item.name).slice(0, 40).map(item => ({ id: item.id, name: String(item.name), mimeType: item.mimeType, size: item.size, kind: item.kind, fullUrl: item.sourceUrl || undefined }))
         : [];
-      const card = appendMessage(role, content, { id: message.ai_message_id || message.id, attachments: storedAttachments });
+      const branch = message.metadata?.coden_branch;
+      const harness = message.metadata?.coden_harness;
+      const card = appendMessage(role, content, {
+        id: message.ai_message_id || message.id,
+        durableId: message.ai_message_id || message.id,
+        branchId: branch?.id || undefined,
+        harnessThreadId: harness?.thread_id || undefined,
+        harnessTurnId: harness?.turn_id || undefined,
+        parentTurnId: harness?.parent_turn_id || undefined,
+        createdAt: message.created_at,
+        attachments: storedAttachments,
+      });
+      if (harness?.thread_id) activeHarnessThreadId = String(harness.thread_id);
+      if (harness?.turn_id) {
+        activeConversationTipTurnId = String(harness.turn_id);
+        activeHarnessTurnId = String(harness.turn_id);
+      }
       if (role === 'user') lastAsked = { text: rawContent, attachmentIds: storedAttachments.map(item => item.id).filter((id): id is string => Boolean(id)) };
       // The conversation ends on an answer that failed (a deploy, a dropped connection): ask again in one click,
       // without typing the request or re-attaching its files. Only the last answer — an old failure is history.
@@ -6824,8 +6990,9 @@ function applyInitialBuilderLayout() {
 async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLastPlan = false, extra: Record<string, unknown> = {}, displayText = prompt, displayAttachments: MessageAttachment[] = []) {
   const safePrompt = repairTextEncoding(redactSecrets(prompt)).trim();
   const safeDisplayText = repairTextEncoding(redactSecrets(displayText));
-  const { __codenRetry, __codenAttach, ...requestExtra } = extra;
+  const { __codenRetry, __codenAttach, __codenEdit, ...requestExtra } = extra;
   const isRecoveryRetry = Boolean(__codenRetry);
+  const isConversationEdit = Boolean(__codenEdit);
   // A run already under way on the server (the page was left and came back):
   // nothing is sent, the run's stream is followed from its first event.
   const attach = __codenAttach && typeof __codenAttach === 'object'
@@ -6845,7 +7012,11 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   };
   clearInlineBlocks();
   // An attached run's request is already in the restored conversation.
-  if (!isRecoveryRetry && !attach) appendMessage('user', safeDisplayText, { attachments: displayAttachments });
+  let userMessageCard: HTMLElement | null = null;
+  if (!isRecoveryRetry && !attach) {
+    userMessageCard = appendMessage('user', safeDisplayText, { attachments: displayAttachments });
+    pendingConversationUserUiId = messageHandleId(userMessageCard);
+  }
   if (promptUiContext === 'chat_simple' || promptUiContext === 'clarification_only' || promptUiContext === 'planning_only') {
     activeAbort = new AbortController();
     const card = appendMessage('assistant', '', { working: true });
@@ -7288,8 +7459,12 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
        */
       effort: composerEffort,
       routingMode: readRoutingMode(),
-      clientMessageId: messageHandleId(status) ? `${messageHandleId(status)}_user` : undefined,
+      clientMessageId: pendingConversationUserUiId || (messageHandleId(status) ? `${messageHandleId(status)}_user` : undefined),
       assistantMessageId: messageHandleId(status) || undefined,
+      branchId: activeConversationBranchId || undefined,
+      branchFromMessageId: pendingConversationBranchFromMessageId || undefined,
+      parentTurnId: activeConversationTipTurnId || undefined,
+      harnessThreadId: activeHarnessThreadId || undefined,
       ...(visionInputs.length ? { visionInputs } : {}),
       ...effectiveExtra,
     };
@@ -7337,6 +7512,8 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
     if (!payload) throw new Error('Generation failed or empty response');
 
     const responsePayload = redactInternalModelFields(payload || {});
+    applyConversationReceipt(responsePayload.conversation, messageHandleId(userMessageCard), messageHandleId(status));
+    if (isConversationEdit && responsePayload.conversation?.userMessageId) pendingConversationBranchFromMessageId = '';
     if (responsePayload.project?.id) {
       currentProjectId = String(responsePayload.project.id);
       setCurrentBuilderProjectId(currentProjectId);

@@ -40,4 +40,14 @@ describe('minimal builder shell', () => {
     // And exactly one upgrade control, so it cannot quietly become two again.
     expect(builderHtml.match(/id="project-menu-upgrade"/g)).toHaveLength(1);
   });
+
+  it('styles the project panel with active-theme surfaces and a compact responsive card', () => {
+    expect(builderHtml).toContain('<span>Retour au Dashboard</span>');
+    expect(builderHtml).toContain('width: min(328px, calc(100vw - 24px))');
+    expect(builderHtml).toContain('background: var(--surface);');
+    expect(builderHtml).toContain('background: var(--surface-soft);');
+    expect(builderHtml).toContain('color: var(--foreground);');
+    expect(builderHtml).toContain('color: var(--accent);');
+    expect(builderHtml).toContain('max-height: calc(100dvh - 72px)');
+  });
 });
