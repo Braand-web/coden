@@ -30,6 +30,9 @@ for (const name of ['billing_accounts','credit_grants','usage_events','usage_res
 sql += table(pricing,'billing_pricing_versions')+'\n';
 sql += grantMigration.slice(grantMigration.indexOf('alter table public.credit_grants'),grantMigration.indexOf('-- 2.'))+'\n';
 sql += fn(grantMigration,'coden_billing_grant')+'\n'+fn(grantMigration,'coden_ledger_immutable')+'\n';
+// Preserve the existing production release signature, including its default.
+// CREATE OR REPLACE cannot remove defaults; the migration must remain compatible.
+sql += fn(base,'coden_billing_release')+'\n';
 sql += `create trigger coden_ledger_immutable before update or delete on public.credit_ledger_entries for each row execute function public.coden_ledger_immutable();
 grant usage on schema public to service_role; grant all on all tables in schema public to service_role;
 insert into public.billing_pricing_versions(version,status,config) values(1,'active','{"schema_version":1}');
