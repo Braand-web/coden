@@ -155,22 +155,17 @@ function setupMarquee() {
   const marquee = document.querySelector<HTMLElement>('.lp-marquee');
   const belt = marquee?.querySelector('.lp-marquee-belt');
   const track = belt?.querySelector('.lp-marquee-track');
-  const toggle = document.querySelector<HTMLButtonElement>('.lp-marquee-toggle');
-  if (!marquee || !belt || !track || !toggle) return;
+  if (!marquee || !belt || !track) return;
   // Exact duplicate gives a seamless loop, with no duplicate accessible names.
   const clone = track.cloneNode(true) as HTMLElement;
   clone.setAttribute('aria-hidden', 'true');
   clone.inert = true;
   belt.append(clone);
-  let userPaused = false;
   let onScreen = true;
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const update = () => {
-    marquee.dataset.paused = String(userPaused || !onScreen || document.hidden || motion.matches);
-    toggle.setAttribute('aria-pressed', String(userPaused));
-    toggle.textContent = userPaused ? 'Reprendre le défilement' : 'Mettre en pause';
+    marquee.dataset.paused = String(!onScreen || document.hidden || motion.matches);
   };
-  toggle.addEventListener('click', () => { userPaused = !userPaused; update(); });
   document.addEventListener('visibilitychange', update);
   motion.addEventListener('change', update);
   if ('IntersectionObserver' in window) {

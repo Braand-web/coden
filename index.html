@@ -116,8 +116,7 @@
         <figcaption id="workspace-caption">Illustration du parcours Coden. Le résultat dépend de votre projet.</figcaption>
       </figure>
       <div class="lp-stack" data-lp-reveal>
-        <div class="lp-stack-heading"><p>Quelques connecteurs du catalogue</p><button type="button" class="lp-marquee-toggle" aria-controls="connector-marquee" aria-pressed="false">Mettre en pause</button></div>
-        <div class="lp-marquee" id="connector-marquee" role="region" aria-label="Catalogue de connecteurs">
+        <div class="lp-marquee" id="connector-marquee" role="region" aria-label="Connecteurs disponibles. Le défilement se met en pause au survol ou au focus clavier." aria-describedby="connector-note" tabindex="0">
           <div class="lp-marquee-belt"><ul class="lp-marquee-track">
             <li><img src="/connector-logos/supabase.svg" alt="" width="24" height="24" loading="lazy" />Supabase</li>
             <li><img src="/connector-logos/github.svg" alt="" width="24" height="24" loading="lazy" />GitHub</li>
@@ -135,7 +134,7 @@
             <li><img src="/connector-logos/stripe.svg" alt="" width="24" height="24" loading="lazy" />Stripe</li>
           </ul></div>
         </div>
-        <p class="lp-stack-note">Disponibilité selon le connecteur et sa configuration.</p>
+        <p class="lp-stack-note" id="connector-note">Disponibilité selon le connecteur et sa configuration.</p>
       </div>
     </section>
     <section class="lp-section lp-pricing" id="tarifs" data-lp-pricing aria-labelledby="pricing-title">
