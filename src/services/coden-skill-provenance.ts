@@ -19,6 +19,7 @@ export const AUDITED_SKILL_REPOSITORIES: readonly AuditedSkillRepository[] = [
   { id: 'mattpocock-skills', repository: 'https://github.com/mattpocock/skills', commit: '3cca18b368ae95cdbdebbff572ccafa662551015', license: 'MIT', runtimeEligible: true },
   { id: 'addy-agent-skills', repository: 'https://github.com/addyosmani/agent-skills', commit: '48cb1168aeaaa70dfc2bbf709eddfa2a8ed8129a', license: 'MIT', runtimeEligible: true },
   { id: 'impeccable', repository: 'https://github.com/pbakaus/impeccable', commit: '831cabee8b4bc1a2b66e5ae22003e9a19b57d464', license: 'Apache-2.0', runtimeEligible: true },
+  { id: 'rea', repository: 'https://github.com/morluto/rea', commit: '916ac97bf9f7b976982e438ceb856a9692576cb1', license: 'MIT', runtimeEligible: true },
   { id: 'gstack', repository: 'https://github.com/garrytan/gstack', commit: 'c24121663732644c56280474a1720475dbe53127', license: 'MIT', runtimeEligible: true },
   { id: 'vercel-agent-skills', repository: 'https://github.com/vercel-labs/agent-skills', commit: '063bee94c3f4df8453406c830b0a7df0f2860278', license: 'UNSPECIFIED', runtimeEligible: false },
   { id: 'anthropic-skills', repository: 'https://github.com/anthropics/skills', commit: '41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f', license: 'Apache-2.0', runtimeEligible: true },
@@ -40,6 +41,7 @@ export const CODEN_SKILL_PROVENANCE: Readonly<Record<CodenCapabilitySkillId, rea
     source('superpowers', 'skills/executing-plans/SKILL.md', 'c4c3d8b628c51114cd165fb8246fe02744cd8be180032328391252e653028d9b'),
   ],
   'context-and-repo-intelligence': [source('addy-agent-skills', 'skills/context-engineering/SKILL.md', '1392005054efb0a5c9cbbd83811f95ac30d34e5228a1f6837baf59fb7d588017')],
+  'reverse-engineer-anything': [source('rea', '.agents/skills/reverse-engineer-anything/SKILL.md', '94fdf0cb5ac1f480f86ac81a2b581115ef9a4ee614d7f28b2041055f10662f21')],
   'architecture-and-domain': [
     source('mattpocock-skills', 'skills/engineering/codebase-design/SKILL.md', '362b0bec828219d9f4b08ca7c466164e67253bdd817359258e60d2e9c5692a8f'),
     source('mattpocock-skills', 'skills/engineering/domain-modeling/SKILL.md', 'dd4c753a617bd7db97c34fd3e049581c4bc0c0590e8a8b1f97d3b9d6013131dc'),

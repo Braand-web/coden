@@ -151,17 +151,6 @@ const commonTextTools = {
 const LEGACY_MODEL_REGISTRY = [
   {
     ...viaOpenRouter,
-    id: 'google/gemini-3.8-flash:batch', label: 'Gemini 3.8 Flash', provider: 'google',
-    contextWindow: 1_048_576, maxOutputTokens: 65_536,
-    tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 1,
-    inputUsdPerMillion: 0.19, outputUsdPerMillion: 0.94, isFast: true, isNew: true,
-    description: 'Le moins cher du catalogue : classification, résumés, analyses de fichiers et travaux de fond.',
-    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true, supportsAudio: true, supportsVideo: true,
-      reasoningLevel: 'medium', codeLevel: 'medium', agenticLevel: 'medium', designLevel: 'medium', securityLevel: 'medium',
-      speed: 'balanced', reliability: 'high', bestFor: ['classification', 'summary', 'vision', 'long_context', 'background_work'] },
-  },
-  {
-    ...viaOpenRouter,
     id: 'openai/gpt-5.6-luna-pro', label: 'Luna Pro', provider: 'openai',
     contextWindow: 1_050_000, maxOutputTokens: 128_000,
     tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 2,
@@ -260,12 +249,10 @@ const LEGACY_MODEL_REGISTRY = [
 // below; legacy batch and retired role assignments cannot leak into new runs.
 export const MODEL_REGISTRY = [
   ...LEGACY_MODEL_REGISTRY,
-  { ...LEGACY_MODEL_REGISTRY[1], id:'openai/gpt-5.6-luna', label:'Luna', inputUsdPerMillion:0.2, outputUsdPerMillion:1.2 },
-  { ...LEGACY_MODEL_REGISTRY[3], id:'openai/gpt-5.6-terra', label:'Terra' },
-  { ...LEGACY_MODEL_REGISTRY[6], id:'openai/gpt-5.6-sol', label:'Sol' },
-  { ...LEGACY_MODEL_REGISTRY[0], id:'google/gemini-3.8-flash', label:'Gemini 3.8 Flash', inputUsdPerMillion:0.75, outputUsdPerMillion:3.75,
-    capabilities:{ ...LEGACY_MODEL_REGISTRY[0].capabilities, codeLevel:'high', agenticLevel:'high', designLevel:'high' } },
-  { ...LEGACY_MODEL_REGISTRY[8], id:'anthropic/claude-fable-5.1', label:'Fable 5.1', inputUsdPerMillion:10, outputUsdPerMillion:50 },
+  { ...LEGACY_MODEL_REGISTRY[0], id:'openai/gpt-5.6-luna', label:'Luna', inputUsdPerMillion:0.2, outputUsdPerMillion:1.2 },
+  { ...LEGACY_MODEL_REGISTRY[2], id:'openai/gpt-5.6-terra', label:'Terra' },
+  { ...LEGACY_MODEL_REGISTRY[5], id:'openai/gpt-5.6-sol', label:'Sol' },
+  { ...LEGACY_MODEL_REGISTRY[7], id:'anthropic/claude-fable-5.1', label:'Fable 5.1', inputUsdPerMillion:10, outputUsdPerMillion:50 },
   {
     ...viaOpenRouter,
     id: ASTRA_MODEL_ID,
@@ -358,6 +345,21 @@ export const MODEL_REGISTRY = [
       reasoningLevel: 'frontier', codeLevel: 'frontier', agenticLevel: 'frontier', designLevel: 'frontier', securityLevel: 'high',
       speed: 'balanced', reliability: 'high', bestFor: ['full_stack_generation', 'frontend_generation', 'product_design', 'refactor', 'debug', 'tool_use'] },
   },
+  {
+    ...viaOpenRouter,
+    id: 'anthropic/claude-haiku-5.5', label: 'Haiku 5.5', provider: 'anthropic',
+    // Verified against OpenRouter /api/v1/models on 2026-10-09. Live catalogue
+    // values remain authoritative; the larger-context surcharge starts at 100k.
+    contextWindow: 1_000_000, maxOutputTokens: 128_000,
+    tier: AIModelTier.ECONOMY, minPlan: UserPlan.FREE, creditFloor: 1,
+    inputUsdPerMillion: 0.1, outputUsdPerMillion: 0.5,
+    pricingTiers: [{ minInputTokens: 100_000, inputUsdPerMillion: 0.5, outputUsdPerMillion: 2.5 }],
+    isFast: true, isNew: true,
+    description: 'Rapide et économique pour les résumés, les sous-agents et les petites modifications, avec analyse d’images et de fichiers.',
+    capabilities: { ...commonTextTools, supportsVision: true, supportsFiles: true,
+      reasoningLevel: 'medium', codeLevel: 'high', agenticLevel: 'high', designLevel: 'medium', securityLevel: 'medium',
+      speed: 'fast', reliability: 'high', bestFor: ['conversation', 'classification', 'summary', 'small_edits', 'code_edit', 'tool_use'] },
+  },
 ] as const satisfies readonly ModelDefinition[];
 
 /** Whether a model is behind a feature flag at all (the client needs the server's word before offering it). */
@@ -367,17 +369,16 @@ export function isFlaggedModel(id: string): boolean {
 
 /** Whether a model is switched on: no flag, or its flag is `1`. Read at call time, so a restart is all a change needs. */
 export function isModelEnabled(id: string, env: Record<string, string | undefined> = typeof process !== 'undefined' ? process.env : {}): boolean {
-  const flag = (MODEL_REGISTRY as readonly ModelDefinition[]).find(model => model.id === id)?.requiresFlag;
-  return !flag || env[flag] === '1';
+  const model = (MODEL_REGISTRY as readonly ModelDefinition[]).find(model => model.id === id);
+  return Boolean(model && (!model.requiresFlag || env[model.requiresFlag] === '1'));
 }
 
 /**
  * The model an id names, without its OpenRouter variant suffix.
  *
- * `google/gemini-3.8-flash:batch` and `google/gemini-3.8-flash` are one model
+ * `anthropic/claude-fable-5.1:batch` and `anthropic/claude-fable-5.1` are one model
  * served two ways; listed side by side they read as the same entry twice —
- * which is exactly what the composer's menu showed ("Gemini 3.8 Flash",
- * "Fable 5.1", each twice).
+ * which is what the composer's menu previously showed for Fable 5.1.
  */
 export function canonicalModelId(id: string): string {
   return String(id || '').replace(/:[a-z0-9-]+$/i, '');
@@ -418,7 +419,7 @@ export function getModelTokenPricing(model: ModelDefinition, inputTokens: number
 export const AUTO_MODEL_ROLES = {
   router: 'openai/gpt-5.6-luna',
   worker: 'openai/gpt-5.6-terra',
-  visual: 'google/gemini-3.8-flash',
+  visual: 'openai/gpt-6-luna',
   lead: 'openai/gpt-5.6-sol',
   premium: 'anthropic/claude-opus-5',
 } as const;
@@ -494,8 +495,8 @@ function blendedUnitCost(model: ModelDefinition): number {
  * and nothing here should make a customer's displayed rate move downward as a
  * side effect of a rounding constant.
  *
- * Five models move, all upward, all previously under-priced against their own
- * cost: Gemini 3.8 Flash 1→2, Terra 5→6, Kimi K3 3→8, Fable 5.1 22→24,
+ * Four models move, all upward, all previously under-priced against their own
+ * cost: Terra 5→6, Kimi K3 3→8, Fable 5.1 22→24,
  * Astra 20→24.
  */
 const COST_TO_CREDIT_FLOOR = 0.6;
@@ -520,15 +521,13 @@ export const AI_MODEL_CAPABILITIES = buildRecord<ModelCapabilities>(model => ({
 // independent candidates are deliberate: a single provider outage used to make
 // Auto behave like a pinned model after just one fallback failed.
 export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
-  'openai/gpt-5.6-luna':['google/gemini-3.8-flash', 'openai/gpt-5.6-luna-pro'],
-  'openai/gpt-5.6-terra':['moonshotai/kimi-k3', 'google/gemini-3.8-flash'],
+  'openai/gpt-5.6-luna':['openai/gpt-5.6-luna-pro', 'openai/gpt-6-luna'],
+  'openai/gpt-5.6-terra':['moonshotai/kimi-k3', 'openai/gpt-6-luna'],
   'openai/gpt-5.6-sol':['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
-  'google/gemini-3.8-flash':['openai/gpt-5.6-luna', 'openai/gpt-5.6-luna-pro'],
   'anthropic/claude-fable-5.1':['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
   [ASTRA_MODEL_ID]: ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
-  'google/gemini-3.8-flash:batch': ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna'],
-  'openai/gpt-5.6-luna-pro': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
-  'moonshotai/kimi-k3': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+  'openai/gpt-5.6-luna-pro': ['openai/gpt-5.6-luna', 'openai/gpt-6-luna'],
+  'moonshotai/kimi-k3': ['openai/gpt-5.6-luna', 'openai/gpt-6-luna'],
   'openai/gpt-5.6-terra-pro': ['anthropic/claude-sonnet-5', 'moonshotai/kimi-k3'],
   'anthropic/claude-sonnet-5': ['openai/gpt-5.6-terra-pro', 'moonshotai/kimi-k3'],
   'x-ai/grok-4.6': ['anthropic/claude-sonnet-5', 'moonshotai/kimi-k3'],
@@ -537,11 +536,12 @@ export const AI_MODEL_FALLBACKS: Record<AllowedModelId, AllowedModelId[]> = {
   // Fable is the deferred tier; its recovery is the interactive model of the
   // same family, never another batch model that would defer a second time.
   'anthropic/claude-fable-5.1:batch': ['anthropic/claude-opus-5', 'anthropic/claude-sonnet-5'],
-  'openai/gpt-6-luna': ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+  'openai/gpt-6-luna': ['openai/gpt-5.6-luna', 'openai/gpt-5.6-luna-pro'],
   'openai/gpt-6-sol': ['anthropic/claude-opus-5.5', 'openai/gpt-5.6-sol'],
   'anthropic/claude-opus-5.5': ['openai/gpt-6-sol', 'anthropic/claude-opus-5'],
   // Falls back to the model it succeeds, then to the next family.
   'anthropic/claude-sonnet-5.5': ['anthropic/claude-sonnet-5', 'openai/gpt-5.6-terra-pro'],
+  'anthropic/claude-haiku-5.5': ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna'],
 };
 
 export type ModelCreditRate = {

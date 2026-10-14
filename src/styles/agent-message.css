@@ -176,3 +176,8 @@ button.coden-tool-line:focus-visible { outline: var(--focus-outline); outline-of
 .coden-guard-note { display:flex; align-items:flex-start; gap:6px; margin:2px 0 6px; color:var(--text-muted); font-size:12px; line-height:1.45; }
 .coden-guard-note svg { flex:none; margin-top:2px; }
 .coden-guard-note[data-level="paused"] { color:var(--foreground); }
+.coden-media-job .coden-media-quote { color: var(--text-muted); font-size: 0.8125rem; }
+.coden-media-job .coden-media-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.coden-media-job button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--input); color: var(--foreground); cursor: pointer; }
+.coden-media-job button:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.coden-media-job button:disabled { opacity: .5; cursor: wait; }

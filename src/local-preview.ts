@@ -466,7 +466,7 @@ function localPreviewAdminPayload(section: string): Record<string, unknown> {
     owner_id: users[index % users.length].id, status: 'draft', preview_status: index % 4 ? 'verified' : 'needs_fix', publish_status: index % 6 === 0 ? 'published' : null,
     live_url: index % 6 === 0 ? `https://app-${index}.coden.app` : null, file_count: 12 + index, created_at: day(40 - index), updated_at: day(index % 12),
   })) };
-  const models = ['openai/gpt-6-luna', 'anthropic/claude-sonnet-5', 'moonshotai/kimi-k3', 'google/gemini-3.8-flash'];
+  const models = ['openai/gpt-6-luna', 'anthropic/claude-sonnet-5', 'moonshotai/kimi-k3'];
   const byDay = Array.from({ length: 30 }, (_, index) => ({ key: day(29 - index).slice(0, 10), cost_usd: Math.round((0.4 + ((index * 37) % 11) / 5) * 100) / 100, requests: 5 + (index % 9), prompt_tokens: 40_000 + index * 900, completion_tokens: 6_000 + index * 120 }));
   payloads.live = {
     live: { active_now: 3, active_today: 11, users_total: users.length, projects_today: 4, projects_week: 19, runs_today: 27, runs_failed_today: 2, running_turns: 1, tokens_today: 482_310, cost_today_usd: 1.87, cost_month_usd: 38.42 },

@@ -3,13 +3,13 @@ import { CODEN_CAPABILITY_SKILLS, resolveCodenSkillPlan } from './coden-skill-pl
 import { AUDITED_SKILL_REPOSITORIES, validateSkillProvenance } from './coden-skill-provenance';
 
 describe('Coden capability skill planner', () => {
-  it('publishes the complete eighteen-skill catalogue', () => {
-    expect(CODEN_CAPABILITY_SKILLS).toHaveLength(19);
-    expect(new Set(CODEN_CAPABILITY_SKILLS.map(skill => skill.id)).size).toBe(19);
+  it('publishes the complete twenty-skill catalogue', () => {
+    expect(CODEN_CAPABILITY_SKILLS).toHaveLength(20);
+    expect(new Set(CODEN_CAPABILITY_SKILLS.map(skill => skill.id)).size).toBe(20);
   });
 
   it('pins audited upstream repositories and valid runtime provenance', () => {
-    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(13);
+    expect(AUDITED_SKILL_REPOSITORIES).toHaveLength(14);
     expect(AUDITED_SKILL_REPOSITORIES.every(repository => /^[a-f0-9]{40}$/.test(repository.commit))).toBe(true);
     expect(validateSkillProvenance()).toEqual([]);
   });
@@ -46,5 +46,20 @@ describe('Coden capability skill planner', () => {
   it('uses root-cause debugging and browser evidence for a broken form', () => {
     const plan = resolveCodenSkillPlan({ prompt: 'Le formulaire plante après connexion', intent: 'debug_fix', complexity: 'medium', fileCount: 12 });
     expect(plan.selectedSkillIds).toEqual(expect.arrayContaining(['systematic-debugging', 'browser-and-visual-qa', 'independent-verification']));
+  });
+
+  it('loads REA-inspired evidence discipline only for explicit reverse-engineering work', () => {
+    const reverse = resolveCodenSkillPlan({ prompt: 'Reverse engineer the behavior of this app and explain how its onboarding works', intent: 'research', complexity: 'medium' });
+    const sourceReview = resolveCodenSkillPlan({ prompt: 'Review this source repository architecture', intent: 'review', complexity: 'medium', fileCount: 12 });
+    expect(reverse.selectedSkillIds).toContain('reverse-engineer-anything');
+    expect(reverse.nodes.find(node => node.skillIds.includes('reverse-engineer-anything'))?.phase).toBe('inspect');
+    expect(sourceReview.selectedSkillIds).not.toContain('reverse-engineer-anything');
+    expect(CODEN_CAPABILITY_SKILLS.find(skill => skill.id === 'reverse-engineer-anything')?.instruction).toContain('Coden currently provides no REA MCP server');
+  });
+
+  it('applies Impeccable principles to the native frontend design skill without claiming its CLI', () => {
+    const design = CODEN_CAPABILITY_SKILLS.find(skill => skill.id === 'frontend-design')!;
+    expect(design.instruction).toContain('Persuade, Operate, Read or Experience');
+    expect(design.instruction).toContain('Do not claim upstream Impeccable scripts');
   });
 });

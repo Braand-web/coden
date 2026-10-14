@@ -838,7 +838,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const hasVisuals = attachedFiles.some(item => item.kind === "image" || item.kind === "video") || detectedLinks.length > 0;
     const blindModel = hasVisuals && !isAutoModel && availability?.get(selectedModel)?.supportsVision === false;
     const visionAlternative = blindModel
-      ? models.find(id => id !== AUTO_MODEL && /gemini/i.test(id) && availability?.get(id)?.supportsVision !== false && !isModelLockedForPlan(id, plan)) || AUTO_MODEL
+      ? models.find(id => id !== AUTO_MODEL && availability?.get(id)?.supportsVision === true && availability?.get(id)?.available !== false && !isModelLockedForPlan(id, plan)) || AUTO_MODEL
       : null;
     const visionNotice = blindModel && visionAlternative ? (
       <>

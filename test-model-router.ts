@@ -45,11 +45,10 @@ const router = new ModelRouter();
 
 // A conversational request must never be routed to a deferred tier, whatever
 // the caller passed: a batch model answers minutes later, which reads as a
-// hang. Gemini is the cheapest model in the catalogue and is skipped here for
-// exactly that reason.
-assert.notEqual(
-  await router.selectModel({ plan: 'free', mode: 'Auto', userCredits: 10, taskComplexity: 'simple' }),
-  'google/gemini-3.8-flash:batch',
+// hang. No deferred model can enter the interactive path.
+assert.ok(!(
+  await router.selectModel({ plan: 'free', mode: 'Auto', userCredits: 10, taskComplexity: 'simple' })
+).endsWith(':batch'),
   'an interactive request must not be deferred, even to save money',
 );
 

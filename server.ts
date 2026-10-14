@@ -9,6 +9,8 @@ import { loadLatestDeploymentsByProject } from './src/services/dashboard-deploym
 import { branchMetadataForMessage, conversationMessageKey, resolveConversationBranch } from './src/services/conversation-branches.ts';
 import { normalizeAgentEffort, effortCostMultiplier, budgetForEffort, reasoningLevelForEffort } from './src/services/agent-effort.ts';
 import type { ReasoningLevel } from './src/services/openrouter-request.ts';
+import { OpenRouterDecisions, type InternalRoutingBudget } from './src/services/openrouter-decisions.ts';
+import { decisionsMode, decisionsSampleRate, routeIntentWithDecisions, type DecisionsComplexity } from './src/services/decisions-intent-router.ts';
 import {
   EMPTY_SESSION,
   appendRunRecord,
@@ -25,6 +27,12 @@ import {
 import { modelAvailability, openRouterCatalog, validateCatalogModels } from './src/services/openrouter-capabilities.ts';
 import { requireDatabaseResult } from './src/services/database-result.ts';
 import { createAgentEventStream, expandPersistedEnvelope } from './src/services/agent-event-stream.ts';
+import { BuilderMediaService } from './src/services/builder-media/service.ts';
+import { SupabaseMediaStore } from './src/services/builder-media/supabase-store.ts';
+import { BuilderMediaGateway } from './src/services/builder-media/gateway.ts';
+import { MediaAssetStorage } from './src/services/builder-media/assets.ts';
+import { publicMediaJob, readMediaCatalog, publicMediaText } from './src/services/builder-media/policy.ts';
+import { registerPrivateMediaModels, filterPublicMediaPayload } from './src/services/builder-media/public-filter.ts';
 import { insertUnifiedUsageEvent } from './src/services/unified-usage-store.ts';
 import { BillingLedgerUnavailableError, billingActionIdentity, billingActionFingerprint, customerActionCredits, checkpointDeliveredUsage, completeDeliveredAction, paidOperationsPaused, assertPaidOperationsAvailable, queueDeliveredSettlement, retryDeliveredSettlements } from './src/services/billing-action.ts';
 import { CLOUD_TARIFF_VERSION, cloudBillingEnabled, cloudGraceState, cloudReferenceTariff } from './src/services/cloud-billing.ts';
@@ -1266,7 +1274,7 @@ function agentLibraryStore(): AgentLibraryStore | null {
 }
 const errorSummarizer = createErrorSummarizer(
   (modelId, messages) => openRouter.chat(modelId, messages, 2, 30_000),
-  'google/gemini-3.8-flash',
+  'openai/gpt-5.6-luna',
 );
 
 /** What the model a turn runs on can read. Auto routes a turn with images to a model that sees them. */
@@ -2422,6 +2430,8 @@ type IntentDecision = {
   nextAction?: AgentNextAction;
   autoPlanRequired?: boolean;
   selectedModelPolicy?: 'auto' | 'economy' | 'balanced' | 'premium';
+  /** Validated Decisions classification; observed-only judgements never set it. */
+  routingComplexity?: DecisionsComplexity;
   routingSource?: 'heuristic' | 'ai' | 'fallback';
   modelObjective?: AgentObjective;
   requiredCapabilities?: string[];
@@ -5510,8 +5520,38 @@ function guardAiDecisionWithUnderstanding(
   return withUnderstanding(aiDecision);
 }
 
+const decisionsIntentClient = new OpenRouterDecisions({ apiKey: getOpenRouterApiKey });
+
 async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentDecision): Promise<IntentDecision | null> {
   if (!hasLiveAiProvider() || !agentIntentNeedsAiRouter(fallback)) return null;
+  return routeIntentWithDecisions(input, {
+    mode: decisionsMode(), sampleRate: decisionsSampleRate(), client: decisionsIntentClient,
+    legacy: budget => classifyIntentWithChat(input, fallback, budget),
+    accept: judgement => {
+      const complexity = judgement.complexityConfidence >= 0.85 ? judgement.complexity : undefined;
+      const french = isLikelyFrenchPrompt(input.prompt);
+      const changes = ['build', 'edit', 'debug_fix'].includes(judgement.intent);
+      const reason = french
+        ? changes ? 'Coden va réaliser la modification demandée.' : 'Coden va répondre à votre demande sans modifier les fichiers.'
+        : changes ? 'Coden will implement the requested change.' : 'Coden will answer without changing files.';
+      const raw = completeIntentRouterOutput({
+        intent: judgement.intent, confidence: judgement.confidence, normalized_prompt: input.prompt,
+        auto_plan_required: changes && (judgement.planningProbability >= 0.85 || judgement.complexity === 'extreme'),
+        selected_model_policy: complexity === 'extreme' ? 'premium' : complexity === 'complex' ? 'balanced' : complexity ? 'economy' : 'auto',
+        reason: 'Validated structured intent classification.', user_visible_reason: reason,
+        required_capabilities: changes ? ['code'] : [],
+        objective: { goal: input.prompt, risk: changes ? judgement.planningProbability >= 0.85 ? 'high' : 'medium' : 'low' },
+      }, fallback, input.prompt);
+      const decision = buildDecisionFromAi(raw, fallback);
+      if (!decision) return null;
+      return { ...guardAiDecisionWithUnderstanding(decision, input, fallback), resolvedPrompt: input.prompt, routingComplexity: complexity };
+    },
+    // Allowlisted counters only. No prompts, responses, secrets or user content.
+    observe: observation => console.info('[coden:decisions_intent]', observation),
+  });
+}
+
+async function classifyIntentWithChat(input: AgentDecisionInput, fallback: IntentDecision, budget: InternalRoutingBudget): Promise<IntentDecision> {
   // The intent router used to name its own model. Every agent that does that
   // is a copy of the routing policy that will not be updated when the policy
   // changes, so this asks the central selector like everything else: the task
@@ -5548,6 +5588,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
   // Approved exception: at most two Coden-funded calls, each <= $0.05
   // including purchase fees. No customer debit and no unbounded retries.
   const runtimeConfig = { ...buildProviderRequestConfig(routerRuntime), internalRoutingBudgetUsd: 0.05 };
+  budget.claim();
   const result = await providerGateway.chat(routerModel, routerMessages, {
     maxAttempts: 1,
     timeoutMs: routerRuntime.timeoutMs,
@@ -5563,6 +5604,7 @@ async function classifyIntentWithAi(input: AgentDecisionInput, fallback: IntentD
     // conversation because a supporting field was missing.
     (value): value is Record<string, unknown> => isIntentRouterStructuredOutput(completeIntentRouterOutput(value, fallback, input.prompt)),
     async invalidText => {
+      budget.claim();
       const repaired = await providerGateway.chat(routerModel, [
         {
           role: 'system',
@@ -5782,6 +5824,7 @@ const STUDIO_OPUS_MODEL_PREFERENCE: AllowedModelId[] = [
 ];
 
 function inferAgentTaskComplexity(prompt: string, decision: IntentDecision, files: GeneratedFile[] = []): AgentTaskComplexity {
+  if (decision.routingComplexity) return decision.routingComplexity;
   const text = String(prompt || '').toLowerCase();
   const riskyTerms = [
     'auth', 'authentication', 'login', 'signup', 'supabase', 'database', 'schema',
@@ -7571,7 +7614,7 @@ function applyAutoFix(project: GeneratedProject, files: GeneratedFile[], errors:
   };
 }
 
-function createZipBuffer(files: GeneratedFile[]): Buffer {
+function createZipBuffer(files: Array<{ path: string; content: string | Uint8Array }>): Buffer {
   const chunks: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
@@ -10212,9 +10255,9 @@ async function persistProjectMessageRow(client: any, row: any) {
 async function saveProjectMessage(data: any) {
   const parts = redactMessageParts(
     normalizeMessageParts(data.parts, data.content || ''),
-    value => redactSecrets(value),
+    value => data.role === 'assistant' ? publicMediaText(redactSecrets(value)) : redactSecrets(value),
   );
-  const content = redactSecrets(messageTextFromParts(parts, data.content || ''));
+  const content = data.role === 'assistant' ? publicMediaText(redactSecrets(messageTextFromParts(parts, data.content || ''))) : redactSecrets(messageTextFromParts(parts, data.content || ''));
   const row = {
     id: data.id || randomUUID(),
     ...data,
@@ -10262,13 +10305,13 @@ async function saveProjectMessage(data: any) {
 function sanitizeProjectMessageForUser(row: any) {
   const parts = redactMessageParts(
     normalizeMessageParts(row?.parts, row?.content || ''),
-    value => redactSecrets(value),
+    value => row?.role === 'assistant' ? publicMediaText(redactSecrets(value)) : redactSecrets(value),
   );
   return {
     ...row,
     content: messageTextFromParts(parts, row?.content || ''),
     parts,
-    metadata: redactSecretPayload(row?.metadata || {}),
+    metadata: filterPublicMediaPayload(redactSecretPayload(row?.metadata || {})),
   };
 }
 
@@ -11436,6 +11479,7 @@ async function reserveUnifiedUsage(input: {
   credits: number;
   estimatedCogsUsd: number;
   idempotencyKey: string;
+  expiresMinutes?: number;
 }): Promise<UnifiedUsageReservation> {
   assertPaidOperationsAvailable();
   const credits = Math.max(0, Number(input.credits || 0));
@@ -11449,7 +11493,7 @@ async function reserveUnifiedUsage(input: {
     p_credits: credits,
     p_estimated_cogs_usd: estimatedCogsUsd,
     p_idempotency_key: input.idempotencyKey,
-    p_expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    p_expires_at: new Date(Date.now() + (input.expiresMinutes || 30) * 60_000).toISOString(),
   });
   if (error || !data) {
     const detail = String(error?.message || 'no reservation returned');
@@ -14781,7 +14825,7 @@ app.get('/api/users/me/ai-usage', async (req: any, res) => {
         id: row.id,
         mode: row.usage_events?.category || row.usage_events?.resource || (row.entry_type === 'refund' ? 'Refund' : 'Usage'),
         credits_charged: Math.abs(Number(row.amount_credits || 0)),
-        model_name: row.usage_events?.model || null,
+        model_name: String(row.usage_events?.resource || '').startsWith('media.') ? 'Génération de média' : row.usage_events?.model || null,
         // The id travels with the name because the Cloud tab groups a
         // project's usage, and a name is not an identity: it was joining on
         // `project_name`, so renaming a project made its entire usage history
@@ -16246,6 +16290,77 @@ async function saveMediaAssetRecords(input: {
   if (error) console.warn('[coden:media_assets_insert_failed]', { message: redactSecrets(error.message) });
 }
 
+// New media uses the central ledger/storage only. It must never touch App Runtime.
+registerPrivateMediaModels(readMediaCatalog(process.env.CODEN_MEDIA_CATALOG_JSON).map(model => model.model));
+function builderMediaEnabled() { return process.env.CODEN_BUILDER_MEDIA_ENABLED === 'true'; }
+function builderMediaAllowed(userId: string) {
+  const canary = String(process.env.CODEN_BUILDER_MEDIA_CANARY_USERS || '').split(',').map(value => value.trim()).filter(Boolean);
+  return builderMediaEnabled() && (!canary.length || canary.includes(userId));
+}
+function centralMediaClient() {
+  const client = requireSupabase('Private Builder media');
+  if (new URL(client.supabaseUrl).hostname !== 'ftmbiocvslxctldfihcp.supabase.co') throw new Error('MEDIA_CENTRAL_CONFIGURATION_REQUIRED');
+  return client;
+}
+const builderMediaStore = new SupabaseMediaStore(centralMediaClient);
+const builderMediaAssets = new MediaAssetStorage(centralMediaClient, builderMediaStore, projectId => sandboxRegistry.get(projectId));
+const builderMediaService = new BuilderMediaService({
+  enabled: builderMediaEnabled,
+  models: () => readMediaCatalog(process.env.CODEN_MEDIA_CATALOG_JSON).filter(model => model.provider === 'fal'
+    ? Boolean(process.env.FAL_API_KEY || process.env.FAL_KEY) : Boolean(process.env.OPENROUTER_API_KEY)),
+  store: builderMediaStore,
+  gateway: new BuilderMediaGateway(process.env),
+  persist: (job, index, result) => builderMediaAssets.persist(job, index, result),
+  materialize: scope => builderMediaAssets.materialize(scope),
+  billing: {
+    reserve: async job => {
+      if (await spendingCapGate(job.accountId, true)) throw new Error('MEDIA_CREDITS_REQUIRED');
+      return reserveUnifiedUsage({ accountId: job.accountId, category: 'ai_gateway', credits: job.creditsMax,
+        estimatedCogsUsd: job.model.costUsd * job.input.count, idempotencyKey: 'media:' + job.id + ':reserve', expiresMinutes: 120 });
+    },
+    settle: async (job, credits, costUsd) => {
+      const reservation = job.reservation as UnifiedUsageReservation;
+      const eventId = await recordUnifiedUsageEvent({ accountId: job.accountId, projectId: job.projectId,
+        runId: job.runId, category: 'ai_gateway', resource: 'media.' + job.model.kind,
+        provider: job.model.provider, model: job.model.model, quantity: job.requests.filter(r => r.file).length, unit: 'asset',
+        providerCostUsd: costUsd, allocatedPlatformCostUsd: 0, completeCostUsd: costUsd,
+        idempotencyKey: 'media:' + job.id + ':usage', settlement: { reservation, credits },
+        providerPayload: { media_job_id: job.id, cost_source: 'receipt_or_verified_quote' } });
+      await settleUnifiedUsage({ reservation, usageEventId: eventId, creditsCharged: credits, completeCostUsd: costUsd });
+    },
+    release: job => releaseUnifiedUsage(job.reservation as UnifiedUsageReservation),
+  },
+});
+let mediaWorkerRunning = false;
+const mediaWorker = setInterval(() => {
+  if (!builderMediaEnabled() || mediaWorkerRunning) return;
+  mediaWorkerRunning = true;
+  void builderMediaService.tick().catch(() => console.warn('[coden:media_worker_pending]')).finally(() => { mediaWorkerRunning = false; });
+}, 15_000);
+mediaWorker.unref();
+
+app.get('/api/projects/:id/media/jobs', requireAuth, async (req: any, res: any) => {
+  const { userId } = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, userId, req);
+  if (!project || project.owner_id !== userId) return res.status(404).json({ success: false, message: 'Projet introuvable.' });
+  if (!builderMediaAllowed(userId)) return res.json({ success: true, jobs: [] });
+  try { return res.json({ success: true, jobs: (await builderMediaStore.list({ projectId: project.id, userId })).map(publicMediaJob) }); }
+  catch { return res.status(503).json({ success: false, message: 'Les médias sont momentanément indisponibles. Votre projet est conservé.' }); }
+});
+app.post('/api/projects/:id/media/jobs/:jobId/decision', requireAuth, async (req: any, res: any) => {
+  const { userId } = getRequiredAuth(req);
+  const project = await loadProject(req.params.id, userId, req);
+  if (!project || project.owner_id !== userId || !isUuid(req.params.jobId)) return res.status(404).json({ success: false, message: 'Projet introuvable.' });
+  if (!requireProjectCapability(req, res, 'build', project)) return;
+  if (!builderMediaAllowed(userId)) return res.status(409).json({ success: false, message: 'La génération de médias n’est pas encore disponible pour ce compte.' });
+  if (typeof req.body?.accept !== 'boolean') return res.status(400).json({ success: false, message: 'Une décision est nécessaire.' });
+  if (!enforceRateLimit('media-decision:' + userId, 20, 60_000)) return res.status(429).json({ success: false, message: 'Veuillez patienter.' });
+  try {
+    const job = await builderMediaService.decide(req.params.jobId, { projectId: project.id, userId }, req.body.accept);
+    return res.json({ success: true, job: publicMediaJob(job) });
+  } catch { return res.status(409).json({ success: false, message: 'Cette proposition n’est plus disponible. Aucun nouvel appel n’a été lancé.' }); }
+});
+
 app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
   let requestId = `media_${randomUUID()}`;
   const authUser = requireAuthenticatedUser(req, res, requestId);
@@ -16278,6 +16393,9 @@ app.post('/api/projects/:id/media/generate', async (req: any, res: any) => {
   const modelAvailable = isMediaModelAvailable(model, plan);
   const output = mediaOutputForKind(settings.kind);
   const isMarketingKit = isMarketingMediaKind(settings.kind);
+  // The old synchronous path must not bypass durable jobs/consent/credit delivery.
+  if (!isMarketingKit) return res.status(409).json({ success: false, diagnostic_code: 'MEDIA_USE_BUILDER',
+    message: 'Demandez le média dans le Builder pour conserver votre projet et suivre sa génération.' });
   const client=await ensureUnifiedIncludedGrants(accountId);
   const claim=await client.rpc('coden_billing_claim_action',{p_id:requestId,p_account_id:accountId,
     p_fingerprint:billingActionFingerprint({prompt,settings,model:model.id})});
@@ -17361,6 +17479,11 @@ app.post('/api/projects/:id/generate', async (req: any, res: any) => {
         userPlan: routingPlan,
         credits: routingCredits,
         onChatEvent: eventStream ? event => eventStream.chat(event) : undefined,
+        mediaTools: builderMediaAllowed(userId) && project.owner_id === userId && userDurableMessageId && harnessContext?.turn.id
+          ? builderMediaService.tools({ projectId: project.id, userId, accountId: billingAccountId,
+            runId: pipelineRunId || requestId, turnId: harnessContext.turn.id, messageId: userDurableMessageId, requestText: prompt },
+            job => eventStream?.chat({ type: 'media_job', job }))
+          : undefined,
         signal: generationAbortController.signal,
         onSnapshot: async files => {
           // Keep the in-progress tree durable without promoting it to
@@ -20730,7 +20853,9 @@ app.get('/api/projects/:id/export', async (req: any, res: any) => {
   const project = await loadProject(req.params.id, userId);
   if (!project) return res.status(404).json({ success: false, error: 'Project not found.' });
   const files = await loadProjectFiles(project.id);
-  const zip = createZipBuffer(files.length ? files : createTemplateFiles(project.name, project.prompt || project.name));
+  const binaryMedia = builderMediaEnabled() ? await builderMediaAssets.entries({ projectId: project.id, userId: project.owner_id }) : [];
+  const zip = createZipBuffer([...(files.length ? files : createTemplateFiles(project.name, project.prompt || project.name)),
+    ...binaryMedia.map(file => ({ path: file.path, content: file.bytes }))]);
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${project.slug || 'coden-app'}.zip"`);
   res.send(zip);
@@ -22190,8 +22315,10 @@ async function publishVercelProjectForRequest(req: any, res: any) {
     if (contract.validation.length) {
       return res.status(422).json({ success: false, error: 'Generated app manifest is invalid.', validation: contract.validation, manifest: contract.manifest, request_id: requestId });
     }
+    const mediaEntries = builderMediaEnabled() ? await builderMediaAssets.entries({ projectId: project.id, userId: project.owner_id }) : [];
     const artifactHash = immutableArtifactHash({
-      files: contract.files.map(file => ({ path: file.path, content: file.content })),
+      files: [...contract.files.map(file => ({ path: file.path, content: file.content })),
+        ...mediaEntries.map(file => ({ path: file.path, content: Buffer.from(file.bytes).toString('base64') }))],
       manifest: contract.universalManifest,
       previewSessionId: String((context as any).previewSessionId || project.id),
       verificationPassed: publishStatus.can_publish,
@@ -22268,6 +22395,7 @@ async function publishVercelProjectForRequest(req: any, res: any) {
        */
       const buildOnProvider = !localBuildAllowed();
       const sourceFiles = { files: extractStaticFiles(project, contract.files) };
+      for (const file of mediaEntries) sourceFiles.files[file.path] = { content: Buffer.from(file.bytes).toString('base64'), encoding: 'base64' };
       markPublishPhase('prepared');
       const publicRoutes = Array.isArray(contract.manifest.routes)
         ? contract.manifest.routes
@@ -22971,6 +23099,7 @@ app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: a
       loadProjectServerSecrets(project.id),
     ]);
     sandbox.setEnv({ ...serverSecrets, ...backendEnv });
+    if (builderMediaEnabled()) await builderMediaAssets.materialize({ projectId: project.id, userId: project.owner_id });
     await sandbox.replaceProjectFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
 
     // Installing is the slow step, so it is skipped when the tree is already

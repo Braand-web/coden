@@ -7,6 +7,7 @@ import { Response } from '../ui/response';
 import { AgentThinkingLine, THINKING_LABEL } from './agent-thinking-line';
 import { AgentToolLine } from './agent-tool-line';
 import AskCard from './ask-card';
+import { MediaJobCard } from './media-job-card';
 import type { AgentMessageState, AgentNotice, AutoChoice, DecisionNotice, ReasoningPart } from './agent-parts';
 import type { ConnectionChoice, DecisionAnswer, DecisionQuestion, SubagentSnapshot } from '../../lib/agent-chat-protocol';
 import { getRuntimeRecoveryPresentation, publicRuntimeErrorMessage } from '../../lib/runtime-error-presentation';
@@ -277,6 +278,7 @@ function DecisionNoticeView({ notice, onSelect, onAnswers }: { notice: DecisionN
 }
 
 function StreamNotice({ notice, onDecisionSelect, onDecisionAnswers, onArtifactOpen }: { notice: AgentNotice; onDecisionSelect?: (decisionId: string, option: DecisionNotice['options'][number]) => void; onDecisionAnswers?: DecisionAnswersHandler; onArtifactOpen?: (artifactId: string) => void }) {
+  if (notice.type === 'media') return <MediaJobCard initial={notice.job} />;
   if (notice.type === 'decision') return <DecisionNoticeView notice={notice} onSelect={onDecisionSelect} onAnswers={onDecisionAnswers} />;
   if (notice.type === 'guard') return <p className="coden-guard-note" data-level={notice.level} title={notice.detail}><ShieldCheck size={13} aria-hidden="true" /><span>{notice.title}{notice.detail ? ` — ${notice.detail}` : ''}</span></p>;
   if (notice.type === 'artifact') return <section className="coden-stream-notice coden-stream-artifact"><div className="coden-stream-notice-kicker"><FileText size={14} aria-hidden="true" />{notice.artifactType}</div><h3>{notice.title}</h3><p>Version {notice.version}</p>{onArtifactOpen ? <button type="button" className="coden-stream-artifact-open" onClick={() => onArtifactOpen(notice.id)}>Ouvrir</button> : null}</section>;

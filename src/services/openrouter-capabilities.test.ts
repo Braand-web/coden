@@ -66,7 +66,7 @@ describe('OpenRouter-only capability contract', () => {
     expect(selectModel({task:'architecture',plan:'enterprise'}).modelId).toBe('openai/gpt-5.6-sol');
     expect(selectModel({task:'conversation',plan:'enterprise'}).reasoningLevel).toBe('medium');
     expect(selectModel({task:'classification',plan:'enterprise'}).reasoningLevel).toBe('low');
-    expect(selectModel({task:'classification',needs:{vision:true},plan:'enterprise'}).modelId).toBe('google/gemini-3.8-flash');
+    expect(selectModel({task:'classification',needs:{vision:true},plan:'enterprise'}).modelId).toBe('openai/gpt-6-luna');
     expect(selectModel({task:'design',complexity:'complex',plan:'free'}).reason).toContain('best accessible model');
     expect(() => selectModel({task:'architecture',estimatedInputTokens:100000000,plan:'enterprise'})).toThrow('No eligible');
     delete process.env.CODEN_ROUTER_V2;

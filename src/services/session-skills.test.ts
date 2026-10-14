@@ -33,4 +33,18 @@ describe('on-demand session methods', () => {
     expect(session.context()).toContain('tenant-aware permissions');
     expect(session.context()).toContain('scripts are not supplied');
   });
+
+  it('offers Impeccable as a Coden-native method while disclosing missing upstream tooling', () => {
+    const runtime = createSessionSkills();
+    expect(LOAD_SKILL_SCHEMA.parameters.properties.id.enum).toContain('impeccable');
+    expect(runtime.load({ id: 'impeccable' }).ok).toBe(true);
+    expect(runtime.context()).toContain('does not install Impeccable’s CLI');
+  });
+
+  it('offers REA-inspired investigation without implying its MCP tools are connected', () => {
+    const runtime = createSessionSkills();
+    expect(LOAD_SKILL_SCHEMA.parameters.properties.id.enum).toContain('reverse-engineer-anything');
+    expect(runtime.load({ id: 'reverse-engineer-anything' }).ok).toBe(true);
+    expect(runtime.context()).toContain('no REA MCP server or native binary-analysis engines');
+  });
 });

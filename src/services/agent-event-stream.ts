@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import type { AgentEnvelope, ChatEvent, WorkspaceEvent } from '../lib/agent-chat-protocol.ts';
+import { filterPublicMediaPayload, mediaStreamFilter } from './builder-media/public-filter.ts';
 
 export type AgentEventStreamOptions = {
   messageId?: string;
@@ -30,12 +31,12 @@ export const LIVENESS_PERSIST_MS = 30_000;
 export function expandPersistedEnvelope(envelope: any): any[] {
   const segments = envelope?.payload?.segments;
   const delta = envelope?.payload?.delta;
-  if (!Array.isArray(segments) || typeof delta !== 'string') return [envelope];
+  if (!Array.isArray(segments) || typeof delta !== 'string') return [filterPublicMediaPayload(envelope)];
   let offset = 0;
   return segments.map(([sequence, length]: [number, number]) => {
     const slice = delta.slice(offset, offset + length);
     offset += length;
-    return { ...envelope, seq: sequence, payload: { type: envelope.payload.type, delta: slice } };
+    return filterPublicMediaPayload({ ...envelope, seq: sequence, payload: { type: envelope.payload.type, delta: slice } });
   });
 }
 
@@ -140,6 +141,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
 
   const send = (channel: AgentEnvelope['channel'], payload: ChatEvent | WorkspaceEvent) => {
     if (finalized) return;
+    payload = filterPublicMediaPayload(payload);
     if (channel === 'chat' && payload.type !== 'heartbeat') {
       const event = JSON.parse(JSON.stringify(payload)) as ChatEvent;
       const previous = persistedChatEvents.at(-1);
@@ -191,7 +193,7 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     send('chat', { type: 'reasoning_delta', delta });
   };
   const endText = () => { flushReasoning(); flushText(); if (textOpen) { send('chat', { type: 'text_end' }); textOpen = false; } };
-  const chat = (event: ChatEvent) => {
+  const chatSafe = (event: ChatEvent) => {
     if (finalized) return;
     if (event.type === 'reasoning_delta') {
       flushText();
@@ -217,6 +219,14 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
     }
     send('chat', event);
   };
+  const publicText = mediaStreamFilter(delta => chatSafe({ type: 'text_delta', delta }));
+  const publicReasoning = mediaStreamFilter(delta => chatSafe({ type: 'reasoning_delta', delta }));
+  const chat = (event: ChatEvent) => {
+    if (event.type === 'text_delta') { publicReasoning.end(); publicText.push(event.delta); return; }
+    if (event.type === 'reasoning_delta') { publicText.end(); publicReasoning.push(event.delta); return; }
+    if (event.type !== 'heartbeat') { publicReasoning.end(); publicText.end(); }
+    chatSafe(event);
+  };
   const workspace = (payload: WorkspaceEvent) => { flushReasoning(); flushText(); send('workspace', payload); };
   const heartbeat = setInterval(() => chat({ type: 'heartbeat' }), 15_000);
   heartbeat.unref();
@@ -231,13 +241,14 @@ export function createAgentEventStream(res: Response, runId: string, options: Ag
   return {
     chat,
     workspace,
-    drain: () => { flushReasoning(); flushText(); return settled(); },
+    drain: () => { publicReasoning.end(); publicText.end(); flushReasoning(); flushText(); return settled(); },
     get lastSequence() { return seq; },
     get transcript() { return transcript.trim(); },
     get persistedChatEvents() { return JSON.parse(JSON.stringify(persistedChatEvents)) as ChatEvent[]; },
     async finish(payload: any, status: number) {
       if (finalized || closing) return;
       closing = true;
+      publicReasoning.end(); publicText.end();
       endText();
       workspace({ type: 'result', result: { ...payload, status_code: status } });
       const answer = [payload.summary, payload.text, payload.message].find(value => typeof value === 'string' && value.trim());

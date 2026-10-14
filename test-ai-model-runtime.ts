@@ -78,7 +78,7 @@ for (const modelId of AI_ALLOWED_MODELS) {
 
 {
   const runtime = buildAIModelRuntimeConfig({
-    modelId: 'google/gemini-3.8-flash:batch',
+    modelId: 'openai/gpt-6-luna',
     task: 'backend_generation',
     allowTools: false,
   });

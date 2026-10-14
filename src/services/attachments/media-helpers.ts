@@ -3,8 +3,8 @@
  * scanned PDF, transcribing a soundtrack.
  *
  * Each picks, from the models Coden is allowed to call, one whose live
- * catalogue entry reads that modality (Gemini Flash first: it reads images,
- * PDFs and audio, quickly and cheaply). When none does, the helper returns an
+ * catalogue entry reads that modality (economical interactive models first).
+ * When none does, the helper returns an
  * empty string and the attachment says what could not be read.
  */
 import type { ChatContentPart, ChatMessage } from '../openrouter-service.ts';
@@ -14,7 +14,7 @@ import { IMAGE_ANALYSIS_PROMPT } from './image-analysis.ts';
 type Chat = (modelId: string, messages: ChatMessage[], retryAttempts?: number, timeoutMs?: number) => Promise<{ text: string; cost_usd?: number }>;
 type Catalog = { peek(id: string): { architecture?: { input_modalities?: string[] } } | undefined; ensure(): Promise<void> };
 
-const PREFERRED = ['google/gemini-3.8-flash', 'google/gemini-3.8-flash:batch'];
+const PREFERRED = ['openai/gpt-6-luna', 'openai/gpt-5.6-luna-pro'];
 
 export function pickModelFor(modality: 'image' | 'audio' | 'file' | 'video', allowed: readonly string[], catalog: Catalog): string | null {
   const ordered = [...PREFERRED.filter(id => allowed.includes(id)), ...allowed.filter(id => !PREFERRED.includes(id) && !id.endsWith(':batch'))];

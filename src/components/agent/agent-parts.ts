@@ -1,5 +1,6 @@
 import type { ChatEvent, DecisionQuestion, FileAction, SubagentSnapshot } from '../../lib/agent-chat-protocol';
 import { normalizeDecisionQuestions } from '../../lib/decision-questions';
+import type { PublicMediaJob } from '../../lib/media-job';
 export type TextPart = { id: string; type: 'text'; text: string; done: boolean };
 export type ToolPart = { id: string; type: 'tool'; kind: 'read' | 'write'; verb: string; files: string[] };
 /** What the model reasoned before answering, folded by default. */
@@ -12,7 +13,8 @@ export type ArtifactNotice = { type: 'artifact'; id: string; artifactType: 'plan
 export type CostNotice = { type: 'cost'; id: string; creditsUsed: number; nextThreshold: number; completed: string; next: string; estimatedRemaining?: number };
 /** An action Coden stopped or asked about: shown as a quiet line, never an alarm. */
 export type GuardNotice = { type: 'guard'; id: string; level: 'blocked' | 'asked' | 'paused'; title: string; detail: string };
-export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice | GuardNotice;
+export type MediaNotice = { type: 'media'; id: string; job: PublicMediaJob };
+export type AgentNotice = DecisionNotice | ArtifactNotice | CostNotice | GuardNotice | MediaNotice;
 export type AgentMessageState = {
   parts: AgentPart[]; activity: string | null; thinking: boolean;
   researchSources?: Array<{ title: string; url: string }>;
@@ -45,12 +47,13 @@ export function settleSubagents(agents: SubagentSnapshot[] | undefined, complete
 
 export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, sequence?: number): AgentMessageState {
   if (sequence !== undefined && sequence <= (prev.lastSequence ?? -1)) return prev;
-  if (prev.status !== 'streaming') return prev;
+  if (prev.status !== 'streaming' && event.type !== 'media_job') return prev;
   const next = { ...prev, parts: [...prev.parts], notices: [...(prev.notices || [])], lastSequence: sequence ?? prev.lastSequence };
   const closeText = () => { next.parts = next.parts.map(p => (p.type === 'text' || p.type === 'reasoning') && !p.done ? { ...p, done: true } : p); };
   switch (event.type) {
     case 'run_started': next.thinking = true; break;
     case 'activity': closeText(); next.activity = event.label; next.thinking = true; break;
+    case 'media_job': next.notices = [...(next.notices || []).filter(notice => notice.id !== event.job.id), { type: 'media', id: event.job.id, job: event.job }]; break;
     case 'research_sources': next.researchSources = [...new Map(
       [...(prev.researchSources || []), ...event.sources].map(source => [source.url, source]),
     ).values()].slice(0, 3); break;
@@ -113,7 +116,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
       next.thinking = false;
       next.activity = null;
       next.pausedReason = awaitingDecision || waitingReason === 'credits' ? waitingReason : undefined;
-      next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard' || (awaitingDecision && notice.type === 'decision'));
+      next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard' || notice.type === 'media' || (awaitingDecision && notice.type === 'decision'));
       break;
     }
     case 'run_cancelled': closeText(); next.status = 'cancelled'; next.subagents = settleSubagents(next.subagents, false); next.thinking = false; next.activity = null; break;
@@ -128,7 +131,7 @@ export function reduceAgentMessage(prev: AgentMessageState, event: ChatEvent, se
      */
     case 'run_failed': closeText(); next.status = 'error'; next.subagents = settleSubagents(next.subagents, false); next.error = event.message; next.diagnosticCode = event.diagnosticCode; next.thinking = false; next.activity = null; break;
     case 'run_paused': closeText(); next.thinking = false; next.activity = null; next.pausedReason = event.reason; break;
-    case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard'); break;
+    case 'run_resumed': next.thinking = true; next.pausedReason = undefined; next.notices = next.notices?.filter(notice => notice.type === 'artifact' || notice.type === 'guard' || notice.type === 'media'); break;
     case 'decision_required': {
       closeText(); next.thinking = false; next.activity = null;
       /*

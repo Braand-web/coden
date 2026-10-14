@@ -235,7 +235,7 @@ class FakeAnthropic {
   assert.equal(result.text, 'ok');
   assert.deepEqual(
     fake.calls,
-    ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+    ['openai/gpt-5.6-luna-pro', 'openai/gpt-5.6-luna', 'openai/gpt-6-luna'],
     'Auto must exhaust its bounded interactive recovery chain before surfacing an outage.',
   );
 }
@@ -472,7 +472,7 @@ console.log('test-provider-gateway passed');
   assert.equal(result.text, 'ok');
   assert.deepEqual(
     fake.calls,
-    ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash'],
+    ['openai/gpt-5.6-luna', 'openai/gpt-5.6-luna-pro'],
     'Auto should hand an incompatible provider configuration to its compatible recovery model.',
   );
 }

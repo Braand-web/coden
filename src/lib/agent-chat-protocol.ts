@@ -1,3 +1,4 @@
+import type { PublicMediaJob } from './media-job';
 export type FileAction = 'read' | 'search' | 'create' | 'edit' | 'delete';
 
 export type DecisionOption = { id: string; label: string; description?: string; recommended?: boolean };
@@ -29,6 +30,7 @@ export type DecisionAnswer = { selected: number[]; custom?: string };
 export type ChatEvent =
   | { type: 'run_started'; messageId: string }
   | { type: 'activity'; label: string }
+  | { type: 'media_job'; job: PublicMediaJob }
   | { type: 'research_sources'; sources: Array<{ title: string; url: string }> }
   | { type: 'text_delta'; delta: string }
   | { type: 'text_end' }

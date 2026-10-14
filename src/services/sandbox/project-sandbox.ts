@@ -293,12 +293,21 @@ export class ProjectSandbox {
     const written: string[] = [];
     for (const file of files || []) {
       if (!file || typeof file.path !== 'string') continue;
+      if (/^public\/assets\/generated(?:\/|$)/.test(file.path.replace(/\\/g, '/').replace(/^\.\//, ''))) throw new Error('MEDIA_BINARY_IS_READ_ONLY');
       const target = resolveInSandbox(this.projectId, file.path);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, typeof file.content === 'string' ? file.content : '', 'utf8');
       written.push(file.path);
     }
     return written;
+  }
+
+  /** Generated media is binary, never a text file or model-owned source. */
+  async writeBinaryAsset(relativePath: string, bytes: Uint8Array): Promise<void> {
+    if (!/^public\/assets\/generated\/[a-f0-9-]+(?:-poster)?\.(webp|mp4)$/.test(relativePath) || bytes.length > 20 * 1024 * 1024) throw new Error('MEDIA_PATH_INVALID');
+    const target = resolveInSandbox(this.projectId, relativePath);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, bytes);
   }
 
   /**
@@ -320,7 +329,7 @@ export class ProjectSandbox {
     const written = await this.writeFiles(files);
     const removed: string[] = [];
     for (const existing of await this.listFiles()) {
-      if (wanted.has(existing) || /^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.env(?:\..*)?)$/.test(existing)) continue;
+      if (wanted.has(existing) || /^public\/assets\/generated\/[a-f0-9-]+\.(webp|mp4)$/.test(existing) || /^(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.env(?:\..*)?)$/.test(existing)) continue;
       await this.deleteProjectFile(existing);
       removed.push(existing);
     }
@@ -329,11 +338,14 @@ export class ProjectSandbox {
 
   async readProjectFile(relativePath: string): Promise<string> {
     this.lastUsedAt = Date.now();
+    if (/^public\/assets\/generated\//.test(relativePath)) throw new Error('Generated media is binary. Use list_project_media instead.');
     return readFile(resolveInSandbox(this.projectId, relativePath), 'utf8');
   }
 
   async deleteProjectFile(relativePath: string): Promise<void> {
     this.lastUsedAt = Date.now();
+    const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
+    if (['public', 'public/assets'].includes(normalized) || /^public\/assets\/generated(?:\/|$)/.test(normalized)) throw new Error('MEDIA_BINARY_IS_READ_ONLY');
     await rm(resolveInSandbox(this.projectId, relativePath), {
       recursive: true,
       force: true,
@@ -354,7 +366,7 @@ export class ProjectSandbox {
         if (skip.has(entry.name) || entry.isSymbolicLink()) continue;
         const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
         if (entry.isDirectory()) await walk(path.join(dir, entry.name), rel);
-        else found.push(rel);
+        else if (!/^public\/assets\/generated\/[a-f0-9-]+(?:-poster)?\.(webp|mp4)$/.test(rel)) found.push(rel);
       }
     };
     await walk(this.dir, '');

@@ -1630,7 +1630,7 @@ function syncWorkshopPreview() {
     setDesignPreviewHtml(designPreviewShellHtml('idle', 'Design canvas'));
     return;
   }
-  if (activeWorkshop === 'media') {
+  if (activeWorkshop === 'media' && !isUsablePreviewHtml(currentPreviewHtml)) {
     activateBuilderView('preview');
     setMediaPreviewHtml(currentMediaPreviewHtml || mediaPreviewShellHtml('idle', 'Media output'));
     return;
@@ -2236,6 +2236,13 @@ let connectionChoicesBound = false;
 function bindConnectionChoices() {
   if (connectionChoicesBound) return;
   connectionChoicesBound = true;
+  window.addEventListener('coden:integrate-media', event => {
+    const detail = (event as CustomEvent).detail;
+    if (!detail || detail.projectId !== currentProjectId || !/^[a-f0-9-]{36}$/.test(String(detail.jobId))) return;
+    const input = chatComposer(); if (!input) return;
+    input.value = 'Intègre le média déjà enregistré (lot ' + detail.jobId + ') dans le projet, en respectant le design actuel, le responsive et l’accessibilité. Réutilise ce fichier sans lancer de nouvelle génération payante.';
+    input.dispatchEvent(new Event('input', { bubbles: true })); input.focus();
+  });
   window.addEventListener('coden:connection-choice', event => {
     const detail = (event as CustomEvent<ConnectionChoiceEventDetail>).detail;
     if (!detail) return;
@@ -7398,7 +7405,7 @@ async function generateFromPrompt(prompt: string, requestedMode: ChatMode, useLa
   startBuildStream();
   try {
     await ensureProjectForPrompt(safePrompt);
-    if (activeWorkshop === 'media') {
+    if (activeWorkshop === 'media' && ['launch_kit', 'campaign_pack', 'social_posts', 'ads_creatives', 'brand_assets', 'pitch_one_pager', 'storyboard'].includes(mediaSettings.kind)) {
       generationTouchesPreview = true;
       activeGenerationTouchesPreview = true;
       activateBuilderView('preview');

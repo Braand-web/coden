@@ -130,7 +130,7 @@ describe('composer attachments', () => {
   it('warns when the chosen model cannot see, and offers one that can', async () => {
     primeModelAvailability({ models: [
       { id: 'moonshotai/kimi-k3', available: true, supports_vision: false },
-      { id: 'google/gemini-3.8-flash', available: true, supports_vision: true },
+      { id: 'openai/gpt-5.6-luna-pro', available: true, supports_vision: true },
     ] });
     const onModelChange = vi.fn();
     act(() => root.render(<PromptInput defaultExpanded uploader={fakeUploader()} model="moonshotai/kimi-k3" onModelChange={onModelChange} plan="free" />));
@@ -140,9 +140,9 @@ describe('composer attachments', () => {
     const notice = container.querySelector('.coden-attach-notice');
     expect(notice?.textContent).toContain('Kimi K3 ne lit pas les images');
     const button = notice!.querySelector('button')!;
-    expect(button.textContent).toBe('Utiliser Gemini 3.8 Flash');
+    expect(button.textContent).toBe('Utiliser Luna Pro');
     await act(async () => { button.dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
-    expect(onModelChange).toHaveBeenCalledWith('google/gemini-3.8-flash');
+    expect(onModelChange).toHaveBeenCalledWith('openai/gpt-5.6-luna-pro');
   });
 
   it('adds a pasted screenshot', async () => {

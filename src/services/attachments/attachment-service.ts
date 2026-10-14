@@ -541,7 +541,7 @@ export class AttachmentService {
     const notices: string[] = [];
     const hasImages = [...readyFiles, ...referenced].some(record => record.kind === 'image' || record.kind === 'video') || okLinks.length > 0;
     if (hasImages && !input.support.vision) {
-      notices.push('Le modèle choisi ne lit pas les images : Coden lui transmet une description détaillée de chaque visuel. Pour un rendu fidèle à une capture, une maquette ou une vidéo, choisissez Auto ou un modèle multimodal (Gemini 3.8 Flash, par exemple).');
+      notices.push('Le modèle choisi ne lit pas les images : Coden lui transmet une description détaillée de chaque visuel. Pour un rendu fidèle à une capture ou une maquette, choisissez Auto ou un modèle compatible avec les images.');
     }
 
     // Vision parts: this message's images, the links' screenshots, then video frames, then earlier images pointed at.

@@ -546,13 +546,6 @@ exports[`what is visible in production > prices, plans, credit tiers, top-ups, a
 exports[`what is visible in production > the model list and the plan each model starts at 1`] = `
 [
   {
-    "creditFloor": 1,
-    "id": "google/gemini-3.8-flash:batch",
-    "label": "Gemini 3.8 Flash",
-    "minPlan": "free",
-    "tier": "Economy",
-  },
-  {
     "creditFloor": 2,
     "id": "openai/gpt-5.6-luna-pro",
     "label": "Luna Pro",
@@ -630,13 +623,6 @@ exports[`what is visible in production > the model list and the plan each model 
     "tier": "Premium",
   },
   {
-    "creditFloor": 1,
-    "id": "google/gemini-3.8-flash",
-    "label": "Gemini 3.8 Flash",
-    "minPlan": "free",
-    "tier": "Economy",
-  },
-  {
     "creditFloor": 22,
     "id": "anthropic/claude-fable-5.1",
     "label": "Fable 5.1",
@@ -677,6 +663,13 @@ exports[`what is visible in production > the model list and the plan each model 
     "label": "Sonnet 5.5",
     "minPlan": "pro",
     "tier": "Pro",
+  },
+  {
+    "creditFloor": 1,
+    "id": "anthropic/claude-haiku-5.5",
+    "label": "Haiku 5.5",
+    "minPlan": "free",
+    "tier": "Economy",
   },
 ]
 `;

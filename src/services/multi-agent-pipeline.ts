@@ -47,6 +47,7 @@ import { runCoderLoop, type RepairEvent, type RepairOutcome, type RepairTurn } f
 import type { DesignGuard } from './sandbox/sandbox-tools.ts';
 import { compareDesign, extractDesignContract, renderDesignContract, restoreDesign, wantsDesignChange, type DesignViolation } from './design-contract.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
+import type { MediaTools } from './builder-media/contracts.ts';
 import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
 import { createSessionSkills, LOAD_SKILL_SCHEMA } from './session-skills.ts';
 import type { ChatContentPart, ChatMessage } from './openrouter-service.ts';
@@ -414,6 +415,7 @@ function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity 
 }
 
 function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; redact?: (text: string) => string; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
+  mediaTools?: MediaTools;
   /**
    * The model and reasoning level for the next round. Read at the start of
    * every round, so Auto can escalate between rounds; absent, the model is
@@ -529,12 +531,17 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     // The team's tools sit beside the sandbox's; sub-agents get the sandbox's only (depth 1).
     const base = team ? [...tools, ...team.schemas.filter(schema => !tools.some(tool => tool.name === schema.name))] : tools;
     const skillTools = [...base, LOAD_SKILL_SCHEMA as unknown as (typeof base)[number]];
-    const allTools = input.previewTool ? [...skillTools, input.previewTool.schema as unknown as (typeof base)[number]] : skillTools;
+    const previewAndSkills = input.previewTool ? [...skillTools, input.previewTool.schema as unknown as (typeof base)[number]] : skillTools;
+    // Only the main session model sees these tools. Team members receive sandbox tools, not spending tools.
+    const allTools = input.mediaTools ? [...previewAndSkills, ...input.mediaTools.schemas as unknown as typeof previewAndSkills] : previewAndSkills;
     const handlers = Object.fromEntries(allTools.map(tool => [
       tool.name,
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
+        if (input.mediaTools?.schemas.some(schema => schema.name === tool.name)) {
+          return input.mediaTools.call(tool.name, args);
+        }
         if (tool.name === LOAD_SKILL_SCHEMA.name) {
           return recordToolCall(input.harness || null, input.harnessTurn ? { turnId: input.harnessTurn.turnId, role: input.harnessTurn.role } : null, { name: tool.name, args }, async () => sessionSkills.load(args));
         }
@@ -594,7 +601,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     ]));
     const runRound = (modelId: AllowedModelId, carried: ChatMessage[]) => runLlmToolLoop({
       gateway: input.gateway,
-      dynamicSystemContext: () => sessionSkills.context(),
+      dynamicSystemContext: () => [sessionSkills.context(), input.mediaTools?.guidance].filter(Boolean).join('\n\n'),
       redact: input.redact,
       modelId,
       messages: [
@@ -703,6 +710,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
 }
 
 export async function runMultiAgentPipeline(input: {
+  mediaTools?: MediaTools;
   gateway: ProviderGateway;
   /** The person's recent looks, to stay away from, and this project's own stored hue (see sandbox/design-diversity.ts). */
   designHistory?: { avoidHues: number[]; lockHue?: number | null };
@@ -1033,6 +1041,8 @@ export async function runMultiAgentPipeline(input: {
     : input.existingFiles.map(file => ({ path: file.path, content: file.content || '' }));
   let planningVisible = true;
   let pendingLaunchLabel: [string, string] | null = null;
+  // Source snapshots are text-only; restore media before the runtime starts.
+  await input.mediaTools?.restore();
   const launchPromise = launchProjectPreview({
     projectId: input.projectId,
     userId: input.userId,
@@ -1446,6 +1456,7 @@ export async function runMultiAgentPipeline(input: {
       detail: notice.reason,
     }),
     turn: buildToolLoopTurn({
+      mediaTools: input.mediaTools,
       redact: secretRedactor,
       gateway: input.gateway,
       modelId,

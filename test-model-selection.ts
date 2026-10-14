@@ -9,7 +9,7 @@ assert.equal(AUTO_MODEL_IDS.length, 5);
 assert.deepEqual([...AUTO_MODEL_IDS].sort(), [
   'openai/gpt-5.6-luna',
   'openai/gpt-5.6-terra',
-  'google/gemini-3.8-flash',
+  'openai/gpt-6-luna',
   'openai/gpt-5.6-sol',
   'anthropic/claude-opus-5',
 ].sort());
@@ -21,7 +21,7 @@ assert.equal(selectModelForAgent('router',{plan:'free'}).modelId,'openai/gpt-5.6
 assert.equal(selectModel({task:'architecture',plan:'scale'}).modelId,'openai/gpt-5.6-sol');
 assert.equal(selectModel({task:'code_generation',plan:'pro'}).modelId,'openai/gpt-5.6-luna');
 assert.equal(selectModel({task:'review',plan:'scale'}).modelId,'anthropic/claude-opus-5');
-assert.equal(selectModel({task:'classification',needs:{vision:true},plan:'free'}).modelId,'google/gemini-3.8-flash');
+assert.equal(selectModel({task:'classification',needs:{vision:true},plan:'free'}).modelId,'openai/gpt-6-luna');
 const complex=selectModel({task:'code_generation',complexity:'complex',plan:'scale'});
 assert.equal(MODEL_REGISTRY.find(m=>m.id===complex.modelId)?.capabilities.codeLevel,'frontier');
 assert.ok(complex.rejected.every(r=>r.because.length>5));

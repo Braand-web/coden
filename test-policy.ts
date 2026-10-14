@@ -13,8 +13,7 @@ import {
 // a controlled Business/Enterprise escalation, never as a sixth Auto role.
 const EXPECTED_ALLOWED_MODELS = [
   'openai/gpt-5.6-luna', 'openai/gpt-5.6-terra', 'openai/gpt-5.6-sol',
-  'google/gemini-3.8-flash', 'anthropic/claude-fable-5.1',
-  'google/gemini-3.8-flash:batch',
+  'anthropic/claude-fable-5.1',
   'openai/gpt-5.6-luna-pro',
   'moonshotai/kimi-k3',
   'openai/gpt-5.6-terra-pro',
@@ -29,6 +28,7 @@ const EXPECTED_ALLOWED_MODELS = [
   'anthropic/claude-opus-5.5',
   // Behind CODEN_MODEL_SONNET_5_5; its numbers come from the live catalogue.
   'anthropic/claude-sonnet-5.5',
+  'anthropic/claude-haiku-5.5',
 ] as const;
 
 async function runTests() {
@@ -41,6 +41,8 @@ async function runTests() {
   assert.deepEqual([...AI_ALLOWED_MODELS].sort(), [...EXPECTED_ALLOWED_MODELS].sort());
   EXPECTED_ALLOWED_MODELS.forEach(validateAllowedModel);
   [
+    'google/gemini-3.8-flash',
+    'google/gemini-3.8-flash:batch',
     'google/gemini-2.5-flash',
     'openai/gpt-5-mini',
     'openai/gpt-4o',
