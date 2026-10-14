@@ -1,0 +1,128 @@
+/* Original Coden starter tokens, adapted to the installed Tailwind 4 compiler. */
+@import 'tailwindcss' source(none);
+@source '../templates/community';
+@font-face { font-family: Geist; src: url('/assets/geist-latin.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+@theme inline {
+ --color-bg: var(--tpl-bg); --color-surface: var(--tpl-surface); --color-surface-raised: var(--tpl-surface-raised); --color-border: var(--tpl-border); --color-border-subtle: var(--tpl-border-subtle);
+ --color-content: var(--tpl-text); --color-secondary: var(--tpl-text-secondary); --color-tertiary: var(--tpl-text-tertiary);
+ --color-accent: var(--tpl-accent); --color-accent-hover: var(--tpl-accent-hover); --color-on-accent: var(--tpl-on-accent);
+ --color-success: var(--tpl-success); --color-warning: var(--tpl-warning); --color-error: var(--tpl-error); --color-info: var(--tpl-info);
+ --radius-control: var(--radius-control); --radius-card: var(--radius-card); --radius-modal: var(--radius-modal);
+ --shadow-card: var(--shadow-card); --shadow-card-hover: var(--shadow-card-hover);
+ --font-display: var(--tpl-font-display, Geist); --font-sans: Geist;
+ --ease-standard: var(--ease-standard); --duration-micro: 150ms; --duration-state: 250ms;
+}
+
+/*
+ * Neutrals carry a trace of hue (250, cool) rather than being achromatic, and
+ * never reach pure white or black — a pure #FFF surface next to a pure #000
+ * text reads as harsh on a screen and leaves no room for elevation.
+ */
+:root {
+  color-scheme: dark;
+
+  --tpl-bg: oklch(0.16 0.008 250);
+  --tpl-surface: oklch(0.20 0.008 250);
+  --tpl-surface-raised: oklch(0.24 0.010 250);
+  --tpl-border: oklch(0.30 0.012 250);
+  --tpl-border-subtle: oklch(0.25 0.010 250);
+
+  --tpl-text: oklch(0.96 0.004 250);
+  --tpl-text-secondary: oklch(0.74 0.008 250);
+  --tpl-text-tertiary: oklch(0.56 0.010 250);
+
+  /* One accent. Semantic states share its lightness and chroma; only hue moves,
+     so nothing shouts louder than anything else. */
+  --tpl-accent: oklch(0.62 0.15 250);
+  --tpl-accent-hover: oklch(0.68 0.15 250);
+  --tpl-on-accent: oklch(0.16 0.008 250);
+
+  --tpl-success: oklch(0.62 0.15 150);
+  --tpl-warning: oklch(0.62 0.15 75);
+  --tpl-error: oklch(0.62 0.15 25);
+  --tpl-info: oklch(0.62 0.15 230);
+
+  /* Radii by component category, not by whim. */
+  --radius-control: 8px;
+  --radius-card: 14px;
+  --radius-modal: 18px;
+
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.20), 0 4px 12px oklch(0 0 0 / 0.12);
+  --shadow-card-hover: 0 2px 4px oklch(0 0 0 / 0.22), 0 8px 24px oklch(0 0 0 / 0.16);
+
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-micro: 150ms;
+  --duration-state: 250ms;
+}
+
+/* The light palette is rebuilt with the same logic, not inverted. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --tpl-bg: oklch(0.98 0.004 250);
+  --tpl-surface: oklch(0.995 0.002 250);
+  --tpl-surface-raised: oklch(0.965 0.005 250);
+  --tpl-border: oklch(0.90 0.008 250);
+  --tpl-border-subtle: oklch(0.94 0.006 250);
+
+  --tpl-text: oklch(0.22 0.010 250);
+  --tpl-text-secondary: oklch(0.46 0.012 250);
+  --tpl-text-tertiary: oklch(0.62 0.010 250);
+
+  --tpl-accent: oklch(0.52 0.15 250);
+  --tpl-accent-hover: oklch(0.46 0.15 250);
+  --tpl-on-accent: oklch(0.99 0.002 250);
+
+  --tpl-success: oklch(0.52 0.15 150);
+  --tpl-warning: oklch(0.52 0.15 75);
+  --tpl-error: oklch(0.52 0.15 25);
+  --tpl-info: oklch(0.52 0.15 230);
+}
+
+body {
+  margin: 0;
+  background: var(--tpl-bg);
+  color: var(--tpl-text);
+  font-family: var(--font-body, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:where(button, input, select, textarea) {
+  min-height: 44px;
+}
+
+:where(button, [role="button"], select, summary) {
+  cursor: pointer;
+}
+
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+
+/* Focus is never removed, only restyled — the contract makes it non-negotiable. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--tpl-accent);
+  outline-offset: 2px;
+}
+
+/* Motion is opt-out for anyone who has asked the OS to reduce it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:root { --font-body: Geist; }
+
+/* Keep the narrow phone-sized Builder preview free of horizontal overflow. */
+@media (max-width:360px) {
+  body[data-template="chez-marcel"] header nav a[href="#carte"],
+  body[data-template="chez-marcel"] header nav button { display:none; }
+  body[data-template="chez-marcel"] header > div { gap:8px; padding-inline:8px; }
+}

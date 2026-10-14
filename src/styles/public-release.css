@@ -1,0 +1,16 @@
+/* Public pages use the same render-blocking stylesheet strategy as the landing. */
+@import '../styles/public-pages.css';
+@import '../styles/public-alive.css';
+@import '../styles/public-shell.css';
+@import '../styles/meta-pixel-consent.css';
+@import '../styles/select-menu.css';
+@import '../pricing-page.css';
+@import './public-refinements.css';
+
+@font-face {
+  font-family: Geist;
+  src: url('/assets/geist-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: optional;
+}

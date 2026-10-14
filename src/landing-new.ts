@@ -1,4 +1,5 @@
-import './styles/landing-new.css';
+import './styles/landing-release.css';
+import { setupConnectorColors } from './marketing/connector-colors';
 import { mountPromptInput } from './mount-prompt-input';
 import { mountPublicShell } from './public-shell';
 import { hasStoredSession } from './lib/stored-session';
@@ -9,7 +10,7 @@ import type { AttachmentUploader } from './lib/attachment-types';
 import { stashPendingFiles } from './lib/pending-files';
 import { mountBrandMesh, type BrandMeshVariant } from './lib/brand-mesh';
 import { enhanceSelect, type SelectMenu } from './lib/select-menu';
-import { installMeshParallax, installPointerLight, installReadingProgress } from './lib/page-motion';
+import { installReadingProgress } from './lib/page-motion';
 import './styles/public-alive.css';
 import { createLandingDraft } from './lib/landing-draft';
 import { readPreferredEffort, readPreferredModelSelection, writePreferredEffort, writePreferredModelSelection } from './lib/composer-preferences';
@@ -208,6 +209,27 @@ function setupMesh() {
   document.querySelectorAll<HTMLElement>('[data-lp-mesh]').forEach(host => mountBrandMesh(host, host.dataset.lpMesh as BrandMeshVariant));
 }
 
+async function setupShowcase() {
+  const [{ mountCommunitySection }, { mountTestimonials }] = await Promise.all([
+    import('./marketing/community-section'), import('./marketing/benefits-section'),
+  ]);
+  mountCommunitySection();
+  const { section } = mountTestimonials();
+  mountBrandMesh(section.querySelector('[data-lp-mesh]'), 'soft');
+  if (location.hash === '#communaute' || location.hash === '#temoignages') {
+    document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'instant', block: 'start' });
+  }
+  const host = document.querySelector('#exemples .lp-workspace');
+  const load = () => void import('./marketing/builder-demo').then(module => module.mountBuilderDemo());
+  if (host && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect(); load();
+    }, { rootMargin: '400px' });
+    observer.observe(host);
+  } else load();
+}
+
 function init() {
   mountPublicShell();
   initCodenNavigationTransitions();
@@ -216,9 +238,11 @@ function init() {
   setupMarquee();
   setupReveal();
   setupMesh();
-  installPointerLight('.lp-card, .lp-plan, .lp-workspace');
+  setupConnectorColors();
+  void setupShowcase();
+
   installReadingProgress();
-  installMeshParallax();
+
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
 else init();

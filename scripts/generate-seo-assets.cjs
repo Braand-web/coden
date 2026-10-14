@@ -6,6 +6,8 @@ const siteUrl = 'https://coden.fun';
 const routePolicy = JSON.parse(fs.readFileSync(path.join(root, 'config', 'public-route-policy.json'), 'utf8'));
 
 const existingPages = [
+  { file: 'faq.html', path: '/faq.html', title: 'Questions fréquentes — Coden', description: 'Les réponses utiles pour créer, ajuster et publier votre application avec Coden.' },
+  { file: 'contact.html', path: '/contact.html', title: 'Contact — Coden', description: 'Contactez l’équipe Coden pour une question sur le service, votre compte ou vos données.' },
   { file: 'index.html', path: '/', title: 'Coden — Créez une application web avec l’IA', description: 'Décrivez votre idée, créez une application web avec l’IA, prévisualisez-la, ajustez-la puis publiez votre projet avec Coden.' },
   { file: 'pricing.html', path: '/pricing.html', title: 'Tarifs Coden — Offres et crédits en FCFA', description: 'Comparez les offres Coden, les crédits inclus, les droits de publication et les domaines personnalisés. Tarifs affichés en FCFA.' },
   { file: 'features.html', path: '/features.html', title: 'Fonctionnalités Coden — Créer une application web', description: 'Découvrez comment créer, prévisualiser, modifier et publier une application web avec Coden.' },

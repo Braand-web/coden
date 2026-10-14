@@ -80,14 +80,12 @@
       } catch { document.documentElement.dataset.theme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
     })();
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=optional" crossorigin="anonymous" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=optional" crossorigin="anonymous" media="print" onload="this.media='all';this.onload=null" />
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=optional" crossorigin="anonymous" /></noscript>
+          <noscript></noscript>
+  <link rel="preload" href="/assets/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/src/styles/landing-release.css" />
 </head>
 <body data-coden-surface="landing-new">
-  <div id="coden-marketing-header-root"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" alt="" /><span>Coden</span></a></div>
+  <div id="coden-marketing-header-root"><a class="public-shell-fallback-brand" data-coden-logo href="/" aria-label="Accueil Coden"><img src="/favicon.svg" width="30" height="30" alt="" /><span>Coden</span></a></div>
   <main id="main-content" class="lp">
     <section class="lp-hero" id="top" aria-labelledby="hero-title">
       <div class="lp-mesh" data-lp-mesh="hero" aria-hidden="true"></div>
@@ -137,6 +135,8 @@
         <p class="lp-stack-note" id="connector-note">Disponibilité selon le connecteur et sa configuration.</p>
       </div>
     </section>
+    <section id="communaute" class="lp-section lp-community" aria-label="Projets de démonstration"></section>
+    <section id="temoignages" class="lp-section lp-testimonials" aria-label="Les avantages de Coden"></section>
     <section class="lp-section lp-pricing" id="tarifs" data-lp-pricing aria-labelledby="pricing-title">
       <div class="lp-mesh" data-lp-mesh="soft" aria-hidden="true"></div>
       <header class="lp-heading" data-lp-reveal><h2 id="pricing-title">Un plan pour votre rythme.</h2><p>Commencez simplement. Évoluez quand votre projet grandit.</p></header>

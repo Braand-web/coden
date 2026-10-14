@@ -10,10 +10,10 @@
       },
       {
         "label": {
-          "fr": "Exemples",
-          "en": "Examples"
+          "fr": "Communauté",
+          "en": "Community"
         },
-        "href": "/#exemples"
+        "href": "/#communaute"
       },
       {
         "label": {
@@ -21,13 +21,6 @@
           "en": "Pricing"
         },
         "href": "/pricing.html"
-      },
-      {
-        "label": {
-          "fr": "FAQ",
-          "en": "FAQ"
-        },
-        "href": "/#faq"
       }
     ],
     "legal": [
@@ -50,7 +43,7 @@
           "fr": "Contact",
           "en": "Contact"
         },
-        "href": "mailto:contact@coden.fun"
+        "href": "/contact.html"
       }
     ],
     "actions": {
@@ -63,8 +56,8 @@
       },
       "cta": {
         "label": {
-          "fr": "Essayer",
-          "en": "Try it"
+          "fr": "Créer une app",
+          "en": "Create an app"
         },
         "href": "/auth.html?mode=signup&redirect=%2Fdashboard.html"
       }
@@ -77,7 +70,9 @@
     "/documentation.html",
     "/security.html",
     "/privacy.html",
-    "/terms.html"
+    "/terms.html",
+    "/faq.html",
+    "/contact.html"
   ],
   "private": [
     "/auth.html",

@@ -84,9 +84,25 @@ function codenHtmlFileSlashNormalization() {
   };
 }
 
+/** Official template examples run in isolated marketing frames. */
+function codenTemplateExamples() {
+  const directory = path.resolve(__dirname, 'templates/community').replace(/\\/g, '/');
+  return {
+    name: 'coden-template-examples',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!id.replace(/\\/g, '/').startsWith(directory + '/')) return;
+      return code.replaceAll("'chez-marcel:v1'", "'coden-demo:chez-marcel:v1'")
+        .replaceAll("'budget-clair:v1'", "'coden-demo:budget-clair:v1'")
+        .replaceAll("'cap-sur-le-monde:v1'", "'coden-demo:cap-sur-le-monde:v1'")
+        .replaceAll('--color-', '--tpl-').replaceAll('--font-display', '--tpl-font-display');
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [codenHtmlFileSlashNormalization(), codenPublicRedirects(), tailwindcss()],
+    plugins: [codenHtmlFileSlashNormalization(), codenPublicRedirects(), codenTemplateExamples(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -116,7 +116,7 @@ function mountHeader() {
   signIn.dataset.conversionPlace = 'navbar';
   const cta = signedIn
     ? navigationLink('/dashboard.html', 'Mes projets', 'coden-public-cta')
-    : navigationLink(PUBLIC_ACTIONS.cta.href, 'Créer mon application', 'coden-public-cta');
+    : navigationLink(PUBLIC_ACTIONS.cta.href, navLabel(PUBLIC_ACTIONS.cta, 'fr'), 'coden-public-cta');
   if (!signedIn) {
     cta.dataset.conversionEvent = 'start_building_click';
     cta.dataset.conversionPlace = 'navbar';
@@ -201,7 +201,7 @@ function footerColumns(signedIn = hasStoredSession()): FooterColumn[] {
     : [[PUBLIC_ACTIONS.signIn.href, navLabel(PUBLIC_ACTIONS.signIn, 'fr')], [signup, 'Créer un compte'], ['/dashboard.html', 'Mes projets']];
   return [
     { title: 'Produit', links: [['/features.html', 'Fonctionnalités'], ['/pricing.html', 'Tarifs'], ['/#exemples', 'Exemples'], [signup, 'Créer une application']] },
-    { title: 'Ressources', links: [['/documentation.html', 'Documentation'], ['/#faq', 'Questions fréquentes'], ['/security.html', 'Sécurité']] },
+    { title: 'Ressources', links: [['/documentation.html', 'Documentation'], ['/faq.html', 'Questions fréquentes'], ['/security.html', 'Sécurité']] },
     { title: 'Compte', links: account },
     { title: 'Mentions légales', links: PUBLIC_LEGAL_LINKS.map(link => [link.href, navLabel(link, 'fr')] as const) },
   ];

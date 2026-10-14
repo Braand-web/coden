@@ -1,0 +1,287 @@
+/* Marketing visual system layer: semantic tokens and polish only.
+   The source landing, section structure, and product components stay intact. */
+body[data-coden-surface="landing-new"] .lp-hero :is(h1, .lp-hero-subtitle, .lp-composer) {
+  animation: none;
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+
+body[data-coden-surface="landing-new"] .public-shell-fallback-brand {
+  box-sizing: border-box;
+  max-width: 1120px;
+  min-height: 64px;
+  margin-top: 24px;
+  padding: 8px 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  body[data-coden-surface="landing-new"] .public-shell-fallback-brand {
+    margin-top: 12px;
+    padding: 8px;
+  }
+}
+
+body[data-coden-surface="landing-new"] {
+  --marketing-space-1: 4px;
+  --marketing-space-2: 8px;
+  --marketing-space-3: 12px;
+  --marketing-space-4: 16px;
+  --marketing-space-5: 24px;
+  --marketing-space-6: 32px;
+  --marketing-space-7: 48px;
+  --marketing-space-8: 64px;
+
+  --marketing-radius-control: var(--radius-md, 12px);
+  --marketing-radius-card: var(--radius-lg, 16px);
+  --marketing-radius-panel: var(--radius-xl, 24px);
+  --marketing-control-height: 44px;
+  --marketing-section-space: 64px;
+
+  --marketing-surface-tint: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  --marketing-border-soft: color-mix(in srgb, var(--border) 82%, transparent);
+  --marketing-focus-halo: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+  --marketing-shadow-card: 0 16px 48px color-mix(in srgb, var(--foreground) 5%, transparent);
+  --marketing-motion: 180ms var(--ease-standard, cubic-bezier(.32,.72,0,1));
+}
+
+body[data-coden-surface="landing-new"] .lp :where(h1,h2,h3,p) {
+  text-wrap: pretty;
+}
+
+body[data-coden-surface="landing-new"] .lp :where(h1,h2,h3) {
+  text-wrap: balance;
+}
+
+body[data-coden-surface="landing-new"] .lp-section {
+  padding-block: var(--marketing-section-space);
+}
+
+/* Consistent geometry across existing cards, pricing and preview surfaces. */
+body[data-coden-surface="landing-new"] :where(.lp-card,.lp-plan,.lp-community-thumb,.lp-testimonial-author) {
+  border-radius: var(--marketing-radius-card);
+}
+
+body[data-coden-surface="landing-new"] .lp-workspace,
+body[data-coden-surface="landing-new"] .lp-testimonial-stage,
+body[data-coden-surface="landing-new"] .lp-project-dialog {
+  border-radius: var(--marketing-radius-panel);
+}
+
+body[data-coden-surface="landing-new"] :where(.lp-card,.lp-plan) {
+  border-color: var(--marketing-border-soft);
+  transition:
+    transform var(--marketing-motion),
+    border-color var(--marketing-motion),
+    background-color var(--marketing-motion),
+    box-shadow var(--marketing-motion);
+}
+
+body[data-coden-surface="landing-new"] .lp-plan.is-featured {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  background: var(--marketing-surface-tint);
+  box-shadow: var(--marketing-shadow-card);
+}
+
+@media (hover: hover) {
+  body[data-coden-surface="landing-new"] :where(.lp-card,.lp-plan):hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+    box-shadow: var(--marketing-shadow-card);
+  }
+}
+
+/* Keep the brand blue while making the headline readable over the animated mesh. */
+body[data-coden-surface="landing-new"] .lp-hero h1 {
+  background-image: linear-gradient(
+    100deg,
+    var(--foreground),
+    color-mix(in srgb, var(--foreground) 88%, var(--accent))
+  );
+}
+
+body[data-coden-surface="landing-new"] :where(.coden-public-nav a,.lp-button,.lp-pricing-controls button) {
+  min-height: var(--marketing-control-height);
+}
+
+body[data-coden-surface="landing-new"] .lp-button {
+  border-radius: var(--marketing-radius-control);
+  transition:
+    transform var(--marketing-motion),
+    background-color var(--marketing-motion),
+    border-color var(--marketing-motion),
+    box-shadow var(--marketing-motion);
+}
+
+body[data-coden-surface="landing-new"] .lp-button.is-secondary {
+  border-color: var(--marketing-border-soft);
+  background: var(--surface);
+}
+
+body[data-coden-surface="landing-new"] .lp-testimonial-author {
+  min-height: 64px;
+  border-color: transparent;
+}
+
+body[data-coden-surface="landing-new"] .lp-testimonial-author[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: var(--marketing-surface-tint);
+}
+
+body[data-coden-surface="landing-new"] .lp-stack-note,
+body[data-coden-surface="landing-new"] .lp-testimonial-tagline {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+body[data-coden-surface="landing-new"] .lp-quote-mark { display: none; }
+
+/* A high-contrast, consistent keyboard indicator on every existing control. */
+body[data-coden-surface="landing-new"] :where(
+  .coden-public-header,
+  .lp-cards,
+  .lp-plans,
+  .lp-pricing-controls,
+  .lp-community-grid,
+  .lp-project-dialog,
+  .lp-testimonials,
+  .lp-faq
+) :where(a,button,summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: var(--marketing-focus-halo);
+}
+
+body[data-coden-surface="landing-new"] .lp-community-open:focus-visible {
+  border-radius: var(--marketing-radius-card);
+}
+
+body[data-coden-surface="landing-new"] .lp :where(a,button,summary),
+body[data-coden-surface="landing-new"] .coden-public-header :where(a,button) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 600px) {
+  body[data-coden-surface="landing-new"] {
+    --marketing-section-space: 40px;
+  }
+
+  body[data-coden-surface="landing-new"] .lp-testimonial-author {
+    min-height: var(--marketing-control-height);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-coden-surface="landing-new"] :where(.lp-card,.lp-plan,.lp-button,.lp-testimonial-author) {
+    transition: none !important;
+  }
+
+  body[data-coden-surface="landing-new"] :where(.lp-card,.lp-plan):hover,
+  body[data-coden-surface="landing-new"] .lp-button:active {
+    transform: none !important;
+  }
+}
+
+/* Connector marks stay quiet at rest, then recover their own SVG brand hue. */
+body[data-coden-surface="landing-new"] .lp-marquee-track li {
+  position: relative;
+  isolation: isolate;
+  transition: color var(--marketing-motion);
+}
+
+body[data-coden-surface="landing-new"] .lp-marquee-track li::before {
+  position: absolute;
+  z-index: 0;
+  left: 8px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--connector-brand-color, var(--accent));
+  content: "";
+  opacity: 0;
+  filter: blur(13px);
+  transform: translateY(-50%) scale(.65);
+  transition: opacity var(--marketing-motion), transform var(--marketing-motion);
+  pointer-events: none;
+}
+
+body[data-coden-surface="landing-new"] .lp-marquee-track li > * { position: relative; z-index: 1; }
+
+@media (hover: hover) {
+  body[data-coden-surface="landing-new"] .lp-marquee-track li:hover {
+    color: var(--connector-brand-color, var(--foreground));
+  }
+
+  body[data-coden-surface="landing-new"] .lp-marquee-track li:hover::before {
+    opacity: .58;
+    transform: translateY(-50%) scale(1.15);
+  }
+
+  body[data-coden-surface="landing-new"] .lp-marquee-track li:hover img {
+    opacity: 1;
+    filter: saturate(1.12) drop-shadow(0 0 8px color-mix(in srgb, var(--connector-brand-color, var(--accent)) 68%, transparent)) !important;
+    transform: scale(1.1);
+  }
+}
+
+:root[data-theme="dark"] body[data-coden-surface="landing-new"] .lp-marquee-track li:hover img:is(
+  [src$="/github.svg"], [src$="/vercel.svg"], [src$="/notion.svg"], [src$="/elevenlabs.svg"]
+) {
+  filter: invert(1) drop-shadow(0 0 8px color-mix(in srgb, var(--connector-brand-color, #f4f6fb) 68%, transparent)) !important;
+}
+
+body[data-coden-surface="landing-new"] .coden-public-footer-bottom .coden-public-theme-toggle {
+  min-width: 112px;
+  min-height: 44px;
+  justify-content: center;
+  gap: 9px;
+  padding: 5px 15px 5px 8px;
+  border-color: var(--marketing-border-soft);
+  background: var(--marketing-surface-tint);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 550;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition: border-color var(--marketing-motion), background-color var(--marketing-motion), color var(--marketing-motion), box-shadow var(--marketing-motion), transform var(--marketing-motion);
+}
+
+body[data-coden-surface="landing-new"] .coden-public-footer-bottom .coden-public-theme-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--foreground);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+body[data-coden-surface="landing-new"] .coden-public-footer-bottom .coden-public-theme-toggle svg {
+  box-sizing: content-box;
+  width: 16px;
+  height: 16px;
+  padding: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+
+body[data-coden-surface="landing-new"] .coden-public-footer-bottom .coden-public-theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: var(--marketing-focus-halo);
+}
+
+@media (max-width: 600px) {
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-coden-surface="landing-new"] .lp-marquee-track li,
+  body[data-coden-surface="landing-new"] .lp-marquee-track li::before,
+  body[data-coden-surface="landing-new"] .lp-marquee-track img,
+  body[data-coden-surface="landing-new"] .coden-public-footer-bottom .coden-public-theme-toggle {
+    transition: none !important;
+  }
+
+  body[data-coden-surface="landing-new"] .lp-marquee-track li:hover img { transform: none; }
+}

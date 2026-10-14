@@ -39,6 +39,8 @@ function fixture() {
     loadProjectBackendEnv: vi.fn(async () => ({ VITE_SUPABASE_URL: 'https://app-a.example.test', VITE_SUPABASE_ANON_KEY: 'public-test-key' })),
     loadProjectServerSecrets: vi.fn(async () => ({ EXAMPLE_SERVER_SECRET: 'not-a-real-secret' })),
     issuePreviewToken: vi.fn(() => 'test-token'),
+    builderMediaEnabled: vi.fn(() => false),
+    builderMediaAssets: { materialize: vi.fn(async () => {}) },
   };
   new Function(...Object.keys(deps), code)(...Object.values(deps));
   const res = {
@@ -50,6 +52,14 @@ function fixture() {
 }
 
 describe('production preview restart route', () => {
+  it('restores owner-scoped binary media after replacing the saved source tree', async () => {
+    const f = fixture();
+    f.deps.builderMediaEnabled.mockReturnValue(true);
+    await f.run();
+    expect(f.deps.builderMediaAssets.materialize).toHaveBeenCalledWith({ projectId: 'app-a', userId: 'owner-a' });
+    expect(f.sandbox.replaceProjectFiles.mock.invocationCallOrder[0]).toBeLessThan(f.deps.builderMediaAssets.materialize.mock.invocationCallOrder[0]);
+    expect(f.res.statusCode).toBe(200);
+  });
   it('restores the entire saved app and original per-app environment', async () => {
     const f = fixture();
     await f.run();

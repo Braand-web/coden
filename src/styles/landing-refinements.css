@@ -1,0 +1,94 @@
+@import '../styles/coden-tailwind.css';
+@source '../components/ui';
+@source '../components/agent/message-attachments.tsx';
+@font-face { font-family: Geist; src: url('/assets/geist-latin.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: optional; }
+/* Additive polish of the existing page. The inside of PromptInput is untouched. */
+body[data-coden-surface="landing-new"] { --text-on-accent: #fff; }
+html { scroll-padding-top: 112px; }
+body[data-coden-surface="landing-new"] .lp { max-width: 1180px; padding-inline: 32px; }
+body[data-coden-surface="landing-new"] .coden-public-header { margin-top: 24px; min-height: 64px; padding: 8px 16px; border-radius: 9999px; box-shadow: 0 8px 32px color-mix(in srgb,var(--foreground) 4%,transparent); }
+body[data-coden-surface="landing-new"] .coden-public-header[data-header-state="scrolled"] { background: color-mix(in srgb,var(--surface) 96%,transparent); border-color: var(--border); backdrop-filter: blur(24px); }
+body[data-coden-surface="landing-new"] .coden-public-cta { color: #fff; border-radius: 9999px; padding: 8px 16px; min-height: 44px; box-shadow: none; }
+body[data-coden-surface="landing-new"] .lp-hero { padding: 176px 0 96px; }
+body[data-coden-surface="landing-new"] .lp-hero h1 { max-width: 680px; margin-inline: auto; font-size: 72px; line-height: 1; font-weight: 500; letter-spacing: -.06em; background: linear-gradient(95deg,var(--foreground),var(--text-muted)); background-clip: text; color: transparent; }
+body[data-coden-surface="landing-new"] .lp-hero-subtitle { margin-top: 24px !important; font-size: 20px; line-height: 28px; color: var(--text-secondary); }
+body[data-coden-surface="landing-new"] .lp-hero .lp-composer { margin-top: 40px; }
+body[data-coden-surface="landing-new"] .lp-composer-status { min-height: 16px; margin-top: 12px; font-size: 12px; line-height: 16px; }
+/* The user requested Coden's existing animated blue mesh. */
+body[data-coden-surface="landing-new"] .lp-mesh { display: block; opacity: .85; background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb,var(--accent) 14%,transparent),transparent 70%); }
+body[data-coden-surface="landing-new"] .lp-mesh.is-ready { background: none; }
+body[data-coden-surface="landing-new"] .lp-section { padding: 64px 0; }
+body[data-coden-surface="landing-new"] .lp-heading { margin-bottom: 40px; }
+body[data-coden-surface="landing-new"] .lp-heading h2, body[data-coden-surface="landing-new"] .lp-launch h2 { font-size: 48px; line-height: 1; font-weight: 500; letter-spacing: -.045em; }
+body[data-coden-surface="landing-new"] .lp-heading p, body[data-coden-surface="landing-new"] .lp-launch > p { margin-top: 16px !important; font-size: 18px; line-height: 28px; color: var(--text-secondary); }
+body[data-coden-surface="landing-new"] .lp-cards { gap: 16px; }
+body[data-coden-surface="landing-new"] .lp-card { padding: 32px; border-radius: 16px; border: 1px solid var(--border-subtle); background: var(--surface-soft); box-shadow: none; }
+body[data-coden-surface="landing-new"] .lp-card::after, body[data-coden-surface="landing-new"] .lp-plan::after, body[data-coden-surface="landing-new"] .lp-workspace::after, body[data-coden-surface="landing-new"] .lp-button::after { display: none; }
+body[data-coden-surface="landing-new"] .lp-step { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--accent); border: 1px solid color-mix(in srgb,var(--accent) 24%,transparent); border-radius: 9999px; font-size: 12px; line-height: 16px; }
+body[data-coden-surface="landing-new"] .lp-card h3 { margin-top: 24px; font-size: 24px; line-height: 32px; font-weight: 500; }
+body[data-coden-surface="landing-new"] .lp-card p { margin-top: 12px; font-size: 16px; line-height: 24px; }
+body[data-coden-surface="landing-new"] .lp-workspace { border-radius: 24px; border-color: var(--border); background: var(--surface-soft); box-shadow: 0 24px 64px color-mix(in srgb,var(--foreground) 4%,transparent); }
+body[data-coden-surface="landing-new"] .lp-workspace-toolbar { padding: 16px 24px; border-bottom: 0; }
+body[data-coden-surface="landing-new"] .lp-workspace-body { gap: 32px; padding: 16px 24px 24px; grid-template-columns: 1fr 1.8fr; }
+body[data-coden-surface="landing-new"] .lp-workspace-chat { padding: 24px 0; }
+body[data-coden-surface="landing-new"] .lp-demo-prompt { border: 0; background: var(--surface-hover); padding: 16px; border-radius: 16px; }
+body[data-coden-surface="landing-new"] .lp-workspace-preview { min-height: 360px; padding: 40px; background: var(--surface); border-radius: 16px; border: 1px solid var(--border-subtle); }
+body[data-coden-surface="landing-new"] .lp-workspace-preview h3 { font-size: 48px; line-height: 1; font-weight: 500; letter-spacing: -.05em; }
+body[data-coden-surface="landing-new"] .lp-demo-grid span { background: color-mix(in srgb,var(--accent) 8%,var(--surface)); border: 0; height: 64px; }
+body[data-coden-surface="landing-new"] .lp-workspace figcaption { border: 0; padding: 0 24px 24px; }
+body[data-coden-surface="landing-new"] .lp-stack { margin-top: 32px; }
+body[data-coden-surface="landing-new"] .lp-marquee { border: 0; padding: 24px 0; mask-image: linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent); }
+body[data-coden-surface="landing-new"] .lp-marquee-track { gap: 40px; }
+body[data-coden-surface="landing-new"] .lp-marquee-track li { font-size: 14px; color: var(--text-muted); }
+body[data-coden-surface="landing-new"] .lp-marquee-track img { width: 20px; height: 20px; filter: grayscale(1); opacity: .65; }
+body[data-coden-surface="landing-new"] .lp-stack-note { text-align: center; font-size: 12px; line-height: 16px; }
+body[data-coden-surface="landing-new"] .lp-plans { gap: 16px; }
+body[data-coden-surface="landing-new"] .lp-plan { padding: 32px; border-radius: 16px; background: var(--surface-soft); border-color: var(--border-subtle); }
+body[data-coden-surface="landing-new"] .lp-plan.is-featured { background: var(--surface); border-color: color-mix(in srgb,var(--accent) 60%,var(--border)); box-shadow: 0 16px 40px color-mix(in srgb,var(--accent) 8%,transparent); }
+body[data-coden-surface="landing-new"] .lp-plan-price strong { font-size: 36px; line-height: 40px; font-weight: 500; }
+body[data-coden-surface="landing-new"] .lp-plan h3 { font-size: 24px; line-height: 32px; font-weight: 500; }
+body[data-coden-surface="landing-new"] .lp-plan li::before { color: var(--accent); }
+body[data-coden-surface="landing-new"] .lp-button { padding: 8px 12px; min-height: 44px; color: #fff !important; border-radius: 8px; font-size: 16px; line-height: 24px; box-shadow: none; }
+body[data-coden-surface="landing-new"] .lp-button.is-secondary { background: var(--surface); color: var(--foreground) !important; }
+body[data-coden-surface="landing-new"] .lp-pricing-controls { border: 0; border-radius: 9999px; }
+body[data-coden-surface="landing-new"] .lp-pricing-controls button { padding: 12px 16px; border-radius: 9999px; }
+body[data-coden-surface="landing-new"] .lp-faq { padding-block: 80px; }
+body[data-coden-surface="landing-new"] .lp-faq summary { font-size: 18px; line-height: 28px; }
+body[data-coden-surface="landing-new"] .lp-faq details p { font-size: 16px; line-height: 24px; padding-bottom: 24px; }
+body[data-coden-surface="landing-new"] .lp-launch { margin: 64px 0 80px; padding: 64px 24px 48px; background: var(--surface-soft); border-radius: 24px; }
+body[data-coden-surface="landing-new"] .lp-launch h2 { font-size: 48px; line-height: 1; }
+body[data-coden-surface="landing-new"] .coden-public-footer-frame { border-top: 1px solid var(--border-subtle); padding-top: 48px; }
+body[data-coden-surface="landing-new"] .coden-public-footer { border: 0; }
+body[data-coden-surface="landing-new"] .coden-public-footer-column h2 { font-size: 14px; line-height: 20px; font-weight: 500; }
+body[data-coden-surface="landing-new"] .coden-public-footer-column a { font-size: 14px; line-height: 20px; }
+@media (max-width: 900px) {
+  body[data-coden-surface="landing-new"] .lp-hero { padding-top: 160px; }
+  body[data-coden-surface="landing-new"] .lp-hero h1 { font-size: 60px; line-height: 1; }
+  body[data-coden-surface="landing-new"] .lp-card, body[data-coden-surface="landing-new"] .lp-plan { padding: 24px; }
+}
+@media (max-width: 600px) {
+  body[data-coden-surface="landing-new"] .lp { padding-inline: 16px; }
+  body[data-coden-surface="landing-new"] .coden-public-header { margin-top: 16px; padding: 8px 12px; }
+  body[data-coden-surface="landing-new"] .lp-hero { padding: 128px 0 48px; }
+  body[data-coden-surface="landing-new"] .lp-hero h1 { font-size: 36px; line-height: 40px; }
+  body[data-coden-surface="landing-new"] .lp-hero-subtitle { font-size: 16px; line-height: 24px; }
+  body[data-coden-surface="landing-new"] .lp-hero .lp-composer { margin-top: 32px; }
+  body[data-coden-surface="landing-new"] .lp-section { padding: 40px 0; }
+  body[data-coden-surface="landing-new"] .lp-heading { margin-bottom: 32px; }
+  body[data-coden-surface="landing-new"] .lp-heading h2, body[data-coden-surface="landing-new"] .lp-launch h2 { font-size: 30px; line-height: 36px; }
+  body[data-coden-surface="landing-new"] .lp-heading p, body[data-coden-surface="landing-new"] .lp-launch > p { font-size: 16px; line-height: 24px; }
+  body[data-coden-surface="landing-new"] .lp-card h3 { margin-top: 16px; font-size: 20px; line-height: 28px; }
+  body[data-coden-surface="landing-new"] .lp-card p { font-size: 14px; line-height: 20px; }
+  body[data-coden-surface="landing-new"] .lp-workspace-body { grid-template-columns: 1fr; padding: 8px 16px 16px; gap: 16px; }
+  body[data-coden-surface="landing-new"] .lp-workspace-chat { padding: 8px 0; gap: 16px; }
+  body[data-coden-surface="landing-new"] .lp-workspace-preview { min-height: 256px; padding: 24px; }
+  body[data-coden-surface="landing-new"] .lp-workspace-preview h3 { font-size: 36px; line-height: 40px; }
+  body[data-coden-surface="landing-new"] .lp-workspace-toolbar { padding: 16px; }
+  body[data-coden-surface="landing-new"] .lp-workspace figcaption { padding: 0 16px 16px; }
+  body[data-coden-surface="landing-new"] .lp-launch { padding: 40px 16px; margin-block: 32px; }
+  body[data-coden-surface="landing-new"] .lp-faq { padding-block: 48px; }
+  body[data-coden-surface="landing-new"] .lp-faq summary { font-size: 16px; line-height: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body[data-coden-surface="landing-new"] .lp *, body[data-coden-surface="landing-new"] .coden-public-header * { animation: none !important; transition: none !important; }
+}

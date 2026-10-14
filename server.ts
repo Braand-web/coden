@@ -23099,8 +23099,8 @@ app.post('/api/projects/:id/sandbox/start', requireAuth, async (req: any, res: a
       loadProjectServerSecrets(project.id),
     ]);
     sandbox.setEnv({ ...serverSecrets, ...backendEnv });
-    if (builderMediaEnabled()) await builderMediaAssets.materialize({ projectId: project.id, userId: project.owner_id });
     await sandbox.replaceProjectFiles(files.map((file: any) => ({ path: file.path, content: file.content || '' })));
+    if (builderMediaEnabled()) await builderMediaAssets.materialize({ projectId: project.id, userId: project.owner_id });
 
     // Installing is the slow step, so it is skipped when the tree is already
     // there. Reopening a project should resume in a second, not a minute.

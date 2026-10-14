@@ -1,5 +1,6 @@
 import './styles/public-pages.css';
 import './styles/public-alive.css';
+import './styles/public-release.css';
 import { initCodenNavigationTransitions } from './navigation-transitions';
 import { mountPublicShell } from './public-shell';
 import { installMeshParallax, installPointerLight, installReadingProgress, mountHeroMesh } from './lib/page-motion';
