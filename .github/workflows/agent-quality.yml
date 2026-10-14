@@ -19,6 +19,10 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run test:unit -- --maxWorkers=2
+      - name: Verify the real project-scoped REA worker
+        run: node node_modules/vitest/vitest.mjs run src/services/builder-rea --maxWorkers=1 --no-file-parallelism
+        env:
+          REA_INTEGRATION: '1'
       - run: node --experimental-strip-types test-agent-harness-v3.ts
       - run: node --experimental-strip-types test-security-boundaries.ts
       - run: node --experimental-strip-types test-durable-project-persistence.ts

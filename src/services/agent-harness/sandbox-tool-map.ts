@@ -26,6 +26,11 @@ import type { HarnessAgentRole } from './contracts.ts';
 /** The harness tool a sandbox tool acts as, or null when it has no equivalent. */
 export function harnessToolForSandboxTool(name: string): string | null {
   switch (name) {
+    case 'rea_inspect_artifact':
+    case 'rea_analyze_javascript':
+    case 'rea_read_analysis':
+    case 'rea_trace_feature':
+      return 'artifact.inspect';
     case 'read_file':
     case 'list_files':
       return 'workspace.read';
@@ -112,7 +117,12 @@ export async function recordToolCall<T>(
       // The outcome, not the payload: a tool result can be a whole file, and
       // the trace is read by people and log tooling, not replayed.
       const ok = (result as any)?.ok !== false;
-      await harness.completeTool(itemId, { ok }).catch(() => undefined);
+      const rea = call.name.startsWith('rea_') ? {
+        evidenceIds: Array.isArray((result as any)?.evidenceIds) ? (result as any).evidenceIds.filter((id: unknown) => typeof id === 'string' && /^ev_[a-f0-9]{64}$/.test(id)).slice(0, 16) : [],
+        durationMs: Number((result as any)?.durationMs) || 0,
+        delivery: (result as any)?.delivery === 'partial' ? 'partial' : 'complete',
+      } : {};
+      await harness.completeTool(itemId, { ok, ...rea }).catch(() => undefined);
     }
     return result;
   } catch (error: any) {

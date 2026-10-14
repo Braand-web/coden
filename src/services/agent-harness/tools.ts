@@ -20,6 +20,7 @@ const READ_ROLES: HarnessAgentRole[] = [
 const WRITE_ROLES: HarnessAgentRole[] = ['orchestrator', 'frontend', 'backend', 'database', 'integrator', 'tester'];
 
 export const DEFAULT_HARNESS_TOOLS: HarnessToolDefinition[] = [
+  { name: 'artifact.inspect', description: 'Statically inspect a project-owned imported artifact with bounded REA tools.', risk: 'read', allowedRoles: READ_ROLES, requiresApproval: false, mutatesWorkspace: false, resourceScope: 'project' },
   { name: 'workspace.read', description: 'Read project files and metadata.', risk: 'read', allowedRoles: READ_ROLES, requiresApproval: false, mutatesWorkspace: false, resourceScope: 'none' },
   { name: 'workspace.search', description: 'Search symbols and text in the project.', risk: 'read', allowedRoles: READ_ROLES, requiresApproval: false, mutatesWorkspace: false, resourceScope: 'none' },
   { name: 'workspace.patch', description: 'Apply a structured patch to owned files.', risk: 'write', allowedRoles: WRITE_ROLES, requiresApproval: false, mutatesWorkspace: true, resourceScope: 'files' },

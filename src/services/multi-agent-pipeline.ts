@@ -48,6 +48,8 @@ import type { DesignGuard } from './sandbox/sandbox-tools.ts';
 import { compareDesign, extractDesignContract, renderDesignContract, restoreDesign, wantsDesignChange, type DesignViolation } from './design-contract.ts';
 import { SANDBOX_TOOL_SCHEMAS } from './sandbox/sandbox-tools.ts';
 import type { MediaTools } from './builder-media/contracts.ts';
+import type { ReaTools } from './builder-rea/contracts.ts';
+import { createBuilderReaTools } from './builder-rea/service.ts';
 import { carryOverTranscript, compactTranscript, runLlmToolLoop, type AgentLoopSpend } from './llm-tool-loop.ts';
 import { createSessionSkills, LOAD_SKILL_SCHEMA } from './session-skills.ts';
 import type { ChatContentPart, ChatMessage } from './openrouter-service.ts';
@@ -414,8 +416,9 @@ function nextComplexity(complexity: TaskComplexity | undefined): TaskComplexity 
   return complexity === 'simple' ? 'complex' : 'extreme';
 }
 
-function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; redact?: (text: string) => string; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
+export function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedModelId; sandbox: ProjectSandbox; redact?: (text: string) => string; visionInputs?: Array<{url:string;detail?:'auto'|'low'|'high'}>; onChatEvent?: (event: import('../lib/agent-chat-protocol.ts').ChatEvent) => void; activityLabel: string; onSpend?: (spend: AgentLoopSpend) => void | Promise<unknown>; deadline: number; signal?: AbortSignal; allowFallback?: boolean; effort?: AgentEffort;
   mediaTools?: MediaTools;
+  reaTools?: ReaTools;
   /**
    * The model and reasoning level for the next round. Read at the start of
    * every round, so Auto can escalate between rounds; absent, the model is
@@ -533,12 +536,17 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     const skillTools = [...base, LOAD_SKILL_SCHEMA as unknown as (typeof base)[number]];
     const previewAndSkills = input.previewTool ? [...skillTools, input.previewTool.schema as unknown as (typeof base)[number]] : skillTools;
     // Only the main session model sees these tools. Team members receive sandbox tools, not spending tools.
-    const allTools = input.mediaTools ? [...previewAndSkills, ...input.mediaTools.schemas as unknown as typeof previewAndSkills] : previewAndSkills;
+    const withMedia = input.mediaTools ? [...previewAndSkills, ...input.mediaTools.schemas as unknown as typeof previewAndSkills] : previewAndSkills;
+    const allTools = input.reaTools ? [...withMedia, ...input.reaTools.schemas as unknown as typeof withMedia] : withMedia;
     const handlers = Object.fromEntries(allTools.map(tool => [
       tool.name,
       async (args: Record<string, unknown>) => {
         input.signal?.throwIfAborted();
         toolCalls += 1;
+        if (input.reaTools?.schemas.some(schema => schema.name === tool.name)) {
+          input.onChatEvent?.({ type: 'activity', label: isFrenchText(input.userMessages?.at(-1) || '') ? 'Analyse de l’application importée…' : 'Analyzing the imported application…' });
+          return recordToolCall(input.harness || null, input.harnessTurn || null, { name: tool.name, args }, () => input.reaTools!.call(tool.name, args));
+        }
         if (input.mediaTools?.schemas.some(schema => schema.name === tool.name)) {
           return input.mediaTools.call(tool.name, args);
         }
@@ -601,7 +609,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
     ]));
     const runRound = (modelId: AllowedModelId, carried: ChatMessage[]) => runLlmToolLoop({
       gateway: input.gateway,
-      dynamicSystemContext: () => [sessionSkills.context(), input.mediaTools?.guidance].filter(Boolean).join('\n\n'),
+      dynamicSystemContext: () => [sessionSkills.context(), input.mediaTools?.guidance, input.reaTools?.guidance].filter(Boolean).join('\n\n'),
       redact: input.redact,
       modelId,
       messages: [
@@ -711,6 +719,7 @@ function buildToolLoopTurn(input: { gateway: ProviderGateway; modelId: AllowedMo
 
 export async function runMultiAgentPipeline(input: {
   mediaTools?: MediaTools;
+  reaTools?: ReaTools;
   gateway: ProviderGateway;
   /** The person's recent looks, to stay away from, and this project's own stored hue (see sandbox/design-diversity.ts). */
   designHistory?: { avoidHues: number[]; lockHue?: number | null };
@@ -800,6 +809,7 @@ export async function runMultiAgentPipeline(input: {
   const releaseRun = await sandboxRegistry.acquireRun(input.projectId, { signal: input.signal });
   // The agents' browsers on the running app: closed with the run, whatever ended it.
   const previewTools: PreviewTool[] = [];
+  const reaResources: ReaTools[] = [];
   try {
   /*
    * What the run is doing right now, for the thinking line.
@@ -1282,6 +1292,8 @@ export async function runMultiAgentPipeline(input: {
   // filesystem tools. The existing project is retained for targeted repair.
 
   const sandbox = sandboxRegistry.get(input.projectId);
+  const reaTools = input.reaTools || (typeof sandbox.dir === 'string' && sandbox.projectId === input.projectId ? createBuilderReaTools({ projectId: input.projectId, userId: input.userId, sandbox, signal: input.signal, deadline: runDeadline, redact: secretRedactor }) : undefined);
+  if (reaTools) reaResources.push(reaTools);
   /*
    * Round one is told what it is building on, not only what to build.
    *
@@ -1457,6 +1469,7 @@ export async function runMultiAgentPipeline(input: {
     }),
     turn: buildToolLoopTurn({
       mediaTools: input.mediaTools,
+      reaTools,
       redact: secretRedactor,
       gateway: input.gateway,
       modelId,
@@ -1768,6 +1781,6 @@ export async function runMultiAgentPipeline(input: {
   } finally {
     releaseRun();
     // The agent's browsers close with the run, whatever ended it.
-    await Promise.all(previewTools.map(tool => tool.dispose())).catch(() => undefined);
+    await Promise.all([...previewTools.map(tool => tool.dispose()), ...reaResources.map(tool => tool.dispose())]).catch(() => undefined);
   }
 }

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": "^22.19.0 || ^24.11.0 || >=26.0.0"
   },
   "scripts": {
     "prebuild": "node scripts/generate-seo-assets.cjs",
@@ -34,6 +34,7 @@
     "eval:reference": "node --experimental-strip-types --experimental-transform-types scripts/eval-reference-set.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
     "@noble/hashes": "^2.4.0",
     "@paper-design/shaders": "^0.0.81",
     "@supabase/supabase-js": "^2.106.0",
@@ -61,6 +62,7 @@
     "nanoid": "^5.1.11",
     "pdfjs-dist": "^6.3.289",
     "playwright": "^1.62.1",
+    "rea-agents": "6.4.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "sharp": "^0.35.4",
