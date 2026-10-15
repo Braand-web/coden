@@ -1,0 +1,9 @@
+.publication-login { max-inline-size: 36rem; margin: 12vh auto; padding: 32px; display: grid; gap: 24px; }
+.publication-login > a:first-child { display: flex; align-items: center; gap: 12px; text-decoration: none; font-weight: 600; font-size: 1.25rem; color: var(--foreground); }
+.publication-login h1 { margin: 0; font-size: 1.875rem; line-height: 1.2; }
+.publication-login p { margin: 0; line-height: 1.5; color: var(--text-secondary); }
+.publication-login button { min-block-size: 48px; border: 0; border-radius: var(--radius-sm); padding: 8px 12px; background: var(--accent); color: white; font: inherit; cursor: pointer; }
+.publication-login a { color: var(--accent); text-underline-offset: 4px; }
+.publication-login :is(a,button):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.publication-login [hidden] { display: none; }
+@media(max-width: 480px) { .publication-login { margin-block: 8vh; padding: 24px; } }

@@ -4,6 +4,18 @@ import { responseCompression } from './src/services/http-compression.ts';
 import { REDUCED_MOTION_PREVIEW_HOOK, restoreLegacyMotionPreview } from './src/services/preview-motion-compat.ts';
 import { authoritativeProjectFiles, loadGenerationFiles } from './src/services/project-file-recovery.ts';
 import { loadPublicationFiles, publicationSourceReady } from './src/services/publication-source.ts';
+import { PublicationService } from './src/services/publication-v2/service.ts';
+import { PublicationRepository } from './src/services/publication-v2/repository.ts';
+import { PublicationAccessService } from './src/services/publication-v2/access.ts';
+import { PublicationError, suggestedSettings, sourcePublicationMetadata } from './src/services/publication-v2/model.ts';
+import { deliverPublicationInvitations } from './src/services/publication-v2/invitations.ts';
+import { createCloudflarePublicationProvider } from './src/services/publication-v2/cloudflare-provider.ts';
+import { IsolatedPublicationBuilder } from './src/services/publication-v2/isolated-builder.ts';
+import { publicationConfigurationChecks } from './src/services/publication-v2/configuration.ts';
+import { registerPublicationV2Routes, publicationV2Publish, publicationApiError, type PublicationRoutesDependencies } from './src/services/publication-v2/routes.ts';
+import { codenRootDomain } from './src/services/cloudflare-hosting-policy.ts';
+import { retireCodenVercelProject } from './src/services/publish-vercel.ts';
+import { getWorkerDomainStatus, detachWorkerCustomDomain, removeCloudflareWorker, cloudflareWorkerNameForSlug } from './src/services/publish-cloudflare-workers.ts';
 import { writeDurableSnapshot, isSnapshotTableMissing, requireDurableCheckpoint } from './src/services/durable-snapshot-write.ts';
 import { loadLatestDeploymentsByProject } from './src/services/dashboard-deployments.ts';
 import { branchMetadataForMessage, conversationMessageKey, resolveConversationBranch } from './src/services/conversation-branches.ts';
@@ -15767,6 +15779,14 @@ app.post('/api/share/:token/copy', async (req: any, res: any) => {
 async function communityPublishedSnapshot(projectId: string) {
   const client = getSupabase();
   if (!client) return null;
+  if (publicationV2Enabled()) {
+    const state = await new PublicationRepository(client).state(projectId);
+    if (state?.release_id) {
+      if (!state.enabled || state.effective?.audience !== 'public') return null;
+      const snapshot = await new PublicationRepository(client).snapshot(state.release_id);
+      return { publicUrl: `https://${state.effective.subdomain}.${codenRootDomain()}`, deploymentId: snapshot.id, artifactHash: snapshot.fingerprint, files: snapshot.files.filter(file => file.encoding !== 'base64').map(({ path, content }) => ({ path, content })) };
+    }
+  }
   const deployment = await getLatestPublishedDeployment(projectId).catch(() => null);
   if (!deployment) return null;
   const publicUrl = String(deployment.public_url || '').trim();
@@ -20911,6 +20931,25 @@ app.get('/api/projects/:id/domains', async (req: any, res) => {
  * while the live app is still owned by another host.
  */
 async function createProjectDomainProvider(project: GeneratedProject) {
+  if (publicationV2Enabled()) {
+    const state = await publicationRepository().state(project.id);
+    if (state) return {
+      async attach(domain: string) {
+        await requireDatabaseResult(requireSupabase('Publication custom domain').rpc('publication_reserve_address', { p_project: project.id, p_host: domain }), 'reserve custom publication host');
+        return { instructions: [{ type: 'CNAME' as const, name: domain, value: `${state.hosting_id}.${process.env.CLOUDFLARE_WORKERS_SUBDOMAIN}.workers.dev`, status: 'pending' as const }] };
+      },
+      async status(domain: string) {
+        const active = await publicationRepository().knownHost(project.id, domain);
+        if (!active) return { active: false, detail: 'Publiez les modifications pour activer ce domaine sur la passerelle.', certificate: null };
+        const result = await getWorkerDomainStatus(state.hosting_id, domain);
+        return { active: result.status === 'active', detail: result.status, certificate: result.certificate_status };
+      },
+      async detach(domain: string) {
+        await requireDatabaseResult(requireSupabase('Publication custom domain').from('publication_aliases').delete().eq('project_id', project.id).eq('host', domain), 'disable custom publication host');
+        await detachWorkerCustomDomain(state.hosting_id, domain);
+      },
+    };
+  }
   const published = await getLatestPublishedDeployment(project.id);
   if (published?.provider === 'cloudflare-pages') {
     return createCloudflarePagesDomainProvider(pagesProjectFromDeploymentUrl(String(published.deployment_url)));
@@ -21246,12 +21285,154 @@ async function upgradePendingCodenAddress(project: GeneratedProject, deployment:
   }
 }
 
+function publicationV2Enabled() { return process.env.CODEN_PUBLICATION_V2 === '1'; }
+let publicationV2Service: PublicationService | null = null;
+function publicationRepository() { return new PublicationRepository(requireSupabase('Publication V2')); }
+async function assertPublicationPermission(projectId: string, actorId: string) {
+  const project = await loadProject(projectId, actorId);
+  if (!project || !['owner', 'admin'].includes(String((project as any).__coden_project_role))) throw new PublicationError('PUBLICATION_FORBIDDEN', 'Seul le propriétaire ou un administrateur peut publier.', 403);
+}
+function getPublicationV2Service() {
+  if (publicationV2Service) return publicationV2Service;
+  const rootDomain = codenRootDomain();
+  const provider = createCloudflarePublicationProvider({
+    enabled: publicationV2Enabled(), rootDomain,
+    accountId: String(process.env.CLOUDFLARE_ACCOUNT_ID || ''), apiToken: String(process.env.CLOUDFLARE_API_TOKEN || ''),
+    workersSubdomain: String(process.env.CLOUDFLARE_WORKERS_SUBDOMAIN || ''),
+    platformOrigin: getCodenPublicOrigin(), platformSecret: String(process.env.CODEN_PUBLICATION_PLATFORM_SECRET || ''),
+    compatibilityDate: '2026-10-01', isolatedBuilder: new IsolatedPublicationBuilder(rootDomain, async id => (await publicationRepository().snapshot(id)).artifact),
+  });
+  publicationV2Service = new PublicationService({
+    repository: publicationRepository(), rootDomain, provider,
+    assertCanPublish: assertPublicationPermission,
+    workspaceAllowed: async project => ['business', 'scale', 'enterprise'].includes(await getOrganizationPlan(project.organization_id)),
+    defaults: async project => ({ ...suggestedSettings(project), metadata: sourcePublicationMetadata((await createPublishContext(project as GeneratedProject)).files, project.name) }),
+    capture: async (project, actorId, settings) => {
+      const context = await createPublishContext(project as GeneratedProject);
+      const contract = await readGeneratedRuntimeContract(project as GeneratedProject, context.files);
+      if (contract.validation.length) throw new PublicationError('INVALID_RUNTIME_CONTRACT', 'Le contrat de construction doit être corrigé avant publication.', 422);
+      const media = builderMediaEnabled() ? await builderMediaAssets.entries({ projectId: project.id, userId: project.owner_id }) : [];
+      const backendEnv = await loadProjectBackendEnv({ client: getSupabase(), projectId: project.id });
+      const publicEnv: Record<string, string> = { ...backendEnv,
+        ...(backendEnv.VITE_SUPABASE_URL ? { VITE_CODEN_CLOUD_SUPABASE_URL: backendEnv.VITE_SUPABASE_URL } : {}),
+        ...(backendEnv.VITE_SUPABASE_ANON_KEY ? { VITE_CODEN_CLOUD_SUPABASE_ANON_KEY: backendEnv.VITE_SUPABASE_ANON_KEY } : {}) };
+      const ownedDomains = await requireDatabaseResult<any[]>(requireSupabase('Publication hosts').from('domains').select('domain').eq('project_id', project.id).neq('status', 'removed'), 'capture publication hosts') || [];
+      const deployments = await requireDatabaseResult<any[]>(requireSupabase('Publication aliases').from('deployments').select('public_url').eq('project_id', project.id).eq('status', 'ready'), 'capture previous publication aliases') || [];
+      const hosts = [...ownedDomains.map(row => row.domain), ...deployments.flatMap(row => { try { const host = new URL(row.public_url).hostname; return host.endsWith(`.${rootDomain}`) ? [host] : []; } catch { return []; } })];
+      const missing = (contract.manifest.requiredPublicEnv || []).filter((item: any) => item.required && !(publicEnv as Record<string, string>)[item.name]);
+      if (missing.length) throw new PublicationError('PUBLIC_ENV_REQUIRED', 'Connectez le backend de cette application avant publication.');
+      return { project_id: project.id, actor_id: actorId, settings,
+        files: [...contract.files.map(file => ({ path: file.path, content: file.content })), ...media.map(file => ({ path: file.path, content: Buffer.from(file.bytes).toString('base64'), encoding: 'base64' as const }))],
+        manifest: contract.manifest, public_env: publicEnv, hosts };
+    },
+    checks: async project => {
+      const context = await createPublishContext(project as GeneratedProject);
+      const checks = buildPublishStatus(context).checks.map(check => ({ id: check.key, label: check.label, status: check.status, detail: check.detail }));
+      checks.push(...publicationConfigurationChecks(process.env, { platformOrigin: getCodenPublicOrigin(), rootDomain, requiresBuild: context.files.some(file => file.path === 'package.json') }).map(check => ({ ...check, detail: check.detail || '' })));
+      const contract = await readGeneratedRuntimeContract(project as GeneratedProject, context.files);
+      if (!['static-assets', 'cloudflare-workers'].includes(contract.manifest.runtime)) checks.push({ id: 'workers_runtime', label: 'Runtime compatible Workers requis', status: 'fail', detail: 'Ce projet utilise un serveur Node ou Vercel. Configurez un véritable build Workers ; aucune conversion en site statique ne sera effectuée.' });
+      if ((contract.manifest.requiredServerEnv || []).some((item: { required?: boolean }) => item.required)) checks.push({ id: 'workers_bindings', label: 'Liaisons serveur à configurer', status: 'fail', detail: 'Les secrets et liaisons du runtime généré doivent être configurés avant publication.' });
+      checks.push({ id: 'coverage', label: 'Couverture du contrôle', status: 'warn', detail: 'Analyse statique des fichiers. Ne prouve pas la sécurité de toutes les données, règles RLS ou connexions externes.' });
+      return checks;
+    },
+    assertSnapshotSafe: async snapshot => { if (scanGeneratedSecurity(snapshot.files.filter(file => file.encoding !== 'base64')).status === 'failed') throw new PublicationError('PUBLICATION_SECURITY_BLOCKED', 'Les problèmes de sécurité de cette version doivent être corrigés.'); },
+    retireLegacyOrigins: async (projectId, actorId) => {
+      const client = requireSupabase('Retire legacy publication origins');
+      const project = await loadProject(projectId, actorId);
+      if (!project) throw new PublicationError('PROJECT_NOT_FOUND', 'Projet introuvable.', 404);
+      const rows = await requireDatabaseResult<any[]>(client.from('deployments').select('id,provider,provider_deployment_id,deployment_url,public_url,custom_domain').eq('project_id', project.id).neq('status', 'removed'), 'read legacy origins') || [];
+      const v2Rows = await requireDatabaseResult<any[]>(client.from('publication_snapshots').select('id').eq('project_id', project.id).eq('activated', true), 'identify guarded publications') || [];
+      const v2Ids = new Set(v2Rows.map(row => row.id));
+      const domains = await requireDatabaseResult<any[]>(client.from('domains').select('domain').eq('project_id', project.id).neq('status', 'removed'), 'read owned publication domains') || [];
+      const oldHosts = [...domains.map(row => row.domain), ...rows.flatMap(row => { try { const host = new URL(row.public_url).hostname; return host.endsWith(`.${rootDomain}`) ? [host] : []; } catch { return []; } })];
+      for (const host of new Set(oldHosts)) await requireDatabaseResult(client.rpc('publication_reserve_address', { p_project: project.id, p_host: host }), 'retain publication alias');
+      for (const row of rows) {
+        if (!row.deployment_url && !row.provider_deployment_id) continue; // failed before any provider origin existed
+        let originHost = '';
+        try { originHost = new URL(row.deployment_url).hostname; } catch { /* provider identity must still be verified */ }
+        // A historical migration relabelled CF records as Vercel. The retained
+        // origin is stronger evidence than that mutable provider label.
+        if (row.provider === 'cloudflare-pages' || originHost.endsWith('.pages.dev')) {
+          const name = pagesProjectFromDeploymentUrl(row.deployment_url);
+          const codenAliases = oldHosts.filter(host => host.endsWith(`.${rootDomain}`)).map(host => host.slice(0, -rootDomain.length - 1));
+          for (const subdomain of new Set([cloudflarePublicationSlug(project.id), ...codenAliases])) await removePagesPublication(name, subdomain);
+        }
+        else if ((row.provider === 'cloudflare-workers' || originHost.endsWith('.workers.dev')) && !v2Ids.has(row.id)) {
+          let name = '';
+          try { const url = new URL(row.deployment_url); if (url.protocol === 'https:' && url.hostname.endsWith('.workers.dev')) name = url.hostname.split('.')[0]; } catch { /* unknown origin is not silently exempted */ }
+          const ownedNames = [cloudflareWorkerNameForSlug(String(project.slug || project.id)), cloudflareWorkerNameForSlug(cloudflarePublicationSlug(project.id))];
+          if (!ownedNames.includes(name)) throw new PublicationError('LEGACY_WORKER_UNIDENTIFIED', 'L’identité d’un ancien Worker doit être vérifiée avant publication.');
+          for (const host of oldHosts) await detachWorkerCustomDomain(name, host);
+          try { await removeCloudflareWorker(name); } catch (error: any) { if (Number(error?.statusCode) !== 404) throw error; }
+        }
+        else if (row.provider === 'vercel') {
+          if (!originHost.endsWith('.vercel.app') && !String(row.provider_deployment_id || '').startsWith('dpl_')) throw new PublicationError('LEGACY_ORIGIN_UNIDENTIFIED', 'L’origine d’une ancienne publication doit être vérifiée avant de continuer.');
+          await retireCodenVercelProject(vercelProjectNameForSlug(String(project.slug || project.id)), row.provider_deployment_id || originHost);
+        }
+        else if (row.provider !== 'cloudflare-workers') throw new PublicationError('LEGACY_ORIGIN_UNSUPPORTED', 'Une ancienne origine doit être retirée avant cette publication.');
+      }
+      // Retain source/deployment history, but it must never be served by an old
+      // public proxy after the guarded Workers version becomes authoritative.
+      for (const row of rows.filter(row => !v2Ids.has(row.id))) await requireDatabaseResult(client.from('deployments').update({ status: 'removed', updated_at: new Date().toISOString() }).eq('id', row.id), 'mark retired origin');
+    },
+    onActivated: async snapshot => {
+      // Default OFF. Local preview never imports this transport or loads keys.
+      if (process.env.CODEN_PUBLICATION_EMAILS === '1') {
+        const config = readNotifierConfig();
+        await deliverPublicationInvitations(requireSupabase('Publication invitations'), snapshot.id, `https://${snapshot.settings.subdomain}.${rootDomain}`, async (email, url) => {
+          if (!config.resendKey || !config.emailFrom) throw new Error('EMAIL_NOT_CONFIGURED');
+          const response = await fetch('https://api.resend.com/emails', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8_000), headers: { 'content-type': 'application/json', authorization: `Bearer ${config.resendKey}`, 'Idempotency-Key': `publication-${snapshot.id}-${createHash('sha256').update(email).digest('hex')}` }, body: JSON.stringify({ from: config.emailFrom, to: [email], subject: 'Votre invitation à un site Coden', text: `Vous avez été invité à consulter ce site : ${url}\nConnectez-vous à Coden avec cette adresse. Cette invitation ne donne pas accès à l’éditeur.` }) });
+          if (!response.ok) throw new Error('EMAIL_DELIVERY_FAILED');
+        });
+      }
+      // Private sites are removed atomically by publication_activate as well.
+      if (snapshot.settings.audience !== 'public') return communityService.onUnpublished(snapshot.project_id, { id: snapshot.actor_id, type: 'user' });
+      const project = await loadProject(snapshot.project_id, snapshot.actor_id);
+      if (project) await communityService.onPublished({ project, snapshot: { publicUrl: `https://${snapshot.settings.subdomain}.${rootDomain}`, deploymentId: null, artifactHash: snapshot.fingerprint, files: snapshot.files.filter(file => file.encoding !== 'base64') }, plan: await getOrganizationPlan(project.organization_id) });
+    },
+    onUnpublished: id => communityService.onUnpublished(id),
+  });
+  return publicationV2Service;
+}
+function getPublicationAccess() {
+  const repository = publicationRepository();
+  return new PublicationAccessService({ repository, rootDomain: codenRootDomain(), codenOrigin: getCodenPublicOrigin(),
+    getIdentity: async userId => {
+      const { data, error } = await requireSupabase('Website visitor identity').auth.admin.getUserById(userId);
+      if (error) throw new Error('VISITOR_IDENTITY_UNAVAILABLE');
+      return data?.user ? { id: data.user.id, email: data.user.email || '', emailVerified: !!data.user.email_confirmed_at } : null;
+    },
+    isOwnerOrAdmin: async (projectId, userId) => { try { await assertPublicationPermission(projectId, userId); return true; } catch (error) { if (error instanceof PublicationError) return false; throw error; } },
+    isWorkspaceMember: async (projectId, userId) => {
+      const project = await loadProjectForAnalytics(projectId);
+      return !!project && !!await lookupOrganizationMembershipRole(project.organization_id, userId);
+    },
+    workspaceStillAllowed: async projectId => { const project = await loadProjectForAnalytics(projectId); return !!project && ['business', 'scale', 'enterprise'].includes(await getOrganizationPlan(project.organization_id)); },
+  });
+}
+const publicationV2Routes: PublicationRoutesDependencies = {
+  app, enabled: publicationV2Enabled, requireAuth,
+  project: async req => { const project = await loadProject(req.params.id, getRequiredAuth(req).userId, req); if (!project) throw new PublicationError('PROJECT_NOT_FOUND', 'Projet introuvable.', 404); await assertPublicationPermission(project.id, getRequiredAuth(req).userId); return project; },
+  actorId: req => getRequiredAuth(req).userId, service: getPublicationV2Service, access: getPublicationAccess,
+  getJob: getJobStatus, platformSecret: () => String(process.env.CODEN_PUBLICATION_PLATFORM_SECRET || ''), rateLimit: key => enforceRateLimit(key, 20, 60_000),
+};
+registerPublicationV2Routes(publicationV2Routes);
+app.get('/publication-auth', (req, res) => {
+  if (!publicationV2Enabled()) return res.status(404).end();
+  res.set('Cache-Control', 'no-store').set('Referrer-Policy', 'no-referrer');
+  return res.sendFile(path.resolve(staticDir, 'publication-auth.html'));
+});
+
 app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
   const requestId = `pubstatus_${randomUUID()}`;
   try {
     const userId = getUserOrgId(req);
     const project = await loadProject(req.params.id, userId);
     if (!project) return res.status(404).json({ success: false, error: 'Project not found.', request_id: requestId });
+    if (publicationV2Enabled()) {
+      await assertPublicationPermission(project.id, getRequiredAuth(req).userId);
+      return res.json({ success: true, publish: { ...buildPublishStatus(await createPublishContext(project)), ...await getPublicationV2Service().status(project, getRequiredAuth(req).userId) } });
+    }
     const context = await createPublishContext(project);
     context.latestDeployment = await upgradePendingCodenAddress(project, context.latestDeployment);
     return res.json({
@@ -21264,6 +21445,7 @@ app.get('/api/projects/:id/publish/status', async (req: any, res: any) => {
       ),
     });
   } catch (error: any) {
+    if (publicationV2Enabled()) return publicationApiError(res, error);
     console.error('[coden:publish_status_failed]', {
       request_id: requestId,
       project_id: req.params.id,
@@ -21399,6 +21581,7 @@ function buildPublishedProxyTargets(project: GeneratedProject, deploymentUrl: st
 }
 
 async function servePublishedSnapshot(project: GeneratedProject, deployment: any, res: any, proxyBasePath = '') {
+  if (publicationV2Enabled()) { const state = await publicationRepository().state(project.id); if (state?.release_id || state?.generation) return res.status(404).set('Cache-Control', 'no-store').send('Published app not found.'); }
   if (!deployment || !isPublishedDeploymentReady(deployment)) {
     return res.status(404).send('This app has not been published yet.');
   }
@@ -21417,6 +21600,7 @@ async function servePublishedSnapshot(project: GeneratedProject, deployment: any
 }
 
 async function proxyPublishedDeployment(project: GeneratedProject, deployment: any, req: any, res: any, proxyBasePath = '') {
+  if (publicationV2Enabled()) { const state = await publicationRepository().state(project.id); if (state?.release_id || state?.generation) return res.status(404).set('Cache-Control', 'no-store').send('Published app not found.'); }
   const deploymentUrl = String(deployment?.deployment_url || '');
   if (!deploymentUrl) return servePublishedSnapshot(project, deployment, res, proxyBasePath);
 
@@ -21540,13 +21724,17 @@ app.use((req, res, next) => {
 // ─── Async Job Queue API ──────────────────────────────────────────────────────
 
 // GET /api/jobs/:id — poll job status
+async function canReadDurableJob(req: any, job: any) {
+  const project = await loadProject(job.project_id, getRequiredAuth(req).userId, req);
+  return !!project && hasProjectCapability(req, job.type === 'publish' ? 'deploy' : 'view', project);
+}
 app.get('/api/jobs/:id', requireAuth, async (req: any, res: any) => {
   const auth = getRequiredAuth(req);
   const job = await getJobStatus(req.params.id);
   if (!job) return res.status(404).json({ success: false, error: 'Job not found.' });
   // Security: only job owner or org member can see it
-  if (job.user_id !== auth.userId && job.organization_id !== auth.userId) {
-    return res.status(403).json({ success: false, error: 'Access denied.' });
+  if (!await canReadDurableJob(req, job)) {
+    return res.status(404).json({ success: false, error: 'Job not found.' });
   }
   return res.json({ success: true, job: {
     id: job.id, type: job.type, status: job.status, priority: job.priority,
@@ -21561,8 +21749,8 @@ app.get('/api/jobs/:id/events', requireAuth, async (req: any, res: any) => {
   const auth = getRequiredAuth(req);
   const job = await getJobStatus(req.params.id);
   if (!job) return res.status(404).json({ success: false, error: 'Job not found.' });
-  if (job.user_id !== auth.userId && job.organization_id !== auth.userId) {
-    return res.status(403).json({ success: false, error: 'Access denied.' });
+  if (!await canReadDurableJob(req, job)) {
+    return res.status(404).json({ success: false, error: 'Job not found.' });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -21575,21 +21763,34 @@ app.get('/api/jobs/:id/events', requireAuth, async (req: any, res: any) => {
   }, 15_000);
   res.on('close', () => clearInterval(heartbeat));
 
-  let lastEventId = 0;
+  let lastEventId = Number(req.get('Last-Event-ID') || req.query.after || 0);
+  if (!Number.isSafeInteger(lastEventId) || lastEventId < 0) { clearInterval(heartbeat); return res.status(400).end(); }
+  let lastCreatedAt = '1970-01-01T00:00:00.000Z';
+  const delivered = new Set<string>();
+  let polling = false;
   const pollEvents = async () => {
+    if (polling || res.destroyed || res.writableEnded) return;
+    polling = true;
     try {
       const supabase = getSupabase();
       if (!supabase) return;
-      const { data: events } = await supabase
+      const authorizedJob = await getJobStatus(req.params.id);
+      if (!authorizedJob || !await canReadDurableJob(req, authorizedJob)) { clearInterval(heartbeat); clearInterval(poller); res.end(); return; }
+      let eventQuery = supabase
         .from('agent_job_events')
-        .select('id, step, message, created_at')
-        .eq('job_id', req.params.id)
-        .gt('id', lastEventId)
-        .order('created_at', { ascending: true });
+        .select(publicationV2Enabled() ? 'id, sequence, step, message, created_at' : 'id, step, message, created_at')
+        .eq('job_id', req.params.id);
+      eventQuery = publicationV2Enabled() ? eventQuery.gt('sequence', lastEventId).order('sequence', { ascending: true }) : eventQuery.gte('created_at', lastCreatedAt).order('created_at', { ascending: true });
+      const { data: events, error: eventError } = await eventQuery.limit(500);
+      if (eventError) throw new Error('JOB_EVENTS_UNAVAILABLE');
       if (events?.length) {
         for (const event of events) {
-          res.write(`data: ${JSON.stringify({ type: 'progress', step: event.step, message: event.message })}\n\n`);
-          lastEventId = event.id;
+          if (delivered.has(event.id)) continue;
+          if (!publicationV2Enabled() && event.created_at !== lastCreatedAt) delivered.clear();
+          lastCreatedAt = event.created_at;
+          delivered.add(event.id);
+          lastEventId = publicationV2Enabled() ? Number(event.sequence) : lastEventId + 1;
+          res.write(`id: ${lastEventId}\ndata: ${JSON.stringify({ type: 'progress', sequence: lastEventId, step: event.step, message: event.message })}\n\n`);
         }
       }
       // Check if job is done
@@ -21600,10 +21801,12 @@ app.get('/api/jobs/:id/events', requireAuth, async (req: any, res: any) => {
         clearInterval(poller);
         res.end();
       }
-    } catch { /* ignore polling errors */ }
+    } catch { if (!res.writableEnded) res.write(`event: observation-error\ndata: ${JSON.stringify({ error: 'Suivi temporairement indisponible. Reconnectez le suivi.' })}\n\n`); }
+    finally { polling = false; }
   };
 
   const poller = setInterval(pollEvents, 2_000);
+  res.on('close', () => clearInterval(poller));
   await pollEvents();
 });
 
@@ -21908,7 +22111,7 @@ async function readGeneratedRuntimeContract(project: GeneratedProject, sourceFil
   if (manifestEntry) {
     try { manifest = JSON.parse(manifestEntry.content); } catch { manifest = null; }
   }
-  if (manifest?.runtime === 'cloudflare-workers') {
+  if (manifest?.runtime === 'cloudflare-workers' && !publicationV2Enabled()) {
     const prompt = project.prompt || project.name;
     const requirement = detectCodenCloudRequirements(prompt);
     const migrated = applyCodenFullstackKit({
@@ -22218,6 +22421,7 @@ async function verifyProjectPreviewWithRealBuild(project: GeneratedProject, file
 const activePublishOperations = new Map<string, string>();
 
 async function publishVercelProjectForRequest(req: any, res: any) {
+  if (publicationV2Enabled()) return publicationV2Publish(req, res, publicationV2Routes);
   const requestId = `pub_${randomUUID()}`;
   // Where the minutes go: each phase's end, in ms since the click. Logged once, on success and on failure alike.
   const publishStartedAtMs = Date.now();
@@ -22721,6 +22925,14 @@ app.get('/api/projects/:id/deployments/:deploymentId', requireAuth, async (req: 
 });
 
 app.post('/api/projects/:id/deployments/:deploymentId/rollback', requireAuth, async (req: any, res: any) => {
+  if (publicationV2Enabled()) {
+    try {
+      if (req.body?.confirmed !== true) throw new PublicationError('CONFIRMATION_REQUIRED', 'Confirmez la restauration.');
+      const project = await publicationV2Routes.project(req);
+      const jobId = await getPublicationV2Service().rollback(project, getRequiredAuth(req).userId, String(req.params.deploymentId), String(req.body?.idempotency_key || ''));
+      return res.status(202).json({ success: true, job_id: jobId, publish: await getPublicationV2Service().status(project, getRequiredAuth(req).userId) });
+    } catch (error) { return publicationApiError(res, error); }
+  }
   if (!requireCodenAgentFeature(res, CODEN_AGENT_FLAGS.deploymentAdapters, 'deployment_adapters')) return;
   const auth = getRequiredAuth(req);
   const project = await loadProjectForPublish(req.params.id, auth.userId, req);
@@ -22885,6 +23097,10 @@ app.get('/api/projects/:id/publish-cf/domain/verify', requireAuth, async (req: a
 });
 
 app.delete('/api/projects/:id/publish-cf', requireAuth, async (req: any, res: any) => {
+  if (publicationV2Enabled()) {
+    try { const project = await publicationV2Routes.project(req); await getPublicationV2Service().unpublish(project, getRequiredAuth(req).userId); return res.json({ success: true, publish: await getPublicationV2Service().status(project, getRequiredAuth(req).userId) }); }
+    catch (error) { return publicationApiError(res, error); }
+  }
   try {
     const auth = getRequiredAuth(req);
     const project = await loadProjectForPublish(req.params.id, auth.userId, req);
@@ -23399,6 +23615,12 @@ const httpServer = app.listen(port, () => {
   });
 
   // ✅ Initialize async job queue worker — picks up long-running jobs from Supabase
+  if (publicationV2Enabled()) registerJobHandler('publish', async (job, onProgress, execution) => {
+    const snapshotId = String(job.payload.publication_snapshot_id || '');
+    if (!snapshotId) throw new Error('PUBLICATION_SNAPSHOT_REQUIRED');
+    if (!execution || !job.lease_token) throw new Error('PUBLICATION_LEASE_REQUIRED');
+    return getPublicationV2Service().run(snapshotId, onProgress || (() => {}), { ...execution, lease: job.lease_token });
+  });
   const supabaseClient = getSupabase();
   if (supabaseClient) {
     if (process.env.CODEN_COST_OBSERVABILITY_V1 === '1' && process.env.CODEN_SECRETS_KEY) {

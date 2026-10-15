@@ -7,6 +7,7 @@ import './styles/coden-shell.css';
 import './styles/modern-shell.css';
 import './styles/coherence.css';
 import './styles/publish-panel.css';
+import { mountPublishPanelV2, type PublishPanelV2Controller } from './components/publish-panel-v2';
 import './styles/cloud-console.css';
 import './styles/code-workshop.css';
 import './styles/version-history.css';
@@ -3352,7 +3353,10 @@ async function requestProjectGeneration(
   const applyEvent = (event: AgentEnvelope) => {
     lastSequence = Math.max(lastSequence, event.seq);
     streamRunId = event.runId;
-    if (event.channel === 'workspace' && event.payload.type === 'result') authoritativeResult = event.payload.result;
+    if (event.channel === 'workspace' && event.payload.type === 'result') {
+      authoritativeResult = event.payload.result;
+      void refreshPublicationIndicator(projectId);
+    }
     const id = messageHandleId(card || null);
     if (id && event.channel === 'chat') conversationApi?.applyChatEvent(id, event);
     if (event.channel === 'workspace' && event.payload.type === 'run_acknowledged') {
@@ -4478,6 +4482,26 @@ function publishPrimaryLabel(status: PublishStatusPayload | null) {
   if (status.state === 'published' || status.state === 'changes_unpublished') return 'Mettre à jour';
   return 'Publier';
 }
+let publicationIndicatorTimer: ReturnType<typeof setTimeout> | null = null;
+function updatePublicationIndicator(status: { has_unpublished_changes: boolean; effective: unknown; removal_pending?: boolean; active_job: { status: string } | null }, projectId: string) {
+  if (projectId !== currentProjectId) return;
+  if (publicationIndicatorTimer) clearTimeout(publicationIndicatorTimer);
+  const running = !!status.active_job && ['pending', 'processing'].includes(status.active_job.status);
+  const label = status.removal_pending ? 'Retrait à terminer' : running ? 'Publication en cours' : status.effective && status.has_unpublished_changes ? 'Publier les modifications' : 'Publier';
+  document.querySelectorAll<HTMLButtonElement>('.btn-publish').forEach(button => {
+    button.dataset.unpublishedChanges = String(status.has_unpublished_changes);
+    button.setAttribute('aria-label', label); button.title = label;
+    const text = button.querySelector('span'); if (text) text.textContent = label;
+  });
+  publicationIndicatorTimer = running ? setTimeout(() => void refreshPublicationIndicator(projectId), 2500) : null;
+}
+async function refreshPublicationIndicator(projectId = currentProjectId) {
+  if (!projectId || !isRealProjectId(projectId)) return;
+  try {
+    const response = await apiFetch<{ publish?: any }>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`);
+    if (response.publish?.version === 2) updatePublicationIndicator(response.publish, projectId);
+  } catch { /* The publish panel supplies explicit recovery; background reads do not interrupt editing. */ }
+}
 
 function formatPublishDate(value: string | null | undefined) {
   if (!value) return 'Jamais';
@@ -4572,7 +4596,10 @@ function positionPublishDropdown() {
   }
 }
 
+let publishPanelV2: PublishPanelV2Controller | null = null;
 function closePublishPanel() {
+  publishPanelV2?.destroy();
+  publishPanelV2 = null;
   document.getElementById('coden-publish-panel')?.remove();
 }
 
@@ -4994,6 +5021,7 @@ function renderPublishPanel(payload: PublishApiPayload | null, isPublishing = fa
       const action = button.dataset.publishAction || 'close';
       if (action === 'close') closePublishPanel();
       if (action === 'main') {
+        if ((payload?.publish as any)?.version === 2) { closePublishPanel(); void openPublishPanel(); return; }
         publishPanelMode = 'main';
         renderPublishPanel(payload, isPublishing, error);
       }
@@ -5047,6 +5075,24 @@ async function openPublishPanel() {
       apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(projectId)}/publish/status`),
       loadCommunityInfo(projectId),
     ]);
+    if (currentProjectId === projectId && document.getElementById('coden-publish-panel') && (payload.publish as any)?.version === 2) {
+      closePublishPanel();
+      publishPanelV2 = mountPublishPanelV2({
+        container: document.body,
+        projectId,
+        request: apiFetch,
+        onManageDomains: () => {
+          const v2 = payload.publish as any;
+          const legacyPayload = { ...payload, publish: { ...v2, state: v2.effective ? (v2.has_unpublished_changes ? 'changes_unpublished' : 'published') : 'ready_to_publish', public_url: v2.public_url || '', checks: v2.checks.map((check: any) => ({ ...check, key: check.id })) } } as PublishApiPayload;
+          publishPanelMode = 'domain';
+          renderPublishPanel(legacyPayload, false);
+          void loadProjectDomains().then(() => renderPublishPanel(legacyPayload, false));
+        },
+        onClose: () => { publishPanelV2 = null; },
+        onStatus: status => updatePublicationIndicator(status, projectId),
+      });
+      return;
+    }
     if (currentProjectId === projectId && document.getElementById('coden-publish-panel')) {
       renderPublishPanel(payload, Boolean(publishInFlight));
     }
@@ -5084,6 +5130,14 @@ async function shareProjectLink(button: HTMLButtonElement) {
   try {
     const payload = await apiFetch<PublishApiPayload>(`/api/projects/${encodeURIComponent(currentProjectId)}/publish/status`);
     const status = payload?.publish || null;
+    if ((status as any)?.version === 2) {
+      const live = (status as any).effective && status?.public_url;
+      if (!live) { flash("Publiez d'abord", false); return; }
+      if (!navigator.clipboard?.writeText) { flash('Copie indisponible', false); return; }
+      await navigator.clipboard.writeText(live);
+      flash('Lien copié', true);
+      return;
+    }
     const hasLiveDeployment = Boolean(payload?.deployment && status && (status.state === 'published' || status.state === 'changes_unpublished'));
     const publicUrl = hasLiveDeployment ? status?.public_url || '' : '';
     if (!publicUrl) {
@@ -6408,6 +6462,7 @@ async function loadProject() {
       }
     }
     if (projectName) setProjectNameDisplay(payload.project.name);
+    void refreshPublicationIndicator();
     if (currentProjectId) await flushPendingPromptAttachments();
     renderFiles(payload.files || []);
     applyWorkspaceState(payload.workspace_state || null);

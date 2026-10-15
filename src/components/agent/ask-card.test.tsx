@@ -121,7 +121,9 @@ describe('AskCard', () => {
     expect(container.querySelectorAll('.coden-ask-roll').length).toBe(2);
     await settle(600);
     expect(container.querySelector('.coden-ask-counter')?.textContent).toBe('10 / 10');
-  });
+    // This real-timer regression intentionally waits 8×500 + 30 + 600ms.
+    // Leave room for React/DOM work instead of timing out at the 5s default.
+  }, 15_000);
 
   it('answers once, however many times the card is pressed', async () => {
     const questions: DecisionQuestion[] = [{ q: 'Continuer ?', type: 'radio', options: ['Oui', 'Non'] }];

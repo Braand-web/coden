@@ -1,10 +1,8 @@
 export type GeneratedAppProfile = 'tanstack-fullstack' | 'node-fullstack' | 'vite-static' | 'legacy-vite-fullstack';
 export type GeneratedAppFramework = 'tanstack-start' | 'vite-react';
 /**
- * `cloudflare-workers` remains in the TypeScript union only so historical
- * deployment records and the retired Cloudflare rollback helpers can still be
- * read safely. New manifests cannot select it: the schema and profile resolver
- * below only emit Vercel Functions, Node or static assets.
+ * Publication V2 accepts explicitly compatible Worker bundles. Profile inference
+ * remains unchanged; Node/Vercel applications are never relabelled as static.
  */
 export type GeneratedAppRuntime = 'vercel-functions' | 'node-server' | 'static-assets' | 'cloudflare-workers';
 
@@ -51,7 +49,7 @@ const generatedAppManifestSchema = z.object({
   schemaVersion: z.literal(1),
   profile: z.enum(['tanstack-fullstack', 'node-fullstack', 'vite-static', 'legacy-vite-fullstack']),
   framework: z.enum(['tanstack-start', 'vite-react']),
-  runtime: z.enum(['vercel-functions', 'node-server', 'static-assets']),
+  runtime: z.enum(['vercel-functions', 'node-server', 'static-assets', 'cloudflare-workers']),
   backend: z.enum(['coden-cloud-supabase', 'node-api', 'none']),
   buildCommand: z.string().trim().min(1),
   devCommand: z.string().trim().min(1),
@@ -282,8 +280,8 @@ export function validateGeneratedAppManifest(manifest: GeneratedAppManifest): st
   if (manifest.schemaVersion !== 1) errors.push('Unsupported generated app manifest schema.');
   if (!manifest.profile || !manifest.framework || !manifest.runtime) errors.push('Runtime profile is incomplete.');
   if (!manifest.buildCommand || !manifest.outputDirectory) errors.push('Build contract is incomplete.');
-  if (manifest.profile === 'tanstack-fullstack' && manifest.runtime !== 'vercel-functions') {
-    errors.push('TanStack fullstack apps must target Vercel Functions.');
+  if (manifest.profile === 'tanstack-fullstack' && manifest.runtime !== 'vercel-functions' && manifest.runtime !== 'cloudflare-workers') {
+    errors.push('TanStack fullstack apps must target a compatible server runtime.');
   }
   if (manifest.profile === 'node-fullstack' && (manifest.runtime !== 'node-server' || manifest.backend !== 'node-api')) {
     errors.push('Node fullstack apps must target the Node server runtime and declare a Node API backend.');

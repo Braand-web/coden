@@ -748,6 +748,23 @@ export async function pauseVercelProject(project: string): Promise<'paused' | 'm
   return 'paused';
 }
 
+/** Publication V2 migration retires every legacy deployment URL, not just the
+ * primary alias. Called only for a Coden-owned project selected by server data. */
+export async function retireCodenVercelProject(project: string, deploymentIdentity?: string): Promise<void> {
+  if (!/^coden-[a-z0-9-]+$/.test(project)) throw new Error('INVALID_CODEN_VERCEL_PROJECT');
+  // The durable deployment identifies the ORIGINAL provider project even when
+  // Coden's editable slug/name changed since that deployment was created.
+  if (!deploymentIdentity) throw new Error('LEGACY_VERCEL_IDENTITY_REQUIRED');
+  let original: VercelDeployment | null = null;
+  try { original = await vercelRequest<VercelDeployment>(`/v13/deployments/${encodeURIComponent(deploymentIdentity)}`); }
+  catch (error: any) { if (Number(error?.statusCode) !== 404) throw error; }
+  if (original && (!original.projectId || !/^coden-[a-z0-9-]+$/.test(String(original.name)))) throw new Error('LEGACY_VERCEL_PROJECT_UNRECOGNIZED');
+  const projectId = original?.projectId || await resolveVercelProjectId(project);
+  if (!projectId) return;
+  try { await vercelRequest(`/v9/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }); }
+  catch (error: any) { if (Number(error?.statusCode) !== 404) throw error; }
+}
+
 /** Reactivate an intact provider project after a paid subscription resumes. */
 export async function unpauseVercelProject(project: string): Promise<'active' | 'missing'> {
   const projectId = await resolveVercelProjectId(project);

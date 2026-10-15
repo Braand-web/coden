@@ -34,7 +34,7 @@ export function publicationRelativePath(value: string): string {
   return value;
 }
 
-export function validatePublicationAssets(value: unknown): Asset[] {
+export function validatePublicationAssets(value: unknown, runtime: 'static-assets' | 'cloudflare-workers' = 'static-assets'): Asset[] {
   if (!Array.isArray(value) || !value.length || value.length > MAX_FILES) throw new Error('INVALID_BUILD_ARTIFACT');
   const seen = new Set<string>();
   let total = 0;
@@ -42,13 +42,13 @@ export function validatePublicationAssets(value: unknown): Asset[] {
     const relative = publicationRelativePath(String(raw?.path || ''));
     if (seen.has(relative.toLowerCase()) || !Number.isSafeInteger(raw.size) || raw.size < 0 || raw.size > MAX_FILE_BYTES || !/^[a-f0-9]{64}$/.test(raw.sha256)) throw new Error('INVALID_BUILD_ARTIFACT');
     // Static uploads must not silently execute Workers or leak build metadata/secrets.
-    if (relative.split('/').some(p => /^\.env(?:\.|$)/i.test(p) || p === '.git' || p === 'node_modules') || /(?:^|\/)_worker\.js(?:\/|$)/.test(relative)) throw new Error('UNSAFE_STATIC_ARTIFACT');
+    if (relative.split('/').some(p => /^\.env(?:\.|$)/i.test(p) || p === '.git' || p === 'node_modules') || (runtime === 'static-assets' && /(?:^|\/)_worker\.js(?:\/|$)/.test(relative))) throw new Error('UNSAFE_STATIC_ARTIFACT');
     seen.add(relative.toLowerCase());
     total += raw.size;
     if (total > MAX_TOTAL_BYTES) throw new Error('BUILD_ARTIFACT_LIMIT');
     return { path: relative, size: raw.size, sha256: raw.sha256 };
   });
-  if (!seen.has('index.html')) throw new Error('BUILD_INDEX_MISSING');
+  if (runtime === 'static-assets' && !seen.has('index.html')) throw new Error('BUILD_INDEX_MISSING');
   return assets;
 }
 
@@ -68,7 +68,7 @@ walk(root);process.stdout.write(JSON.stringify(assets));`;
 
 export async function buildPublicationInMicroVM(
   source: StaticSource,
-  options: BuildOptions & { projectId: string },
+  options: BuildOptions & { projectId: string; runtime?: 'static-assets' | 'cloudflare-workers' },
   deps: { factory?: Factory; env?: Record<string, string | undefined> } = {},
 ): Promise<string> {
   const env = deps.env || process.env;
@@ -110,7 +110,7 @@ export async function buildPublicationInMicroVM(
     const listed = await run(`node -e ${quote(enumerationScript(output))}`, 30_000);
     if (String(listed.stdout || '').length > 1024 * 1024) throw new Error('BUILD_ARTIFACT_LIMIT');
     let assets: Asset[];
-    try { assets = validatePublicationAssets(JSON.parse(listed.stdout)); }
+    try { assets = validatePublicationAssets(JSON.parse(listed.stdout), options.runtime); }
     catch { throw new Error('INVALID_BUILD_ARTIFACT'); }
     // A fresh host directory receives bytes only. No generated code is run here.
     const destination = path.resolve(options.workDir, 'published-assets');
