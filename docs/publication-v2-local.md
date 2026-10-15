@@ -63,6 +63,20 @@ opération séparée ; aucun secret n’est conservé dans ce document.
 
 ## Configuration et mise en service
 
+Les paramètres publics du compte existant ont été vérifiés dans le tableau de
+bord Cloudflare et préremplis dans `.env.example` : compte
+`2ead1748668417f67d184d93a3fd69ec`, zone `coden.fun`
+`d1070f2886f9672770daf412504a9f1d` et sous-domaine Workers `novacore629`.
+Le projet Supabase cible reste `ftmbiocvslxctldfihcp`. Ces identifiants ne sont
+pas des clés d’accès : ils ne suffisent pas à autoriser les appels serveur.
+
+Le 15 octobre 2026, le DNS de `coden.fun` pointait encore vers
+`eq5hiovr.up.railway.app`. Le domaine et le point de santé de cette origine
+répondaient `404 Application not found`. À la demande du propriétaire, le
+raccordement Railway est reporté. Aucun DNS, ancien site publié, jeton ou droit
+Cloudflare n’a été modifié. La préconfiguration ne rétablit donc pas le site
+principal et ne déclenche pas de publication réelle.
+
 Les migrations générées avec le CLI sont conservées dans `supabase/migrations/`.
 Pour toute nouvelle installation, les relire et privilégier un environnement
 dédié avant la production. L’application directe décrite ci-dessus correspond
