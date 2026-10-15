@@ -1,4 +1,4 @@
-# Publication V2 — livraison locale
+# Publication V2 — livraison et activation
 
 Cette évolution est désactivée par défaut (`CODEN_PUBLICATION_V2=0`). Le push du
 code ne remplace pas l’activation de l’infrastructure. Aucun déploiement, aucune
@@ -39,19 +39,42 @@ Les comptes simulés permettent de distinguer propriétaire, invité et non invi
   pas la publication. Le transport réel exige `CODEN_PUBLICATION_EMAILS=1`, non
   activé dans cette livraison.
 
-## Préparation d’un futur environnement de test
+## État de la base existante — 15 octobre 2026
 
-Les deux migrations générées avec le CLI sont conservées dans
-`supabase/migrations/20261015043041_durable_agent_job_queue.sql` et
-`supabase/migrations/20261015043635_publication_v2.sql`. Elles ne doivent être
-appliquées en production qu’après revue et essai sur un environnement de test.
+À la demande explicite du propriétaire, les deux migrations ont été appliquées
+directement au projet Supabase existant `ftmbiocvslxctldfihcp` (branche `main`,
+production), sans créer de branche de test ni modifier les projets ou leurs
+fichiers. Chaque migration a été exécutée dans une transaction avec des délais
+de verrouillage et d’exécution bornés, puis inscrite dans l’historique Supabase :
+
+- `20261015043041_durable_agent_job_queue.sql` ;
+- `20261015043635_publication_v2.sql`.
+
+Une lecture du catalogue après application a confirmé les deux versions,
+les sept tables de publication avec RLS activée, l’absence d’accès direct pour
+`anon` et `authenticated`, les huit fonctions de publication réservées au serveur
+et les neuf colonnes de suivi attendues pour la file durable. Aucune publication
+V2 n’était active au moment de cette vérification.
+
+Ces migrations sont déjà appliquées : ne pas les rejouer manuellement. Cette
+vérification du schéma ne constitue pas une validation du déploiement Cloudflare,
+de l’authentification visiteur ou des emails. L’activation du serveur reste une
+opération séparée ; aucun secret n’est conservé dans ce document.
+
+## Configuration et mise en service
+
+Les migrations générées avec le CLI sont conservées dans `supabase/migrations/`.
+Pour toute nouvelle installation, les relire et privilégier un environnement
+dédié avant la production. L’application directe décrite ci-dessus correspond
+au choix explicite du propriétaire pour son instance existante.
 
 `npm run publication:check` vérifie la configuration sans afficher les secrets.
 `npm run publication:check -- --remote` ajoute uniquement des lectures des schémas
 Supabase et du compte Workers. Ce diagnostic ne crée aucune ressource, n’applique
-aucune migration et n’envoie aucun email. Il doit être exécuté avec les variables
-de l’environnement dédié, pas en recopiant celles de production. Un résultat
-positif vérifie des prérequis, pas une publication réelle.
+aucune migration et n’envoie aucun email. L’exécuter depuis l’environnement
+serveur visé, avec ses variables déjà configurées ; ne pas recopier les secrets
+dans le dépôt ou le navigateur. Un résultat positif vérifie des prérequis, pas
+une publication réelle.
 
 Outre la configuration Cloudflare existante, la passerelle utilise
 `CLOUDFLARE_WORKERS_SUBDOMAIN`, `CODEN_PUBLICATION_PLATFORM_SECRET` (secret serveur
@@ -62,6 +85,14 @@ Le jeton Cloudflare du chemin historique Pages ne suffit pas : le compte cible
 doit autoriser les écritures Workers Scripts (versions, déploiements, assets et
 domaines), ainsi que la lecture de son sous domaine Workers. Le routage des
 domaines doit confirmer `enabled: true` et `previews_enabled: false`.
+
+L’ordre de mise en service est le suivant : configurer les variables sur le
+serveur Coden existant, lancer le diagnostic distant en lecture seule, puis
+activer `CODEN_PUBLICATION_V2=1` et redémarrer ce serveur avec la version du code
+correspondante. Garder `CODEN_PUBLICATION_EMAILS=0` tant que l’envoi réel n’est pas
+explicitement activé. Un push Git ne configure pas ces variables et ne prouve pas
+qu’un déploiement a réussi. Ne déclarer une publication opérationnelle qu’après
+vérification de la version effectivement servie et de sa politique d’accès.
 
 Les constructions avec scripts passent par le microVM existant. Les projets Node
 ou Vercel non compatibles Workers sont refusés explicitement, jamais aplatis en
